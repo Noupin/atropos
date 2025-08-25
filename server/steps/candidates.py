@@ -19,8 +19,8 @@ import json
 import re
 from pathlib import Path
 
-from server.helpers.ai import ollama_call_json, retry
-from server.types.clip_candidate import ClipCandidate
+from helpers.ai import ollama_call_json, retry
+from types.clip_candidate import ClipCandidate
 
 # -----------------------------
 # Manifest utils (export/import candidates)

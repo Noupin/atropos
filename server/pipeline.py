@@ -1,13 +1,13 @@
-from server.steps.transcribe import transcribe_audio
-from server.steps.download import download_transcript, download_video, get_video_info
+from steps.transcribe import transcribe_audio
+from steps.download import download_transcript, download_video, get_video_info
 
 import os
 import sys
 
-from server.helpers.audio import ensure_audio
-from server.helpers.transcript import write_transcript_txt
-from server.helpers.formatting import Fore, Style, sanitize_filename
-from server.helpers.logging import run_step
+from helpers.audio import ensure_audio
+from helpers.transcript import write_transcript_txt
+from helpers.formatting import Fore, Style, sanitize_filename
+from helpers.logging import run_step
 
 
 if __name__ == "__main__":
