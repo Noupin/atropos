@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from .candidates import ClipCandidate
+from server.types.clip_candidate import ClipCandidate
 
 
 def save_clip(

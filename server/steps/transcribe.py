@@ -1,6 +1,6 @@
 from faster_whisper import WhisperModel
 
-from helpers.timing import Timer
+from server.types.timer import Timer
 
 
 def transcribe_audio(file_path, model_size="medium"):

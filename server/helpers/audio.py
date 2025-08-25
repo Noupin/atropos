@@ -1,8 +1,8 @@
 import os
 from typing import Optional
 
-from helpers.formatting import Fore, Style
-from steps.download import download_audio, extract_audio_from_video
+from .formatting import Fore, Style
+from server.steps.download import download_audio, extract_audio_from_video
 
 
 def ensure_audio(yt_url: str, audio_out: str, video_out: Optional[str] = None) -> bool:
