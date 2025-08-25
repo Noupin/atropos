@@ -13,7 +13,7 @@ from helpers.audio import ensure_audio
 from helpers.transcript import write_transcript_txt
 from helpers.formatting import Fore, Style, sanitize_filename
 from helpers.logging import run_step
-from types.clip_candidate import ClipCandidate
+from interfaces.clip_candidate import ClipCandidate
 
 
 if __name__ == "__main__":

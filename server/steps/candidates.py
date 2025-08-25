@@ -20,7 +20,7 @@ import re
 from pathlib import Path
 
 from helpers.ai import ollama_call_json, retry
-from types.clip_candidate import ClipCandidate
+from interfaces.clip_candidate import ClipCandidate
 
 # -----------------------------
 # Manifest utils (export/import candidates)
