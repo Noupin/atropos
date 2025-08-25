@@ -37,6 +37,7 @@ def render_vertical_with_captions(
     font_file: Optional[str] = None,
     font_size: int = 42,
     prefer_subtitles: bool = False,
+    srt_path: str | Path | None = None,
 ) -> bool:
     """Take a horizontal clip and produce a 9:16 video with blurred background and burned subtitles.
     We assume `clip_path` is already trimmed to [global_start, global_end]. We still need `global_*` to build the SRT window.
@@ -45,9 +46,17 @@ def render_vertical_with_captions(
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    # Build a temp SRT aligned to this clip (0-based times)
-    srt_path = out.with_suffix(".srt")
-    build_srt_for_range(transcript_path, global_start=global_start, global_end=global_end, srt_path=srt_path)
+    # Build or reuse an SRT aligned to this clip (0-based times)
+    if srt_path is None:
+        srt_path = out.with_suffix(".srt")
+    srt_path = Path(srt_path)
+    if not srt_path.exists():
+        build_srt_for_range(
+            transcript_path,
+            global_start=global_start,
+            global_end=global_end,
+            srt_path=srt_path,
+        )
     srt_path = srt_path.resolve()
 
     has_subs = _ffmpeg_supports_subtitles()
@@ -115,6 +124,7 @@ def render_vertical_from_candidate(
     font_file: Optional[str] = None,
     font_size: int = 42,
     prefer_subtitles: bool = False,
+    srt_path: str | Path | None = None,
 ) -> Path | None:
     out = Path(output_dir) / f"clip_vertical_{candidate.start:.2f}-{candidate.end:.2f}_r{candidate.rating:.1f}.mp4"
     ok = render_vertical_with_captions(
@@ -129,6 +139,7 @@ def render_vertical_from_candidate(
         font_file=font_file,
         font_size=font_size,
         prefer_subtitles=prefer_subtitles,
+        srt_path=srt_path,
     )
     return out if ok else None
 

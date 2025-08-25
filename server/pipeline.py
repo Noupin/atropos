@@ -1,13 +1,19 @@
 from steps.transcribe import transcribe_audio
 from steps.download import download_transcript, download_video, get_video_info
+from steps.candidates import find_funny_timestamps_batched
+from steps.cut import save_clip_from_candidate
+from steps.subtitle import build_srt_for_range
+from steps.render import render_vertical_with_captions
 
 import os
 import sys
+from pathlib import Path
 
 from helpers.audio import ensure_audio
 from helpers.transcript import write_transcript_txt
 from helpers.formatting import Fore, Style, sanitize_filename
 from helpers.logging import run_step
+from types.clip_candidate import ClipCandidate
 
 
 if __name__ == "__main__":
@@ -92,3 +98,76 @@ if __name__ == "__main__":
             print(
                 f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
             )
+
+    # ----------------------
+    # STEP 4: Find Clip Candidates
+    # ----------------------
+
+    def step_candidates() -> list[ClipCandidate]:
+        return find_funny_timestamps_batched(transcript_output_path)
+
+    candidates = run_step(
+        "STEP 4: Finding clip candidates from transcript", step_candidates
+    )
+    if not candidates:
+        print(f"{Fore.RED}STEP 4: No clip candidates found.{Style.RESET_ALL}")
+        sys.exit()
+
+    best_candidate = max(candidates, key=lambda c: c.rating)
+    print(
+        f"Selected clip {best_candidate.start:.2f}-{best_candidate.end:.2f} (rating {best_candidate.rating:.1f})"
+    )
+
+    # ----------------------
+    # STEP 5: Cut Clip
+    # ----------------------
+    clips_dir = f"{non_suffix_filename}_clips"
+
+    def step_cut() -> Path | None:
+        return save_clip_from_candidate(
+            video_output_path, clips_dir, best_candidate
+        )
+
+    clip_path = run_step(
+        f"STEP 5: Cutting clip -> {clips_dir}", step_cut
+    )
+    if clip_path is None:
+        print(f"{Fore.RED}STEP 5: Failed to cut clip.{Style.RESET_ALL}")
+        sys.exit()
+
+    # ----------------------
+    # STEP 6: Build Subtitles
+    # ----------------------
+    srt_path = clip_path.with_suffix(".srt")
+
+    def step_subtitles() -> Path:
+        return build_srt_for_range(
+            transcript_output_path,
+            global_start=best_candidate.start,
+            global_end=best_candidate.end,
+            srt_path=srt_path,
+        )
+
+    run_step(
+        f"STEP 6: Generating subtitles -> {srt_path}", step_subtitles
+    )
+
+    # ----------------------
+    # STEP 7: Render Vertical Video with Captions
+    # ----------------------
+    vertical_output = clip_path.with_name(clip_path.stem + "_vertical.mp4")
+
+    def step_render() -> bool:
+        return render_vertical_with_captions(
+            clip_path,
+            transcript_output_path,
+            global_start=best_candidate.start,
+            global_end=best_candidate.end,
+            output_path=vertical_output,
+            prefer_subtitles=True,
+            srt_path=srt_path,
+        )
+
+    run_step(
+        f"STEP 7: Rendering vertical video -> {vertical_output}", step_render
+    )
