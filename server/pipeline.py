@@ -1,11 +1,10 @@
 from steps.transcribe import transcribe_audio
 from steps.download import download_transcript, download_video, get_video_info
-from steps.candidates import find_funny_timestamps_batched
+from steps.candidates import find_funny_timestamps_batched, export_candidates_json
 from steps.cut import save_clip_from_candidate
 from steps.subtitle import build_srt_for_range
 from steps.render import render_vertical_with_captions
 
-import os
 import sys
 from pathlib import Path
 
@@ -34,26 +33,33 @@ if __name__ == "__main__":
     non_suffix_filename = f"{sanitized_title}_{upload_date}"
     print(f"File Name: {non_suffix_filename}")
 
+    # Create a dedicated output directory for this run
+    base_output_dir = Path(__file__).resolve().parent.parent / "out"
+    project_dir = base_output_dir / non_suffix_filename
+    project_dir.mkdir(parents=True, exist_ok=True)
+
     # ----------------------
     # STEP 1: Download Video
     # ----------------------
-    video_output_path = f"{non_suffix_filename}.mp4"
+    video_output_path = project_dir / f"{non_suffix_filename}.mp4"
 
     def step_download() -> None:
-        if os.path.exists(video_output_path) and os.path.getsize(video_output_path) > 0:
-            print(f"{Fore.GREEN}STEP 1: Video already present -> {video_output_path}{Style.RESET_ALL}")
+        if video_output_path.exists() and video_output_path.stat().st_size > 0:
+            print(
+                f"{Fore.GREEN}STEP 1: Video already present -> {video_output_path}{Style.RESET_ALL}"
+            )
         else:
-            download_video(yt_url, video_output_path)
+            download_video(yt_url, str(video_output_path))
 
     run_step(f"STEP 1: Downloading video -> {video_output_path}", step_download)
 
     # ----------------------
     # STEP 2: Acquire Audio
     # ----------------------
-    audio_output_path = f"{non_suffix_filename}.mp3"
+    audio_output_path = project_dir / f"{non_suffix_filename}.mp3"
 
     def step_audio() -> bool:
-        return ensure_audio(yt_url, audio_output_path, video_output_path)
+        return ensure_audio(yt_url, str(audio_output_path), str(video_output_path))
 
     audio_ok = run_step(
         f"STEP 2: Ensuring audio -> {audio_output_path}", step_audio
@@ -66,11 +72,11 @@ if __name__ == "__main__":
     # ----------------------
     # STEP 3: Get Text (Transcript or Transcription)
     # ----------------------
-    transcript_output_path = f"{non_suffix_filename}.txt"
+    transcript_output_path = project_dir / f"{non_suffix_filename}.txt"
 
     def step_download_transcript() -> bool:
         return download_transcript(
-            yt_url, transcript_output_path, languages=["en", "en-US", "en-GB", "ko"]
+            yt_url, str(transcript_output_path), languages=["en", "en-US", "en-GB", "ko"]
         )
 
     yt_ok = run_step(
@@ -87,9 +93,9 @@ if __name__ == "__main__":
         else:
             def step_transcribe() -> None:
                 result = transcribe_audio(
-                    audio_output_path, model_size="large-v3-turbo"
+                    str(audio_output_path), model_size="large-v3-turbo"
                 )
-                write_transcript_txt(result, transcript_output_path)
+                write_transcript_txt(result, str(transcript_output_path))
 
             run_step(
                 "STEP 3: Transcribing with faster-whisper (large-v3-turbo)",
@@ -102,9 +108,10 @@ if __name__ == "__main__":
     # ----------------------
     # STEP 4: Find Clip Candidates
     # ----------------------
+    candidates_path = project_dir / "candidates.json"
 
     def step_candidates() -> list[ClipCandidate]:
-        return find_funny_timestamps_batched(transcript_output_path)
+        return find_funny_timestamps_batched(str(transcript_output_path))
 
     candidates = run_step(
         "STEP 4: Finding clip candidates from transcript", step_candidates
@@ -112,6 +119,8 @@ if __name__ == "__main__":
     if not candidates:
         print(f"{Fore.RED}STEP 4: No clip candidates found.{Style.RESET_ALL}")
         sys.exit()
+
+    export_candidates_json(candidates, candidates_path)
 
     best_candidate = max(candidates, key=lambda c: c.rating)
     print(
@@ -121,7 +130,7 @@ if __name__ == "__main__":
     # ----------------------
     # STEP 5: Cut Clip
     # ----------------------
-    clips_dir = f"{non_suffix_filename}_clips"
+    clips_dir = project_dir / f"{non_suffix_filename}_clips"
 
     def step_cut() -> Path | None:
         return save_clip_from_candidate(
