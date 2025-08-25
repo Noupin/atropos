@@ -15,17 +15,12 @@ def _to_float(val):
     except Exception:
         return None
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Iterable, Dict
+from typing import List, Optional, Tuple
 import json
 import re
-import os
-import time
-
-import requests
 from pathlib import Path
-import math
-import itertools
-from requests.exceptions import RequestException
+
+from helpers.ai import ollama_call_json, retry
 
 # -----------------------------
 # Data structures
@@ -235,39 +230,6 @@ def _enforce_non_overlap(candidates: List[ClipCandidate], items: List[Tuple[floa
     selected.sort(key=lambda x: x.start)
     return selected
 
-# -----------------------------
-# LLM (Ollama / gemma3) utilities
-# -----------------------------
-
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-
-
-def _ollama_generate(model: str, prompt: str, json_format: bool = True, options: Optional[dict] = None, timeout: int = 120) -> str:
-    """Call Ollama's /api/generate with optional JSON formatting.
-    Returns the raw response string.
-    """
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-    }
-    if json_format:
-        payload["format"] = "json"
-    if options:
-        payload["options"] = options
-    url = f"{OLLAMA_URL}/api/generate"
-    resp = requests.post(url, json=payload, timeout=timeout)
-    resp.raise_for_status()
-    data = resp.json()
-    return data.get("response", "").strip()
-
-# -----------------------------
-# Batching, retries, and orchestration
-# -----------------------------
-
-DEFAULT_JSON_EXTRACT = re.compile(r"\[(?:.|\n)*\]")
-
-
 def _chunk_transcript_items(items: List[Tuple[float, float, str]], *, max_chars: int = 12000, overlap_lines: int = 4) -> List[List[Tuple[float, float, str]]]:
     """Chunk transcript into pieces under a character budget with a small line overlap to avoid split jokes."""
     chunks: List[List[Tuple[float, float, str]]] = []
@@ -292,41 +254,6 @@ def _chunk_transcript_items(items: List[Tuple[float, float, str]], *, max_chars:
 
 def _format_items_for_prompt(items: List[Tuple[float, float, str]]) -> str:
     return "\n".join(f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in items)
-
-
-def _ollama_call_json(model: str, prompt: str, *, options: Optional[dict] = None, timeout: int = 120) -> List[Dict]:
-    """Call Ollama and return parsed JSON array with robust fallback and small cleanup."""
-    try:
-        raw = _ollama_generate(model=model, prompt=prompt, json_format=True, options=options, timeout=timeout)
-    except RequestException as e:
-        raise RuntimeError(f"Ollama request failed: {e}")
-    # Direct parse
-    try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, dict) and "items" in parsed:
-            parsed = parsed["items"]
-        if isinstance(parsed, list):
-            return parsed
-    except Exception:
-        pass
-    # Fallback: extract first JSON array
-    m = DEFAULT_JSON_EXTRACT.search(raw)
-    if not m:
-        raise ValueError(f"Model did not return JSON array. Raw head: {raw[:300]}")
-    return json.loads(m.group(0))
-
-
-def _retry(fn, *, attempts: int = 3, backoff: float = 1.5):
-    last_exc = None
-    delay = 0.8
-    for i in range(attempts):
-        try:
-            return fn()
-        except Exception as e:
-            last_exc = e
-            time.sleep(delay)
-            delay *= backoff
-    raise last_exc
 
 
 def find_funny_timestamps_batched(
@@ -378,10 +305,14 @@ def find_funny_timestamps_batched(
             f"{system_instructions}\n\nTRANSCRIPT (time-coded):\n{condensed}\n\nReturn JSON now."
         )
         def _call():
-            arr = _ollama_call_json(model=model, prompt=prompt, options=combined_options, timeout=request_timeout)
-            return arr
+            return ollama_call_json(
+                model=model,
+                prompt=prompt,
+                options=combined_options,
+                timeout=request_timeout,
+            )
         try:
-            arr = _retry(_call)
+            arr = retry(_call)
         except Exception as e:
             # Skip this chunk on repeated failure
             print(f"Ollama chunk failed, skipping: {e}")
@@ -474,22 +405,7 @@ def find_funny_timestamps(
     )
 
     print("[Single] Sending transcript to model for funny timestamp extraction...")
-    raw = _ollama_generate(model=model, prompt=prompt, json_format=True, options=options)
-
-    # Parse JSON safely
-    try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, dict) and "items" in parsed:
-            parsed = parsed["items"]
-        if not isinstance(parsed, list):
-            raise ValueError("Model did not return a JSON array")
-    except Exception:
-        # Try to salvage by extracting the first JSON array
-        m = re.search(r"\[(?:.|\n)*\]", raw)
-        if not m:
-            raise ValueError(f"Model did not return valid JSON. Raw: {raw[:500]}")
-        parsed = json.loads(m.group(0))
-
+    parsed = ollama_call_json(model=model, prompt=prompt, options=options)
     print(f"[Single] Model returned {len(parsed)} raw candidates before filtering.")
     candidates: List[ClipCandidate] = []
     for it in parsed:
