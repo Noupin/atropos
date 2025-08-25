@@ -1,3 +1,5 @@
+"""Simple timing context manager dataclass."""
+
 import time
 from dataclasses import dataclass
 
@@ -17,5 +19,3 @@ class Timer:
     @property
     def elapsed(self) -> float:
         return self.stop_time - self.start_time
-
-__all__ = ["Timer"]

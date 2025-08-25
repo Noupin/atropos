@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from .candidates import ClipCandidate
+from server.types.clip_candidate import ClipCandidate
 from .subtitle import (
     _escape_for_drawtext,
     _escape_for_subtitles_filter,

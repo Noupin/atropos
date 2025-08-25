@@ -14,29 +14,13 @@ def _to_float(val):
         return float(val)
     except Exception:
         return None
-from dataclasses import dataclass
 from typing import List, Optional, Tuple
 import json
 import re
 from pathlib import Path
 
-from helpers.ai import ollama_call_json, retry
-
-# -----------------------------
-# Data structures
-# -----------------------------
-
-
-@dataclass
-class ClipCandidate:
-    start: float
-    end: float
-    rating: float
-    reason: str
-    quote: str
-
-    def duration(self) -> float:
-        return max(0.0, self.end - self.start)
+from server.helpers.ai import ollama_call_json, retry
+from server.types.clip_candidate import ClipCandidate
 
 # -----------------------------
 # Manifest utils (export/import candidates)
