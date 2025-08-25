@@ -7,6 +7,7 @@ import sys
 from server.helpers.audio import ensure_audio
 from server.helpers.transcript import write_transcript_txt
 from server.helpers.formatting import Fore, Style, sanitize_filename
+from server.helpers.logging import run_step
 
 
 if __name__ == "__main__":
@@ -31,37 +32,63 @@ if __name__ == "__main__":
     # STEP 1: Download Video
     # ----------------------
     video_output_path = f"{non_suffix_filename}.mp4"
-    try:
+
+    def step_download() -> None:
         if os.path.exists(video_output_path) and os.path.getsize(video_output_path) > 0:
             print(f"{Fore.GREEN}STEP 1: Video already present -> {video_output_path}{Style.RESET_ALL}")
         else:
-            print(f"{Fore.CYAN}STEP 1: Downloading video -> {video_output_path}{Style.RESET_ALL}")
             download_video(yt_url, video_output_path)
-    except Exception as e:
-        print(f"{Fore.RED}STEP 1: Video download failed: {e}{Style.RESET_ALL}")
+
+    run_step(f"STEP 1: Downloading video -> {video_output_path}", step_download)
 
     # ----------------------
     # STEP 2: Acquire Audio
     # ----------------------
     audio_output_path = f"{non_suffix_filename}.mp3"
-    print(f"{Fore.CYAN}STEP 2: Ensuring audio -> {audio_output_path}{Style.RESET_ALL}")
-    audio_ok = ensure_audio(yt_url, audio_output_path, video_output_path)
+
+    def step_audio() -> bool:
+        return ensure_audio(yt_url, audio_output_path, video_output_path)
+
+    audio_ok = run_step(
+        f"STEP 2: Ensuring audio -> {audio_output_path}", step_audio
+    )
     if not audio_ok:
-        print(f"{Fore.YELLOW}STEP 2: Failed to acquire audio (direct + video-extract fallbacks tried).{Style.RESET_ALL}")
+        print(
+            f"{Fore.YELLOW}STEP 2: Failed to acquire audio (direct + video-extract fallbacks tried).{Style.RESET_ALL}"
+        )
 
     # ----------------------
     # STEP 3: Get Text (Transcript or Transcription)
     # ----------------------
     transcript_output_path = f"{non_suffix_filename}.txt"
-    print(f"{Fore.CYAN}STEP 3: Attempting YouTube transcript -> {transcript_output_path}{Style.RESET_ALL}")
-    yt_ok = download_transcript(yt_url, transcript_output_path, languages=['en', 'en-US', 'en-GB', 'ko'])
+
+    def step_download_transcript() -> bool:
+        return download_transcript(
+            yt_url, transcript_output_path, languages=["en", "en-US", "en-GB", "ko"]
+        )
+
+    yt_ok = run_step(
+        f"STEP 3: Attempting YouTube transcript -> {transcript_output_path}",
+        step_download_transcript,
+    )
     if yt_ok:
         print(f"{Fore.GREEN}STEP 3: Used YouTube transcript.{Style.RESET_ALL}")
     else:
         if not audio_ok:
-            print(f"{Fore.RED}STEP 3: Cannot transcribe because audio acquisition failed.{Style.RESET_ALL}")
+            print(
+                f"{Fore.RED}STEP 3: Cannot transcribe because audio acquisition failed.{Style.RESET_ALL}"
+            )
         else:
-            print(f"{Fore.CYAN}STEP 3: Transcribing with faster-whisper (large-v3-turbo)...{Style.RESET_ALL}")
-            result = transcribe_audio(audio_output_path, model_size="large-v3-turbo")
-            write_transcript_txt(result, transcript_output_path)
-            print(f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}")
+            def step_transcribe() -> None:
+                result = transcribe_audio(
+                    audio_output_path, model_size="large-v3-turbo"
+                )
+                write_transcript_txt(result, transcript_output_path)
+
+            run_step(
+                "STEP 3: Transcribing with faster-whisper (large-v3-turbo)",
+                step_transcribe,
+            )
+            print(
+                f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
+            )
