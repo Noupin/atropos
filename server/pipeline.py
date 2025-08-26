@@ -64,72 +64,72 @@ if __name__ == "__main__":
     # ----------------------
     # STEP 2: Acquire Audio
     # ----------------------
-    # audio_output_path = project_dir / f"{non_suffix_filename}.mp3"
+    audio_output_path = project_dir / f"{non_suffix_filename}.mp3"
 
-    # def step_audio() -> bool:
-    #     return ensure_audio(yt_url, str(audio_output_path), str(video_output_path))
+    def step_audio() -> bool:
+        return ensure_audio(yt_url, str(audio_output_path), str(video_output_path))
 
-    # audio_ok = run_step(
-    #     f"STEP 2: Ensuring audio -> {audio_output_path}", step_audio
-    # )
-    # if not audio_ok:
-    #     print(
-    #         f"{Fore.YELLOW}STEP 2: Failed to acquire audio (direct + video-extract fallbacks tried).{Style.RESET_ALL}"
-    #     )
+    audio_ok = run_step(
+        f"STEP 2: Ensuring audio -> {audio_output_path}", step_audio
+    )
+    if not audio_ok:
+        print(
+            f"{Fore.YELLOW}STEP 2: Failed to acquire audio (direct + video-extract fallbacks tried).{Style.RESET_ALL}"
+        )
 
-    # # ----------------------
-    # # STEP 3: Get Text (Transcript or Transcription)
-    # # ----------------------
+    # ----------------------
+    # STEP 3: Get Text (Transcript or Transcription)
+    # ----------------------
     transcript_output_path = project_dir / f"{non_suffix_filename}.txt"
 
-    # def step_download_transcript() -> bool:
-    #     return download_transcript(
-    #         yt_url, str(transcript_output_path), languages=["en", "en-US", "en-GB", "ko"]
-    #     )
+    def step_download_transcript() -> bool:
+        return download_transcript(
+            yt_url, str(transcript_output_path), languages=["en", "en-US", "en-GB", "ko"]
+        )
 
-    # yt_ok = run_step(
-    #     f"STEP 3: Attempting YouTube transcript -> {transcript_output_path}",
-    #     step_download_transcript,
-    # )
-    # if yt_ok:
-    #     print(f"{Fore.GREEN}STEP 3: Used YouTube transcript.{Style.RESET_ALL}")
-    # else:
-    #     if not audio_ok:
-    #         print(
-    #             f"{Fore.RED}STEP 3: Cannot transcribe because audio acquisition failed.{Style.RESET_ALL}"
-    #         )
-    #     else:
-    #         def step_transcribe() -> None:
-    #             result = transcribe_audio(
-    #                 str(audio_output_path), model_size="large-v3-turbo"
-    #             )
-    #             write_transcript_txt(result, str(transcript_output_path))
+    yt_ok = run_step(
+        f"STEP 3: Attempting YouTube transcript -> {transcript_output_path}",
+        step_download_transcript,
+    )
+    if yt_ok:
+        print(f"{Fore.GREEN}STEP 3: Used YouTube transcript.{Style.RESET_ALL}")
+    else:
+        if not audio_ok:
+            print(
+                f"{Fore.RED}STEP 3: Cannot transcribe because audio acquisition failed.{Style.RESET_ALL}"
+            )
+        else:
+            def step_transcribe() -> None:
+                result = transcribe_audio(
+                    str(audio_output_path), model_size="large-v3-turbo"
+                )
+                write_transcript_txt(result, str(transcript_output_path))
 
-    #         run_step(
-    #             "STEP 3: Transcribing with faster-whisper (large-v3-turbo)",
-    #             step_transcribe,
-    #         )
-    #         print(
-    #             f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
-    #         )
+            run_step(
+                "STEP 3: Transcribing with faster-whisper (large-v3-turbo)",
+                step_transcribe,
+            )
+            print(
+                f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
+            )
 
-    # # ----------------------
-    # # STEP 4: Find Clip Candidates
-    # # ----------------------
-    # candidates_path = project_dir / "candidates.json"
+    # ----------------------
+    # STEP 4: Find Clip Candidates
+    # ----------------------
+    candidates_path = project_dir / "candidates.json"
 
-    # def step_candidates() -> list[ClipCandidate]:
-    #     return find_funny_timestamps_batched(str(transcript_output_path))
+    def step_candidates() -> list[ClipCandidate]:
+        return find_funny_timestamps_batched(str(transcript_output_path))
 
-    # candidates = run_step(
-    #     "STEP 4: Finding clip candidates from transcript", step_candidates
-    # )
-    # if not candidates:
-    #     print(f"{Fore.RED}STEP 4: No clip candidates found.{Style.RESET_ALL}")
-    #     sys.exit()
+    candidates = run_step(
+        "STEP 4: Finding clip candidates from transcript", step_candidates
+    )
+    if not candidates:
+        print(f"{Fore.RED}STEP 4: No clip candidates found.{Style.RESET_ALL}")
+        sys.exit()
 
-    # export_candidates_json(candidates, candidates_path)
-    candidates = load_candidates_json('../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/candidates.json')
+    export_candidates_json(candidates, candidates_path)
+    # candidates = load_candidates_json('../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/candidates.json')
 
     best_candidate = max(candidates, key=lambda c: c.rating)
     items = parse_transcript(transcript_output_path)
