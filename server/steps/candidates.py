@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 # -----------------------------
 # Safe field helpers
 # -----------------------------
+
 
 def _get_field(obj, key, default=None):
     """Return obj[key] if dict-like, getattr(obj, key) if attribute-like, else default."""
@@ -9,11 +11,14 @@ def _get_field(obj, key, default=None):
         return obj.get(key, default)
     return getattr(obj, key, default)
 
+
 def _to_float(val):
     try:
         return float(val)
     except Exception:
         return None
+
+
 from typing import List, Optional, Tuple
 import json
 import re
@@ -25,6 +30,7 @@ from interfaces.clip_candidate import ClipCandidate
 # -----------------------------
 # Manifest utils (export/import candidates)
 # -----------------------------
+
 
 def export_candidates_json(candidates: List[ClipCandidate], path: str | Path) -> None:
     out = Path(path)
@@ -54,14 +60,21 @@ def load_candidates_json(path: str | Path) -> List[ClipCandidate]:
         quote = str(_get_field(it, "quote", ""))
         if start is None or end is None or rating is None:
             continue
-        result.append(ClipCandidate(start=start, end=end, rating=rating, reason=reason, quote=quote))
+        result.append(
+            ClipCandidate(
+                start=start, end=end, rating=rating, reason=reason, quote=quote
+            )
+        )
     return result
+
 
 # -----------------------------
 # Transcript utilities
 # -----------------------------
 
-_TIME_RANGE = re.compile(r"^\[(?P<start>\d+(?:\.\d+)?)\s*->\s*(?P<end>\d+(?:\.\d+)?)\]\s*(?P<text>.*)$")
+_TIME_RANGE = re.compile(
+    r"^\[(?P<start>\d+(?:\.\d+)?)\s*->\s*(?P<end>\d+(?:\.\d+)?)\]\s*(?P<text>.*)$"
+)
 
 
 def parse_transcript(transcript_path: str | Path) -> List[Tuple[float, float, str]]:
@@ -84,9 +97,11 @@ def parse_transcript(transcript_path: str | Path) -> List[Tuple[float, float, st
                 items.append((start, end, text))
     return items
 
+
 # -----------------------------
 # Clip sanity utilities (snap ends to segment boundaries, prevent overlap)
 # -----------------------------
+
 
 def _build_segment_index(items: List[Tuple[float, float, str]]):
     """Return parallel lists of segment starts and ends for binary search."""
@@ -95,8 +110,9 @@ def _build_segment_index(items: List[Tuple[float, float, str]]):
     return starts, ends
 
 
-
-def _snap_end_to_segment_end(end_time: float, items: List[Tuple[float, float, str]]) -> float:
+def _snap_end_to_segment_end(
+    end_time: float, items: List[Tuple[float, float, str]]
+) -> float:
     """If ``end_time`` falls inside a transcript segment, extend the end to the
     conclusion of that spoken line.  Additional adjacent segments are also
     consumed when they appear to be a continuation of the same sentence—i.e.
@@ -109,7 +125,7 @@ def _snap_end_to_segment_end(end_time: float, items: List[Tuple[float, float, st
         if s <= end_time <= e:
             end = e
             # walk forward while segments appear to continue the sentence
-            for nxt_s, nxt_e, nxt_txt in items[idx + 1:]:
+            for nxt_s, nxt_e, nxt_txt in items[idx + 1 :]:
                 gap = nxt_s - end
                 if gap > 0.6:  # a noticeable pause marks a good stopping point
                     break
@@ -123,7 +139,9 @@ def _snap_end_to_segment_end(end_time: float, items: List[Tuple[float, float, st
 
 
 # SNAP START TO SEGMENT START
-def _snap_start_to_segment_start(start_time: float, items: List[Tuple[float, float, str]]) -> float:
+def _snap_start_to_segment_start(
+    start_time: float, items: List[Tuple[float, float, str]]
+) -> float:
     """If start_time lands inside a spoken segment, snap to that segment's start so we don't cut mid-line.
     If it lands in silence between segments, return unchanged.
     """
@@ -131,7 +149,6 @@ def _snap_start_to_segment_start(start_time: float, items: List[Tuple[float, flo
         if s <= start_time <= e:
             return s
     return start_time
-
 
 
 # MERGE ADJACENT/OVERLAPPING CANDIDATES
@@ -160,7 +177,11 @@ def _merge_adjacent_candidates(
         # Skip overly long initial candidates entirely
         if (e - s) > max_duration_seconds:
             continue
-        snapped.append(ClipCandidate(start=s, end=e, rating=c.rating, reason=c.reason, quote=c.quote))
+        snapped.append(
+            ClipCandidate(
+                start=s, end=e, rating=c.rating, reason=c.reason, quote=c.quote
+            )
+        )
 
     if not snapped:
         return []
@@ -184,8 +205,16 @@ def _merge_adjacent_candidates(
                     start=new_start,
                     end=new_end,
                     rating=max(cur.rating, nxt.rating),
-                    reason=(cur.reason + (" | " if cur.reason and nxt.reason else "") + nxt.reason).strip(),
-                    quote=(cur.quote + (" | " if cur.quote and nxt.quote else "") + nxt.quote).strip(),
+                    reason=(
+                        cur.reason
+                        + (" | " if cur.reason and nxt.reason else "")
+                        + nxt.reason
+                    ).strip(),
+                    quote=(
+                        cur.quote
+                        + (" | " if cur.quote and nxt.quote else "")
+                        + nxt.quote
+                    ).strip(),
                 )
                 continue
         # Cannot merge, push current and advance
@@ -222,7 +251,13 @@ def _enforce_non_overlap(
         if (snapped_end - snapped_start) > max_duration_seconds:
             continue
         adjusted.append(
-            ClipCandidate(start=snapped_start, end=snapped_end, rating=c.rating, reason=c.reason, quote=c.quote)
+            ClipCandidate(
+                start=snapped_start,
+                end=snapped_end,
+                rating=c.rating,
+                reason=c.reason,
+                quote=c.quote,
+            )
         )
 
     if not adjusted:
@@ -244,7 +279,13 @@ def _enforce_non_overlap(
     selected.sort(key=lambda x: x.start)
     return selected
 
-def _chunk_transcript_items(items: List[Tuple[float, float, str]], *, max_chars: int = 12000, overlap_lines: int = 4) -> List[List[Tuple[float, float, str]]]:
+
+def _chunk_transcript_items(
+    items: List[Tuple[float, float, str]],
+    *,
+    max_chars: int = 12000,
+    overlap_lines: int = 4,
+) -> List[List[Tuple[float, float, str]]]:
     """Chunk transcript into pieces under a character budget with a small line overlap to avoid split jokes."""
     chunks: List[List[Tuple[float, float, str]]] = []
     buf: List[Tuple[float, float, str]] = []
@@ -270,9 +311,37 @@ def _format_items_for_prompt(items: List[Tuple[float, float, str]]) -> str:
     return "\n".join(f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in items)
 
 
-def find_funny_timestamps_batched(
+_FUNNY_PROMPT_DESC = (
+    "humorous or high-likelihood viral clip moments. Consider punchlines, callbacks, "
+    "playful insults, crowd laughter cues, exaggerated reactions, or topic pivots."
+)
+
+_INSPIRING_PROMPT_DESC = (
+    "uplifting or motivational moments that stir positive emotion, showcase overcoming "
+    "challenges, or deliver heartfelt advice."
+)
+
+_EDUCATIONAL_PROMPT_DESC = (
+    "informative, insightful, or instructional moments that clearly teach a concept or "
+    "share useful facts."
+)
+
+
+def _build_system_instructions(prompt_desc: str, min_rating: float) -> str:
+    return (
+        f"You are ranking {prompt_desc}"
+        " Return a JSON array ONLY."
+        ' Each item MUST be: {"start": number, "end": number, "rating": 1-10 number, "reason": string, "quote": string}'
+        f" Include ONLY items with rating >= {min_rating}."
+        " Use the provided time ranges; do not invent timestamps outside them."
+        " Prefer segment boundaries but you may merge adjacent lines if a bit spans them."
+    )
+
+
+def find_clip_timestamps_batched(
     transcript_path: str | Path,
     *,
+    prompt_desc: str = _FUNNY_PROMPT_DESC,
     min_rating: float = 7.0,
     model: str = "gemma3",
     options: Optional[dict] = None,
@@ -290,18 +359,12 @@ def find_funny_timestamps_batched(
     if not items:
         return []
 
-    chunks = _chunk_transcript_items(items, max_chars=max_chars_per_chunk, overlap_lines=overlap_lines)
+    chunks = _chunk_transcript_items(
+        items, max_chars=max_chars_per_chunk, overlap_lines=overlap_lines
+    )
     print(f"[Batch] Processing {len(chunks)} transcript chunks...")
 
-    system_instructions = (
-        "You are ranking humorous or high-likelihood viral clip moments."
-        " Consider punchlines, callbacks, playful insults, crowd laughter cues, exaggerated reactions, or topic pivots."
-        " Return a JSON array ONLY."
-        " Each item MUST be: {\"start\": number, \"end\": number, \"rating\": 1-10 number, \"reason\": string, \"quote\": string}."
-        f" Include ONLY items with rating >= {min_rating}."
-        " Use the provided time ranges; do not invent timestamps outside them."
-        " Prefer segment boundaries but you may merge adjacent lines if a joke spans them."
-    )
+    system_instructions = _build_system_instructions(prompt_desc, min_rating)
 
     all_candidates: List[ClipCandidate] = []
     min_ts = items[0][0]
@@ -313,11 +376,12 @@ def find_funny_timestamps_batched(
         combined_options.update(options)
 
     for idx, chunk in enumerate(chunks):
-        print(f"[Batch] Processing chunk {idx+1}/{len(chunks)} with {len(chunk)} lines...")
-        condensed = _format_items_for_prompt(chunk)
-        prompt = (
-            f"{system_instructions}\n\nTRANSCRIPT (time-coded):\n{condensed}\n\nReturn JSON now."
+        print(
+            f"[Batch] Processing chunk {idx+1}/{len(chunks)} with {len(chunk)} lines..."
         )
+        condensed = _format_items_for_prompt(chunk)
+        prompt = f"{system_instructions}\n\nTRANSCRIPT (time-coded):\n{condensed}\n\nReturn JSON now."
+
         def _call():
             return ollama_call_json(
                 model=model,
@@ -325,6 +389,7 @@ def find_funny_timestamps_batched(
                 options=combined_options,
                 timeout=request_timeout,
             )
+
         try:
             arr = retry(_call)
         except Exception as e:
@@ -345,31 +410,45 @@ def find_funny_timestamps_batched(
                 continue
             if rating < min_rating:
                 continue
-            all_candidates.append(ClipCandidate(start=start, end=end, rating=rating, reason=reason, quote=quote))
+            all_candidates.append(
+                ClipCandidate(
+                    start=start, end=end, rating=rating, reason=reason, quote=quote
+                )
+            )
 
     # Optionally filter out overlaps with previously selected clips
     if exclude_ranges:
+
         def overlaps_any(c: ClipCandidate) -> bool:
             for a, b in exclude_ranges:
                 if not (c.end <= a or c.start >= b):
                     return True
             return False
+
         all_candidates = [c for c in all_candidates if not overlaps_any(c)]
 
-    print(f"[Batch] Collected {len(all_candidates)} raw candidates across all chunks. Merging and enforcing non-overlap...")
+    print(
+        f"[Batch] Collected {len(all_candidates)} raw candidates across all chunks. Merging and enforcing non-overlap..."
+    )
     # Merge adjacent/overlapping candidates into full bits before non-overlap selection
-    all_candidates = _merge_adjacent_candidates(all_candidates, items, merge_gap_seconds=1.5, max_duration_seconds=60.0)
+    all_candidates = _merge_adjacent_candidates(
+        all_candidates, items, merge_gap_seconds=1.5, max_duration_seconds=60.0
+    )
     # Enforce snapping and non-overlap globally
     result = _enforce_non_overlap(all_candidates, items)
     print(f"[Batch] {len(result)} candidates remain after overlap enforcement.")
     return result
 
+
 # -----------------------------
 # LLM (Ollama / gemma3) utilities
 # -----------------------------
 
-def find_funny_timestamps(
+
+def find_clip_timestamps(
     transcript_path: str | Path,
+    *,
+    prompt_desc: str = _FUNNY_PROMPT_DESC,
     min_rating: float = 7.0,
     model: str = "gemma3",
     options: Optional[dict] = None,
@@ -401,16 +480,7 @@ def find_funny_timestamps(
         total += ln
     condensed = "\n".join(condensed)
 
-    system_instructions = (
-        "You are ranking humorous or high-likelihood viral clip moments."
-        " Consider punchlines, callbacks, playful insults, crowd laughter cues,"
-        " exaggerated reactions, or obvious topic pivots."
-        " Return a JSON array ONLY."
-        " Each item MUST be: {\"start\": number, \"end\": number, \"rating\": 1-10 number, \"reason\": string, \"quote\": string}."
-        f" Include ONLY items with rating >= {min_rating}."
-        " Use the provided time ranges; do not invent timestamps outside them."
-        " Prefer segment boundaries but you may merge adjacent lines if a joke spans them."
-    )
+    system_instructions = _build_system_instructions(prompt_desc, min_rating)
 
     prompt = (
         f"{system_instructions}\n\n"
@@ -418,7 +488,7 @@ def find_funny_timestamps(
         "Return JSON now."
     )
 
-    print("[Single] Sending transcript to model for funny timestamp extraction...")
+    print("[Single] Sending transcript to model for timestamp extraction...")
     parsed = ollama_call_json(model=model, prompt=prompt, options=options)
     print(f"[Single] Model returned {len(parsed)} raw candidates before filtering.")
     candidates: List[ClipCandidate] = []
@@ -436,11 +506,79 @@ def find_funny_timestamps(
             continue
         if rating < min_rating:
             continue
-        candidates.append(ClipCandidate(start=start, end=end, rating=rating, reason=reason, quote=quote))
+        candidates.append(
+            ClipCandidate(
+                start=start, end=end, rating=rating, reason=reason, quote=quote
+            )
+        )
 
     # Merge adjacent/overlapping candidates into full bits before non-overlap selection
-    candidates = _merge_adjacent_candidates(candidates, items, merge_gap_seconds=1.5, max_duration_seconds=60.0)
+    candidates = _merge_adjacent_candidates(
+        candidates, items, merge_gap_seconds=1.5, max_duration_seconds=60.0
+    )
     # Snap to segment ends and prevent overlapping clips
     candidates = _enforce_non_overlap(candidates, items)
     return candidates
 
+
+# Convenience wrappers --------------------------------------------------------
+
+
+def find_funny_timestamps_batched(
+    transcript_path: str | Path,
+    **kwargs,
+) -> List[ClipCandidate]:
+    """Find humorous clip candidates using batched processing."""
+    return find_clip_timestamps_batched(
+        transcript_path, prompt_desc=_FUNNY_PROMPT_DESC, **kwargs
+    )
+
+
+def find_funny_timestamps(
+    transcript_path: str | Path,
+    **kwargs,
+) -> List[ClipCandidate]:
+    """Find humorous clip candidates."""
+    return find_clip_timestamps(
+        transcript_path, prompt_desc=_FUNNY_PROMPT_DESC, **kwargs
+    )
+
+
+def find_inspiring_timestamps_batched(
+    transcript_path: str | Path,
+    **kwargs,
+) -> List[ClipCandidate]:
+    """Find inspiring clip candidates using batched processing."""
+    return find_clip_timestamps_batched(
+        transcript_path, prompt_desc=_INSPIRING_PROMPT_DESC, **kwargs
+    )
+
+
+def find_inspiring_timestamps(
+    transcript_path: str | Path,
+    **kwargs,
+) -> List[ClipCandidate]:
+    """Find inspiring clip candidates."""
+    return find_clip_timestamps(
+        transcript_path, prompt_desc=_INSPIRING_PROMPT_DESC, **kwargs
+    )
+
+
+def find_educational_timestamps_batched(
+    transcript_path: str | Path,
+    **kwargs,
+) -> List[ClipCandidate]:
+    """Find educational clip candidates using batched processing."""
+    return find_clip_timestamps_batched(
+        transcript_path, prompt_desc=_EDUCATIONAL_PROMPT_DESC, **kwargs
+    )
+
+
+def find_educational_timestamps(
+    transcript_path: str | Path,
+    **kwargs,
+) -> List[ClipCandidate]:
+    """Find educational clip candidates."""
+    return find_clip_timestamps(
+        transcript_path, prompt_desc=_EDUCATIONAL_PROMPT_DESC, **kwargs
+    )
