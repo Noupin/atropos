@@ -125,11 +125,12 @@ def _merge_adjacent_candidates(
     items: List[Tuple[float, float, str]],
     *,
     merge_gap_seconds: float = 1.5,
-    max_duration_seconds: float = 120.0,
+    max_duration_seconds: float = 60.0,
 ) -> List[ClipCandidate]:
     """Merge candidates that overlap or are separated by a tiny gap, to preserve full jokes/bits.
     - Snap starts/ends to segment boundaries before merging.
-    - If merged duration would exceed max_duration_seconds, keep as-is (no merge for that pair).
+    - Candidates exceeding ``max_duration_seconds`` are discarded rather than trimmed.
+    - If merged duration would exceed ``max_duration_seconds``, keep as-is (no merge for that pair).
     """
     if not candidates:
         return []
@@ -140,6 +141,9 @@ def _merge_adjacent_candidates(
         s = _snap_start_to_segment_start(c.start, items)
         e = _snap_end_to_segment_end(c.end, items)
         if e <= s:
+            continue
+        # Skip overly long initial candidates entirely
+        if (e - s) > max_duration_seconds:
             continue
         snapped.append(ClipCandidate(start=s, end=e, rating=c.rating, reason=c.reason, quote=c.quote))
 
@@ -177,11 +181,18 @@ def _merge_adjacent_candidates(
     return merged
 
 
-def _enforce_non_overlap(candidates: List[ClipCandidate], items: List[Tuple[float, float, str]], min_gap: float = 0.10) -> List[ClipCandidate]:
+def _enforce_non_overlap(
+    candidates: List[ClipCandidate],
+    items: List[Tuple[float, float, str]],
+    *,
+    max_duration_seconds: float = 60.0,
+    min_gap: float = 0.10,
+) -> List[ClipCandidate]:
     """Adjusts candidate ends to segment boundaries and removes overlaps.
     Preference is given to higher-rated candidates when overlaps occur.
     Returns a list sorted by start time.
     Assumes starts are already snapped, but will snap both ends for safety.
+    Drops any candidate exceeding ``max_duration_seconds``.
     """
     if not candidates:
         return []
@@ -193,7 +204,11 @@ def _enforce_non_overlap(candidates: List[ClipCandidate], items: List[Tuple[floa
         snapped_end = _snap_end_to_segment_end(c.end, items)
         if snapped_end <= snapped_start:
             continue
-        adjusted.append(ClipCandidate(start=snapped_start, end=snapped_end, rating=c.rating, reason=c.reason, quote=c.quote))
+        if (snapped_end - snapped_start) > max_duration_seconds:
+            continue
+        adjusted.append(
+            ClipCandidate(start=snapped_start, end=snapped_end, rating=c.rating, reason=c.reason, quote=c.quote)
+        )
 
     if not adjusted:
         return []
@@ -328,7 +343,7 @@ def find_funny_timestamps_batched(
 
     print(f"[Batch] Collected {len(all_candidates)} raw candidates across all chunks. Merging and enforcing non-overlap...")
     # Merge adjacent/overlapping candidates into full bits before non-overlap selection
-    all_candidates = _merge_adjacent_candidates(all_candidates, items, merge_gap_seconds=1.5, max_duration_seconds=120.0)
+    all_candidates = _merge_adjacent_candidates(all_candidates, items, merge_gap_seconds=1.5, max_duration_seconds=60.0)
     # Enforce snapping and non-overlap globally
     result = _enforce_non_overlap(all_candidates, items)
     print(f"[Batch] {len(result)} candidates remain after overlap enforcement.")
@@ -409,7 +424,7 @@ def find_funny_timestamps(
         candidates.append(ClipCandidate(start=start, end=end, rating=rating, reason=reason, quote=quote))
 
     # Merge adjacent/overlapping candidates into full bits before non-overlap selection
-    candidates = _merge_adjacent_candidates(candidates, items, merge_gap_seconds=1.5, max_duration_seconds=120.0)
+    candidates = _merge_adjacent_candidates(candidates, items, merge_gap_seconds=1.5, max_duration_seconds=60.0)
     # Snap to segment ends and prevent overlapping clips
     candidates = _enforce_non_overlap(candidates, items)
     return candidates
