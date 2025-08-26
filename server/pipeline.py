@@ -1,6 +1,12 @@
 from steps.transcribe import transcribe_audio
 from steps.download import download_transcript, download_video, get_video_info
-from steps.candidates import find_funny_timestamps_batched, export_candidates_json, load_candidates_json
+from steps.candidates import (
+    find_funny_timestamps_batched,
+    find_inspiring_timestamps_batched,
+    find_educational_timestamps_batched,
+    export_candidates_json,
+    load_candidates_json,
+)
 from steps.cut import save_clip_from_candidate
 from steps.candidates import (
     parse_transcript,
@@ -24,20 +30,24 @@ from interfaces.clip_candidate import ClipCandidate
 if __name__ == "__main__":
     overall_start = time.perf_counter()
 
-    yt_url = 'https://www.youtube.com/watch?v=GDbDRWzFfds'
+    yt_url = "https://www.youtube.com/watch?v=GDbDRWzFfds"
     # yt_url = input("Enter YouTube video URL: ")
+
+    CLIP_TYPE = "funny"  # change to 'inspiring' or 'educational'
+    MIN_RATING = 7.0
+
     video_info = get_video_info(yt_url)
 
     if not video_info:
         print(f"{Fore.RED}Failed to retrieve video information.{Style.RESET_ALL}")
         sys.exit()
 
-    upload_date = video_info['upload_date']
-    sanitized_title = sanitize_filename(video_info['title'])
+    upload_date = video_info["upload_date"]
+    sanitized_title = sanitize_filename(video_info["title"])
     if len(upload_date) == 8:
         upload_date = upload_date[:4] + upload_date[4:6] + upload_date[6:]
     else:
-        upload_date = 'Unknown_Date'
+        upload_date = "Unknown_Date"
     non_suffix_filename = f"{sanitized_title}_{upload_date}"
     print(f"File Name: {non_suffix_filename}")
 
@@ -69,9 +79,7 @@ if __name__ == "__main__":
     def step_audio() -> bool:
         return ensure_audio(yt_url, str(audio_output_path), str(video_output_path))
 
-    audio_ok = run_step(
-        f"STEP 2: Ensuring audio -> {audio_output_path}", step_audio
-    )
+    audio_ok = run_step(f"STEP 2: Ensuring audio -> {audio_output_path}", step_audio)
     if not audio_ok:
         print(
             f"{Fore.YELLOW}STEP 2: Failed to acquire audio (direct + video-extract fallbacks tried).{Style.RESET_ALL}"
@@ -84,7 +92,9 @@ if __name__ == "__main__":
 
     def step_download_transcript() -> bool:
         return download_transcript(
-            yt_url, str(transcript_output_path), languages=["en", "en-US", "en-GB", "ko"]
+            yt_url,
+            str(transcript_output_path),
+            languages=["en", "en-US", "en-GB", "ko"],
         )
 
     yt_ok = run_step(
@@ -99,6 +109,7 @@ if __name__ == "__main__":
                 f"{Fore.RED}STEP 3: Cannot transcribe because audio acquisition failed.{Style.RESET_ALL}"
             )
         else:
+
             def step_transcribe() -> None:
                 result = transcribe_audio(
                     str(audio_output_path), model_size="large-v3-turbo"
@@ -118,8 +129,17 @@ if __name__ == "__main__":
     # ----------------------
     candidates_path = project_dir / "candidates.json"
 
+    CLIP_FINDERS = {
+        "funny": find_funny_timestamps_batched,
+        "inspiring": find_inspiring_timestamps_batched,
+        "educational": find_educational_timestamps_batched,
+    }
+
     def step_candidates() -> list[ClipCandidate]:
-        return find_funny_timestamps_batched(str(transcript_output_path))
+        finder = CLIP_FINDERS.get(CLIP_TYPE)
+        if finder is None:
+            raise ValueError(f"Unsupported clip type: {CLIP_TYPE}")
+        return finder(str(transcript_output_path), min_rating=MIN_RATING)
 
     candidates = run_step(
         "STEP 4: Finding clip candidates from transcript", step_candidates
@@ -152,13 +172,9 @@ if __name__ == "__main__":
     clips_dir = project_dir / "clips"
 
     def step_cut() -> Path | None:
-        return save_clip_from_candidate(
-            video_output_path, clips_dir, best_candidate
-        )
+        return save_clip_from_candidate(video_output_path, clips_dir, best_candidate)
 
-    clip_path = run_step(
-        f"STEP 5: Cutting clip -> {clips_dir}", step_cut
-    )
+    clip_path = run_step(f"STEP 5: Cutting clip -> {clips_dir}", step_cut)
     if clip_path is None:
         print(f"{Fore.RED}STEP 5: Failed to cut clip.{Style.RESET_ALL}")
         sys.exit()
@@ -177,9 +193,7 @@ if __name__ == "__main__":
             srt_path=srt_path,
         )
 
-    run_step(
-        f"STEP 6: Generating subtitles -> {srt_path}", step_subtitles
-    )
+    run_step(f"STEP 6: Generating subtitles -> {srt_path}", step_subtitles)
 
     # ----------------------
     # STEP 7: Render Vertical Video with Captions
