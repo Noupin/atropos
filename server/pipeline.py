@@ -151,67 +151,67 @@ if __name__ == "__main__":
     export_candidates_json(candidates, candidates_path)
     # candidates = load_candidates_json('../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/candidates.json')
 
-    best_candidate = max(candidates, key=lambda c: c.rating)
+    # Parse transcript once for snapping boundaries
     items = parse_transcript(transcript_output_path)
-    snapped_start = _snap_start_to_segment_start(best_candidate.start, items)
-    snapped_end = _snap_end_to_segment_end(best_candidate.end, items)
-    print(
-        f"Selected clip {snapped_start:.2f}-{snapped_end:.2f} (rating {best_candidate.rating:.1f})"
-    )
-    best_candidate = ClipCandidate(
-        start=snapped_start,
-        end=snapped_end,
-        rating=best_candidate.rating,
-        reason=best_candidate.reason,
-        quote=best_candidate.quote,
-    )
 
-    # ----------------------
-    # STEP 5: Cut Clip
-    # ----------------------
     clips_dir = project_dir / "clips"
-
-    def step_cut() -> Path | None:
-        return save_clip_from_candidate(video_output_path, clips_dir, best_candidate)
-
-    clip_path = run_step(f"STEP 5: Cutting clip -> {clips_dir}", step_cut)
-    if clip_path is None:
-        print(f"{Fore.RED}STEP 5: Failed to cut clip.{Style.RESET_ALL}")
-        sys.exit()
-
-    # ----------------------
-    # STEP 6: Build Subtitles
-    # ----------------------
     subtitles_dir = project_dir / "subtitles"
-    srt_path = subtitles_dir / f"{clip_path.stem}.srt"
-
-    def step_subtitles() -> Path:
-        return build_srt_for_range(
-            transcript_output_path,
-            global_start=best_candidate.start,
-            global_end=best_candidate.end,
-            srt_path=srt_path,
-        )
-
-    run_step(f"STEP 6: Generating subtitles -> {srt_path}", step_subtitles)
-
-    # ----------------------
-    # STEP 7: Render Vertical Video with Captions
-    # ----------------------
     shorts_dir = project_dir / "shorts"
-    vertical_output = shorts_dir / f"{clip_path.stem}_vertical.mp4"
 
-    def step_render() -> Path:
-        return render_vertical_with_captions(
-            clip_path,
-            srt_path,
-            vertical_output,
+    clips_dir.mkdir(parents=True, exist_ok=True)
+    subtitles_dir.mkdir(parents=True, exist_ok=True)
+    shorts_dir.mkdir(parents=True, exist_ok=True)
+
+    for idx, cand in enumerate(candidates, start=1):
+        snapped_start = _snap_start_to_segment_start(cand.start, items)
+        snapped_end = _snap_end_to_segment_end(cand.end, items)
+        candidate = ClipCandidate(
+            start=snapped_start,
+            end=snapped_end,
+            rating=cand.rating,
+            reason=cand.reason,
+            quote=cand.quote,
         )
 
-    run_step(
-        f"STEP 7: Rendering vertical video with captions -> {vertical_output}",
-        step_render,
-    )
+        def step_cut() -> Path | None:
+            return save_clip_from_candidate(video_output_path, clips_dir, candidate)
+
+        clip_path = run_step(
+            f"STEP 5.{idx}: Cutting clip -> {clips_dir}", step_cut
+        )
+        if clip_path is None:
+            print(
+                f"{Fore.RED}STEP 5.{idx}: Failed to cut clip.{Style.RESET_ALL}"
+            )
+            continue
+
+        srt_path = subtitles_dir / f"{clip_path.stem}.srt"
+
+        def step_subtitles() -> Path:
+            return build_srt_for_range(
+                transcript_output_path,
+                global_start=candidate.start,
+                global_end=candidate.end,
+                srt_path=srt_path,
+            )
+
+        run_step(
+            f"STEP 6.{idx}: Generating subtitles -> {srt_path}", step_subtitles
+        )
+
+        vertical_output = shorts_dir / f"{clip_path.stem}_vertical.mp4"
+
+        def step_render() -> Path:
+            return render_vertical_with_captions(
+                clip_path,
+                srt_path,
+                vertical_output,
+            )
+
+        run_step(
+            f"STEP 7.{idx}: Rendering vertical video with captions -> {vertical_output}",
+            step_render,
+        )
 
     total_elapsed = time.perf_counter() - overall_start
     print(
