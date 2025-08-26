@@ -2,6 +2,11 @@ from steps.transcribe import transcribe_audio
 from steps.download import download_transcript, download_video, get_video_info
 from steps.candidates import find_funny_timestamps_batched, export_candidates_json, load_candidates_json
 from steps.cut import save_clip_from_candidate
+from steps.candidates import (
+    parse_transcript,
+    _snap_start_to_segment_start,
+    _snap_end_to_segment_end,
+)
 from steps.subtitle import build_srt_for_range
 # Step 7 rendering now uses MoviePy instead of ffmpeg
 from steps.render import render_vertical_with_captions_moviepy
@@ -125,8 +130,18 @@ if __name__ == "__main__":
     candidates = load_candidates_json('../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/candidates.json')
 
     best_candidate = max(candidates, key=lambda c: c.rating)
+    items = parse_transcript(transcript_output_path)
+    snapped_start = _snap_start_to_segment_start(best_candidate.start, items)
+    snapped_end = _snap_end_to_segment_end(best_candidate.end, items)
     print(
-        f"Selected clip {best_candidate.start:.2f}-{best_candidate.end:.2f} (rating {best_candidate.rating:.1f})"
+        f"Selected clip {snapped_start:.2f}-{snapped_end:.2f} (rating {best_candidate.rating:.1f})"
+    )
+    best_candidate = ClipCandidate(
+        start=snapped_start,
+        end=snapped_end,
+        rating=best_candidate.rating,
+        reason=best_candidate.reason,
+        quote=best_candidate.quote,
     )
 
     # ----------------------

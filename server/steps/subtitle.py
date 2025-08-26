@@ -18,7 +18,7 @@ def extract_caption_lines_for_range(
     rel_* are relative to global_start (i.e., clip-local time).
     """
     items = parse_transcript(transcript_path)
-    lines: List[Tuple[float, float, str]] = []
+    raw_lines: List[Tuple[float, float, str]] = []
     for (s, e, text) in items:
         if e <= global_start or s >= global_end:
             continue
@@ -27,10 +27,20 @@ def extract_caption_lines_for_range(
         txt = (text or "").replace("\n", " ").strip()
         if not txt:
             continue
-        lines.append((rs, re, txt))
-    if not lines:
+        raw_lines.append((rs, re, txt))
+
+    if not raw_lines:
         # Ensure at least one placeholder line so renderers don't choke
-        lines = [(0.0, max(0.8, global_end - global_start), " ")]
+        return [(0.0, max(0.8, global_end - global_start), " ")]
+
+    # Prevent overlapping captions by clamping each line's end to the next start
+    raw_lines.sort(key=lambda x: x[0])
+    lines: List[Tuple[float, float, str]] = []
+    for idx, (rs, re, txt) in enumerate(raw_lines):
+        next_start = raw_lines[idx + 1][0] if idx + 1 < len(raw_lines) else None
+        if next_start is not None and re > next_start:
+            re = max(rs + min_line_dur, next_start)
+        lines.append((rs, re, txt))
     return lines
 
 # -----------------------------
@@ -120,7 +130,7 @@ def build_srt_for_range(
     Line times are shifted so the SRT starts at 00:00:00,000.
     """
     items = parse_transcript(transcript_path)
-    lines = []
+    raw_lines = []
     for (s, e, text) in items:
         if e <= global_start or s >= global_end:
             continue
@@ -129,11 +139,18 @@ def build_srt_for_range(
         txt = (text or "").replace("\n", " ").strip()
         if not txt:
             continue
+        raw_lines.append((rs, re, txt))
+    if not raw_lines:
+        raw_lines = [(0.0, max(0.8, global_end - global_start), " ")]
+
+    # Clamp overlaps to avoid stacked subtitles
+    raw_lines.sort(key=lambda x: x[0])
+    lines = []
+    for idx, (rs, re, txt) in enumerate(raw_lines):
+        next_start = raw_lines[idx + 1][0] if idx + 1 < len(raw_lines) else None
+        if next_start is not None and re > next_start:
+            re = max(rs + min_line_dur, next_start)
         lines.append((rs, re, txt))
-    # Harden: If no lines, create a minimal placeholder to avoid filter errors
-    if not lines:
-        # Ensure file exists to avoid filter errors; create a tiny placeholder
-        lines = [(0.0, max(0.8, global_end - global_start), " ")]
     out = Path(srt_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", encoding="utf-8") as f:

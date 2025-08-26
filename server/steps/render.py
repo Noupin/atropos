@@ -100,7 +100,7 @@ def render_vertical_with_captions(
         "-filter_complex", filter_complex,
         "-map", "[v]", "-map", "0:a?",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-        "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
+        "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart",
         str(out),
     ]
 
@@ -245,7 +245,8 @@ def render_vertical_with_captions_moviepy(
             str(out),
             codec="libx264",
             audio_codec="aac",
-            audio_bitrate="192k",
+            audio_bitrate="256k",
+            audio_fps=48000,
             preset="veryfast",
             ffmpeg_params=["-movflags", "+faststart"],
             threads=os.cpu_count() or 4,

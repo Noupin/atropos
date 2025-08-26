@@ -97,13 +97,28 @@ def _build_segment_index(items: List[Tuple[float, float, str]]):
 
 
 def _snap_end_to_segment_end(end_time: float, items: List[Tuple[float, float, str]]) -> float:
-    """If end_time lands inside a spoken segment, snap to that segment's end so we don't cut into the next line.
-    If it lands in silence between segments, return unchanged.
+    """If ``end_time`` falls inside a transcript segment, extend the end to the
+    conclusion of that spoken line.  Additional adjacent segments are also
+    consumed when they appear to be a continuation of the same sentence—i.e.
+    a short gap and the next segment begins with a lowercase character.
+
+    This helps clips end on a natural pause or sentence boundary rather than
+    cutting off mid-thought.
     """
-    # Linear scan is fine for typical transcript sizes; optimize later if needed
-    for s, e, _ in items:
+    for idx, (s, e, _) in enumerate(items):
         if s <= end_time <= e:
-            return e
+            end = e
+            # walk forward while segments appear to continue the sentence
+            for nxt_s, nxt_e, nxt_txt in items[idx + 1:]:
+                gap = nxt_s - end
+                if gap > 0.6:  # a noticeable pause marks a good stopping point
+                    break
+                first = nxt_txt.lstrip()[:1]
+                if first and first.islower():
+                    end = nxt_e
+                    continue
+                break
+            return end
     return end_time
 
 
