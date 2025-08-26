@@ -8,8 +8,6 @@ from steps.candidates import (
     _snap_end_to_segment_end,
 )
 from steps.subtitle import build_srt_for_range
-# Step 7 rendering now uses MoviePy instead of ffmpeg
-from steps.render import render_vertical_with_captions_moviepy
 
 import sys
 import time
@@ -188,18 +186,6 @@ if __name__ == "__main__":
     shorts_dir = project_dir / "shorts"
     vertical_output = shorts_dir / f"{clip_path.stem}_vertical.mp4"
 
-    def step_render() -> bool:
-        return render_vertical_with_captions_moviepy(
-            clip_path,
-            transcript_output_path,
-            global_start=best_candidate.start,
-            global_end=best_candidate.end,
-            output_path=vertical_output,
-        )
-
-    run_step(
-        f"STEP 7: Rendering vertical video -> {vertical_output}", step_render
-    )
 
     total_elapsed = time.perf_counter() - overall_start
     print(
