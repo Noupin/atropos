@@ -18,7 +18,18 @@ from .subtitle import (
 
 # Optional MoviePy backend (no ffmpeg subtitles filter)
 try:
-    from moviepy import VideoFileClip, CompositeVideoClip, TextClip, ColorClip, vfx
+    from moviepy import (
+        VideoFileClip,
+        CompositeVideoClip,
+        TextClip,
+        ColorClip,
+        vfx,
+        Effect,
+        Clip,
+    )
+    from dataclasses import dataclass
+    from PIL import Image, ImageFilter
+    import numpy as np
     _MOVIEPY_OK = True
 except Exception:
     _MOVIEPY_OK = False
@@ -163,10 +174,12 @@ def render_vertical_with_captions_moviepy(
     font: str | None = None,
     font_size: int = 48,
     text_box_opacity: float = 0.55,
-    text_color: str = "white",
+    text_color: str = "teal",
     stroke_color: str = "black",
     stroke_width: int = 2,
     blur_radius: int = 25,
+    crop_left_right: float = 0.05,
+    descender_pad: int = 8,
 ) -> bool:
     """Render a 9:16 clip with burned captions using MoviePy TextClip overlays.
     This avoids the ffmpeg subtitles/drawtext filters entirely.
@@ -183,19 +196,40 @@ def render_vertical_with_captions_moviepy(
     # Load base clip
     base = VideoFileClip(str(clip_path)).subclipped(start_time=0, end_time=max(0.01, global_end - global_start))
 
-    # Build blurred background covering 9:16 (MoviePy v2+ compatible)
-    # 1) scale to cover target H, 2) crop center to target W, 3) add dim overlay for readability
-    bg = base.resized(height=target_h).with_effects([
-        vfx.Crop(x_center=int(base.w/2), y_center=int(base.h/2), width=target_w, height=target_h)
-    ])
-    # Dim overlay to improve caption readability (since generic blur isn't available in v2 effects)
-    dim_overlay = ColorClip(size=(target_w, target_h), color=(0, 0, 0)).with_opacity(0.35).with_duration(base.duration)
+    @dataclass
+    class GaussianBlur(Effect):
+        radius: float
 
-    # Foreground scaled to fit inside 9:16 without cropping
-    scale_w = target_w
-    fg = base.resized(width=scale_w)
+        def apply(self, clip: Clip) -> Clip:
+            def fl(gf, t):
+                frame = gf(t)
+                img = Image.fromarray(frame)
+                return np.array(img.filter(ImageFilter.GaussianBlur(self.radius)))
+
+            return clip.transform(fl)
+
+    # Build blurred background covering 9:16
+    bg = (
+        base.resized(height=target_h)
+        .with_effects([GaussianBlur(blur_radius), vfx.Crop(x_center=int(base.w/2), y_center=int(base.h/2), width=target_w, height=target_h)])
+    )
+    # Dim overlay for readability
+    dim_overlay = (
+        ColorClip(size=(target_w, target_h), color=(0, 0, 0))
+        .with_opacity(0.35)
+        .with_duration(base.duration)
+    )
+
+    # Foreground with slight crop on left/right to remove empty space
+    fg = base
+    if crop_left_right > 0:
+        crop_px = int(base.w * crop_left_right)
+        fg = fg.with_effects([
+            vfx.Crop(x1=crop_px, x2=base.w - crop_px, y1=0, y2=base.h)
+        ])
+    fg = fg.resized(width=int(target_w * (1 - crop_left_right * 2)))
     if fg.h > target_h:
-        fg = base.resized(height=target_h)
+        fg = fg.resized(height=target_h)
     x_pos = (target_w - fg.w) // 2
     y_pos = (target_h - fg.h) // 2
     fg = fg.with_position((x_pos, y_pos))
@@ -219,18 +253,24 @@ def render_vertical_with_captions_moviepy(
                 stroke_color=stroke_color,
                 stroke_width=stroke_width,
                 method="caption",
-                size=(int(target_w*0.9), None),
+                size=(int(target_w * 0.9), None),
                 text_align="center",
             )
+            tc = tc.with_effects([vfx.Margin(bottom=descender_pad)])
         except Exception as e:
-            print(f"MOVIEPY: TextClip failed ({e}). Try installing ImageMagick and a valid font.")
+            print(
+                f"MOVIEPY: TextClip failed ({e}). Try installing ImageMagick and a valid font."
+            )
             return False
         # Semi-opaque box behind text using a ColorClip
         pad_w, pad_h = 30, 10
-        box = ColorClip(size=(tc.w + pad_w, tc.h + pad_h), color=(0, 0, 0)).with_opacity(text_box_opacity)
+        box = (
+            ColorClip(size=(tc.w + pad_w, tc.h + pad_h), color=(0, 0, 0))
+            .with_opacity(text_box_opacity)
+        )
 
         # Shared timing and position (raised from bottom to avoid overlap)
-        pos = ("center", target_h - int(target_h*0.25))
+        pos = ("center", target_h - int(target_h * 0.25))
         tc = tc.with_start(rs).with_end(re).with_position(pos)
         box = box.with_start(rs).with_end(re).with_position(pos)
 
