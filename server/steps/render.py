@@ -69,14 +69,18 @@ def render_vertical_with_captions(
         if prefer_subtitles and not has_subs:
             print("VERTICAL: 'subtitles' filter not available; using drawtext fallback.")
         # Build drawtext overlays per line
-        lines = extract_caption_lines_for_range(transcript_path, global_start=global_start, global_end=global_end)
+        lines = extract_caption_lines_for_range(
+            transcript_path, global_start=global_start, global_end=global_end
+        )
         draw_filters = []
+        # Position captions a bit higher to avoid overlap with bottom screen text
+        bottom_margin = int(target_h * 0.25)
         for (rs, re, txt) in lines:
             wrapped = _wrap_text_for_drawtext(txt, max_chars=42)
             safe_txt = _escape_for_drawtext(wrapped)
             draw = (
                 "drawtext=text='" + safe_txt + "'"
-                + ":x=(w-text_w)/2:y=h-220:fontsize=" + str(font_size)
+                + f":x=(w-text_w)/2:y=h-{bottom_margin}:fontsize=" + str(font_size)
                 + (f":fontfile='{font_file}'" if font_file else "")
                 + ":fontcolor=white:box=1:boxcolor=black@0.5:boxborderw=10:line_spacing=12"
                 + ":enable='between(t," + f"{rs:.3f},{re:.3f}" + ")'"
@@ -96,7 +100,7 @@ def render_vertical_with_captions(
         "-filter_complex", filter_complex,
         "-map", "[v]", "-map", "0:a?",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-        "-c:a", "aac", "-movflags", "+faststart",
+        "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
         str(out),
     ]
 
@@ -225,8 +229,8 @@ def render_vertical_with_captions_moviepy(
         pad_w, pad_h = 30, 10
         box = ColorClip(size=(tc.w + pad_w, tc.h + pad_h), color=(0, 0, 0)).with_opacity(text_box_opacity)
 
-        # Shared timing and position (near bottom, centered)
-        pos = ("center", target_h - int(target_h*0.18))
+        # Shared timing and position (raised from bottom to avoid overlap)
+        pos = ("center", target_h - int(target_h*0.25))
         tc = tc.with_start(rs).with_end(re).with_position(pos)
         box = box.with_start(rs).with_end(re).with_position(pos)
 
@@ -241,6 +245,7 @@ def render_vertical_with_captions_moviepy(
             str(out),
             codec="libx264",
             audio_codec="aac",
+            audio_bitrate="192k",
             preset="veryfast",
             ffmpeg_params=["-movflags", "+faststart"],
             threads=os.cpu_count() or 4,
