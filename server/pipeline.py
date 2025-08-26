@@ -130,7 +130,7 @@ if __name__ == "__main__":
     # ----------------------
     # STEP 5: Cut Clip
     # ----------------------
-    clips_dir = project_dir / f"{non_suffix_filename}_clips"
+    clips_dir = project_dir / "clips"
 
     def step_cut() -> Path | None:
         return save_clip_from_candidate(
@@ -147,7 +147,8 @@ if __name__ == "__main__":
     # ----------------------
     # STEP 6: Build Subtitles
     # ----------------------
-    srt_path = clip_path.with_suffix(".srt")
+    subtitles_dir = project_dir / "subtitles"
+    srt_path = subtitles_dir / f"{clip_path.stem}.srt"
 
     def step_subtitles() -> Path:
         return build_srt_for_range(
@@ -164,7 +165,8 @@ if __name__ == "__main__":
     # ----------------------
     # STEP 7: Render Vertical Video with Captions
     # ----------------------
-    vertical_output = clip_path.with_name(clip_path.stem + "_vertical.mp4")
+    shorts_dir = project_dir / "shorts"
+    vertical_output = shorts_dir / f"{clip_path.stem}_vertical.mp4"
 
     def step_render() -> bool:
         return render_vertical_with_captions(
