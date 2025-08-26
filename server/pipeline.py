@@ -3,7 +3,8 @@ from steps.download import download_transcript, download_video, get_video_info
 from steps.candidates import find_funny_timestamps_batched, export_candidates_json
 from steps.cut import save_clip_from_candidate
 from steps.subtitle import build_srt_for_range
-from steps.render import render_vertical_with_captions
+# Step 7 rendering now uses MoviePy instead of ffmpeg
+from steps.render import render_vertical_with_captions_moviepy
 
 import sys
 from pathlib import Path
@@ -169,14 +170,12 @@ if __name__ == "__main__":
     vertical_output = shorts_dir / f"{clip_path.stem}_vertical.mp4"
 
     def step_render() -> bool:
-        return render_vertical_with_captions(
+        return render_vertical_with_captions_moviepy(
             clip_path,
             transcript_output_path,
             global_start=best_candidate.start,
             global_end=best_candidate.end,
             output_path=vertical_output,
-            prefer_subtitles=True,
-            srt_path=srt_path,
         )
 
     run_step(
