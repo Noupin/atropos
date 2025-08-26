@@ -100,7 +100,7 @@ def render_vertical_with_captions(
         caption_chain = ",".join(draw_filters) if draw_filters else "null"
 
     filter_complex = (
-        f"[0:v]scale={target_w}:{target_h}:force_original_aspect_ratio=cover,boxblur={blur_strength}:1[bg];"
+        f"[0:v]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},boxblur={blur_strength}:1[bg];"
         f"[0:v]scale={target_w}:-2:force_original_aspect_ratio=decrease[fg];"
         f"[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p,{caption_chain}[v]"
     )
@@ -172,14 +172,18 @@ def render_vertical_with_captions_moviepy(
     target_w: int = 1080,
     target_h: int = 1920,
     font: str | None = None,
-    font_size: int = 48,
-    text_box_opacity: float = 0.55,
-    text_color: str = "teal",
+    font_size: int = 56,
+    text_box_opacity: float = 0.00,  # use outline by default
+    text_color: str = "white",
     stroke_color: str = "black",
-    stroke_width: int = 2,
+    stroke_width: int = 6,
     blur_radius: int = 25,
-    crop_left_right: float = 0.05,
-    descender_pad: int = 8,
+    # Foreground layout
+    fg_height_ratio: float = 0.58,   # portion of 9:16 height occupied by FG (less zoom)
+    fg_vertical_bias: float = 0.04,  # slightly less upward bias
+    crop_left_right: float = 0.04,   # crop a little from sides before scaling
+    descender_pad: int = 18,
+    preserve_source_audio: bool = True,
 ) -> bool:
     """Render a 9:16 clip with burned captions using MoviePy TextClip overlays.
     This avoids the ffmpeg subtitles/drawtext filters entirely.
@@ -213,30 +217,39 @@ def render_vertical_with_captions_moviepy(
         base.resized(height=target_h)
         .with_effects([GaussianBlur(blur_radius), vfx.Crop(x_center=int(base.w/2), y_center=int(base.h/2), width=target_w, height=target_h)])
     )
+    # Guarantee exact canvas match after effects
+    bg = bg.resized((target_w, target_h)).with_position((0, 0))
     # Dim overlay for readability
     dim_overlay = (
         ColorClip(size=(target_w, target_h), color=(0, 0, 0))
-        .with_opacity(0.35)
+        .with_opacity(0.45)
         .with_duration(base.duration)
     )
 
-    # Foreground with slight crop on left/right to remove empty space
+    # Foreground: crop narrow edges, then scale to a fixed portion of the 9:16 height
     fg = base
     if crop_left_right > 0:
         crop_px = int(base.w * crop_left_right)
         fg = fg.with_effects([
             vfx.Crop(x1=crop_px, x2=base.w - crop_px, y1=0, y2=base.h)
         ])
-    fg = fg.resized(width=int(target_w * (1 - crop_left_right * 2)))
-    if fg.h > target_h:
-        fg = fg.resized(height=target_h)
+
+    # Target FG height as a ratio of the vertical canvas
+    fg_h = max(100, int(target_h * fg_height_ratio))
+    fg = fg.resized(height=fg_h)
+    # Center horizontally; bias vertically upwards so captions can sit beneath FG
     x_pos = (target_w - fg.w) // 2
-    y_pos = (target_h - fg.h) // 2
+    # Compute top based on bias: 0.5 places FG center; subtract bias to move up
+    center_y = int(target_h * (0.5 - fg_vertical_bias))
+    y_pos = max(0, center_y - fg.h // 2)
     fg = fg.with_position((x_pos, y_pos))
+    fg_top, fg_bottom = y_pos, y_pos + fg.h
 
     # Build timed caption overlays from transcript
     lines = extract_caption_lines_for_range(transcript_path, global_start=global_start, global_end=global_end)
     caption_clips = []
+    bottom_safe = int(target_h * 0.14)  # a bit more safety to avoid cutoff
+    gap_below_fg = 28                   # more space under FG
     for (rs, re, txt) in lines:
         if not txt.strip():
             continue
@@ -253,45 +266,88 @@ def render_vertical_with_captions_moviepy(
                 stroke_color=stroke_color,
                 stroke_width=stroke_width,
                 method="caption",
-                size=(int(target_w * 0.9), None),
+                size=(int(target_w * 0.86), None),
                 text_align="center",
             )
             tc = tc.with_effects([vfx.Margin(bottom=descender_pad)])
+            effective_h = tc.h + (stroke_width * 2) + descender_pad
         except Exception as e:
             print(
                 f"MOVIEPY: TextClip failed ({e}). Try installing ImageMagick and a valid font."
             )
             return False
-        # Semi-opaque box behind text using a ColorClip
-        pad_w, pad_h = 30, 10
-        box = (
-            ColorClip(size=(tc.w + pad_w, tc.h + pad_h), color=(0, 0, 0))
-            .with_opacity(text_box_opacity)
-        )
+        # Preferred position: just under the foreground
+        under_fg_y = fg_bottom + gap_below_fg
+        max_y = target_h - bottom_safe - effective_h
+        pos_y = min(under_fg_y, max_y)
+        pos = ("center", max(0, pos_y))
 
-        # Shared timing and position (raised from bottom to avoid overlap)
-        pos = ("center", target_h - int(target_h * 0.25))
+        # Optional box behind text (default opacity 0 -> off)
+        clips_to_add = []
+        if text_box_opacity > 0.0:
+            pad_w, pad_h = 28, 16
+            box = (
+                ColorClip(size=(tc.w + pad_w, tc.h + pad_h), color=(0, 0, 0))
+                .with_opacity(text_box_opacity)
+                .with_start(rs).with_end(re).with_position(pos)
+            )
+            clips_to_add.append(box)
+
         tc = tc.with_start(rs).with_end(re).with_position(pos)
-        box = box.with_start(rs).with_end(re).with_position(pos)
-
-        # Add both box and text; they will stack in the main composite
-        caption_clips.extend([box, tc])
+        clips_to_add.append(tc)
+        caption_clips.extend(clips_to_add)
 
     comp = CompositeVideoClip([bg, dim_overlay, fg] + caption_clips, size=(target_w, target_h))
 
+    # Ensure composite uses the original audio track (not bg/overlays)
+    try:
+        comp = comp.with_audio(base.audio)
+    except Exception:
+        pass
+
     t0 = time.time()
     try:
-        comp.write_videofile(
-            str(out),
-            codec="libx264",
-            audio_codec="aac",
-            audio_bitrate="256k",
-            audio_fps=48000,
-            preset="veryfast",
-            ffmpeg_params=["-movflags", "+faststart"],
-            threads=os.cpu_count() or 4,
-            logger=None,
-        )
+        if preserve_source_audio:
+            # 1) Render video-only to a temp file
+            tmp_video_only = out.with_suffix(".video.mp4")
+            comp.write_videofile(
+                str(tmp_video_only),
+                codec="libx264",
+                audio=False,
+                preset="veryfast",
+                ffmpeg_params=["-movflags", "+faststart"],
+                threads=os.cpu_count() or 4,
+                logger=None,
+            )
+            # 2) Mux original audio from the horizontal clip without re-encoding
+            mux_cmd = [
+                "ffmpeg", "-y",
+                "-i", str(tmp_video_only),
+                "-i", str(clip_path),
+                "-map", "0:v:0", "-map", "1:a:0?",
+                "-c:v", "copy", "-c:a", "copy",
+                str(out),
+            ]
+            try:
+                subprocess.run(mux_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            finally:
+                try:
+                    os.remove(tmp_video_only)
+                except OSError:
+                    pass
+        else:
+            # Encode audio at a healthy bitrate/sample rate
+            comp.write_videofile(
+                str(out),
+                codec="libx264",
+                audio_codec="aac",
+                audio_bitrate="320k",
+                audio_fps=48000,
+                preset="veryfast",
+                ffmpeg_params=["-movflags", "+faststart"],
+                threads=os.cpu_count() or 4,
+                logger=None,
+            )
         print(f"MOVIEPY: wrote {out.name} in {time.time()-t0:.2f}s")
         return True
     except Exception as e:
@@ -313,7 +369,7 @@ def render_vertical_from_candidate_moviepy(
     font_size: int = 48,
 ) -> Path | None:
     out = Path(output_dir) / f"clip_vertical_{candidate.start:.2f}-{candidate.end:.2f}_r{candidate.rating:.1f}.mp4"
-    ok = render_vertical_with_captions_moviepy(
+    v_ok = render_vertical_with_captions_moviepy(
         horiz_clip_path,
         transcript_path,
         global_start=candidate.start,
@@ -323,6 +379,6 @@ def render_vertical_from_candidate_moviepy(
         target_h=target_h,
         font=font,
         font_size=font_size,
+        preserve_source_audio=True,
     )
-    return out if ok else None
-
+    return out if v_ok else None
