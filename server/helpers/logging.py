@@ -31,12 +31,14 @@ def run_step(name: str, func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     except Exception as exc:
         elapsed = time.perf_counter() - start
         print(
-            f"{Fore.RED}{name} failed after {elapsed:.2f}s: {exc}{Style.RESET_ALL}"
+            f"{Fore.RED}  ↳ failed after {Fore.MAGENTA}{elapsed:.2f}s{Fore.RED}: {exc}{Style.RESET_ALL}"
         )
         raise
     else:
         elapsed = time.perf_counter() - start
-        print(f"{Fore.GREEN}{name} completed in {elapsed:.2f}s{Style.RESET_ALL}")
+        print(
+            f"{Fore.GREEN}  ↳ completed in {Fore.MAGENTA}{elapsed:.2f}s{Style.RESET_ALL}"
+        )
         return result
 
 
@@ -50,9 +52,11 @@ def log_timing(name: str) -> Generator[None, None, None]:
     except Exception as exc:
         elapsed = time.perf_counter() - start
         print(
-            f"{Fore.RED}{name} failed after {elapsed:.2f}s: {exc}{Style.RESET_ALL}"
+            f"{Fore.RED}  ↳ failed after {Fore.MAGENTA}{elapsed:.2f}s{Fore.RED}: {exc}{Style.RESET_ALL}"
         )
         raise
     else:
         elapsed = time.perf_counter() - start
-        print(f"{Fore.GREEN}{name} completed in {elapsed:.2f}s{Style.RESET_ALL}")
+        print(
+            f"{Fore.GREEN}  ↳ completed in {Fore.MAGENTA}{elapsed:.2f}s{Style.RESET_ALL}"
+        )

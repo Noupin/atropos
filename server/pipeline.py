@@ -12,6 +12,7 @@ from steps.subtitle import build_srt_for_range
 from steps.render import render_vertical_with_captions_moviepy
 
 import sys
+import time
 from pathlib import Path
 
 from helpers.audio import ensure_audio
@@ -22,6 +23,8 @@ from interfaces.clip_candidate import ClipCandidate
 
 
 if __name__ == "__main__":
+    overall_start = time.perf_counter()
+
     yt_url = 'https://www.youtube.com/watch?v=GDbDRWzFfds'
     # yt_url = input("Enter YouTube video URL: ")
     video_info = get_video_info(yt_url)
@@ -196,4 +199,9 @@ if __name__ == "__main__":
 
     run_step(
         f"STEP 7: Rendering vertical video -> {vertical_output}", step_render
+    )
+
+    total_elapsed = time.perf_counter() - overall_start
+    print(
+        f"{Fore.MAGENTA}Full pipeline completed in {total_elapsed:.2f}s{Style.RESET_ALL}"
     )
