@@ -8,6 +8,7 @@ from steps.candidates import (
     _snap_end_to_segment_end,
 )
 from steps.subtitle import build_srt_for_range
+from steps.render import render_vertical_with_captions
 
 import sys
 import time
@@ -186,6 +187,17 @@ if __name__ == "__main__":
     shorts_dir = project_dir / "shorts"
     vertical_output = shorts_dir / f"{clip_path.stem}_vertical.mp4"
 
+    def step_render() -> Path:
+        return render_vertical_with_captions(
+            clip_path,
+            srt_path,
+            vertical_output,
+        )
+
+    run_step(
+        f"STEP 7: Rendering vertical video with captions -> {vertical_output}",
+        step_render,
+    )
 
     total_elapsed = time.perf_counter() - overall_start
     print(
