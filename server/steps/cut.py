@@ -6,6 +6,11 @@ from pathlib import Path
 from typing import Optional
 
 from interfaces.clip_candidate import ClipCandidate
+from .candidates import (
+    parse_transcript,
+    _snap_start_to_segment_start,
+    _snap_end_to_segment_end,
+)
 
 
 def save_clip(
@@ -84,9 +89,26 @@ def save_clip(
 
 
 
-def save_clip_from_candidate(video_path: str | Path, output_dir: str | Path, candidate: ClipCandidate, *, reencode: bool = False) -> Path | None:
-    """Convenience wrapper that names the clip using timestamps and rating."""
-    out = Path(output_dir) / f"clip_{candidate.start:.2f}-{candidate.end:.2f}_r{candidate.rating:.1f}.mp4"
-    ok = save_clip(video_path, out, start=candidate.start, end=candidate.end, reencode=reencode)
+def save_clip_from_candidate(
+    video_path: str | Path,
+    output_dir: str | Path,
+    candidate: ClipCandidate,
+    *,
+    transcript_path: str | Path | None = None,
+    reencode: bool = False,
+) -> Path | None:
+    """Convenience wrapper that names the clip using timestamps and rating.
+
+    If ``transcript_path`` is provided, the candidate start/end are snapped to
+    natural sentence boundaries so the clip ends on a pause or completed
+    thought.
+    """
+    start, end = candidate.start, candidate.end
+    if transcript_path:
+        items = parse_transcript(transcript_path)
+        start = _snap_start_to_segment_start(start, items)
+        end = _snap_end_to_segment_end(end, items)
+    out = Path(output_dir) / f"clip_{start:.2f}-{end:.2f}_r{candidate.rating:.1f}.mp4"
+    ok = save_clip(video_path, out, start=start, end=end, reencode=reencode)
     return out if ok else None
 
