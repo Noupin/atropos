@@ -45,6 +45,8 @@ def save_clip(
         print("FFMPEG: invalid range (end <= start)")
         return False
 
+    duration = end - start
+
     # Build ffmpeg command
     # Use -ss before -i for fast seek; for reencode we also put -ss after -i for accuracy.
     base = [
@@ -56,7 +58,7 @@ def save_clip(
 
     if reencode:
         base += [
-            "-to", f"{end:.3f}",
+            "-t", f"{duration:.3f}",
             "-c:v", "libx264",
             "-preset", "veryfast",
             "-crf", "18",
@@ -64,9 +66,9 @@ def save_clip(
             "-movflags", "+faststart",
         ]
     else:
-        # stream copy; some containers ignore -to unless after -i, but this works for mp4 typically
+        # stream copy; some containers ignore -t unless after -i, but this works for mp4 typically
         base += [
-            "-to", f"{end:.3f}",
+            "-t", f"{duration:.3f}",
             "-c", "copy",
             "-movflags", "+faststart",
         ]
