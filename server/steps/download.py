@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import yt_dlp
 import subprocess
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -71,49 +73,78 @@ def extract_audio_from_video(video_path, audio_output_path='extracted_audio.mp3'
     except Exception as e:
         print(f"Error: {str(e)}")
 
-def download_transcript(url, output_path='transcript.txt', languages=("en", "en-US", "en-GB")):
-    video_id = extract_video_id(url)
+def download_transcript(
+    url_or_id: str,
+    output_path: str | None = None,
+    languages: tuple[str, ...] = ("en", "en-US", "en-GB"),
+):
+    """Return the YouTube transcript for ``url_or_id``.
+
+    Parameters
+    ----------
+    url_or_id:
+        Either a full YouTube URL or the raw video id.
+    output_path:
+        Optional path to write a human readable transcript.  If ``None`` no
+        file is written.
+    languages:
+        Preferred transcript languages in order of priority.
+
+    Returns
+    -------
+    list[dict] | None
+        The transcript as returned by ``youtube-transcript-api`` or ``None`` if
+        it could not be retrieved.
+    """
+
+    video_id = extract_video_id(url_or_id)
+
     try:
-        # Try new API first
+        # Try new API first (v0.6+)
         api = YouTubeTranscriptApi()
         transcript = api.fetch(video_id, languages=languages)
     except AttributeError:
-        # Fall back to old API
+        # Fall back to legacy static method
         try:
-            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
+            transcript = YouTubeTranscriptApi.get_transcript(
+                video_id, languages=languages
+            )
         except NoTranscriptFound:
             print("TRANSCRIPT: No transcript found for this video.")
-            return False
+            return None
         except TranscriptsDisabled:
             print("TRANSCRIPT: Transcripts are disabled for this video.")
-            return False
+            return None
     except NoTranscriptFound:
         print("TRANSCRIPT: No transcript found for this video.")
-        return False
+        return None
     except TranscriptsDisabled:
         print("TRANSCRIPT: Transcripts are disabled for this video.")
-        return False
-    try:
-        with open(output_path, 'w', encoding='utf-8') as f:
-            # `transcript` is an iterable of FetchedTranscriptSnippet objects in new versions,
-            # but older versions may yield dicts. Support both.
-            for snippet in transcript:
-                try:
-                    start = snippet.start
-                    duration = snippet.duration or 0
-                    text = snippet.text
-                except AttributeError:
-                    start = snippet.get('start', 0)
-                    duration = snippet.get('duration', 0) or 0
-                    text = snippet.get('text', '')
-                end = (start or 0) + (duration or 0)
-                text = (text or '').replace('\n', ' ').strip()
-                f.write(f"[{start:.2f} -> {end:.2f}] {text}\n")
-        print(f"TRANSCRIPT: Downloaded transcript to {output_path}")
-        return True
-    except Exception as e:
-        print(f"TRANSCRIPT: Error writing transcript: {str(e)}")
-        return False
+        return None
+
+    if output_path:
+        try:
+            with open(output_path, "w", encoding="utf-8") as f:
+                # ``transcript`` may yield objects or dicts depending on
+                # youtube-transcript-api version; support both.
+                for snippet in transcript:
+                    try:
+                        start = snippet.start
+                        duration = snippet.duration or 0
+                        text = snippet.text
+                    except AttributeError:
+                        start = float(snippet.get("start", 0))
+                        duration = float(snippet.get("duration", 0) or 0)
+                        text = snippet.get("text", "")
+                    end = (start or 0) + (duration or 0)
+                    text = (text or "").replace("\n", " ").strip()
+                    f.write(f"[{start:.2f} -> {end:.2f}] {text}\n")
+            print(f"TRANSCRIPT: Downloaded transcript to {output_path}")
+        except Exception as e:
+            print(f"TRANSCRIPT: Error writing transcript: {str(e)}")
+            return None
+
+    return transcript
 
 if __name__ == "__main__":
     yt_url = 'https://www.youtube.com/watch?v=GDbDRWzFfds'
