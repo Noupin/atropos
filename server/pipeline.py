@@ -36,8 +36,9 @@ if __name__ == "__main__":
 
     # yt_url = "https://www.youtube.com/watch?v=GDbDRWzFfds" #KFAF 1
     # yt_url = "https://www.youtube.com/watch?v=zZYxqZFThls" #KFAF 2
-    yt_url = "https://www.youtube.com/watch?v=K9aFbYd6AUI" #Superman
+    # yt_url = "https://www.youtube.com/watch?v=K9aFbYd6AUI" #Superman
     # yt_url = "https://www.youtube.com/watch?v=os2AyD_4RjM" #Dark phoenix
+    yt_url = "https://www.youtube.com/watch?v=JM1KbE-C9XE"
     # yt_url = input("Enter YouTube video URL: ")
 
     CLIP_TYPE = "funny"  # change to 'inspiring' or 'educational'
@@ -178,7 +179,7 @@ if __name__ == "__main__":
     if not candidates:
         print(f"{Fore.RED}STEP 5: No clip candidates found.{Style.RESET_ALL}")
         sys.exit()
-    # candidates = load_candidates_json('../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/candidates.json')
+    # candidates = load_candidates_json('../out/Nick_s_40th_Birthday_Surprise__-KFAF_20200115/candidates_top.json')
 
     # Parse transcript once for snapping boundaries
     items = parse_transcript(transcript_output_path)
