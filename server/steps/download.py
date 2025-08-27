@@ -1,7 +1,11 @@
 import yt_dlp
 import subprocess
+import logging
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import NoTranscriptFound, TranscriptsDisabled
+
+
+logger = logging.getLogger(__name__)
 
 def extract_video_id(url: str) -> str:
     if "v=" in url:
@@ -45,9 +49,9 @@ def download_video(url, output_path='output_video.mp4'):
             'outtmpl': output_path
         }) as ydl:
             ydl.download([url])
-        print(f"Downloaded video to {output_path}")
+        logger.info("Downloaded video to %s", output_path)
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.error("Error: %s", str(e))
 
 def download_audio(url, output_path='output_audio.mp3'):
     try:
@@ -56,9 +60,9 @@ def download_audio(url, output_path='output_audio.mp3'):
             'outtmpl': output_path
         }) as ydl:
             ydl.download([url])
-        print(f"Downloaded audio to {output_path}")
+        logger.info("Downloaded audio to %s", output_path)
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.error("Error: %s", str(e))
 
 def extract_audio_from_video(video_path, audio_output_path='extracted_audio.mp3'):
     try:
@@ -67,9 +71,9 @@ def extract_audio_from_video(video_path, audio_output_path='extracted_audio.mp3'
             ['ffmpeg', '-i', video_path, '-vn', '-acodec', 'libmp3lame', audio_output_path],
             check=True
         )
-        print(f"Extracted audio to {audio_output_path}")
+        logger.info("Extracted audio to %s", audio_output_path)
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.error("Error: %s", str(e))
 
 def download_transcript(url, output_path='transcript.txt', languages=None):
     video_id = extract_video_id(url)
@@ -82,16 +86,16 @@ def download_transcript(url, output_path='transcript.txt', languages=None):
         try:
             transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
         except NoTranscriptFound:
-            print("TRANSCRIPT: No transcript found for this video.")
+            logger.error("TRANSCRIPT: No transcript found for this video.")
             return False
         except TranscriptsDisabled:
-            print("TRANSCRIPT: Transcripts are disabled for this video.")
+            logger.error("TRANSCRIPT: Transcripts are disabled for this video.")
             return False
     except NoTranscriptFound:
-        print("TRANSCRIPT: No transcript found for this video.")
+        logger.error("TRANSCRIPT: No transcript found for this video.")
         return False
     except TranscriptsDisabled:
-        print("TRANSCRIPT: Transcripts are disabled for this video.")
+        logger.error("TRANSCRIPT: Transcripts are disabled for this video.")
         return False
     try:
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -109,37 +113,36 @@ def download_transcript(url, output_path='transcript.txt', languages=None):
                 end = (start or 0) + (duration or 0)
                 text = (text or '').replace('\n', ' ').strip()
                 f.write(f"[{start:.2f} -> {end:.2f}] {text}\n")
-        print(f"TRANSCRIPT: Downloaded transcript to {output_path}")
+        logger.info("TRANSCRIPT: Downloaded transcript to %s", output_path)
         return True
     except Exception as e:
-        print(f"TRANSCRIPT: Error writing transcript: {str(e)}")
+        logger.error("TRANSCRIPT: Error writing transcript: %s", str(e))
         return False
 
-if __name__ == "__main__":
-    yt_url = 'https://www.youtube.com/watch?v=GDbDRWzFfds'
-    # yt_url = input("Enter YouTube video URL: ")
+def main(yt_url: str = 'https://www.youtube.com/watch?v=GDbDRWzFfds') -> None:
     video_info = get_video_info(yt_url)
     if video_info:
         title = video_info['title']
         upload_date = video_info['upload_date']
-        # Sanitize the title to make it file system safe
         sanitized_title = ''.join(char if char.isalnum() or char in '._-' else '_' for char in title)
-        # Ensure the upload date is in the correct format (YYYYMMDD)
         if len(upload_date) == 8:
             upload_date = upload_date[:4] + upload_date[4:6] + upload_date[6:]
         else:
             upload_date = 'Unknown_Date'
-        # Create safe file names
         video_output_path = f"{sanitized_title}_{upload_date}.mp4"
         audio_output_path = f"{sanitized_title}_{upload_date}.mp3"
         transcript_output_path = f"{sanitized_title}_{upload_date}_transcript.txt"
-        print(f"Video title: {title}")
-        print(f"Upload date: {upload_date}")
-        print(f"Saving video as: {video_output_path}")
-        print(f"Saving audio as: {audio_output_path}")
+        logger.info("Video title: %s", title)
+        logger.info("Upload date: %s", upload_date)
+        logger.info("Saving video as: %s", video_output_path)
+        logger.info("Saving audio as: %s", audio_output_path)
         # download_video(yt_url, video_output_path)
         # extract_audio_from_video(video_output_path, audio_output_path)
         download_transcript(yt_url, transcript_output_path, languages=['en', 'en-US', 'en-GB', 'ko'])
         # download_audio(yt_url, audio_output_path)
     else:
-        print("Failed to retrieve video information.")
+        logger.error("Failed to retrieve video information.")
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()
