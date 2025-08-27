@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 from pathlib import Path
+import re
 
 from helpers.ai import ollama_call_json, retry
 from interfaces.clip_candidate import ClipCandidate
@@ -14,6 +15,8 @@ from .helpers import (
     _enforce_non_overlap,
 )
 from .prompts import _build_system_instructions, FUNNY_PROMPT_DESC
+
+JSON_OBJECT_EXTRACT = re.compile(r"\{(?:.|\n)*\}")
 
 __all__ = ["ClipCandidate", "find_clip_timestamps_batched", "find_clip_timestamps"]
 
@@ -88,12 +91,21 @@ def _verify_tone(
             f"Text: {text}"
         )
         try:
-            out = ollama_call_json(
-                model=model,
-                prompt=prompt,
-                options={"temperature": 0.0},
-                timeout=request_timeout,
-            )
+            try:
+                out = ollama_call_json(
+                    model=model,
+                    prompt=prompt,
+                    options={"temperature": 0.0},
+                    timeout=request_timeout,
+                    extract_re=JSON_OBJECT_EXTRACT,
+                )
+            except TypeError:
+                out = ollama_call_json(
+                    model=model,
+                    prompt=prompt,
+                    options={"temperature": 0.0},
+                    timeout=request_timeout,
+                )
         except Exception as e:
             # If the tone verification step fails (e.g. network/LLM
             # error) we don't want to lose the candidate entirely. Treat
