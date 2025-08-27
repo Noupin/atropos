@@ -9,6 +9,8 @@ from steps.candidates.helpers import (
     parse_transcript,
     _snap_start_to_sentence_start,
     _snap_end_to_sentence_end,
+    snap_start_to_dialog_start,
+    snap_end_to_dialog_end,
 )
 from steps.segment import segment_transcript_items, write_segments_json
 from steps.cut import save_clip_from_candidate
@@ -19,6 +21,11 @@ from steps.silence import (
     write_silences_json,
     snap_start_to_silence,
     snap_end_to_silence,
+)
+from steps.dialog import (
+    detect_dialog_ranges,
+    write_dialog_ranges_json,
+    load_dialog_ranges_json,
 )
 
 import sys
@@ -187,6 +194,19 @@ if __name__ == "__main__":
     segments = segment_transcript_items(items)
     write_segments_json(segments, project_dir / "segments.json")
 
+    dialog_ranges_path = project_dir / "dialog_ranges.json"
+
+    def step_dialog_ranges() -> list[tuple[float, float]]:
+        ranges = detect_dialog_ranges(transcript_output_path)
+        write_dialog_ranges_json(ranges, dialog_ranges_path)
+        return ranges
+
+    dialog_ranges = run_step(
+        f"STEP 5: Detecting dialog ranges -> {dialog_ranges_path}",
+        step_dialog_ranges,
+    )
+    dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
+
     clips_dir = project_dir / "clips"
     subtitles_dir = project_dir / "subtitles"
     shorts_dir = project_dir / "shorts"
@@ -196,8 +216,10 @@ if __name__ == "__main__":
     shorts_dir.mkdir(parents=True, exist_ok=True)
 
     for idx, cand in enumerate(candidates, start=1):
-        snapped_start = _snap_start_to_sentence_start(cand.start, segments)
-        snapped_end = _snap_end_to_sentence_end(cand.end, segments)
+        snapped_start = snap_start_to_dialog_start(cand.start, dialog_ranges)
+        snapped_end = snap_end_to_dialog_end(cand.end, dialog_ranges)
+        snapped_start = _snap_start_to_sentence_start(snapped_start, segments)
+        snapped_end = _snap_end_to_sentence_end(snapped_end, segments)
         adj_start = snap_start_to_silence(snapped_start, silences)
         adj_end = snap_end_to_silence(snapped_end, silences)
         candidate = ClipCandidate(
