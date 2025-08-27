@@ -33,6 +33,7 @@ def _build_system_instructions(prompt_desc: str, min_rating: float) -> str:
         "NEGATIVE FILTERS (exclude these):\n"
         "- Filler, bland agreement, mere exposition, or housekeeping.\n"
         "- Partial thoughts that cut off before the key beat/payoff.\n"
+        "- Segments with no spoken words (e.g., intros/outros, music-only).\n"
         "SCORING GUIDE:\n"
         "9–10: extremely aligned, highly engaging, shareable.\n"
         "8: clearly strong, likely to resonate with most viewers.\n"

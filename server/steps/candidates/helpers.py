@@ -96,6 +96,27 @@ def parse_transcript(transcript_path: str | Path) -> List[Tuple[float, float, st
     return items
 
 
+def has_spoken_words(
+    start: float, end: float, items: List[Tuple[float, float, str]]
+) -> bool:
+    """Return True if any overlapping transcript line contains alphabetic characters.
+
+    Lines that consist solely of bracketed markers like ``[music]`` are ignored.
+    """
+    for s, e, text in items:
+        if e <= start or s >= end:
+            continue
+        t = text.strip()
+        if not t:
+            continue
+        # Exclude bracketed markers such as "[music]".
+        if re.fullmatch(r"\[[^\]]+\]", t.lower()):
+            continue
+        if re.search(r"[a-zA-Z]", t):
+            return True
+    return False
+
+
 # -----------------------------
 # Silence/VAD utilities (FFmpeg silencedetect logs)
 # -----------------------------
@@ -357,6 +378,7 @@ __all__ = [
     "export_candidates_json",
     "load_candidates_json",
     "parse_transcript",
+    "has_spoken_words",
     "parse_ffmpeg_silences",
     "snap_to_silence",
     "snap_to_word_boundaries",
