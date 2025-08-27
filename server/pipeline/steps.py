@@ -15,9 +15,9 @@ from server.steps.silence import (
 from server.steps.candidates.funny import find_funny_timestamps_batched
 from server.steps.candidates.inspiring import find_inspiring_timestamps_batched
 from server.steps.candidates.educational import find_educational_timestamps_batched
-from server.steps.candidates.helpers import (
-    export_candidates_json,
-    parse_transcript,
+from server.steps.candidates.manifest import export_candidates_json
+from server.steps.candidates.transcript import parse_transcript
+from server.steps.candidates.refine import (
     _snap_start_to_sentence_start,
     _snap_end_to_sentence_end,
 )
