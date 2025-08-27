@@ -5,7 +5,6 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "server"))
 
 from server.steps.candidates.manifest import export_candidates_json, load_candidates_json
 from server.interfaces.clip_candidate import ClipCandidate
