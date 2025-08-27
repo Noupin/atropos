@@ -324,17 +324,25 @@ def _enforce_non_overlap(
             continue
         if (e - s) > max_duration_seconds:
             continue
-        adjusted.append(
-            ClipCandidate(start=s, end=e, rating=c.rating, reason=c.reason, quote=c.quote)
-        )
+        new_c = ClipCandidate(start=s, end=e, rating=c.rating, reason=c.reason, quote=c.quote)
+        if hasattr(c, "tone_match"):
+            new_c.tone_match = c.tone_match
+        adjusted.append(new_c)
 
     if not adjusted:
         return []
+    ratings = [c.rating for c in adjusted]
+    mean = sum(ratings) / len(ratings)
+    var = sum((r - mean) ** 2 for r in ratings) / len(ratings)
+    std = var ** 0.5 if var > 0 else 1.0
 
     def score_key(x: ClipCandidate):
         d = x.end - x.start
         prior = 0.65 + 0.35 * duration_score(d, 8.0, 30.0)
-        return (-(x.rating * prior), x.start, x.end)
+        z = (x.rating - mean) / std
+        tone_ok = bool(getattr(x, "tone_match", True))
+        tone_penalty = 0 if tone_ok else 1
+        return (tone_penalty, -(z * prior), x.start, x.end)
 
     adjusted.sort(key=score_key)
     selected: List[ClipCandidate] = []
