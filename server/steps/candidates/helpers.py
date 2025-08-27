@@ -242,6 +242,26 @@ def _snap_start_to_segment_start(
     return start_time
 
 
+def _snap_end_to_sentence_end(
+    time: float, segments: List[Tuple[float, float, str]]
+) -> float:
+    """Snap ``time`` to the end of the sentence/beat containing it."""
+    for s, e, _ in segments:
+        if s <= time <= e:
+            return e
+    return time
+
+
+def _snap_start_to_sentence_start(
+    time: float, segments: List[Tuple[float, float, str]]
+) -> float:
+    """Snap ``time`` to the beginning of the sentence/beat containing it."""
+    for s, e, _ in segments:
+        if s <= time <= e:
+            return s
+    return time
+
+
 def _merge_adjacent_candidates(
     candidates: List[ClipCandidate],
     items: List[Tuple[float, float, str]],

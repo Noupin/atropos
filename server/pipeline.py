@@ -7,9 +7,10 @@ from steps.candidates.helpers import (
     export_candidates_json,
     load_candidates_json,
     parse_transcript,
-    _snap_start_to_segment_start,
-    _snap_end_to_segment_end,
+    _snap_start_to_sentence_start,
+    _snap_end_to_sentence_end,
 )
+from steps.segment import segment_transcript_items, write_segments_json
 from steps.cut import save_clip_from_candidate
 from steps.subtitle import build_srt_for_range
 from steps.render import render_vertical_with_captions
@@ -183,6 +184,8 @@ if __name__ == "__main__":
 
     # Parse transcript once for snapping boundaries
     items = parse_transcript(transcript_output_path)
+    segments = segment_transcript_items(items)
+    write_segments_json(segments, project_dir / "segments.json")
 
     clips_dir = project_dir / "clips"
     subtitles_dir = project_dir / "subtitles"
@@ -193,8 +196,8 @@ if __name__ == "__main__":
     shorts_dir.mkdir(parents=True, exist_ok=True)
 
     for idx, cand in enumerate(candidates, start=1):
-        snapped_start = _snap_start_to_segment_start(cand.start, items)
-        snapped_end = _snap_end_to_segment_end(cand.end, items)
+        snapped_start = _snap_start_to_sentence_start(cand.start, segments)
+        snapped_end = _snap_end_to_sentence_end(cand.end, segments)
         adj_start = snap_start_to_silence(snapped_start, silences)
         adj_end = snap_end_to_silence(snapped_end, silences)
         candidate = ClipCandidate(
