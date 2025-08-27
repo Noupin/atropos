@@ -215,16 +215,25 @@ def _snap_end_to_segment_end(
 
     This helps clips end on a natural pause or sentence boundary rather than
     cutting off mid-thought."""
-    for idx, (s, e, _) in enumerate(items):
+    for idx, (s, e, cur_txt) in enumerate(items):
         if s <= end_time <= e:
             end = e
+            txt = cur_txt
             for nxt_s, nxt_e, nxt_txt in items[idx + 1 :]:
                 gap = nxt_s - end
                 if gap > 0.6:
                     break
+                # If the current segment doesn't end with terminal punctuation,
+                # assume the sentence continues regardless of the next segment's
+                # casing.
+                if txt and not txt.rstrip().endswith((".", "?", "!")):
+                    end = nxt_e
+                    txt = nxt_txt
+                    continue
                 first = nxt_txt.lstrip()[:1]
                 if first and first.islower():
                     end = nxt_e
+                    txt = nxt_txt
                     continue
                 break
             return end
