@@ -1,5 +1,10 @@
 from steps.transcribe import transcribe_audio
-from steps.download import download_video, get_video_info
+from steps.download import (
+    download_video,
+    get_video_info,
+    download_transcript,
+    extract_video_id,
+)
 from steps.candidates.funny import find_funny_timestamps_batched
 from steps.candidates.inspiring import find_inspiring_timestamps_batched
 from steps.candidates.educational import find_educational_timestamps_batched
@@ -14,6 +19,7 @@ from steps.silence import detect_silences
 
 import sys
 import time
+import json
 from pathlib import Path
 
 from helpers.audio import ensure_audio
@@ -84,16 +90,46 @@ if __name__ == "__main__":
         )
 
     # ----------------------
-    # STEP 3: Transcribe Audio & Detect Silences
+    # STEP 3: Acquire Transcript & Detect Silences
     # ----------------------
     transcript_output_path = project_dir / f"{non_suffix_filename}.txt"
+    data_dir = Path(__file__).resolve().parent.parent / "data"
+    transcript_json_path = data_dir / "transcript.json"
+    video_id = extract_video_id(yt_url)
 
-    def step_transcribe() -> dict:
-        return transcribe_audio(str(audio_output_path), model_size="large-v3-turbo")
+    def step_transcript() -> tuple[dict, str]:
+        yt_transcript = download_transcript(video_id)
+        if yt_transcript:
+            data_dir.mkdir(parents=True, exist_ok=True)
+            with open(transcript_json_path, "w", encoding="utf-8") as f:
+                json.dump(yt_transcript, f)
+            segments = [
+                {
+                    "start": float(item.get("start", 0.0)),
+                    "end": float(item.get("start", 0.0) + item.get("duration", 0.0)),
+                    "text": item.get("text", ""),
+                }
+                for item in yt_transcript
+            ]
+            transcription = {
+                "text": "".join(item.get("text", "") for item in yt_transcript),
+                "segments": segments,
+                "words": [],
+                "timing": {},
+            }
+            return transcription, "youtube"
 
-    transcription = run_step(
-        "STEP 3: Transcribing with faster-whisper (large-v3-turbo)",
-        step_transcribe,
+        transcription = transcribe_audio(
+            str(audio_output_path), model_size="large-v3-turbo"
+        )
+        data_dir.mkdir(parents=True, exist_ok=True)
+        with open(transcript_json_path, "w", encoding="utf-8") as f:
+            json.dump(transcription, f)
+        return transcription, "whisper"
+
+    transcription, transcript_source = run_step(
+        "STEP 3: Acquiring transcript (YouTube or Whisper)",
+        step_transcript,
     )
     write_transcript_txt(transcription, str(transcript_output_path))
     words = transcription.get("words", [])
