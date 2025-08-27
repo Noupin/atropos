@@ -4,17 +4,19 @@ FUNNY_PROMPT_DESC = (
     "genuinely funny, laugh-inducing moments. Focus on bits that have a clear setup and a punchline, "
     "or a sharp twist/surprise. Prioritize incongruity, exaggeration, taboo/embarrassment (PG–R), "
     "playful insults/roasts, callbacks, misdirection, and deadpan contradictions. Avoid bland banter, "
-    "filler agreement, or mere information."
+    "filler agreement, or mere information. Reject polite chuckles, self-referential commentary without a joke, "
+    "sarcasm lacking a payoff, or anything that only works with unseen visual context."
 )
 
 INSPIRING_PROMPT_DESC = (
     "uplifting or motivational moments that stir positive emotion, showcase overcoming "
-    "challenges, or deliver heartfelt advice."
+    "challenges, or deliver heartfelt advice. Exclude generic compliments, shallow positivity, or "
+    "promotional sound bites that lack an emotional arc."
 )
 
 EDUCATIONAL_PROMPT_DESC = (
     "informative, insightful, or instructional moments that clearly teach a concept or "
-    "share useful facts."
+    "share useful facts. Reject vague opinions, hearsay, or marketing pitches that do not explain how or why."
 )
 
 
@@ -30,9 +32,11 @@ def _build_system_instructions(prompt_desc: str, min_rating: float) -> str:
         "- Coherence: It forms a self-contained beat; the audience will understand without extra context.\n"
         "- Clipability: It is engaging and quotable; likely to grab attention in a short clip.\n"
         "- Completeness: Start at the natural setup/lead-in (not mid-word) and end right after the payoff/beat lands.\n"
+        "- Strictness: If tone alignment is questionable or borderline, exclude the moment.\n"
         "NEGATIVE FILTERS (exclude these):\n"
         "- Filler, bland agreement, mere exposition, or housekeeping.\n"
         "- Partial thoughts that cut off before the key beat/payoff.\n"
+        "- Any segment that conflicts with the tone-specific negative examples.\n"
         "SCORING GUIDE:\n"
         "9–10: extremely aligned, highly engaging, shareable.\n"
         "8: clearly strong, likely to resonate with most viewers.\n"

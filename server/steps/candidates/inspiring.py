@@ -9,23 +9,35 @@ from .prompts import INSPIRING_PROMPT_DESC
 
 def find_inspiring_timestamps_batched(
     transcript_path: str | Path,
-    *args,
+    *,
+    min_rating: float = 7.0,
+    min_words: int = 8,
     **kwargs,
 ) -> List[ClipCandidate]:
     """Find inspiring clip candidates using batched processing."""
     return find_clip_timestamps_batched(
-        transcript_path, prompt_desc=INSPIRING_PROMPT_DESC, **kwargs
+        transcript_path,
+        prompt_desc=INSPIRING_PROMPT_DESC,
+        min_rating=min_rating,
+        min_words=min_words,
+        **kwargs,
     )
 
 
 def find_inspiring_timestamps(
     transcript_path: str | Path,
-    *args,
+    *,
+    min_rating: float = 7.0,
+    min_words: int = 8,
     **kwargs,
 ) -> List[ClipCandidate]:
     """Find inspiring clip candidates."""
     return find_clip_timestamps(
-        transcript_path, prompt_desc=INSPIRING_PROMPT_DESC, **kwargs
+        transcript_path,
+        prompt_desc=INSPIRING_PROMPT_DESC,
+        min_rating=min_rating,
+        min_words=min_words,
+        **kwargs,
     )
 
 
