@@ -342,7 +342,9 @@ def _enforce_non_overlap(
         z = (x.rating - mean) / std
         tone_ok = bool(getattr(x, "tone_match", True))
         tone_penalty = 0 if tone_ok else 1
-        return (tone_penalty, -(z * prior), x.start, x.end)
+        length_bonus = 0.1 / max(d, 1.0)
+        score = z * prior + length_bonus
+        return (tone_penalty, -score, d, x.start, x.end)
 
     adjusted.sort(key=score_key)
     selected: List[ClipCandidate] = []
