@@ -51,6 +51,54 @@ def _format_items_for_prompt(items: List[Tuple[float, float, str]]) -> str:
     return "\n".join(f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in items)
 
 
+def _candidate_text(c: ClipCandidate, items: List[Tuple[float, float, str]]) -> str:
+    """Return the concatenated transcript text that overlaps a candidate."""
+    parts: List[str] = []
+    for s, e, txt in items:
+        if e <= c.start or s >= c.end:
+            continue
+        parts.append(txt)
+    return " ".join(parts).strip()
+
+
+def _verify_tone(
+    candidates: List[ClipCandidate],
+    items: List[Tuple[float, float, str]],
+    prompt_desc: str,
+    *,
+    min_words: int,
+    model: str,
+    request_timeout: int,
+) -> List[ClipCandidate]:
+    """Run a secondary LLM check to ensure each candidate matches the tone."""
+    passed: List[ClipCandidate] = []
+    for c in candidates:
+        text = _candidate_text(c, items)
+        if len(text.split()) < min_words:
+            continue
+        prompt = (
+            f"Target tone: {prompt_desc}\n"
+            "Respond with JSON {\"match\": true|false}.\n"
+            f"Text: {text}"
+        )
+        try:
+            out = ollama_call_json(
+                model=model,
+                prompt=prompt,
+                options={"temperature": 0.0},
+                timeout=request_timeout,
+            )
+        except Exception as e:
+            print(f"[ToneCheck] dropping candidate due to error: {e}")
+            continue
+        if isinstance(out, list) and out:
+            out = out[0]
+        match = bool(_get_field(out, "match", False))
+        if match:
+            passed.append(c)
+    return passed
+
+
 # -----------------------------
 # LLM (Ollama / gemma3) utilities
 # -----------------------------
@@ -60,6 +108,7 @@ def find_clip_timestamps_batched(
     *,
     prompt_desc: str = FUNNY_PROMPT_DESC,
     min_rating: float = 7.0,
+    min_words: int = 0,
     model: str = "gemma3",
     options: Optional[dict] = None,
     max_chars_per_chunk: int = 12000,
@@ -150,6 +199,15 @@ def find_clip_timestamps_batched(
     )
     result = _enforce_non_overlap(all_candidates, items, words=words, silences=silences)
     print(f"[Batch] {len(result)} candidates remain after overlap enforcement.")
+    result = _verify_tone(
+        result,
+        items,
+        prompt_desc,
+        min_words=min_words,
+        model=model,
+        request_timeout=request_timeout,
+    )
+    print(f"[Batch] {len(result)} candidates remain after tone verification.")
     return result
 
 
@@ -158,6 +216,7 @@ def find_clip_timestamps(
     *,
     prompt_desc: str = FUNNY_PROMPT_DESC,
     min_rating: float = 7.0,
+    min_words: int = 0,
     model: str = "gemma3",
     options: Optional[dict] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
@@ -222,4 +281,12 @@ def find_clip_timestamps(
         silences=silences,
     )
     candidates = _enforce_non_overlap(candidates, items, words=words, silences=silences)
+    candidates = _verify_tone(
+        candidates,
+        items,
+        prompt_desc,
+        min_words=min_words,
+        model=model,
+        request_timeout=180,
+    )
     return candidates
