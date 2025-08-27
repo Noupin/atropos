@@ -56,5 +56,9 @@ def test_detect_silences(tmp_path: Path) -> None:
 
 def test_snap_helpers() -> None:
     silences = [(0.0, 1.0), (5.0, 6.0)]
-    assert snap_start_to_silence(2.5, silences) == 1.0
-    assert snap_end_to_silence(4.0, silences) == 5.0
+    # ``snap_start_to_silence`` should extend to the beginning of the previous
+    # silent segment so the leading silence is preserved.
+    assert snap_start_to_silence(2.5, silences) == 0.0
+    # ``snap_end_to_silence`` should extend through the following silent segment
+    # ensuring trailing silence remains.
+    assert snap_end_to_silence(4.0, silences) == 6.0

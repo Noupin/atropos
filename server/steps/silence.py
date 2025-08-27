@@ -60,15 +60,37 @@ def load_silences_json(path: str | Path) -> List[Tuple[float, float]]:
 
 
 def snap_start_to_silence(start: float, silences: List[Tuple[float, float]]) -> float:
+    """Snap ``start`` to the beginning of the preceding silence.
+
+    The previous behaviour returned the end of the last silence before the
+    clip.  This meant the clip began *after* the silence, effectively trimming
+    quiet padding.  We instead want the clip to include that padding so we snap
+    to the **start** of that silence.  If ``start`` already lies within a
+    silence, we still snap to the start of that region.  If no preceding
+    silence exists, ``start`` is returned unchanged.
+    """
+
     for s_start, s_end in reversed(silences):
-        if s_end <= start:
-            return s_end
+        # When the start falls within a silence or after one, snap to the
+        # beginning of that silence to include the quiet lead-in.
+        if s_start <= start:
+            return s_start
     return start
 
 
 def snap_end_to_silence(end: float, silences: List[Tuple[float, float]]) -> float:
+    """Snap ``end`` to the conclusion of the following silence.
+
+    Previously we snapped to the **start** of the next silence which cut off
+    any trailing quiet section.  To extend clips through the silence we now
+    snap to the silence's end.  If ``end`` already lies inside a silence, the
+    end of that same silence is used.  When no subsequent silence exists, the
+    original ``end`` is returned.
+    """
+
     for s_start, s_end in silences:
-        if s_start >= end:
-            return s_start
+        # If the clip ends before or inside this silence, extend to its end.
+        if s_end >= end:
+            return s_end
     return end
 
