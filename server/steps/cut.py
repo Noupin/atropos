@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Optional
 
 from .candidates import ClipCandidate
-from .candidates.helpers import (
-    parse_transcript,
+from .candidates.transcript import parse_transcript
+from .candidates.refine import (
     _snap_start_to_segment_start,
     _snap_end_to_segment_end,
 )

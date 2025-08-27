@@ -7,18 +7,19 @@ import re
 from server.helpers.ai import ollama_call_json, retry
 from server.interfaces.clip_candidate import ClipCandidate
 
-from .helpers import (
-    _get_field,
-    _to_float,
-    parse_transcript,
-    _merge_adjacent_candidates,
-    _enforce_non_overlap,
-)
+from .manifest import _get_field, _to_float
+from .transcript import parse_transcript
+from .refine import _merge_adjacent_candidates, _enforce_non_overlap
 from .prompts import _build_system_instructions, FUNNY_PROMPT_DESC
 
 JSON_OBJECT_EXTRACT = re.compile(r"\{(?:.|\n)*\}")
 
-__all__ = ["ClipCandidate", "find_clip_timestamps_batched", "find_clip_timestamps"]
+__all__ = [
+    "ClipCandidate",
+    "find_clip_timestamps_batched",
+    "find_clip_timestamps",
+    "parse_transcript",
+]
 
 
 # -----------------------------
