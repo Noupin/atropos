@@ -10,6 +10,7 @@ from .helpers import (
     _get_field,
     _to_float,
     parse_transcript,
+    has_spoken_words,
     _merge_adjacent_candidates,
     _enforce_non_overlap,
 )
@@ -121,6 +122,8 @@ def find_clip_timestamps_batched(
             if not (min_ts <= start < end <= max_ts):
                 continue
             if rating < min_rating:
+                continue
+            if not has_spoken_words(start, end, items):
                 continue
             all_candidates.append(
                 ClipCandidate(
