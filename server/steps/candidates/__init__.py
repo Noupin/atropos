@@ -11,6 +11,7 @@ from .helpers import (
     _to_float,
     parse_transcript,
     has_spoken_words,
+    count_words,
     _merge_adjacent_candidates,
     _enforce_non_overlap,
 )
@@ -53,6 +54,41 @@ def _format_items_for_prompt(items: List[Tuple[float, float, str]]) -> str:
 
 
 # -----------------------------
+# Tone verification
+# -----------------------------
+
+def _candidate_matches_tone(
+    candidate: ClipCandidate,
+    items: List[Tuple[float, float, str]],
+    prompt_desc: str,
+    *,
+    model: str,
+    options: Optional[dict],
+    timeout: int = 120,
+) -> bool:
+    lines = [t for s, e, t in items if not (e <= candidate.start or s >= candidate.end)]
+    if not lines:
+        return False
+    excerpt = "\n".join(lines)
+    check_prompt = (
+        f"You are a strict classifier. Decide if the passage clearly matches this tone: {prompt_desc}.\n"
+        "Respond with a JSON array like [{\"match\": true|false}].\n"
+        "Only return true if the tone is obvious; otherwise false.\n\n"
+        f"PASSAGE:\n{excerpt}"
+    )
+    try:
+        resp = ollama_call_json(
+            model=model,
+            prompt=check_prompt,
+            options=options,
+            timeout=timeout,
+        )
+        return bool(resp and isinstance(resp, list) and resp[0].get("match"))
+    except Exception:
+        return False
+
+
+# -----------------------------
 # LLM (Ollama / gemma3) utilities
 # -----------------------------
 
@@ -61,6 +97,7 @@ def find_clip_timestamps_batched(
     *,
     prompt_desc: str = FUNNY_PROMPT_DESC,
     min_rating: float = 7.0,
+    min_word_count: int = 0,
     model: str = "gemma3",
     options: Optional[dict] = None,
     max_chars_per_chunk: int = 12000,
@@ -125,6 +162,8 @@ def find_clip_timestamps_batched(
                 continue
             if not has_spoken_words(start, end, items):
                 continue
+            if min_word_count and count_words(start, end, items) < min_word_count:
+                continue
             all_candidates.append(
                 ClipCandidate(
                     start=start, end=end, rating=rating, reason=reason, quote=quote
@@ -153,7 +192,24 @@ def find_clip_timestamps_batched(
     )
     result = _enforce_non_overlap(all_candidates, items, words=words, silences=silences)
     print(f"[Batch] {len(result)} candidates remain after overlap enforcement.")
-    return result
+
+    if min_word_count:
+        result = [
+            c for c in result if count_words(c.start, c.end, items) >= min_word_count
+        ]
+
+    verified: List[ClipCandidate] = []
+    for c in result:
+        if _candidate_matches_tone(
+            c,
+            items,
+            prompt_desc,
+            model=model,
+            options=combined_options,
+            timeout=request_timeout,
+        ):
+            verified.append(c)
+    return verified
 
 
 def find_clip_timestamps(
@@ -161,6 +217,7 @@ def find_clip_timestamps(
     *,
     prompt_desc: str = FUNNY_PROMPT_DESC,
     min_rating: float = 7.0,
+    min_word_count: int = 0,
     model: str = "gemma3",
     options: Optional[dict] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
@@ -210,6 +267,8 @@ def find_clip_timestamps(
             continue
         if rating < min_rating:
             continue
+        if min_word_count and count_words(start, end, items) < min_word_count:
+            continue
         candidates.append(
             ClipCandidate(
                 start=start, end=end, rating=rating, reason=reason, quote=quote
@@ -225,4 +284,20 @@ def find_clip_timestamps(
         silences=silences,
     )
     candidates = _enforce_non_overlap(candidates, items, words=words, silences=silences)
-    return candidates
+
+    if min_word_count:
+        candidates = [
+            c for c in candidates if count_words(c.start, c.end, items) >= min_word_count
+        ]
+
+    verified: List[ClipCandidate] = []
+    for c in candidates:
+        if _candidate_matches_tone(
+            c,
+            items,
+            prompt_desc,
+            model=model,
+            options=options,
+        ):
+            verified.append(c)
+    return verified

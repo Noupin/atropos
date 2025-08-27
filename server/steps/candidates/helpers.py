@@ -117,6 +117,16 @@ def has_spoken_words(
     return False
 
 
+def count_words(start: float, end: float, items: List[Tuple[float, float, str]]) -> int:
+    """Return the number of word tokens overlapping the [start, end] window."""
+    total = 0
+    for s, e, text in items:
+        if e <= start or s >= end:
+            continue
+        total += len(re.findall(r"\b\w+\b", text))
+    return total
+
+
 # -----------------------------
 # Silence/VAD utilities (FFmpeg silencedetect logs)
 # -----------------------------

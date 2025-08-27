@@ -10,22 +10,30 @@ from .prompts import INSPIRING_PROMPT_DESC
 def find_inspiring_timestamps_batched(
     transcript_path: str | Path,
     *,
+    min_word_count: int = 8,
     **kwargs,
 ) -> List[ClipCandidate]:
     """Find inspiring clip candidates using batched processing."""
     return find_clip_timestamps_batched(
-        transcript_path, prompt_desc=INSPIRING_PROMPT_DESC, **kwargs
+        transcript_path,
+        prompt_desc=INSPIRING_PROMPT_DESC,
+        min_word_count=min_word_count,
+        **kwargs,
     )
 
 
 def find_inspiring_timestamps(
     transcript_path: str | Path,
     *,
+    min_word_count: int = 8,
     **kwargs,
 ) -> List[ClipCandidate]:
     """Find inspiring clip candidates."""
     return find_clip_timestamps(
-        transcript_path, prompt_desc=INSPIRING_PROMPT_DESC, **kwargs
+        transcript_path,
+        prompt_desc=INSPIRING_PROMPT_DESC,
+        min_word_count=min_word_count,
+        **kwargs,
     )
 
 
