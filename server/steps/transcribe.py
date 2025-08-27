@@ -1,5 +1,9 @@
 from faster_whisper import WhisperModel
 from server.interfaces.timer import Timer
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def transcribe_audio(file_path, model_size="medium"):
@@ -28,13 +32,15 @@ def transcribe_audio(file_path, model_size="medium"):
     }
 
 
-if __name__ == "__main__":
-    audio_path = "kfaf1.mp3"
-    model_name = "large-v3-turbo"
+def main(audio_path: str = "kfaf1.mp3", model_name: str = "large-v3-turbo") -> None:
     result = transcribe_audio(audio_path, model_name)
-    print("Transcription text (first 500 chars):")
-    print(result["text"][:500])
-    print("\nFirst 12 segments:")
-    print(result["segments"][:12])
-    print("\nTiming info:")
-    print(result["timing"]) 
+    logger.info("Transcription text (first 500 chars):")
+    logger.info(result["text"][:500])
+    logger.info("\nFirst 12 segments:")
+    logger.info(result["segments"][:12])
+    logger.info("\nTiming info:")
+    logger.info(result["timing"])
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()
