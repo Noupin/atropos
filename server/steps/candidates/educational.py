@@ -9,7 +9,7 @@ from .prompts import EDUCATIONAL_PROMPT_DESC
 
 def find_educational_timestamps_batched(
     transcript_path: str | Path,
-    *,
+    *args,
     **kwargs,
 ) -> List[ClipCandidate]:
     """Find educational clip candidates using batched processing."""
@@ -20,7 +20,7 @@ def find_educational_timestamps_batched(
 
 def find_educational_timestamps(
     transcript_path: str | Path,
-    *,
+    *args,
     **kwargs,
 ) -> List[ClipCandidate]:
     """Find educational clip candidates."""

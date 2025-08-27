@@ -9,7 +9,7 @@ from .prompts import INSPIRING_PROMPT_DESC
 
 def find_inspiring_timestamps_batched(
     transcript_path: str | Path,
-    *,
+    *args,
     **kwargs,
 ) -> List[ClipCandidate]:
     """Find inspiring clip candidates using batched processing."""
@@ -20,7 +20,7 @@ def find_inspiring_timestamps_batched(
 
 def find_inspiring_timestamps(
     transcript_path: str | Path,
-    *,
+    *args,
     **kwargs,
 ) -> List[ClipCandidate]:
     """Find inspiring clip candidates."""

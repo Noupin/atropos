@@ -28,9 +28,9 @@ from steps.candidates import ClipCandidate
 if __name__ == "__main__":
     overall_start = time.perf_counter()
 
-    # yt_url = "https://www.youtube.com/watch?v=GDbDRWzFfds"
+    yt_url = "https://www.youtube.com/watch?v=GDbDRWzFfds"
     # yt_url = "https://www.youtube.com/watch?v=zZYxqZFThls"
-    yt_url = "https://www.youtube.com/watch?v=K9aFbYd6AUI"
+    # yt_url = "https://www.youtube.com/watch?v=K9aFbYd6AUI"
     # yt_url = input("Enter YouTube video URL: ")
 
     CLIP_TYPE = "funny"  # change to 'inspiring' or 'educational'
