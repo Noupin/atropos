@@ -12,6 +12,7 @@ def find_educational_timestamps_batched(
     *,
     min_rating: float = 7.0,
     min_words: int = 8,
+    return_all_stages: bool = False,
     **kwargs,
 ) -> List[ClipCandidate]:
     """Find educational clip candidates using batched processing."""
@@ -20,6 +21,7 @@ def find_educational_timestamps_batched(
         prompt_desc=EDUCATIONAL_PROMPT_DESC,
         min_rating=min_rating,
         min_words=min_words,
+        return_all_stages=return_all_stages,
         **kwargs,
     )
 
@@ -29,6 +31,7 @@ def find_educational_timestamps(
     *,
     min_rating: float = 7.0,
     min_words: int = 8,
+    return_all_stages: bool = False,
     **kwargs,
 ) -> List[ClipCandidate]:
     """Find educational clip candidates."""
@@ -37,6 +40,7 @@ def find_educational_timestamps(
         prompt_desc=EDUCATIONAL_PROMPT_DESC,
         min_rating=min_rating,
         min_words=min_words,
+        return_all_stages=return_all_stages,
         **kwargs,
     )
 

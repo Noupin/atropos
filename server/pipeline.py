@@ -149,6 +149,8 @@ if __name__ == "__main__":
     # STEP 5: Find Clip Candidates
     # ----------------------
     candidates_path = project_dir / "candidates.json"
+    candidates_all_path = project_dir / "candidates_all.json"
+    candidates_top_path = project_dir / "candidates_top.json"
 
     CLIP_FINDERS = {
         "funny": find_funny_timestamps_batched,
@@ -156,20 +158,26 @@ if __name__ == "__main__":
         "educational": find_educational_timestamps_batched,
     }
 
-    def step_candidates() -> list[ClipCandidate]:
+    def step_candidates() -> tuple[list[ClipCandidate], list[ClipCandidate], list[ClipCandidate]]:
         finder = CLIP_FINDERS.get(CLIP_TYPE)
         if finder is None:
             raise ValueError(f"Unsupported clip type: {CLIP_TYPE}")
-        return finder(str(transcript_output_path), min_rating=MIN_RATING)
+        return finder(
+            str(transcript_output_path),
+            min_rating=MIN_RATING,
+            return_all_stages=True,
+        )
 
-    candidates = run_step(
+    candidates, top_candidates, all_candidates = run_step(
         "STEP 5: Finding clip candidates from transcript", step_candidates
     )
+
+    export_candidates_json(all_candidates, candidates_all_path)
+    export_candidates_json(top_candidates, candidates_top_path)
+    export_candidates_json(candidates, candidates_path)
     if not candidates:
         print(f"{Fore.RED}STEP 5: No clip candidates found.{Style.RESET_ALL}")
         sys.exit()
-
-    export_candidates_json(candidates, candidates_path)
     # candidates = load_candidates_json('../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/candidates.json')
 
     # Parse transcript once for snapping boundaries

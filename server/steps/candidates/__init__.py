@@ -117,7 +117,8 @@ def find_clip_timestamps_batched(
     exclude_ranges: Optional[List[Tuple[float, float]]] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
     words: Optional[List[dict]] = None,
-) -> List[ClipCandidate]:
+    return_all_stages: bool = False,
+) -> List[ClipCandidate] | tuple[List[ClipCandidate], List[ClipCandidate], List[ClipCandidate]]:
     """Chunk the transcript and query the model per-chunk to avoid context/HTTP timeouts."""
     items = parse_transcript(transcript_path)
     if not items:
@@ -197,18 +198,24 @@ def find_clip_timestamps_batched(
         words=words,
         silences=silences,
     )
-    result = _enforce_non_overlap(all_candidates, items, words=words, silences=silences)
-    print(f"[Batch] {len(result)} candidates remain after overlap enforcement.")
-    result = _verify_tone(
-        result,
+    top_candidates = _enforce_non_overlap(
+        all_candidates, items, words=words, silences=silences
+    )
+    print(f"[Batch] {len(top_candidates)} candidates remain after overlap enforcement.")
+    verified_candidates = _verify_tone(
+        top_candidates,
         items,
         prompt_desc,
         min_words=min_words,
         model=model,
         request_timeout=request_timeout,
     )
-    print(f"[Batch] {len(result)} candidates remain after tone verification.")
-    return result
+    print(
+        f"[Batch] {len(verified_candidates)} candidates remain after tone verification."
+    )
+    if return_all_stages:
+        return verified_candidates, top_candidates, all_candidates
+    return verified_candidates
 
 
 def find_clip_timestamps(
@@ -221,7 +228,8 @@ def find_clip_timestamps(
     options: Optional[dict] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
     words: Optional[List[dict]] = None,
-) -> List[ClipCandidate]:
+    return_all_stages: bool = False,
+) -> List[ClipCandidate] | tuple[List[ClipCandidate], List[ClipCandidate], List[ClipCandidate]]:
     """Use a local Ollama model (gemma3) to score transcript lines and propose clip windows."""
     items = parse_transcript(transcript_path)
     if not items:
@@ -272,7 +280,7 @@ def find_clip_timestamps(
             )
         )
 
-    candidates = _merge_adjacent_candidates(
+    all_candidates = _merge_adjacent_candidates(
         candidates,
         items,
         merge_gap_seconds=1.0,
@@ -280,13 +288,17 @@ def find_clip_timestamps(
         words=words,
         silences=silences,
     )
-    candidates = _enforce_non_overlap(candidates, items, words=words, silences=silences)
-    candidates = _verify_tone(
-        candidates,
+    top_candidates = _enforce_non_overlap(
+        all_candidates, items, words=words, silences=silences
+    )
+    verified_candidates = _verify_tone(
+        top_candidates,
         items,
         prompt_desc,
         min_words=min_words,
         model=model,
         request_timeout=180,
     )
-    return candidates
+    if return_all_stages:
+        return verified_candidates, top_candidates, all_candidates
+    return verified_candidates
