@@ -32,10 +32,13 @@ def test_batched_skip_music_only(tmp_path: Path, monkeypatch) -> None:
     p.write_text(transcript, encoding="utf-8")
 
     def fake_call_json(**kwargs):
-        return [
-            {"start": 0.0, "end": 4.0, "rating": 8.0, "reason": "", "quote": ""},
-            {"start": 5.0, "end": 6.0, "rating": 8.0, "reason": "", "quote": "hi"},
-        ]
+        prompt = kwargs.get("prompt", "")
+        if "TRANSCRIPT" in prompt:
+            return [
+                {"start": 0.0, "end": 4.0, "rating": 8.0, "reason": "", "quote": ""},
+                {"start": 5.0, "end": 6.0, "rating": 8.0, "reason": "", "quote": "hi"},
+            ]
+        return [{"match": True}]
 
     monkeypatch.setattr(
         "server.steps.candidates.ollama_call_json", fake_call_json

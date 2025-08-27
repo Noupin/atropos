@@ -3,18 +3,21 @@ from __future__ import annotations
 FUNNY_PROMPT_DESC = (
     "genuinely funny, laugh-inducing moments. Focus on bits that have a clear setup and a punchline, "
     "or a sharp twist/surprise. Prioritize incongruity, exaggeration, taboo/embarrassment (PG–R), "
-    "playful insults/roasts, callbacks, misdirection, and deadpan contradictions. Avoid bland banter, "
-    "filler agreement, or mere information."
+    "playful insults/roasts, callbacks, misdirection, and deadpan contradictions. Do NOT include "
+    "dry narration, polite small talk, generic compliments, or clips where someone merely says "
+    "'that's funny' without delivering a joke."
 )
 
 INSPIRING_PROMPT_DESC = (
     "uplifting or motivational moments that stir positive emotion, showcase overcoming "
-    "challenges, or deliver heartfelt advice."
+    "challenges, or deliver heartfelt advice. Avoid hollow platitudes, self-promotion, "
+    "sarcasm, or bleak/nihilistic comments."
 )
 
 EDUCATIONAL_PROMPT_DESC = (
     "informative, insightful, or instructional moments that clearly teach a concept or "
-    "share useful facts."
+    "share useful facts. Exclude vague speculation, unsupported opinions, "
+    "advertisements, or trivial asides that provide no real learning."
 )
 
 
@@ -25,7 +28,7 @@ def _build_system_instructions(prompt_desc: str, min_rating: float) -> str:
         '{"start": number, "end": number, "rating": 1-10 number, '
         '"reason": string, "quote": string, "tags": string[]}\n'
         f"Include ONLY items with rating >= {min_rating}.\n"
-        "RUBRIC (all must be true for inclusion):\n"
+        "RUBRIC (all must be clearly satisfied; borderline clips must be excluded):\n"
         "- Relevance: The moment strongly reflects the target described above.\n"
         "- Coherence: It forms a self-contained beat; the audience will understand without extra context.\n"
         "- Clipability: It is engaging and quotable; likely to grab attention in a short clip.\n"
@@ -34,6 +37,7 @@ def _build_system_instructions(prompt_desc: str, min_rating: float) -> str:
         "- Filler, bland agreement, mere exposition, or housekeeping.\n"
         "- Partial thoughts that cut off before the key beat/payoff.\n"
         "- Segments with no spoken words (e.g., intros/outros, music-only).\n"
+        "- Moments that do not unmistakably match the requested tone.\n"
         "SCORING GUIDE:\n"
         "9–10: extremely aligned, highly engaging, shareable.\n"
         "8: clearly strong, likely to resonate with most viewers.\n"
