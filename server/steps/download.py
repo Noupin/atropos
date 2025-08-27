@@ -71,7 +71,7 @@ def extract_audio_from_video(video_path, audio_output_path='extracted_audio.mp3'
     except Exception as e:
         print(f"Error: {str(e)}")
 
-def download_transcript(url, output_path='transcript.txt', languages=None):
+def download_transcript(url, output_path='transcript.txt', languages=("en", "en-US", "en-GB")):
     video_id = extract_video_id(url)
     try:
         # Try new API first
