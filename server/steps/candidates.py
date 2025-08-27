@@ -23,6 +23,7 @@ from typing import List, Optional, Tuple
 import json
 import re
 from pathlib import Path
+from math import inf
 
 from helpers.ai import ollama_call_json, retry
 from interfaces.clip_candidate import ClipCandidate
@@ -77,6 +78,7 @@ _TIME_RANGE = re.compile(
 )
 
 
+
 def parse_transcript(transcript_path: str | Path) -> List[Tuple[float, float, str]]:
     """Read a transcript .txt with lines like: `[12.34 -> 17.89] text`.
     Returns list of (start, end, text).
@@ -96,6 +98,114 @@ def parse_transcript(transcript_path: str | Path) -> List[Tuple[float, float, st
             if text:
                 items.append((start, end, text))
     return items
+
+
+# -----------------------------
+# Silence/VAD utilities (FFmpeg silencedetect logs)
+# -----------------------------
+
+def parse_ffmpeg_silences(log_text: str) -> List[Tuple[float, float]]:
+    """Parse ffmpeg -af silencedetect logs into [(silence_start, silence_end), ...]."""
+    silences: List[Tuple[float, float]] = []
+    start = None
+    for ln in log_text.splitlines():
+        ln = ln.strip()
+        if "silence_start:" in ln:
+            try:
+                start = float(ln.split("silence_start:")[1].strip())
+            except Exception:
+                start = None
+        elif "silence_end:" in ln and start is not None:
+            try:
+                t = ln.split("silence_end:")[1].strip().split()[0]
+                end = float(t)
+                silences.append((start, end))
+            except Exception:
+                pass
+            start = None
+    return silences
+
+
+def snap_to_silence(
+    start: float,
+    end: float,
+    silences: List[Tuple[float, float]],
+    *,
+    pre_leadin: float = 0.25,
+    post_tail: float = 0.45,
+) -> Tuple[float, float]:
+    """Snap [start,end] outward to nearest surrounding silence + small air before/after."""
+    if not silences:
+        return start, end
+    prev_sil_end = None
+    next_sil_start = None
+    for s0, e0 in silences:
+        if e0 <= start:
+            prev_sil_end = e0
+        if s0 >= end and next_sil_start is None:
+            next_sil_start = s0
+    s = start if prev_sil_end is None else max(0.0, prev_sil_end + pre_leadin)
+    e = end if next_sil_start is None else max(s + 0.10, next_sil_start - post_tail)
+    return s, e
+
+
+# -----------------------------
+# Word-boundary utility (optional if you have word timestamps)
+# -----------------------------
+
+def snap_to_word_boundaries(start: float, end: float, words: List[dict]) -> Tuple[float, float]:
+    """Clamp to the first/last word overlapping [start,end]. words = [{start,end,text}, ...]."""
+    if not words:
+        return start, end
+    # first word whose end >= start
+    s_idx = next((i for i, w in enumerate(words) if float(w.get("end", 0)) >= start), None)
+    # last word whose start <= end
+    e_idx = next((i for i in range(len(words) - 1, -1, -1) if float(words[i].get("start", inf)) <= end), None)
+    if s_idx is None or e_idx is None or e_idx < s_idx:
+        return start, end
+    s = float(words[s_idx].get("start", start))
+    e = float(words[e_idx].get("end", end))
+    if e <= s:
+        e = s + 0.10
+    return s, e
+
+
+# -----------------------------
+# Unified clip refinement + duration prior
+# -----------------------------
+
+def duration_score(d: float, sweet_min: float = 8.0, sweet_max: float = 30.0) -> float:
+    """Soft prior: 1.0 inside sweet spot; quadratic decay outside."""
+    if d < sweet_min:
+        return max(0.0, 1.0 - ((sweet_min - d) / sweet_min) ** 2)
+    if d > sweet_max:
+        return max(0.0, 1.0 - ((d - sweet_max) / sweet_max) ** 2)
+    return 1.0
+
+
+def refine_clip_window(
+    start: float,
+    end: float,
+    items: List[Tuple[float, float, str]],
+    *,
+    words: Optional[List[dict]] = None,
+    silences: Optional[List[Tuple[float, float]]] = None,
+    pre_leadin: float = 0.25,
+    post_tail: float = 0.45,
+) -> Tuple[float, float]:
+    """Snap to segment, then word (if available), then silence edges with small air."""
+    # Your existing segment snaps
+    s = _snap_start_to_segment_start(start, items)
+    e = _snap_end_to_segment_end(end, items)
+    # Word-level (optional)
+    if words:
+        s, e = snap_to_word_boundaries(s, e, words)
+    # Silence edges (optional)
+    if silences:
+        s, e = snap_to_silence(s, e, silences, pre_leadin=pre_leadin, post_tail=post_tail)
+    if e - s < 0.30:
+        e = s + 0.30
+    return s, e
 
 
 # -----------------------------
@@ -156,8 +266,10 @@ def _merge_adjacent_candidates(
     candidates: List[ClipCandidate],
     items: List[Tuple[float, float, str]],
     *,
-    merge_gap_seconds: float = 1.5,
+    merge_gap_seconds: float = 1.0,
     max_duration_seconds: float = 60.0,
+    words: Optional[List[dict]] = None,
+    silences: Optional[List[Tuple[float, float]]] = None,
 ) -> List[ClipCandidate]:
     """Merge candidates that overlap or are separated by a tiny gap, to preserve full jokes/bits.
     - Snap starts/ends to segment boundaries before merging.
@@ -167,20 +279,16 @@ def _merge_adjacent_candidates(
     if not candidates:
         return []
 
-    # Snap both ends first
+    # Snap both ends first (now refined with words/silence when available)
     snapped: List[ClipCandidate] = []
     for c in candidates:
-        s = _snap_start_to_segment_start(c.start, items)
-        e = _snap_end_to_segment_end(c.end, items)
+        s, e = refine_clip_window(c.start, c.end, items, words=words, silences=silences)
         if e <= s:
             continue
-        # Skip overly long initial candidates entirely
         if (e - s) > max_duration_seconds:
             continue
         snapped.append(
-            ClipCandidate(
-                start=s, end=e, rating=c.rating, reason=c.reason, quote=c.quote
-            )
+            ClipCandidate(start=s, end=e, rating=c.rating, reason=c.reason, quote=c.quote)
         )
 
     if not snapped:
@@ -231,6 +339,8 @@ def _enforce_non_overlap(
     *,
     max_duration_seconds: float = 60.0,
     min_gap: float = 0.10,
+    words: Optional[List[dict]] = None,
+    silences: Optional[List[Tuple[float, float]]] = None,
 ) -> List[ClipCandidate]:
     """Adjusts candidate ends to segment boundaries and removes overlaps.
     Preference is given to higher-rated candidates when overlaps occur.
@@ -244,27 +354,25 @@ def _enforce_non_overlap(
     # 1) Snap both starts and ends so we don't cut into new speech or mid-line
     adjusted: List[ClipCandidate] = []
     for c in candidates:
-        snapped_start = _snap_start_to_segment_start(c.start, items)
-        snapped_end = _snap_end_to_segment_end(c.end, items)
-        if snapped_end <= snapped_start:
+        s, e = refine_clip_window(c.start, c.end, items, words=words, silences=silences)
+        if e <= s:
             continue
-        if (snapped_end - snapped_start) > max_duration_seconds:
+        if (e - s) > max_duration_seconds:
             continue
         adjusted.append(
-            ClipCandidate(
-                start=snapped_start,
-                end=snapped_end,
-                rating=c.rating,
-                reason=c.reason,
-                quote=c.quote,
-            )
+            ClipCandidate(start=s, end=e, rating=c.rating, reason=c.reason, quote=c.quote)
         )
 
     if not adjusted:
         return []
 
-    # 2) Select non-overlapping by rating desc, then earlier start
-    adjusted.sort(key=lambda x: (-x.rating, x.start, x.end))
+    # Short-clip bias (8–30s sweet spot by default)
+    def score_key(x: ClipCandidate):
+        d = x.end - x.start
+        prior = 0.65 + 0.35 * duration_score(d, 8.0, 30.0)
+        return (-(x.rating * prior), x.start, x.end)
+
+    adjusted.sort(key=score_key)
     selected: List[ClipCandidate] = []
 
     def overlaps(a: ClipCandidate, b: ClipCandidate) -> bool:
@@ -312,8 +420,10 @@ def _format_items_for_prompt(items: List[Tuple[float, float, str]]) -> str:
 
 
 _FUNNY_PROMPT_DESC = (
-    "humorous or high-likelihood viral clip moments. Consider punchlines, callbacks, "
-    "playful insults, crowd laughter cues, exaggerated reactions, or topic pivots."
+    "genuinely funny, laugh-inducing moments. Focus on bits that have a clear setup and a punchline, "
+    "or a sharp twist/surprise. Prioritize incongruity, exaggeration, taboo/embarrassment (PG–R), "
+    "playful insults/roasts, callbacks, misdirection, and deadpan contradictions. Avoid bland banter, "
+    "filler agreement, or mere information."
 )
 
 _INSPIRING_PROMPT_DESC = (
@@ -329,12 +439,26 @@ _EDUCATIONAL_PROMPT_DESC = (
 
 def _build_system_instructions(prompt_desc: str, min_rating: float) -> str:
     return (
-        f"You are ranking {prompt_desc}"
-        " Return a JSON array ONLY."
-        ' Each item MUST be: {"start": number, "end": number, "rating": 1-10 number, "reason": string, "quote": string}'
-        f" Include ONLY items with rating >= {min_rating}."
-        " Use the provided time ranges; do not invent timestamps outside them."
-        " Prefer segment boundaries but you may merge adjacent lines if a bit spans them."
+        f"You are ranking moments that are most aligned with this target: {prompt_desc}\n"
+        "Return a JSON array ONLY. Each item MUST be: "
+        '{"start": number, "end": number, "rating": 1-10 number, '
+        '"reason": string, "quote": string, "tags": string[]}\n'
+        f"Include ONLY items with rating >= {min_rating}.\n"
+        "RUBRIC (all must be true for inclusion):\n"
+        "- Relevance: The moment strongly reflects the target described above.\n"
+        "- Coherence: It forms a self-contained beat; the audience will understand without extra context.\n"
+        "- Clipability: It is engaging and quotable; likely to grab attention in a short clip.\n"
+        "- Completeness: Start at the natural setup/lead-in (not mid-word) and end right after the payoff/beat lands.\n"
+        "NEGATIVE FILTERS (exclude these):\n"
+        "- Filler, bland agreement, mere exposition, or housekeeping.\n"
+        "- Partial thoughts that cut off before the key beat/payoff.\n"
+        "SCORING GUIDE:\n"
+        "9–10: extremely aligned, highly engaging, shareable.\n"
+        "8: clearly strong, likely to resonate with most viewers.\n"
+        "7: decent; include only if there are few stronger options in this span.\n"
+        "TIMING RULES:\n"
+        "- Prefer segment boundaries; may extend across adjacent lines to capture the full beat.\n"
+        "- Do NOT invent timestamps outside provided ranges.\n"
     )
 
 
@@ -349,6 +473,8 @@ def find_clip_timestamps_batched(
     overlap_lines: int = 4,
     request_timeout: int = 180,
     exclude_ranges: Optional[List[Tuple[float, float]]] = None,
+    silences: Optional[List[Tuple[float, float]]] = None,
+    words: Optional[List[dict]] = None,
 ) -> List[ClipCandidate]:
     """Chunk the transcript and query the model per-chunk to avoid context/HTTP timeouts.
 
@@ -432,10 +558,11 @@ def find_clip_timestamps_batched(
     )
     # Merge adjacent/overlapping candidates into full bits before non-overlap selection
     all_candidates = _merge_adjacent_candidates(
-        all_candidates, items, merge_gap_seconds=1.5, max_duration_seconds=60.0
+        all_candidates, items, merge_gap_seconds=1.0, max_duration_seconds=60.0,
+        words=words, silences=silences
     )
     # Enforce snapping and non-overlap globally
-    result = _enforce_non_overlap(all_candidates, items)
+    result = _enforce_non_overlap(all_candidates, items, words=words, silences=silences)
     print(f"[Batch] {len(result)} candidates remain after overlap enforcement.")
     return result
 
@@ -452,6 +579,8 @@ def find_clip_timestamps(
     min_rating: float = 7.0,
     model: str = "gemma3",
     options: Optional[dict] = None,
+    silences: Optional[List[Tuple[float, float]]] = None,
+    words: Optional[List[dict]] = None,
 ) -> List[ClipCandidate]:
     """Use a local Ollama model (gemma3) to score transcript lines and propose clip windows.
 
@@ -514,10 +643,11 @@ def find_clip_timestamps(
 
     # Merge adjacent/overlapping candidates into full bits before non-overlap selection
     candidates = _merge_adjacent_candidates(
-        candidates, items, merge_gap_seconds=1.5, max_duration_seconds=60.0
+        candidates, items, merge_gap_seconds=1.0, max_duration_seconds=60.0,
+        words=words, silences=silences
     )
     # Snap to segment ends and prevent overlapping clips
-    candidates = _enforce_non_overlap(candidates, items)
+    candidates = _enforce_non_overlap(candidates, items, words=words, silences=silences)
     return candidates
 
 
@@ -526,21 +656,25 @@ def find_clip_timestamps(
 
 def find_funny_timestamps_batched(
     transcript_path: str | Path,
+    *,
+    min_rating: float = 8.0,
     **kwargs,
 ) -> List[ClipCandidate]:
     """Find humorous clip candidates using batched processing."""
     return find_clip_timestamps_batched(
-        transcript_path, prompt_desc=_FUNNY_PROMPT_DESC, **kwargs
+        transcript_path, prompt_desc=_FUNNY_PROMPT_DESC, min_rating=min_rating, **kwargs
     )
 
 
 def find_funny_timestamps(
     transcript_path: str | Path,
+    *,
+    min_rating: float = 8.0,
     **kwargs,
 ) -> List[ClipCandidate]:
     """Find humorous clip candidates."""
     return find_clip_timestamps(
-        transcript_path, prompt_desc=_FUNNY_PROMPT_DESC, **kwargs
+        transcript_path, prompt_desc=_FUNNY_PROMPT_DESC, min_rating=min_rating, **kwargs
     )
 
 
