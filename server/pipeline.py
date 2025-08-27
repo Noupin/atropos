@@ -1,18 +1,16 @@
 from steps.transcribe import transcribe_audio
-from steps.download import download_transcript, download_video, get_video_info
+from steps.download import download_video, get_video_info
 from steps.candidates.funny import find_funny_timestamps_batched
 from steps.candidates.inspiring import find_inspiring_timestamps_batched
 from steps.candidates.educational import find_educational_timestamps_batched
 from steps.candidates.helpers import (
     export_candidates_json,
     load_candidates_json,
-    parse_transcript,
-    _snap_start_to_segment_start,
-    _snap_end_to_segment_end,
 )
 from steps.cut import save_clip_from_candidate
 from steps.subtitle import build_srt_for_range
 from steps.render import render_vertical_with_captions
+from steps.silence import detect_silences
 
 import sys
 import time
@@ -86,43 +84,26 @@ if __name__ == "__main__":
         )
 
     # ----------------------
-    # STEP 3: Get Text (Transcript or Transcription)
+    # STEP 3: Transcribe Audio & Detect Silences
     # ----------------------
     transcript_output_path = project_dir / f"{non_suffix_filename}.txt"
 
-    def step_download_transcript() -> bool:
-        return download_transcript(
-            yt_url,
-            str(transcript_output_path),
-            languages=["en", "en-US", "en-GB", "ko"],
-        )
+    def step_transcribe() -> dict:
+        return transcribe_audio(str(audio_output_path), model_size="large-v3-turbo")
 
-    yt_ok = run_step(
-        f"STEP 3: Attempting YouTube transcript -> {transcript_output_path}",
-        step_download_transcript,
+    transcription = run_step(
+        "STEP 3: Transcribing with faster-whisper (large-v3-turbo)",
+        step_transcribe,
     )
-    if yt_ok:
-        print(f"{Fore.GREEN}STEP 3: Used YouTube transcript.{Style.RESET_ALL}")
-    else:
-        if not audio_ok:
-            print(
-                f"{Fore.RED}STEP 3: Cannot transcribe because audio acquisition failed.{Style.RESET_ALL}"
-            )
-        else:
+    write_transcript_txt(transcription, str(transcript_output_path))
+    words = transcription.get("words", [])
 
-            def step_transcribe() -> None:
-                result = transcribe_audio(
-                    str(audio_output_path), model_size="large-v3-turbo"
-                )
-                write_transcript_txt(result, str(transcript_output_path))
+    def step_silence() -> list[tuple[float, float]]:
+        return detect_silences(str(audio_output_path))
 
-            run_step(
-                "STEP 3: Transcribing with faster-whisper (large-v3-turbo)",
-                step_transcribe,
-            )
-            print(
-                f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
-            )
+    silences = run_step(
+        "STEP 3b: Detecting silences in audio", step_silence
+    )
 
     # ----------------------
     # STEP 4: Find Clip Candidates
@@ -139,7 +120,12 @@ if __name__ == "__main__":
         finder = CLIP_FINDERS.get(CLIP_TYPE)
         if finder is None:
             raise ValueError(f"Unsupported clip type: {CLIP_TYPE}")
-        return finder(str(transcript_output_path), min_rating=MIN_RATING)
+        return finder(
+            str(transcript_output_path),
+            min_rating=MIN_RATING,
+            words=words,
+            silences=silences,
+        )
 
     candidates = run_step(
         "STEP 4: Finding clip candidates from transcript", step_candidates
@@ -151,9 +137,6 @@ if __name__ == "__main__":
     export_candidates_json(candidates, candidates_path)
     # candidates = load_candidates_json('../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/candidates.json')
 
-    # Parse transcript once for snapping boundaries
-    items = parse_transcript(transcript_output_path)
-
     clips_dir = project_dir / "clips"
     subtitles_dir = project_dir / "subtitles"
     shorts_dir = project_dir / "shorts"
@@ -162,19 +145,17 @@ if __name__ == "__main__":
     subtitles_dir.mkdir(parents=True, exist_ok=True)
     shorts_dir.mkdir(parents=True, exist_ok=True)
 
-    for idx, cand in enumerate(candidates, start=1):
-        snapped_start = _snap_start_to_segment_start(cand.start, items)
-        snapped_end = _snap_end_to_segment_end(cand.end, items)
-        candidate = ClipCandidate(
-            start=snapped_start,
-            end=snapped_end,
-            rating=cand.rating,
-            reason=cand.reason,
-            quote=cand.quote,
-        )
+    for idx, candidate in enumerate(candidates, start=1):
 
         def step_cut() -> Path | None:
-            return save_clip_from_candidate(video_output_path, clips_dir, candidate)
+            return save_clip_from_candidate(
+                video_output_path,
+                clips_dir,
+                candidate,
+                transcript_path=transcript_output_path,
+                words=words,
+                silences=silences,
+            )
 
         clip_path = run_step(
             f"STEP 5.{idx}: Cutting clip -> {clips_dir}", step_cut

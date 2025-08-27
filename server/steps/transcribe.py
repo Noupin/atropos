@@ -3,19 +3,24 @@ from interfaces.timer import Timer
 
 
 def transcribe_audio(file_path, model_size="medium"):
-    """Transcribe an audio file using faster_whisper."""
+    """Transcribe an audio file using faster_whisper.
+
+    Returns a dict with the combined text, segment metadata, optional
+    word-level timings, and timing information for the transcription run.
+    """
     with Timer() as t:
         model = WhisperModel(model_size, device="auto")
-        segments, info = model.transcribe(file_path)
+        segments, info = model.transcribe(file_path, word_timestamps=True)
+
     text = "".join([s.text for s in segments])
-    segment_list = [
-        {
-            "start": s.start,
-            "end": s.end,
-            "text": s.text,
-        }
-        for s in segments
-    ]
+
+    segment_list = []
+    words: list[dict] = []
+    for s in segments:
+        segment_list.append({"start": s.start, "end": s.end, "text": s.text})
+        for w in getattr(s, "words", []) or []:
+            words.append({"start": w.start, "end": w.end, "text": w.word.strip()})
+
     timing = {
         "start_time": t.start_time,
         "stop_time": t.stop_time,
@@ -24,6 +29,7 @@ def transcribe_audio(file_path, model_size="medium"):
     return {
         "text": text,
         "segments": segment_list,
+        "words": words,
         "timing": timing,
     }
 
