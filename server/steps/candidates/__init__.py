@@ -72,18 +72,18 @@ def _verify_tone(
     min_words: int,
     model: str,
     request_timeout: int,
-) -> List[ClipCandidate]:
-    """Run a secondary LLM check to ensure each candidate matches the tone."""
-    passed: List[ClipCandidate] = []
+) -> List[Optional[ClipCandidate]]:
+    """Run a secondary LLM check to ensure each candidate matches the tone.
+
+    Returns a list where ``None`` entries indicate clips that could not be
+    confidently verified (e.g. too short or ambiguous responses).
+    """
+    results: List[Optional[ClipCandidate]] = []
     for c in candidates:
         text = _candidate_text(c, items)
-        # If the candidate text is too short for a meaningful tone
-        # verification we simply keep it. The upstream rating should
-        # already have filtered obviously bad clips and we don't want to
-        # drop otherwise valid candidates just because the tone check
-        # cannot be applied.
         if len(text.split()) < min_words:
-            passed.append(c)
+            print(f"[ToneCheck] candidate below min_words ({min_words}), marking uncertain: {c}")
+            results.append(None)
             continue
         prompt = (
             f"Target tone: {prompt_desc}\n"
@@ -111,21 +111,21 @@ def _verify_tone(
             # error) we don't want to lose the candidate entirely. Treat
             # it as a pass and keep the candidate.
             print(f"[ToneCheck] keeping candidate due to error: {e}")
-            passed.append(c)
+            results.append(c)
             continue
         if isinstance(out, list) and out:
             out = out[0]
 
-        # When the model fails to supply an explicit "match" field we
-        # err on the side of keeping the candidate. Only when the model
-        # explicitly returns a falsey value do we drop it.
         match_field = _get_field(out, "match")
         if match_field is None:
-            passed.append(c)
+            print(f"[ToneCheck] missing 'match' field for candidate: {c}")
+            results.append(None)
             continue
         if bool(match_field):
-            passed.append(c)
-    return passed
+            results.append(c)
+        else:
+            results.append(None)
+    return results
 
 
 # -----------------------------
@@ -231,14 +231,18 @@ def find_clip_timestamps_batched(
         all_candidates, items, words=words, silences=silences
     )
     print(f"[Batch] {len(top_candidates)} candidates remain after overlap enforcement.")
-    verified_candidates = _verify_tone(
-        top_candidates,
-        items,
-        prompt_desc,
-        min_words=min_words,
-        model=model,
-        request_timeout=request_timeout,
-    )
+    verified_candidates = [
+        c
+        for c in _verify_tone(
+            top_candidates,
+            items,
+            prompt_desc,
+            min_words=min_words,
+            model=model,
+            request_timeout=request_timeout,
+        )
+        if c is not None
+    ]
     print(
         f"[Batch] {len(verified_candidates)} candidates remain after tone verification."
     )
@@ -320,14 +324,18 @@ def find_clip_timestamps(
     top_candidates = _enforce_non_overlap(
         all_candidates, items, words=words, silences=silences
     )
-    verified_candidates = _verify_tone(
-        top_candidates,
-        items,
-        prompt_desc,
-        min_words=min_words,
-        model=model,
-        request_timeout=180,
-    )
+    verified_candidates = [
+        c
+        for c in _verify_tone(
+            top_candidates,
+            items,
+            prompt_desc,
+            min_words=min_words,
+            model=model,
+            request_timeout=180,
+        )
+        if c is not None
+    ]
     if return_all_stages:
         return verified_candidates, top_candidates, all_candidates
     return verified_candidates
