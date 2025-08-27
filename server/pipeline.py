@@ -13,6 +13,12 @@ from steps.candidates.helpers import (
 from steps.cut import save_clip_from_candidate
 from steps.subtitle import build_srt_for_range
 from steps.render import render_vertical_with_captions
+from steps.silence import (
+    detect_silences,
+    write_silences_json,
+    snap_start_to_silence,
+    snap_end_to_silence,
+)
 
 import sys
 import time
@@ -126,7 +132,21 @@ if __name__ == "__main__":
             )
 
     # ----------------------
-    # STEP 4: Find Clip Candidates
+    # STEP 4: Detect Silence Segments
+    # ----------------------
+    silences_path = project_dir / "silences.json"
+
+    def step_silences() -> list[tuple[float, float]]:
+        silences = detect_silences(str(audio_output_path)) if audio_ok else []
+        write_silences_json(silences, silences_path)
+        return silences
+
+    silences = run_step(
+        f"STEP 4: Detecting silences -> {silences_path}", step_silences
+    )
+
+    # ----------------------
+    # STEP 5: Find Clip Candidates
     # ----------------------
     candidates_path = project_dir / "candidates.json"
 
@@ -143,10 +163,10 @@ if __name__ == "__main__":
         return finder(str(transcript_output_path), min_rating=MIN_RATING)
 
     candidates = run_step(
-        "STEP 4: Finding clip candidates from transcript", step_candidates
+        "STEP 5: Finding clip candidates from transcript", step_candidates
     )
     if not candidates:
-        print(f"{Fore.RED}STEP 4: No clip candidates found.{Style.RESET_ALL}")
+        print(f"{Fore.RED}STEP 5: No clip candidates found.{Style.RESET_ALL}")
         sys.exit()
 
     export_candidates_json(candidates, candidates_path)
@@ -166,9 +186,11 @@ if __name__ == "__main__":
     for idx, cand in enumerate(candidates, start=1):
         snapped_start = _snap_start_to_segment_start(cand.start, items)
         snapped_end = _snap_end_to_segment_end(cand.end, items)
+        adj_start = snap_start_to_silence(snapped_start, silences)
+        adj_end = snap_end_to_silence(snapped_end, silences)
         candidate = ClipCandidate(
-            start=snapped_start,
-            end=snapped_end,
+            start=adj_start,
+            end=adj_end,
             rating=cand.rating,
             reason=cand.reason,
             quote=cand.quote,
@@ -178,11 +200,11 @@ if __name__ == "__main__":
             return save_clip_from_candidate(video_output_path, clips_dir, candidate)
 
         clip_path = run_step(
-            f"STEP 5.{idx}: Cutting clip -> {clips_dir}", step_cut
+            f"STEP 6.{idx}: Cutting clip -> {clips_dir}", step_cut
         )
         if clip_path is None:
             print(
-                f"{Fore.RED}STEP 5.{idx}: Failed to cut clip.{Style.RESET_ALL}"
+                f"{Fore.RED}STEP 6.{idx}: Failed to cut clip.{Style.RESET_ALL}"
             )
             continue
 
@@ -197,7 +219,7 @@ if __name__ == "__main__":
             )
 
         run_step(
-            f"STEP 6.{idx}: Generating subtitles -> {srt_path}", step_subtitles
+            f"STEP 7.{idx}: Generating subtitles -> {srt_path}", step_subtitles
         )
 
         vertical_output = shorts_dir / f"{clip_path.stem}_vertical.mp4"
@@ -210,7 +232,7 @@ if __name__ == "__main__":
             )
 
         run_step(
-            f"STEP 7.{idx}: Rendering vertical video with captions -> {vertical_output}",
+            f"STEP 8.{idx}: Rendering vertical video with captions -> {vertical_output}",
             step_render,
         )
 
