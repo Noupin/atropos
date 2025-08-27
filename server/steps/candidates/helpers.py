@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from math import inf
 
-from interfaces.clip_candidate import ClipCandidate
+from server.interfaces.clip_candidate import ClipCandidate
 
 
 # -----------------------------
