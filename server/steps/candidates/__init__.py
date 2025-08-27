@@ -4,8 +4,8 @@ from typing import List, Optional, Tuple
 from pathlib import Path
 import re
 
-from helpers.ai import ollama_call_json, retry
-from interfaces.clip_candidate import ClipCandidate
+from server.helpers.ai import ollama_call_json, retry
+from server.interfaces.clip_candidate import ClipCandidate
 
 from .helpers import (
     _get_field,
