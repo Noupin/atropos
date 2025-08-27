@@ -5,8 +5,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from interfaces.clip_candidate import ClipCandidate
-from .candidates import (
+from .candidates import ClipCandidate
+from .candidates.helpers import (
     parse_transcript,
     _snap_start_to_segment_start,
     _snap_end_to_segment_end,

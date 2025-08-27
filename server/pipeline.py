@@ -1,18 +1,16 @@
 from steps.transcribe import transcribe_audio
 from steps.download import download_transcript, download_video, get_video_info
-from steps.candidates import (
-    find_funny_timestamps_batched,
-    find_inspiring_timestamps_batched,
-    find_educational_timestamps_batched,
+from steps.candidates.funny import find_funny_timestamps_batched
+from steps.candidates.inspiring import find_inspiring_timestamps_batched
+from steps.candidates.educational import find_educational_timestamps_batched
+from steps.candidates.helpers import (
     export_candidates_json,
     load_candidates_json,
-)
-from steps.cut import save_clip_from_candidate
-from steps.candidates import (
     parse_transcript,
     _snap_start_to_segment_start,
     _snap_end_to_segment_end,
 )
+from steps.cut import save_clip_from_candidate
 from steps.subtitle import build_srt_for_range
 from steps.render import render_vertical_with_captions
 
@@ -24,7 +22,7 @@ from helpers.audio import ensure_audio
 from helpers.transcript import write_transcript_txt
 from helpers.formatting import Fore, Style, sanitize_filename
 from helpers.logging import run_step
-from interfaces.clip_candidate import ClipCandidate
+from steps.candidates import ClipCandidate
 
 
 if __name__ == "__main__":
