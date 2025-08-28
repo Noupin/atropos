@@ -25,16 +25,17 @@ def test_tone_aligned_prioritized() -> None:
     assert chosen.start == 0.0 and chosen.end == 4.0
 
 
-def test_shorter_clip_preferred() -> None:
+def test_sweet_spot_clip_preferred() -> None:
+    """Clips in the 10–30s range should outrank very short options."""
     items = [
-        (0.0, 5.0, "A"),
-        (5.0, 10.0, "B"),
-        (10.0, 15.0, "C"),
-        (15.0, 20.0, "D"),
+        (0.0, 4.0, "A"),
+        (4.0, 8.0, "B"),
+        (8.0, 12.0, "C"),
+        (12.0, 16.0, "D"),
     ]
-    long = ClipCandidate(start=0.0, end=14.0, rating=7.0, reason="", quote="")
-    short = ClipCandidate(start=0.0, end=8.0, rating=7.0, reason="", quote="")
+    long = ClipCandidate(start=0.0, end=13.0, rating=7.0, reason="", quote="")
+    short = ClipCandidate(start=0.0, end=7.0, rating=7.0, reason="", quote="")
     result = _enforce_non_overlap([long, short], items)
     assert len(result) == 1
     chosen = result[0]
-    assert chosen.start == 0.0 and chosen.end == 10.0
+    assert chosen.start == 0.0 and chosen.end == 16.0
