@@ -18,6 +18,42 @@ def extract_video_id(url: str) -> str:
         video_id = url
     return video_id
 
+
+def get_video_urls(url: str) -> list[str]:
+    """Return a list of video URLs for the provided YouTube link.
+
+    If the URL points to a playlist, this returns URLs for each entry.
+    Otherwise the original URL is returned in a single-item list. Entries
+    that cannot be resolved to a usable URL are skipped.
+    """
+
+    ydl_opts = {
+        "quiet": True,
+        "extract_flat": True,
+        "force_flat_playlist": True,
+        "no_warnings": True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    if not info:
+        return []
+
+    entries = info.get("entries")
+    if not entries:
+        return [url]
+
+    urls: list[str] = []
+    for entry in entries:
+        entry_url = entry.get("url")
+        if not entry_url:
+            video_id = entry.get("id")
+            if video_id:
+                entry_url = f"https://www.youtube.com/watch?v={video_id}"
+        if entry_url:
+            urls.append(entry_url)
+    return urls
+
 def get_video_info(url):
     ydl_opts = {
         'quiet': True,
