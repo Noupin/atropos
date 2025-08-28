@@ -18,6 +18,10 @@ from .helpers import (
 from .prompts import _build_system_instructions, FUNNY_PROMPT_DESC
 
 JSON_OBJECT_EXTRACT = re.compile(r"\{(?:.|\n)*\}")
+PROMO_RE = re.compile(
+    r"\b(sponsor(?:ed|s)?|patreon|ads?|advertisement|advertising|brought to you by)\b",
+    re.IGNORECASE,
+)
 
 __all__ = ["ClipCandidate", "find_clip_timestamps_batched", "find_clip_timestamps"]
 
@@ -63,6 +67,20 @@ def _candidate_text(c: ClipCandidate, items: List[Tuple[float, float, str]]) -> 
             continue
         parts.append(txt)
     return " ".join(parts).strip()
+
+
+def _filter_promotional_candidates(
+    candidates: List[ClipCandidate],
+    items: List[Tuple[float, float, str]],
+) -> List[ClipCandidate]:
+    """Remove candidates that appear to contain ad reads or sponsor shoutouts."""
+    filtered: List[ClipCandidate] = []
+    for c in candidates:
+        text = _candidate_text(c, items).lower()
+        if PROMO_RE.search(text):
+            continue
+        filtered.append(c)
+    return filtered
 
 
 def _verify_tone(
@@ -221,6 +239,7 @@ def find_clip_timestamps_batched(
         filtered_candidates = [c for c in all_candidates if not overlaps_any(c)]
     else:
         filtered_candidates = all_candidates
+    filtered_candidates = _filter_promotional_candidates(filtered_candidates, items)
 
     print(
         f"[Batch] Collected {len(all_candidates)} raw candidates across all chunks. Merging and enforcing non-overlap..."
@@ -325,6 +344,8 @@ def find_clip_timestamps(
                 start=start, end=end, rating=rating, reason=reason, quote=quote
             )
         )
+
+    candidates = _filter_promotional_candidates(candidates, items)
 
     all_candidates = _merge_adjacent_candidates(
         candidates,
