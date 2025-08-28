@@ -41,6 +41,35 @@ def test_promotional_segments_rejected(tmp_path: Path, monkeypatch) -> None:
     assert result == []
 
 
+def test_sponsorship_segments_rejected(tmp_path: Path, monkeypatch) -> None:
+    transcript = tmp_path / "t.txt"
+    transcript.write_text(
+        "[0.00 -> 5.00] Today's video has a special sponsorship from ACME Corp.\n",
+        encoding="utf-8",
+    )
+
+    def fake_local_llm_call_json(model, prompt, options=None, timeout=None):
+        if not hasattr(fake_local_llm_call_json, "calls"):
+            fake_local_llm_call_json.calls = 0
+        fake_local_llm_call_json.calls += 1
+        if fake_local_llm_call_json.calls == 1:
+            return [
+                {
+                    "start": 0.0,
+                    "end": 5.0,
+                    "rating": 9,
+                    "reason": "promo",
+                    "quote": "sponsorship plug",
+                }
+            ]
+        return {"match": True}
+
+    monkeypatch.setattr(cand_pkg, "local_llm_call_json", fake_local_llm_call_json)
+
+    result = find_funny_timestamps(str(transcript), min_words=1)
+    assert result == []
+
+
 def test_prompt_mentions_promotional_filter() -> None:
     prompt = _build_system_instructions(FUNNY_PROMPT_DESC, 7.0)
     lower = prompt.lower()

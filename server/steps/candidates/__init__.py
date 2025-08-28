@@ -19,7 +19,7 @@ from .prompts import _build_system_instructions, FUNNY_PROMPT_DESC
 
 JSON_OBJECT_EXTRACT = re.compile(r"\{(?:.|\n)*\}")
 PROMO_RE = re.compile(
-    r"\b(sponsor(?:ed|s)?|patreon|ads?|advertisement|advertising|brought to you by)\b",
+    r"\b(sponsor(?:ed|s)?|sponsorships?|patreon|ads?|advertisement|advertising|brought to you by)\b",
     re.IGNORECASE,
 )
 
@@ -276,6 +276,10 @@ def find_clip_timestamps_batched(
     print(
         f"[Batch] {len(verified_candidates)} candidates remain after tone verification."
     )
+    verified_candidates = _filter_promotional_candidates(verified_candidates, items)
+    print(
+        f"[Batch] {len(verified_candidates)} candidates remain after final promo filter."
+    )
     if return_all_stages:
         return verified_candidates, top_candidates, all_candidates
     return verified_candidates
@@ -375,6 +379,10 @@ def find_clip_timestamps(
         )
         if c is not None
     ]
+    verified_candidates = _filter_promotional_candidates(verified_candidates, items)
+    print(
+        f"[Single] {len(verified_candidates)} candidates remain after final promo filter."
+    )
     if return_all_stages:
         return verified_candidates, top_candidates, all_candidates
     return verified_candidates
