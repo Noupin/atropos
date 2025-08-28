@@ -15,11 +15,11 @@ def test_non_funny_segments_rejected(tmp_path: Path, monkeypatch) -> None:
     transcript = tmp_path / "t.txt"
     transcript.write_text("[0.00 -> 3.00] This is a very serious discussion about science.\n", encoding="utf-8")
 
-    def fake_ollama_call_json(model, prompt, options=None, timeout=None):
-        if not hasattr(fake_ollama_call_json, "calls"):
-            fake_ollama_call_json.calls = 0
-        fake_ollama_call_json.calls += 1
-        if fake_ollama_call_json.calls == 1:
+    def fake_local_llm_call_json(model, prompt, options=None, timeout=None):
+        if not hasattr(fake_local_llm_call_json, "calls"):
+            fake_local_llm_call_json.calls = 0
+        fake_local_llm_call_json.calls += 1
+        if fake_local_llm_call_json.calls == 1:
             return [
                 {
                     "start": 0.0,
@@ -31,7 +31,7 @@ def test_non_funny_segments_rejected(tmp_path: Path, monkeypatch) -> None:
             ]
         return {"match": False}
 
-    monkeypatch.setattr(cand_pkg, "ollama_call_json", fake_ollama_call_json)
+    monkeypatch.setattr(cand_pkg, "local_llm_call_json", fake_local_llm_call_json)
 
     result = find_funny_timestamps(str(transcript), min_words=1)
     assert result == []

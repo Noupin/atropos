@@ -41,7 +41,7 @@ from helpers.audio import ensure_audio
 from helpers.transcript import write_transcript_txt
 from helpers.formatting import Fore, Style, sanitize_filename
 from helpers.logging import run_step
-from helpers.ai import ollama_call_json
+from helpers.ai import local_llm_call_json
 from steps.candidates import ClipCandidate
 
 
@@ -280,7 +280,7 @@ def process_video(yt_url: str) -> None:
                 f"Quote: {candidate.quote}"
             )
             try:
-                tags = ollama_call_json(
+                tags = local_llm_call_json(
                     model="gemma3",
                     prompt=prompt,
                     options={"temperature": 0.0},
