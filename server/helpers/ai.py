@@ -6,7 +6,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 import requests
-from requests.exceptions import RequestException
+from requests.exceptions import HTTPError, RequestException
 
 # Default URLs for local model servers. Can be overridden via environment.
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
@@ -98,7 +98,15 @@ def lmstudio_generate(
         payload.update(options)
     url = f"{LMSTUDIO_URL}/v1/chat/completions"
     resp = requests.post(url, json=payload, timeout=timeout)
-    resp.raise_for_status()
+    try:
+        resp.raise_for_status()
+    except HTTPError:
+        if json_format and resp.status_code == 400 and "response_format" in payload:
+            payload.pop("response_format", None)
+            resp = requests.post(url, json=payload, timeout=timeout)
+            resp.raise_for_status()
+        else:
+            raise
     data = resp.json()
     choices = data.get("choices", [])
     if not choices:
