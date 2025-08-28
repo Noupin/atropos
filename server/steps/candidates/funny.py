@@ -3,15 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List
 
-from . import find_clip_timestamps_batched, find_clip_timestamps, ClipCandidate
+from . import ClipCandidate, find_clip_timestamps, find_clip_timestamps_batched
+from .config import FUNNY_MIN_RATING, FUNNY_MIN_WORDS
 from .prompts import FUNNY_PROMPT_DESC
 
 
 def find_funny_timestamps_batched(
     transcript_path: str | Path,
     *,
-    min_rating: float = 8.0,
-    min_words: int = 5,
+    min_rating: float = FUNNY_MIN_RATING,
+    min_words: int = FUNNY_MIN_WORDS,
     return_all_stages: bool = False,
     **kwargs,
 ) -> List[ClipCandidate]:
@@ -29,8 +30,8 @@ def find_funny_timestamps_batched(
 def find_funny_timestamps(
     transcript_path: str | Path,
     *,
-    min_rating: float = 8.0,
-    min_words: int = 5,
+    min_rating: float = FUNNY_MIN_RATING,
+    min_words: int = FUNNY_MIN_WORDS,
     return_all_stages: bool = False,
     **kwargs,
 ) -> List[ClipCandidate]:
