@@ -1,5 +1,10 @@
 from steps.transcribe import transcribe_audio
-from steps.download import download_transcript, download_video, get_video_info
+from steps.download import (
+    download_transcript,
+    download_video,
+    get_video_info,
+    get_video_urls,
+)
 from steps.candidates.funny import find_funny_timestamps_batched
 from steps.candidates.inspiring import find_inspiring_timestamps_batched
 from steps.candidates.educational import find_educational_timestamps_batched
@@ -36,18 +41,12 @@ from helpers.audio import ensure_audio
 from helpers.transcript import write_transcript_txt
 from helpers.formatting import Fore, Style, sanitize_filename
 from helpers.logging import run_step
+from helpers.ai import ollama_call_json
 from steps.candidates import ClipCandidate
 
 
-if __name__ == "__main__":
+def process_video(yt_url: str) -> None:
     overall_start = time.perf_counter()
-
-    # yt_url = "https://www.youtube.com/watch?v=GDbDRWzFfds" #KFAF 1
-    yt_url = "https://www.youtube.com/watch?v=zZYxqZFThls" #KFAF 2
-    # yt_url = "https://www.youtube.com/watch?v=K9aFbYd6AUI" #Superman
-    # yt_url = "https://www.youtube.com/watch?v=os2AyD_4RjM" #Dark phoenix
-    # yt_url = "https://www.youtube.com/watch?v=JM1KbE-C9XE" #KFAF Nicks 40th birthday
-    # yt_url = input("Enter YouTube video URL: ")
 
     CLIP_TYPE = "funny"  # change to 'inspiring' or 'educational'
     MIN_RATING = 7.0
@@ -270,7 +269,59 @@ if __name__ == "__main__":
             step_render,
         )
 
+        description_path = shorts_dir / f"{clip_path.stem}_description.txt"
+
+        def step_description() -> Path:
+            prompt = (
+                "Generate 3 relevant hashtags for a YouTube short based on the "
+                "video's title and a quote from the clip. Respond with a JSON "
+                "array of strings without the # symbol.\n"
+                f"Title: {video_info['title']}\n"
+                f"Quote: {candidate.quote}"
+            )
+            try:
+                tags = ollama_call_json(
+                    model="gemma3",
+                    prompt=prompt,
+                    options={"temperature": 0.0},
+                )
+            except Exception as e:
+                print(f"[Hashtags] error generating hashtags: {e}")
+                tags = []
+            hashtags = [
+                "#" + tag.replace(" ", "")
+                for tag in tags
+                if isinstance(tag, str)
+            ]
+            hashtags.extend(["#shorts", "#madebyatropos"])
+            description = (
+                f"Full video: {yt_url}\n"
+                f"Credit: {video_info.get('uploader', 'Unknown Channel')}\n"
+                "Made by Atropos\n\n"
+                + " ".join(hashtags)
+            )
+            description_path.write_text(description, encoding="utf-8")
+            return description_path
+
+        run_step(
+            f"STEP 9.{idx}: Writing description -> {description_path}",
+            step_description,
+        )
+
     total_elapsed = time.perf_counter() - overall_start
     print(
         f"{Fore.MAGENTA}Full pipeline completed in {total_elapsed:.2f}s{Style.RESET_ALL}"
     )
+
+
+if __name__ == "__main__":
+    # yt_url = "https://www.youtube.com/watch?v=GDbDRWzFfds" #KFAF 1
+    yt_url = "https://www.youtube.com/watch?v=zZYxqZFThls"  # KFAF 2
+    # yt_url = "https://www.youtube.com/watch?v=K9aFbYd6AUI" #Superman
+    # yt_url = "https://www.youtube.com/watch?v=os2AyD_4RjM" #Dark phoenix
+    # yt_url = "https://www.youtube.com/watch?v=JM1KbE-C9XE" #KFAF Nicks 40th birthday
+    # yt_url = input("Enter YouTube video URL: ")
+
+    urls = get_video_urls(yt_url)
+    for url in urls:
+        process_video(url)
