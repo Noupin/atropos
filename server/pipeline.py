@@ -19,6 +19,7 @@ from steps.candidates.helpers import (
     _snap_end_to_sentence_end,
     snap_start_to_dialog_start,
     snap_end_to_dialog_end,
+    dedupe_candidates,
 )
 from steps.segment import segment_transcript_items, write_segments_json
 from steps.cut import save_clip_from_candidate
@@ -233,28 +234,59 @@ def process_video(yt_url: str) -> None:
     dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
 
     clips_dir = project_dir / "clips"
+    raw_clips_dir = project_dir / "clips_raw"
     subtitles_dir = project_dir / "subtitles"
     shorts_dir = project_dir / "shorts"
 
     clips_dir.mkdir(parents=True, exist_ok=True)
+    raw_clips_dir.mkdir(parents=True, exist_ok=True)
     subtitles_dir.mkdir(parents=True, exist_ok=True)
     shorts_dir.mkdir(parents=True, exist_ok=True)
 
-    for idx, cand in enumerate(candidates, start=1):
+    # Silence-only clips
+    raw_candidates = [
+        ClipCandidate(
+            start=snap_start_to_silence(c.start, silences),
+            end=snap_end_to_silence(c.end, silences),
+            rating=c.rating,
+            reason=c.reason,
+            quote=c.quote,
+        )
+        for c in candidates
+    ]
+    raw_candidates = dedupe_candidates(raw_candidates)
+
+    for idx, cand in enumerate(raw_candidates, start=1):
+        def step_cut_raw() -> Path | None:
+            return save_clip_from_candidate(video_output_path, raw_clips_dir, cand)
+
+        run_step(
+            f"STEP 6R.{idx}: Cutting raw clip -> {raw_clips_dir}",
+            step_cut_raw,
+        )
+
+    # Fully snapped clips
+    refined_candidates = []
+    for cand in candidates:
         snapped_start = snap_start_to_dialog_start(cand.start, dialog_ranges)
         snapped_end = snap_end_to_dialog_end(cand.end, dialog_ranges)
         snapped_start = _snap_start_to_sentence_start(snapped_start, segments)
         snapped_end = _snap_end_to_sentence_end(snapped_end, segments)
         adj_start = snap_start_to_silence(snapped_start, silences)
         adj_end = snap_end_to_silence(snapped_end, silences)
-        candidate = ClipCandidate(
-            start=adj_start,
-            end=adj_end,
-            rating=cand.rating,
-            reason=cand.reason,
-            quote=cand.quote,
+        refined_candidates.append(
+            ClipCandidate(
+                start=adj_start,
+                end=adj_end,
+                rating=cand.rating,
+                reason=cand.reason,
+                quote=cand.quote,
+            )
         )
 
+    refined_candidates = dedupe_candidates(refined_candidates)
+
+    for idx, candidate in enumerate(refined_candidates, start=1):
         def step_cut() -> Path | None:
             return save_clip_from_candidate(video_output_path, clips_dir, candidate)
 
