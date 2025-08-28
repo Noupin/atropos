@@ -12,7 +12,7 @@ from server.interfaces.clip_candidate import ClipCandidate
 
 
 def test_tone_aligned_prioritized() -> None:
-    items = [(0.0, 2.0, "a"), (2.0, 4.0, "b")]
+    items = [(0.0, 12.0, "A"), (12.0, 24.0, "B")]
     good = ClipCandidate(start=0.0, end=1.0, rating=5.0, reason="", quote="")
     bad = ClipCandidate(start=0.0, end=1.0, rating=9.0, reason="", quote="")
     good.tone_match = True
@@ -22,7 +22,7 @@ def test_tone_aligned_prioritized() -> None:
     assert len(result) == 1
     chosen = result[0]
     assert chosen.rating == good.rating
-    assert chosen.start == 0.0 and chosen.end == 4.0
+    assert chosen.start == 0.0 and chosen.end == 12.0
 
 
 def test_sweet_spot_clip_preferred() -> None:
@@ -39,3 +39,10 @@ def test_sweet_spot_clip_preferred() -> None:
     assert len(result) == 1
     chosen = result[0]
     assert chosen.start == 0.0 and chosen.end == 16.0
+
+
+def test_short_clips_discarded() -> None:
+    items = [(0.0, 5.0, "A"), (5.0, 10.0, "B")]
+    short = ClipCandidate(start=0.0, end=4.0, rating=8.0, reason="", quote="")
+    result = _enforce_non_overlap([short], items)
+    assert result == []
