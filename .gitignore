@@ -11,3 +11,4 @@ env
 /out
 
 .env
+upload_config.json

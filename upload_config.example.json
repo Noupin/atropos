@@ -1,0 +1,14 @@
+{
+  "instagram_account": "INSTAGRAM_ACCOUNT_ID",
+  "instagram_token": "INSTAGRAM_ACCESS_TOKEN",
+  "tiktok_account": "TIKTOK_ACCOUNT_ID",
+  "tiktok_token": "TIKTOK_ACCESS_TOKEN",
+  "youtube_account": "YOUTUBE_CHANNEL_ID",
+  "youtube_token": "YOUTUBE_API_KEY",
+  "facebook_page": "FACEBOOK_PAGE_ID",
+  "facebook_token": "FACEBOOK_ACCESS_TOKEN",
+  "snapchat_account": "SNAPCHAT_ACCOUNT_ID",
+  "snapchat_token": "SNAPCHAT_ACCESS_TOKEN",
+  "twitter_account": "TWITTER_HANDLE",
+  "twitter_token": "TWITTER_BEARER_TOKEN"
+}

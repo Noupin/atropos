@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 from helpers.logging import run_step
 from .steps.instagram import upload_instagram
@@ -19,6 +20,12 @@ class UploadConfig:
     facebook_page: str
     snapchat_account: str
     twitter_account: str
+    instagram_token: Optional[str] = None
+    tiktok_token: Optional[str] = None
+    youtube_token: Optional[str] = None
+    facebook_token: Optional[str] = None
+    snapchat_token: Optional[str] = None
+    twitter_token: Optional[str] = None
 
 
 def upload_video_to_all(
@@ -39,6 +46,7 @@ def upload_video_to_all(
         video_path,
         caption,
         config.instagram_account,
+        config.instagram_token,
     )
     run_step(
         "Upload to TikTok",
@@ -46,6 +54,7 @@ def upload_video_to_all(
         video_path,
         caption,
         config.tiktok_account,
+        config.tiktok_token,
     )
     run_step(
         "Upload to YouTube",
@@ -54,6 +63,7 @@ def upload_video_to_all(
         title,
         description,
         config.youtube_account,
+        config.youtube_token,
     )
     run_step(
         "Upload to Facebook",
@@ -61,6 +71,7 @@ def upload_video_to_all(
         video_path,
         caption,
         config.facebook_page,
+        config.facebook_token,
     )
     run_step(
         "Upload to Snapchat",
@@ -68,6 +79,7 @@ def upload_video_to_all(
         video_path,
         caption,
         config.snapchat_account,
+        config.snapchat_token,
     )
     run_step(
         "Upload to Twitter",
@@ -75,4 +87,5 @@ def upload_video_to_all(
         video_path,
         caption,
         config.twitter_account,
+        config.twitter_token,
     )
