@@ -6,7 +6,12 @@ import re
 
 from helpers.ai import local_llm_call_json, retry
 from interfaces.clip_candidate import ClipCandidate
-from .config import MAX_DURATION_SECONDS, MIN_DURATION_SECONDS
+from .config import (
+    DEFAULT_MIN_RATING,
+    DEFAULT_MIN_WORDS,
+    MAX_DURATION_SECONDS,
+    MIN_DURATION_SECONDS,
+)
 
 from .helpers import (
     _get_field,
@@ -155,9 +160,9 @@ def find_clip_timestamps_batched(
     transcript_path: str | Path,
     *,
     prompt_desc: str = FUNNY_PROMPT_DESC,
-    min_rating: float = 7.0,
+    min_rating: float = DEFAULT_MIN_RATING,
     rating_descriptions: Optional[Dict[str, str]] = None,
-    min_words: int = 0,
+    min_words: int = DEFAULT_MIN_WORDS,
     model: str = "gemma3",
     options: Optional[dict] = None,
     max_chars_per_chunk: int = 12000,
@@ -292,9 +297,9 @@ def find_clip_timestamps(
     transcript_path: str | Path,
     *,
     prompt_desc: str = FUNNY_PROMPT_DESC,
-    min_rating: float = 7.0,
+    min_rating: float = DEFAULT_MIN_RATING,
     rating_descriptions: Optional[Dict[str, str]] = None,
-    min_words: int = 0,
+    min_words: int = DEFAULT_MIN_WORDS,
     model: str = "gemma3",
     options: Optional[dict] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
