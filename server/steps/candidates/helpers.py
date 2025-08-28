@@ -302,8 +302,9 @@ def _merge_adjacent_candidates(
     max_duration_seconds: float = MAX_DURATION_SECONDS,
     words: Optional[List[dict]] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
+    merge_overlaps: bool = False,
 ) -> List[ClipCandidate]:
-    """Merge candidates that overlap or are separated by a tiny gap, to preserve full jokes/bits."""
+    """Snap candidate boundaries and optionally merge adjacent/overlapping candidates."""
     if not candidates:
         return []
 
@@ -322,6 +323,9 @@ def _merge_adjacent_candidates(
         return []
 
     snapped.sort(key=lambda c: (c.start, c.end))
+    if not merge_overlaps:
+        return snapped
+
     merged: List[ClipCandidate] = []
     cur = snapped[0]
 

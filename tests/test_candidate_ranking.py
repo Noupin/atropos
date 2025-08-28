@@ -46,7 +46,7 @@ def test_shorter_clip_preferred() -> None:
 def test_short_clips_discarded() -> None:
     items = [(0.0, 5.0, "A"), (5.0, 10.0, "B")]
     short = ClipCandidate(start=0.0, end=4.0, rating=8.0, reason="", quote="")
-    result = _enforce_non_overlap([short], items)
+    result = _enforce_non_overlap([short], items, min_duration_seconds=10.0)
     assert result == []
 
 
@@ -59,7 +59,7 @@ def test_clips_under_ten_seconds_excluded() -> None:
     ]
     short = ClipCandidate(start=0.0, end=5.0, rating=7.0, reason="", quote="")
     long = ClipCandidate(start=0.0, end=14.0, rating=7.0, reason="", quote="")
-    result = _enforce_non_overlap([short, long], items)
+    result = _enforce_non_overlap([short, long], items, min_duration_seconds=10.0)
     assert len(result) == 1
     chosen = result[0]
     assert chosen.start == 0.0 and chosen.end == 20.0
