@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from typing import Callable, TypeVar, Any, Generator
 
 from .formatting import Fore, Style
+from .notifications import send_failure_email
 
 T = TypeVar('T')
 
@@ -32,6 +33,10 @@ def run_step(name: str, func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         elapsed = time.perf_counter() - start
         print(
             f"{Fore.RED}  ↳ failed after {Fore.MAGENTA}{elapsed:.2f}s{Fore.RED}: {exc}{Style.RESET_ALL}"
+        )
+        send_failure_email(
+            f"Pipeline step failed: {name}",
+            f"Step '{name}' failed after {elapsed:.2f}s with error: {exc}",
         )
         raise
     else:

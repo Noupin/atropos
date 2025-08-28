@@ -47,6 +47,7 @@ from helpers.formatting import (
     youtube_timestamp_url,
 )
 from helpers.logging import run_step
+from helpers.notifications import send_failure_email
 from helpers.ai import local_llm_call_json
 from steps.candidates import ClipCandidate
 
@@ -60,6 +61,10 @@ def process_video(yt_url: str) -> None:
     video_info = get_video_info(yt_url)
 
     if not video_info:
+        send_failure_email(
+            "Video info retrieval failed",
+            f"Failed to retrieve video information for {yt_url}",
+        )
         print(f"{Fore.RED}Failed to retrieve video information.{Style.RESET_ALL}")
         sys.exit()
 
@@ -105,6 +110,10 @@ def process_video(yt_url: str) -> None:
         print(
             f"{Fore.YELLOW}STEP 2: Failed to acquire audio (direct + video-extract fallbacks tried).{Style.RESET_ALL}"
         )
+        send_failure_email(
+            "Audio acquisition failed",
+            f"Failed to acquire audio for video {yt_url}",
+        )
 
     # ----------------------
     # STEP 3: Get Text (Transcript or Transcription)
@@ -128,6 +137,10 @@ def process_video(yt_url: str) -> None:
         if not audio_ok:
             print(
                 f"{Fore.RED}STEP 3: Cannot transcribe because audio acquisition failed.{Style.RESET_ALL}"
+            )
+            send_failure_email(
+                "Transcript unavailable",
+                f"No transcript could be retrieved or generated for video {yt_url} because audio acquisition failed.",
             )
         else:
 
@@ -191,6 +204,10 @@ def process_video(yt_url: str) -> None:
     export_candidates_json(candidates, candidates_path)
     if not candidates:
         print(f"{Fore.RED}STEP 5: No clip candidates found.{Style.RESET_ALL}")
+        send_failure_email(
+            "No clip candidates found",
+            f"No clip candidates were found for video {yt_url}",
+        )
         sys.exit()
     # candidates = load_candidates_json('../out/Nick_s_40th_Birthday_Surprise__-KFAF_20200115/candidates_top.json')
 
@@ -245,6 +262,10 @@ def process_video(yt_url: str) -> None:
             print(
                 f"{Fore.RED}STEP 6.{idx}: Failed to cut clip.{Style.RESET_ALL}"
             )
+            send_failure_email(
+                "Clip cutting failed",
+                f"Failed to cut clip {idx} for video {yt_url}",
+            )
             continue
 
         srt_path = subtitles_dir / f"{clip_path.stem}.srt"
@@ -298,7 +319,16 @@ def process_video(yt_url: str) -> None:
                 )
             except Exception as e:
                 print(f"[Hashtags] error generating hashtags: {e}")
+                send_failure_email(
+                    "Hashtag generation failed",
+                    f"Error generating hashtags for clip {idx} of video {yt_url}: {e}",
+                )
                 tags = []
+            if not tags:
+                send_failure_email(
+                    "Hashtag generation failed",
+                    f"No hashtags generated for clip {idx} of video {yt_url}",
+                )
             hashtags = [
                 "#" + tag.replace(" ", "")
                 for tag in tags
