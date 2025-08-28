@@ -457,6 +457,29 @@ def _enforce_non_overlap(
     return selected
 
 
+def dedupe_candidates(
+    candidates: List[ClipCandidate],
+    *,
+    time_tolerance: float = 0.05,
+) -> List[ClipCandidate]:
+    """Remove candidates with identical timestamps within ``time_tolerance``.
+
+    For clips sharing the same start and end times (within the tolerance), the
+    highest-rated candidate is kept.
+    """
+    if not candidates:
+        return []
+
+    buckets: dict[tuple[int, int], ClipCandidate] = {}
+    for cand in candidates:
+        key = (round(cand.start / time_tolerance), round(cand.end / time_tolerance))
+        best = buckets.get(key)
+        if best is None or cand.rating > best.rating:
+            buckets[key] = cand
+
+    return sorted(buckets.values(), key=lambda c: (c.start, c.end))
+
+
 __all__ = [
     "_get_field",
     "_to_float",
@@ -474,4 +497,5 @@ __all__ = [
     "_snap_end_to_segment_end",
     "_merge_adjacent_candidates",
     "_enforce_non_overlap",
+    "dedupe_candidates",
 ]
