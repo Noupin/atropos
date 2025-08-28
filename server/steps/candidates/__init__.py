@@ -146,6 +146,7 @@ def find_clip_timestamps_batched(
     exclude_ranges: Optional[List[Tuple[float, float]]] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
     words: Optional[List[dict]] = None,
+    min_duration_seconds: float = 10.0,
     return_all_stages: bool = False,
 ) -> List[ClipCandidate] | tuple[List[ClipCandidate], List[ClipCandidate], List[ClipCandidate]]:
     """Chunk the transcript and query the model per-chunk to avoid context/HTTP timeouts."""
@@ -228,7 +229,11 @@ def find_clip_timestamps_batched(
         silences=silences,
     )
     top_candidates = _enforce_non_overlap(
-        all_candidates, items, words=words, silences=silences
+        all_candidates,
+        items,
+        words=words,
+        silences=silences,
+        min_duration_seconds=min_duration_seconds,
     )
     print(f"[Batch] {len(top_candidates)} candidates remain after overlap enforcement.")
     verified_candidates = [
@@ -261,6 +266,7 @@ def find_clip_timestamps(
     options: Optional[dict] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
     words: Optional[List[dict]] = None,
+    min_duration_seconds: float = 10.0,
     return_all_stages: bool = False,
 ) -> List[ClipCandidate] | tuple[List[ClipCandidate], List[ClipCandidate], List[ClipCandidate]]:
     """Use a local Ollama model (gemma3) to score transcript lines and propose clip windows."""
@@ -322,7 +328,11 @@ def find_clip_timestamps(
         silences=silences,
     )
     top_candidates = _enforce_non_overlap(
-        all_candidates, items, words=words, silences=silences
+        all_candidates,
+        items,
+        words=words,
+        silences=silences,
+        min_duration_seconds=min_duration_seconds,
     )
     verified_candidates = [
         c

@@ -351,14 +351,15 @@ def _enforce_non_overlap(
     items: List[Tuple[float, float, str]],
     *,
     max_duration_seconds: float = 60.0,
+    min_duration_seconds: float = 10.0,
     min_gap: float = 0.10,
     words: Optional[List[dict]] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
 ) -> List[ClipCandidate]:
     """Adjusts candidate ends to segment boundaries and removes overlaps.
 
-    Clips around 10–30 seconds are preferred; very short clips (<10 s)
-    receive no length bonus.
+    Clips around 10–30 seconds are preferred; candidates shorter than
+    ``min_duration_seconds`` are discarded.
     """
     if not candidates:
         return []
@@ -368,7 +369,10 @@ def _enforce_non_overlap(
         s, e = refine_clip_window(c.start, c.end, items, words=words, silences=silences)
         if e <= s:
             continue
-        if (e - s) > max_duration_seconds:
+        d = e - s
+        if d > max_duration_seconds:
+            continue
+        if d < min_duration_seconds:
             continue
         new_c = ClipCandidate(start=s, end=e, rating=c.rating, reason=c.reason, quote=c.quote)
         if hasattr(c, "tone_match"):
@@ -389,8 +393,9 @@ def _enforce_non_overlap(
         z = (x.rating - mean) / std
         tone_ok = bool(getattr(x, "tone_match", True))
         tone_penalty = 0 if tone_ok else 1
-        # Provide a small preference for longer clips but none for clips <10s.
-        length_bonus = 0.0 if d < 10 else 0.1 / d
+        # Provide a small preference for longer clips but none for clips below
+        # the minimum duration threshold.
+        length_bonus = 0.0 if d < min_duration_seconds else 0.1 / d
         score = z * prior + length_bonus
         return (tone_penalty, -score, d, x.start, x.end)
 
