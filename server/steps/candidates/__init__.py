@@ -6,6 +6,7 @@ import re
 
 from helpers.ai import ollama_call_json, retry
 from interfaces.clip_candidate import ClipCandidate
+from .config import MAX_DURATION_SECONDS, MIN_DURATION_SECONDS
 
 from .helpers import (
     _get_field,
@@ -146,7 +147,7 @@ def find_clip_timestamps_batched(
     exclude_ranges: Optional[List[Tuple[float, float]]] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
     words: Optional[List[dict]] = None,
-    min_duration_seconds: float = 10.0,
+    min_duration_seconds: float = MIN_DURATION_SECONDS,
     return_all_stages: bool = False,
 ) -> List[ClipCandidate] | tuple[List[ClipCandidate], List[ClipCandidate], List[ClipCandidate]]:
     """Chunk the transcript and query the model per-chunk to avoid context/HTTP timeouts."""
@@ -224,7 +225,7 @@ def find_clip_timestamps_batched(
         all_candidates,
         items,
         merge_gap_seconds=1.0,
-        max_duration_seconds=60.0,
+        max_duration_seconds=MAX_DURATION_SECONDS,
         words=words,
         silences=silences,
     )
@@ -266,7 +267,7 @@ def find_clip_timestamps(
     options: Optional[dict] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
     words: Optional[List[dict]] = None,
-    min_duration_seconds: float = 10.0,
+    min_duration_seconds: float = MIN_DURATION_SECONDS,
     return_all_stages: bool = False,
 ) -> List[ClipCandidate] | tuple[List[ClipCandidate], List[ClipCandidate], List[ClipCandidate]]:
     """Use a local Ollama model (gemma3) to score transcript lines and propose clip windows."""
@@ -323,7 +324,7 @@ def find_clip_timestamps(
         candidates,
         items,
         merge_gap_seconds=1.0,
-        max_duration_seconds=60.0,
+        max_duration_seconds=MAX_DURATION_SECONDS,
         words=words,
         silences=silences,
     )
