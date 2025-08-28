@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv(dotenv_path="./server/.env")
+
 from steps.transcribe import transcribe_audio
 from steps.download import (
     download_transcript,
