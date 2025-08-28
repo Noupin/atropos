@@ -43,10 +43,10 @@ if __name__ == "__main__":
     overall_start = time.perf_counter()
 
     # yt_url = "https://www.youtube.com/watch?v=GDbDRWzFfds" #KFAF 1
-    # yt_url = "https://www.youtube.com/watch?v=zZYxqZFThls" #KFAF 2
+    yt_url = "https://www.youtube.com/watch?v=zZYxqZFThls" #KFAF 2
     # yt_url = "https://www.youtube.com/watch?v=K9aFbYd6AUI" #Superman
     # yt_url = "https://www.youtube.com/watch?v=os2AyD_4RjM" #Dark phoenix
-    yt_url = "https://www.youtube.com/watch?v=JM1KbE-C9XE"
+    # yt_url = "https://www.youtube.com/watch?v=JM1KbE-C9XE" #KFAF Nicks 40th birthday
     # yt_url = input("Enter YouTube video URL: ")
 
     CLIP_TYPE = "funny"  # change to 'inspiring' or 'educational'
