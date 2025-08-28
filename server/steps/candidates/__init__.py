@@ -219,6 +219,8 @@ def find_clip_timestamps_batched(
             return False
 
         filtered_candidates = [c for c in all_candidates if not overlaps_any(c)]
+    else:
+        filtered_candidates = all_candidates
 
     print(
         f"[Batch] Collected {len(all_candidates)} raw candidates across all chunks. Merging and enforcing non-overlap..."
