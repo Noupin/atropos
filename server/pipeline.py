@@ -40,7 +40,12 @@ from pathlib import Path
 
 from helpers.audio import ensure_audio
 from helpers.transcript import write_transcript_txt
-from helpers.formatting import Fore, Style, sanitize_filename
+from helpers.formatting import (
+    Fore,
+    Style,
+    sanitize_filename,
+    youtube_timestamp_url,
+)
 from helpers.logging import run_step
 from helpers.ai import local_llm_call_json
 from steps.candidates import ClipCandidate
@@ -307,8 +312,9 @@ def process_video(yt_url: str) -> None:
                 ][:3]
                 hashtags.extend(fallback)
             hashtags.extend(["#shorts", "#madebyatropos"])
+            full_video_link = youtube_timestamp_url(yt_url, candidate.start)
             description = (
-                f"Full video: {yt_url}\n"
+                f"Full video: {full_video_link}\n"
                 f"Credit: {video_info.get('uploader', 'Unknown Channel')}\n"
                 "Made by Atropos\n\n"
                 + " ".join(hashtags)
