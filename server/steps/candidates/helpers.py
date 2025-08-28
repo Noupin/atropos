@@ -167,6 +167,28 @@ def snap_to_word_boundaries(start: float, end: float, words: List[dict]) -> Tupl
 
 
 # -----------------------------
+# Dialog range utilities
+# -----------------------------
+
+def snap_start_to_dialog_start(
+    start: float, ranges: List[Tuple[float, float]]
+) -> float:
+    """Snap ``start`` to the beginning of the dialog range containing it."""
+    for s, e in ranges:
+        if s <= start <= e:
+            return s
+    return start
+
+
+def snap_end_to_dialog_end(end: float, ranges: List[Tuple[float, float]]) -> float:
+    """Snap ``end`` to the conclusion of the dialog range containing it."""
+    for s, e in ranges:
+        if s <= end <= e:
+            return e
+    return end
+
+
+# -----------------------------
 # Unified clip refinement + duration prior
 # -----------------------------
 
@@ -389,6 +411,8 @@ __all__ = [
     "parse_transcript",
     "parse_ffmpeg_silences",
     "snap_to_silence",
+    "snap_start_to_dialog_start",
+    "snap_end_to_dialog_end",
     "snap_to_word_boundaries",
     "duration_score",
     "refine_clip_window",
