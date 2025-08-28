@@ -355,7 +355,11 @@ def _enforce_non_overlap(
     words: Optional[List[dict]] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
 ) -> List[ClipCandidate]:
-    """Adjusts candidate ends to segment boundaries and removes overlaps."""
+    """Adjusts candidate ends to segment boundaries and removes overlaps.
+
+    Clips around 10–30 seconds are preferred; very short clips (<10 s)
+    receive no length bonus.
+    """
     if not candidates:
         return []
 
@@ -380,11 +384,13 @@ def _enforce_non_overlap(
 
     def score_key(x: ClipCandidate):
         d = x.end - x.start
+        # Favor clips in the 10–30s sweet spot using duration_score.
         prior = 0.65 + 0.35 * duration_score(d, 10.0, 30.0)
         z = (x.rating - mean) / std
         tone_ok = bool(getattr(x, "tone_match", True))
         tone_penalty = 0 if tone_ok else 1
-        length_bonus = 0.1 / max(d, 1.0)
+        # Provide a small preference for longer clips but none for clips <10s.
+        length_bonus = 0.0 if d < 10 else 0.1 / d
         score = z * prior + length_bonus
         return (tone_penalty, -score, d, x.start, x.end)
 
