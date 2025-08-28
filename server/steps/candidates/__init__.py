@@ -221,7 +221,7 @@ def find_clip_timestamps_batched(
                 continue
             if not (min_ts <= start < end <= max_ts):
                 continue
-            if rating < min_rating:
+            if rating <= min_rating:
                 continue
             all_candidates.append(
                 ClipCandidate(
@@ -337,7 +337,7 @@ def find_clip_timestamps(
             continue
         if not (min_ts <= start < end <= max_ts):
             continue
-        if rating < min_rating:
+        if rating <= min_rating:
             continue
         candidates.append(
             ClipCandidate(
