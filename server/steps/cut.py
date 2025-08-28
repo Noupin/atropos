@@ -11,6 +11,7 @@ from .candidates.helpers import (
     _snap_start_to_segment_start,
     _snap_end_to_segment_end,
 )
+from .candidates.config import MAX_DURATION_SECONDS
 
 
 def save_clip(
@@ -98,6 +99,7 @@ def save_clip_from_candidate(
     *,
     transcript_path: str | Path | None = None,
     reencode: bool = False,
+    max_duration_seconds: float = MAX_DURATION_SECONDS,
 ) -> Path | None:
     """Convenience wrapper that names the clip using timestamps and rating.
 
@@ -110,6 +112,13 @@ def save_clip_from_candidate(
         items = parse_transcript(transcript_path)
         start = _snap_start_to_segment_start(start, items)
         end = _snap_end_to_segment_end(end, items)
+
+    if end - start > max_duration_seconds:
+        end = start + max_duration_seconds
+
+    candidate.start = start
+    candidate.end = end
+
     out = Path(output_dir) / f"clip_{start:.2f}-{end:.2f}_r{candidate.rating:.1f}.mp4"
     ok = save_clip(video_path, out, start=start, end=end, reencode=reencode)
     return out if ok else None
