@@ -192,8 +192,8 @@ def snap_end_to_dialog_end(end: float, ranges: List[Tuple[float, float]]) -> flo
 # Unified clip refinement + duration prior
 # -----------------------------
 
-def duration_score(d: float, sweet_min: float = 8.0, sweet_max: float = 30.0) -> float:
-    """Soft prior: 1.0 inside sweet spot; quadratic decay outside."""
+def duration_score(d: float, sweet_min: float = 10.0, sweet_max: float = 30.0) -> float:
+    """Soft prior: 1.0 inside sweet spot (default 10-30s); quadratic decay outside."""
     if d < sweet_min:
         return max(0.0, 1.0 - ((sweet_min - d) / sweet_min) ** 2)
     if d > sweet_max:
@@ -380,7 +380,7 @@ def _enforce_non_overlap(
 
     def score_key(x: ClipCandidate):
         d = x.end - x.start
-        prior = 0.65 + 0.35 * duration_score(d, 8.0, 30.0)
+        prior = 0.65 + 0.35 * duration_score(d, 10.0, 30.0)
         z = (x.rating - mean) / std
         tone_ok = bool(getattr(x, "tone_match", True))
         tone_penalty = 0 if tone_ok else 1
