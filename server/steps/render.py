@@ -9,6 +9,7 @@ import re
 import json
 import subprocess
 import os
+import shutil
 
 
 def render_vertical_with_captions(
@@ -18,7 +19,7 @@ def render_vertical_with_captions(
     *,
     frame_width: int = 1080,
     frame_height: int = 1920,
-    fg_height_ratio: float = 0.42,      # slightly less zoom on FG
+    fg_height_ratio: float = 0.42,      # foreground (main) video height fraction
     fg_vertical_bias: float = 0.04,
     bottom_safe_ratio: float = 0.14,
     gap_below_fg: int = 28,
@@ -30,6 +31,12 @@ def render_vertical_with_captions(
     blur_ksize: int = 31,               # must be odd; background blur amount
     fill_bgr: Tuple[int, int, int] = (255, 187, 28),   # hex 1cbbff -> RGB(28,187,255) -> BGR(255,187,28)
     outline_bgr: Tuple[int, int, int] = (236, 236, 236),  # hex ececec
+    # NEW performance toggles
+    use_cuda: bool = True,
+    use_opencl: bool = True,
+    cache_text_layout: bool = True,
+    # audio handling (no ffmpeg for *rendering*; mux is optional)
+    mux_audio: bool = True,
 ) -> Path:
     """Render a vertical video with burned-in captions without using ffmpeg.
 
@@ -40,6 +47,29 @@ def render_vertical_with_captions(
     output.parent.mkdir(parents=True, exist_ok=True)
 
     temp_video = output.with_suffix('.video.mp4')
+
+    # --- HW accel probes ---
+    if use_opencl:
+        try:
+            cv2.ocl.setUseOpenCL(True)
+        except Exception:
+            pass
+
+    if use_cuda:
+        try:
+            use_cuda = cv2.cuda.getCudaEnabledDeviceCount() > 0
+        except Exception:
+            use_cuda = False
+
+    # Prepare a reusable Gaussian filter on GPU if available
+    gpu_gauss = None
+    if use_cuda:
+        try:
+            k = blur_ksize if blur_ksize % 2 == 1 else blur_ksize + 1
+            gpu_gauss = cv2.cuda.createGaussianFilter(cv2.CV_8UC3, cv2.CV_8UC3, (k, k), 0)
+        except Exception:
+            gpu_gauss = None
+            use_cuda = False
 
     _SRT_TIME = re.compile(r"^(\d{2}):(\d{2}):(\d{2}),(\d{3})\s+-->\s+(\d{2}):(\d{2}):(\d{2}),(\d{3})$")
 
@@ -152,60 +182,22 @@ def render_vertical_with_captions(
     line_type = cv2.LINE_AA
     font = cv2.FONT_HERSHEY_SIMPLEX
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        t = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
-        current_text = _current_caption_text(t)
+    # --- Caption layout cache (recompute only when text changes) ---
+    _last_text = None
+    _cached_lines: List[str] = []
+    _cached_sizes: List[Tuple[int, int]] = []
+    _cached_total_h: int = 0
 
-        # --- Build blurred background (cover 9:16) ---
-        h, w = frame.shape[:2]
-        scale_bg = max(frame_width / w, frame_height / h)
-        bg = cv2.resize(frame, (int(w * scale_bg), int(h * scale_bg)))
-        # center-crop to exact frame
-        y0 = max(0, (bg.shape[0] - frame_height) // 2)
-        x0 = max(0, (bg.shape[1] - frame_width) // 2)
-        bg = bg[y0:y0 + frame_height, x0:x0 + frame_width]
-        # gaussian blur (ksize must be odd)
-        k = blur_ksize if blur_ksize % 2 == 1 else blur_ksize + 1
-        bg = cv2.GaussianBlur(bg, (k, k), 0)
-        # slight dim for readability
-        bg = cv2.addWeighted(bg, 0.55, np.zeros_like(bg), 0.45, 0)
-
-        # --- Foreground scaled to a portion of the height and biased upward ---
-        fg_target_h = max(100, int(frame_height * fg_height_ratio))
-        scale_fg = fg_target_h / h
-        fg_w, fg_h = int(w * scale_fg), int(h * scale_fg)
-        fg = cv2.resize(frame, (fg_w, fg_h))
-        # position
-        x_fg = (frame_width - fg_w) // 2
-        center_y = int(frame_height * (0.5 - fg_vertical_bias))
-        y_fg = max(0, center_y - fg_h // 2)
-
-        canvas = bg.copy()
-        # --- Safe paste of FG into canvas with clipping ---
-        x1 = max(0, x_fg)
-        y1 = max(0, y_fg)
-        x2 = min(frame_width, x_fg + fg_w)
-        y2 = min(frame_height, y_fg + fg_h)
-        if x2 > x1 and y2 > y1:
-            src_x1 = max(0, -x_fg)
-            src_y1 = max(0, -y_fg)
-            src_x2 = src_x1 + (x2 - x1)
-            src_y2 = src_y1 + (y2 - y1)
-            canvas[y1:y2, x1:x2] = fg[src_y1:src_y2, src_x1:src_x2]
-
-        # --- Captions under FG, wrapped, centered, with outline ---
-        if current_text:
+    def _measure_and_wrap(text: str):
+        nonlocal _last_text, _cached_lines, _cached_sizes, _cached_total_h
+        if (not cache_text_layout) or (text != _last_text):
             max_text_w = int(frame_width * wrap_width_px_ratio)
-            # simple greedy wrap by measuring getTextSize
-            words = current_text.replace("\n", " ").split()
+            words = text.replace("\n", " ").split()
             lines: List[str] = []
             cur = ""
             for wtok in words:
                 test = (cur + " " + wtok).strip()
-                (tw, th), base = cv2.getTextSize(test, font, font_scale, thickness + outline)
+                (tw, th), _ = cv2.getTextSize(test, font, font_scale, thickness + outline)
                 if tw <= max_text_w or not cur:
                     cur = test
                 else:
@@ -213,12 +205,88 @@ def render_vertical_with_captions(
                     cur = wtok
             if cur:
                 lines.append(cur)
-
-            # place starting just below fg bottom, but above bottom safe area
-            bottom_safe = int(frame_height * bottom_safe_ratio)
-            # measure block height
             sizes = [cv2.getTextSize(ln, font, font_scale, thickness + outline)[0] for ln in lines]
             total_h = sum(sz[1] for sz in sizes) + line_spacing * max(0, len(lines) - 1)
+            _last_text, _cached_lines, _cached_sizes, _cached_total_h = text, lines, sizes, total_h
+        return _cached_lines, _cached_sizes, _cached_total_h
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        t = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+        current_text = _current_caption_text(t)
+
+        # --- Build blurred background (cover 9:16) and foreground ---
+        h, w = frame.shape[:2]
+        # Background cover scale
+        scale_bg = max(frame_width / w, frame_height / h)
+        bg: np.ndarray
+        fg: np.ndarray
+
+        if use_cuda:
+            # Upload frame once
+            gpu_frame = cv2.cuda_GpuMat()
+            gpu_frame.upload(frame)
+
+            # Resize background to cover
+            sz_bg = (int(w * scale_bg), int(h * scale_bg))
+            gpu_bg = cv2.cuda.resize(gpu_frame, sz_bg)
+            # Center-crop to target
+            y0 = max(0, (sz_bg[1] - frame_height) // 2)
+            x0 = max(0, (sz_bg[0] - frame_width) // 2)
+            gpu_bg = gpu_bg.rowRange(y0, y0 + frame_height).colRange(x0, x0 + frame_width)
+            # Blur (GPU if filter available)
+            if gpu_gauss is not None:
+                gpu_bg = gpu_gauss.apply(gpu_bg)
+                bg = gpu_bg.download()
+            else:
+                bg = cv2.GaussianBlur(gpu_bg.download(), (blur_ksize if blur_ksize % 2==1 else blur_ksize+1,)*2, 0)
+            # Dim on CPU (simple and reliable)
+            bg = cv2.addWeighted(bg, 0.55, np.zeros_like(bg), 0.45, 0)
+
+            # Foreground scaled to a portion of the height
+            fg_target_h = max(100, int(frame_height * fg_height_ratio))
+            scale_fg = fg_target_h / h
+            sz_fg = (int(w * scale_fg), int(h * scale_fg))
+            gpu_fg = cv2.cuda.resize(gpu_frame, sz_fg)
+            fg = gpu_fg.download()
+        else:
+            # CPU fallback
+            sz_bg = (int(w * scale_bg), int(h * scale_bg))
+            bg = cv2.resize(frame, sz_bg)
+            y0 = max(0, (bg.shape[0] - frame_height) // 2)
+            x0 = max(0, (bg.shape[1] - frame_width) // 2)
+            bg = bg[y0:y0 + frame_height, x0:x0 + frame_width]
+            k = blur_ksize if blur_ksize % 2 == 1 else blur_ksize + 1
+            bg = cv2.GaussianBlur(bg, (k, k), 0)
+            bg = cv2.addWeighted(bg, 0.55, np.zeros_like(bg), 0.45, 0)
+
+            fg_target_h = max(100, int(frame_height * fg_height_ratio))
+            scale_fg = fg_target_h / h
+            fg_w, fg_h = int(w * scale_fg), int(h * scale_fg)
+            fg = cv2.resize(frame, (fg_w, fg_h))
+
+        # Foreground placement
+        fg_h = fg.shape[0]
+        fg_w = fg.shape[1]
+        x_fg = (frame_width - fg_w) // 2
+        center_y = int(frame_height * (0.5 - fg_vertical_bias))
+        y_fg = max(0, center_y - fg_h // 2)
+
+        canvas = bg.copy()
+        # Safe paste FG with clipping
+        x1 = max(0, x_fg); y1 = max(0, y_fg)
+        x2 = min(frame_width, x_fg + fg_w); y2 = min(frame_height, y_fg + fg_h)
+        if x2 > x1 and y2 > y1:
+            src_x1 = max(0, -x_fg); src_y1 = max(0, -y_fg)
+            src_x2 = src_x1 + (x2 - x1); src_y2 = src_y1 + (y2 - y1)
+            canvas[y1:y2, x1:x2] = fg[src_y1:src_y2, src_x1:src_x2]
+
+        # --- Captions under FG, wrapped, centered, with outline ---
+        if current_text:
+            lines, sizes, total_h = _measure_and_wrap(current_text)
+            bottom_safe = int(frame_height * bottom_safe_ratio)
             under_fg_y = y_fg + fg_h + gap_below_fg
             max_y = frame_height - bottom_safe - total_h
             y_text = max(0, min(under_fg_y, max_y))
@@ -242,33 +310,38 @@ def render_vertical_with_captions(
     cap.release()
     writer.release()
 
-    # --- Mux original audio from source clip into the rendered video ---
-    # If the source has no audio, the optional map (1:a:0?) prevents failure.
-    mux_cmd = [
-        "ffmpeg", "-y",
-        "-i", str(temp_video),
-        "-i", str(clip_path),
-        "-map", "0:v:0", "-map", "1:a:0?",
-        "-c:v", "copy", "-c:a", "copy",
-        "-shortest",
-        str(output),
-    ]
-    try:
-        res = subprocess.run(mux_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-    except subprocess.CalledProcessError as e:
-        # Fall back: just move the video-only file to the final path if mux fails
+    # --- Optional: Mux original audio (disabled if ffmpeg not present or mux_audio=False) ---
+    if mux_audio and shutil.which("ffmpeg") is not None:
+        mux_cmd = [
+            "ffmpeg", "-y",
+            "-i", str(temp_video),
+            "-i", str(clip_path),
+            "-map", "0:v:0", "-map", "1:a:0?",
+            "-c:v", "copy", "-c:a", "copy",
+            "-shortest",
+            str(output),
+        ]
         try:
-            if temp_video.exists():
-                temp_video.replace(output)
-        except Exception:
-            pass
-        print("WARN: Audio mux failed; wrote video-only. STDERR head:\n" + (e.stderr.decode(errors='ignore')[:800] if e.stderr else ""))
+            res = subprocess.run(mux_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            try:
+                if temp_video.exists():
+                    os.remove(temp_video)
+            except OSError:
+                pass
+        except subprocess.CalledProcessError as e:
+            # Fall back: just move the video-only file to the final path if mux fails
+            try:
+                if temp_video.exists():
+                    temp_video.replace(output)
+            except Exception:
+                pass
+            print("WARN: Audio mux failed; wrote video-only. STDERR head:\n" + (e.stderr.decode(errors='ignore')[:800] if e.stderr else ""))
     else:
-        # Cleanup temp video after successful mux
-        try:
-            if temp_video.exists():
-                os.remove(temp_video)
-        except OSError:
-            pass
+        # No mux: write video-only as final
+        if temp_video.exists():
+            try:
+                temp_video.replace(output)
+            except Exception:
+                pass
 
     return output
