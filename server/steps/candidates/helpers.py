@@ -7,6 +7,12 @@ from pathlib import Path
 from math import inf
 
 from interfaces.clip_candidate import ClipCandidate
+from .config import (
+    MAX_DURATION_SECONDS,
+    MIN_DURATION_SECONDS,
+    SWEET_SPOT_MAX_SECONDS,
+    SWEET_SPOT_MIN_SECONDS,
+)
 
 
 # -----------------------------
@@ -192,8 +198,12 @@ def snap_end_to_dialog_end(end: float, ranges: List[Tuple[float, float]]) -> flo
 # Unified clip refinement + duration prior
 # -----------------------------
 
-def duration_score(d: float, sweet_min: float = 10.0, sweet_max: float = 30.0) -> float:
-    """Soft prior: 1.0 inside sweet spot (default 10-30s); quadratic decay outside."""
+def duration_score(
+    d: float,
+    sweet_min: float = SWEET_SPOT_MIN_SECONDS,
+    sweet_max: float = SWEET_SPOT_MAX_SECONDS,
+) -> float:
+    """Soft prior: 1.0 inside sweet spot; quadratic decay outside."""
     if d < sweet_min:
         return max(0.0, 1.0 - ((sweet_min - d) / sweet_min) ** 2)
     if d > sweet_max:
@@ -289,7 +299,7 @@ def _merge_adjacent_candidates(
     items: List[Tuple[float, float, str]],
     *,
     merge_gap_seconds: float = 1.0,
-    max_duration_seconds: float = 60.0,
+    max_duration_seconds: float = MAX_DURATION_SECONDS,
     words: Optional[List[dict]] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
 ) -> List[ClipCandidate]:
@@ -350,8 +360,8 @@ def _enforce_non_overlap(
     candidates: List[ClipCandidate],
     items: List[Tuple[float, float, str]],
     *,
-    max_duration_seconds: float = 60.0,
-    min_duration_seconds: float = 10.0,
+    max_duration_seconds: float = MAX_DURATION_SECONDS,
+    min_duration_seconds: float = MIN_DURATION_SECONDS,
     min_gap: float = 0.10,
     words: Optional[List[dict]] = None,
     silences: Optional[List[Tuple[float, float]]] = None,

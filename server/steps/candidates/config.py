@@ -1,0 +1,13 @@
+"""Configuration constants for clip candidate processing."""
+
+MIN_DURATION_SECONDS = 10.0
+MAX_DURATION_SECONDS = 60.0
+SWEET_SPOT_MIN_SECONDS = 10.0
+SWEET_SPOT_MAX_SECONDS = 30.0
+
+__all__ = [
+    "MIN_DURATION_SECONDS",
+    "MAX_DURATION_SECONDS",
+    "SWEET_SPOT_MIN_SECONDS",
+    "SWEET_SPOT_MAX_SECONDS",
+]

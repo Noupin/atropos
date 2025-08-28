@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from .config import (
+    MAX_DURATION_SECONDS,
+    MIN_DURATION_SECONDS,
+    SWEET_SPOT_MAX_SECONDS,
+    SWEET_SPOT_MIN_SECONDS,
+)
+
 FUNNY_PROMPT_DESC = (
     "genuinely funny, laugh-inducing moments. Focus on bits that have a clear setup and a punchline, "
     "or a sharp twist/surprise. Prioritize incongruity, exaggeration, taboo/embarrassment (PG–R), "
@@ -31,6 +38,8 @@ def _build_system_instructions(prompt_desc: str, min_rating: float) -> str:
         "- Relevance: The moment strongly reflects the target described above.\n"
         "- Coherence: It forms a self-contained beat; the audience will understand without extra context.\n"
         "- Clipability: It is engaging and quotable; likely to grab attention in a short clip.\n"
+        f"- Duration: Must be between {MIN_DURATION_SECONDS:.0f} and {MAX_DURATION_SECONDS:.0f} seconds; "
+        f"clips in the {SWEET_SPOT_MIN_SECONDS:.0f}-{SWEET_SPOT_MAX_SECONDS:.0f}s range are ideal.\n"
         "- Completeness: Start at the natural setup/lead-in (not mid-word) and end right after the payoff/beat lands.\n"
         "- Strictness: If tone alignment is questionable or borderline, exclude the moment.\n"
         "NEGATIVE FILTERS (exclude these):\n"
