@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT / "server"))
 
 import server.steps.candidates as cand_pkg
 from server.steps.candidates.funny import find_funny_timestamps
+from server.steps.candidates.prompts import _build_system_instructions, FUNNY_PROMPT_DESC
 
 
 def test_promotional_segments_rejected(tmp_path: Path, monkeypatch) -> None:
@@ -38,3 +39,10 @@ def test_promotional_segments_rejected(tmp_path: Path, monkeypatch) -> None:
 
     result = find_funny_timestamps(str(transcript), min_words=1)
     assert result == []
+
+
+def test_prompt_mentions_promotional_filter() -> None:
+    prompt = _build_system_instructions(FUNNY_PROMPT_DESC, 7.0)
+    lower = prompt.lower()
+    assert "sponsor" in lower
+    assert "patreon" in lower
