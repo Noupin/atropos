@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 import re
 
@@ -156,6 +156,7 @@ def find_clip_timestamps_batched(
     *,
     prompt_desc: str = FUNNY_PROMPT_DESC,
     min_rating: float = 7.0,
+    rating_descriptions: Optional[Dict[str, str]] = None,
     min_words: int = 0,
     model: str = "gemma3",
     options: Optional[dict] = None,
@@ -179,7 +180,9 @@ def find_clip_timestamps_batched(
     )
     print(f"[Batch] Processing {len(chunks)} transcript chunks...")
 
-    system_instructions = _build_system_instructions(prompt_desc, min_rating)
+    system_instructions = _build_system_instructions(
+        prompt_desc, min_rating, rating_descriptions
+    )
 
     all_candidates: List[ClipCandidate] = []
     filtered_candidates: List[ClipCandidate] = []
@@ -290,6 +293,7 @@ def find_clip_timestamps(
     *,
     prompt_desc: str = FUNNY_PROMPT_DESC,
     min_rating: float = 7.0,
+    rating_descriptions: Optional[Dict[str, str]] = None,
     min_words: int = 0,
     model: str = "gemma3",
     options: Optional[dict] = None,
@@ -319,7 +323,9 @@ def find_clip_timestamps(
         total += ln
     condensed = "\n".join(condensed)
 
-    system_instructions = _build_system_instructions(prompt_desc, min_rating)
+    system_instructions = _build_system_instructions(
+        prompt_desc, min_rating, rating_descriptions
+    )
 
     prompt = (
         f"{system_instructions}\n\n"
