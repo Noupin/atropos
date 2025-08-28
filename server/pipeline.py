@@ -35,6 +35,7 @@ from steps.dialog import (
 
 import sys
 import time
+import re
 from pathlib import Path
 
 from helpers.audio import ensure_audio
@@ -274,11 +275,16 @@ def process_video(yt_url: str) -> None:
         def step_description() -> Path:
             prompt = (
                 "Generate as many relevant hashtags for a short form video based on the "
-                "video's title and a quote from the clip. Respond with a JSON "
-                "array of strings without the # symbol.\n"
-                f"Title: {video_info['title']}\n"
-                f"Quote: {candidate.quote}"
+                "video's title"
             )
+            if candidate.quote:
+                prompt += " and a quote from the clip"
+            prompt += (
+                ". Respond with a JSON array of strings without the # symbol.\n"
+                f"Title: {video_info['title']}\n"
+            )
+            if candidate.quote:
+                prompt += f"Quote: {candidate.quote}"
             try:
                 tags = local_llm_call_json(
                     model="gemma3",
@@ -293,6 +299,13 @@ def process_video(yt_url: str) -> None:
                 for tag in tags
                 if isinstance(tag, str)
             ]
+            if not hashtags:
+                fallback = [
+                    "#" + re.sub(r"\W+", "", w.lower())
+                    for w in video_info["title"].split()
+                    if re.sub(r"\W+", "", w)
+                ][:3]
+                hashtags.extend(fallback)
             hashtags.extend(["#shorts", "#madebyatropos"])
             description = (
                 f"Full video: {yt_url}\n"
