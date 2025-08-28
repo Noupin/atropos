@@ -12,7 +12,8 @@ FUNNY_PROMPT_DESC = (
     "or a sharp twist/surprise. Prioritize incongruity, exaggeration, taboo/embarrassment (PG–R), "
     "playful insults/roasts, callbacks, misdirection, and deadpan contradictions. Avoid bland banter, "
     "filler agreement, or mere information. Reject polite chuckles, self-referential commentary without a joke, "
-    "sarcasm lacking a payoff, or anything that only works with unseen visual context."
+    "sarcasm lacking a payoff, or anything that only works with unseen visual context. "
+    "Exclude promotional segments, sponsor mentions, or Patreon shoutouts."
 )
 
 INSPIRING_PROMPT_DESC = (
@@ -46,6 +47,7 @@ def _build_system_instructions(prompt_desc: str, min_rating: float) -> str:
         "- Filler, bland agreement, mere exposition, or housekeeping.\n"
         "- Partial thoughts that cut off before the key beat/payoff.\n"
         "- Any segment that conflicts with the tone-specific negative examples.\n"
+        "- Promotional segments such as sponsor reads, ads, or Patreon shoutouts.\n"
         "SCORING GUIDE:\n"
         "9–10: extremely aligned, highly engaging, shareable.\n"
         "8: clearly strong, likely to resonate with most viewers.\n"
