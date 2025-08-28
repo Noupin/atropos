@@ -32,9 +32,9 @@ def _build_system_instructions(prompt_desc: str, min_rating: float) -> str:
     return (
         f"You are ranking moments that are most aligned with this target: {prompt_desc}\n"
         "Return a JSON array ONLY. Each item MUST be: "
-        '{"start": number, "end": number, "rating": 1-10 number, '
+        '{"start": number, "end": number, "rating": 0-10 number, '
         '"reason": string, "quote": string, "tags": string[]}\n'
-        f"Include ONLY items with rating >= {min_rating}.\n"
+        f"Include ONLY items with rating > {min_rating}.\n"
         "RUBRIC (all must be true for inclusion):\n"
         "- Relevance: The moment strongly reflects the target described above.\n"
         "- Coherence: It forms a self-contained beat; the audience will understand without extra context.\n"
@@ -52,6 +52,10 @@ def _build_system_instructions(prompt_desc: str, min_rating: float) -> str:
         "9–10: extremely aligned, highly engaging, shareable.\n"
         "8: clearly strong, likely to resonate with most viewers.\n"
         "7: decent; include only if there are few stronger options in this span.\n"
+        "6: borderline; noticeable issues with relevance, clarity, or engagement.\n"
+        "5: weak; minimal relevance or impact.\n"
+        "3–4: poor; off-target or confusing.\n"
+        "0–2: not relevant, incoherent, or unusable.\n"
         "POST-PROCESSING (automated filters applied after your response; craft clips that survive them):\n"
         "- Segments with promotional content are dropped—avoid promos entirely.\n"
         "- Start/end times snap to dialog boundaries and adjacent or overlapping clips may merge—pick clean boundaries and limit overlap.\n"
