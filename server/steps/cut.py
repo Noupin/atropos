@@ -111,7 +111,9 @@ def save_clip_from_candidate(
     if transcript_path:
         items = parse_transcript(transcript_path)
         start = _snap_start_to_segment_start(start, items)
-        end = _snap_end_to_segment_end(end, items)
+        end = _snap_end_to_segment_end(
+            end, items, max_extension=max_duration_seconds
+        )
 
     if end - start > max_duration_seconds:
         end = start + max_duration_seconds

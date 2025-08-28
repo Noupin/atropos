@@ -220,10 +220,16 @@ def refine_clip_window(
     silences: Optional[List[Tuple[float, float]]] = None,
     pre_leadin: float = 0.25,
     post_tail: float = 0.45,
+    max_extension: float = MAX_DURATION_SECONDS,
 ) -> Tuple[float, float]:
-    """Snap to segment, then word (if available), then silence edges with small air."""
+    """Refine a clip by snapping to natural boundaries.
+
+    The ``end`` is extended to consume adjacent transcript segments when they
+    appear to be a continuation of the same sentence.  ``max_extension`` limits
+    how far beyond the original ``end`` the refinement may extend.
+    """
     s = _snap_start_to_segment_start(start, items)
-    e = _snap_end_to_segment_end(end, items)
+    e = _snap_end_to_segment_end(end, items, max_extension=max_extension)
     if words:
         s, e = snap_to_word_boundaries(s, e, words)
     if silences:
@@ -238,25 +244,34 @@ def refine_clip_window(
 # -----------------------------
 
 def _snap_end_to_segment_end(
-    end_time: float, items: List[Tuple[float, float, str]]
+    end_time: float,
+    items: List[Tuple[float, float, str]],
+    *,
+    max_extension: float = MAX_DURATION_SECONDS,
 ) -> float:
-    """If ``end_time`` falls inside a transcript segment, extend the end to the
-    conclusion of that spoken line. Additional adjacent segments are also
-    consumed when they appear to be a continuation of the same sentence—i.e.
-    a short gap and the next segment begins with a lowercase character.
+    """Extend ``end_time`` to the conclusion of the current sentence.
 
-    This helps clips end on a natural pause or sentence boundary rather than
-    cutting off mid-thought."""
+    Adjacent transcript segments are consumed when they appear to be part of the
+    same sentence (a short gap and the next segment starting with a lowercase
+    character).  Iteration stops if adding the next segment would extend the
+    clip beyond ``max_extension`` seconds from the original ``end_time``.
+    """
     for idx, (s, e, _) in enumerate(items):
         if s <= end_time <= e:
             end = e
+            if end - end_time >= max_extension:
+                return end_time + max_extension
             for nxt_s, nxt_e, nxt_txt in items[idx + 1 :]:
                 gap = nxt_s - end
                 if gap > 0.6:
                     break
+                if nxt_e - end_time > max_extension:
+                    break
                 first = nxt_txt.lstrip()[:1]
                 if first and first.islower():
                     end = nxt_e
+                    if end - end_time >= max_extension:
+                        return end_time + max_extension
                     continue
                 break
             return end
@@ -310,7 +325,14 @@ def _merge_adjacent_candidates(
 
     snapped: List[ClipCandidate] = []
     for c in candidates:
-        s, e = refine_clip_window(c.start, c.end, items, words=words, silences=silences)
+        s, e = refine_clip_window(
+            c.start,
+            c.end,
+            items,
+            words=words,
+            silences=silences,
+            max_extension=max_duration_seconds,
+        )
         if e <= s:
             continue
         if (e - s) > max_duration_seconds:
@@ -380,7 +402,14 @@ def _enforce_non_overlap(
 
     adjusted: List[ClipCandidate] = []
     for c in candidates:
-        s, e = refine_clip_window(c.start, c.end, items, words=words, silences=silences)
+        s, e = refine_clip_window(
+            c.start,
+            c.end,
+            items,
+            words=words,
+            silences=silences,
+            max_extension=max_duration_seconds,
+        )
         if e <= s:
             continue
         d = e - s
