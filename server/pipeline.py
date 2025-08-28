@@ -41,6 +41,7 @@ from helpers.audio import ensure_audio
 from helpers.transcript import write_transcript_txt
 from helpers.formatting import Fore, Style, sanitize_filename
 from helpers.logging import run_step
+from helpers.ai import ollama_call_json
 from steps.candidates import ClipCandidate
 
 
@@ -266,6 +267,45 @@ def process_video(yt_url: str) -> None:
         run_step(
             f"STEP 8.{idx}: Rendering vertical video with captions -> {vertical_output}",
             step_render,
+        )
+
+        description_path = shorts_dir / f"{clip_path.stem}_description.txt"
+
+        def step_description() -> Path:
+            prompt = (
+                "Generate 3 relevant hashtags for a YouTube short based on the "
+                "video's title and a quote from the clip. Respond with a JSON "
+                "array of strings without the # symbol.\n"
+                f"Title: {video_info['title']}\n"
+                f"Quote: {candidate.quote}"
+            )
+            try:
+                tags = ollama_call_json(
+                    model="gemma3",
+                    prompt=prompt,
+                    options={"temperature": 0.0},
+                )
+            except Exception as e:
+                print(f"[Hashtags] error generating hashtags: {e}")
+                tags = []
+            hashtags = [
+                "#" + tag.replace(" ", "")
+                for tag in tags
+                if isinstance(tag, str)
+            ]
+            hashtags.extend(["#shorts", "#madebyatropos"])
+            description = (
+                f"Full video: {yt_url}\n"
+                f"Credit: {video_info.get('uploader', 'Unknown Channel')}\n"
+                "Made by Atropos\n\n"
+                + " ".join(hashtags)
+            )
+            description_path.write_text(description, encoding="utf-8")
+            return description_path
+
+        run_step(
+            f"STEP 9.{idx}: Writing description -> {description_path}",
+            step_description,
         )
 
     total_elapsed = time.perf_counter() - overall_start

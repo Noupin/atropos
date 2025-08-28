@@ -66,12 +66,14 @@ def get_video_info(url):
         info = ydl.extract_info(url, download=False)
         if info is None:
             return None
-        # Extract video title and upload date
+        # Extract basic metadata
         title = info.get('title', 'Unknown Title')
         upload_date = info.get('upload_date', 'Unknown Date')
+        uploader = info.get('uploader', 'Unknown Channel')
         return {
             'title': title,
-            'upload_date': upload_date
+            'upload_date': upload_date,
+            'uploader': uploader,
         }
 
 def download_video(url, output_path='output_video.mp4'):
