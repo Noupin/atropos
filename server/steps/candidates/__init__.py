@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple
 from pathlib import Path
 import re
 
-from helpers.ai import ollama_call_json, retry
+from helpers.ai import local_llm_call_json, retry
 from interfaces.clip_candidate import ClipCandidate
 from .config import MAX_DURATION_SECONDS, MIN_DURATION_SECONDS
 
@@ -111,7 +111,7 @@ def _verify_tone(
         )
         try:
             try:
-                out = ollama_call_json(
+                out = local_llm_call_json(
                     model=model,
                     prompt=prompt,
                     options={"temperature": 0.0},
@@ -119,7 +119,7 @@ def _verify_tone(
                     extract_re=JSON_OBJECT_EXTRACT,
                 )
             except TypeError:
-                out = ollama_call_json(
+                out = local_llm_call_json(
                     model=model,
                     prompt=prompt,
                     options={"temperature": 0.0},
@@ -198,7 +198,7 @@ def find_clip_timestamps_batched(
         prompt = f"{system_instructions}\n\nTRANSCRIPT (time-coded):\n{condensed}\n\nReturn JSON now."
 
         def _call():
-            return ollama_call_json(
+            return local_llm_call_json(
                 model=model,
                 prompt=prompt,
                 options=combined_options,
@@ -324,7 +324,7 @@ def find_clip_timestamps(
     )
 
     print("[Single] Sending transcript to model for timestamp extraction...")
-    parsed = ollama_call_json(model=model, prompt=prompt, options=options)
+    parsed = local_llm_call_json(model=model, prompt=prompt, options=options)
     print(f"[Single] Model returned {len(parsed)} raw candidates before filtering.")
     candidates: List[ClipCandidate] = []
     for it in parsed:
