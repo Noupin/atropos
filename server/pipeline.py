@@ -273,7 +273,7 @@ def process_video(yt_url: str) -> None:
 
         def step_description() -> Path:
             prompt = (
-                "Generate 3 relevant hashtags for a YouTube short based on the "
+                "Generate as many relevant hashtags for a short form video based on the "
                 "video's title and a quote from the clip. Respond with a JSON "
                 "array of strings without the # symbol.\n"
                 f"Title: {video_info['title']}\n"
