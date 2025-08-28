@@ -1,5 +1,10 @@
 from steps.transcribe import transcribe_audio
-from steps.download import download_transcript, download_video, get_video_info
+from steps.download import (
+    download_transcript,
+    download_video,
+    get_video_info,
+    get_video_urls,
+)
 from steps.candidates.funny import find_funny_timestamps_batched
 from steps.candidates.inspiring import find_inspiring_timestamps_batched
 from steps.candidates.educational import find_educational_timestamps_batched
@@ -39,15 +44,8 @@ from helpers.logging import run_step
 from steps.candidates import ClipCandidate
 
 
-if __name__ == "__main__":
+def process_video(yt_url: str) -> None:
     overall_start = time.perf_counter()
-
-    # yt_url = "https://www.youtube.com/watch?v=GDbDRWzFfds" #KFAF 1
-    yt_url = "https://www.youtube.com/watch?v=zZYxqZFThls" #KFAF 2
-    # yt_url = "https://www.youtube.com/watch?v=K9aFbYd6AUI" #Superman
-    # yt_url = "https://www.youtube.com/watch?v=os2AyD_4RjM" #Dark phoenix
-    # yt_url = "https://www.youtube.com/watch?v=JM1KbE-C9XE" #KFAF Nicks 40th birthday
-    # yt_url = input("Enter YouTube video URL: ")
 
     CLIP_TYPE = "funny"  # change to 'inspiring' or 'educational'
     MIN_RATING = 7.0
@@ -274,3 +272,16 @@ if __name__ == "__main__":
     print(
         f"{Fore.MAGENTA}Full pipeline completed in {total_elapsed:.2f}s{Style.RESET_ALL}"
     )
+
+
+if __name__ == "__main__":
+    # yt_url = "https://www.youtube.com/watch?v=GDbDRWzFfds" #KFAF 1
+    yt_url = "https://www.youtube.com/watch?v=zZYxqZFThls"  # KFAF 2
+    # yt_url = "https://www.youtube.com/watch?v=K9aFbYd6AUI" #Superman
+    # yt_url = "https://www.youtube.com/watch?v=os2AyD_4RjM" #Dark phoenix
+    # yt_url = "https://www.youtube.com/watch?v=JM1KbE-C9XE" #KFAF Nicks 40th birthday
+    # yt_url = input("Enter YouTube video URL: ")
+
+    urls = get_video_urls(yt_url)
+    for url in urls:
+        process_video(url)
