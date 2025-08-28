@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Dict, Optional
+
 from .config import (
     MAX_DURATION_SECONDS,
     MIN_DURATION_SECONDS,
@@ -28,7 +30,23 @@ EDUCATIONAL_PROMPT_DESC = (
 )
 
 
-def _build_system_instructions(prompt_desc: str, min_rating: float) -> str:
+def _build_system_instructions(
+    prompt_desc: str, min_rating: float, rating_descriptions: Optional[Dict[str, str]] = None
+) -> str:
+    scoring_lines = [
+        "9\u201310: extremely aligned, highly engaging, shareable.",
+        "8: clearly strong, likely to resonate with most viewers.",
+        "7: decent; include only if there are few stronger options in this span.",
+        "6: borderline; noticeable issues with relevance, clarity, or engagement.",
+        "5: weak; minimal relevance or impact.",
+        "3\u20134: poor; off-target or confusing.",
+        "0\u20132: not relevant, incoherent, or unusable.",
+    ]
+    if rating_descriptions:
+        for rating, desc in rating_descriptions.items():
+            scoring_lines.append(f"{rating}: {desc}")
+    scoring_guide = "SCORING GUIDE:\n" + "\n".join(scoring_lines) + "\n"
+
     return (
         f"You are ranking moments that are most aligned with this target: {prompt_desc}\n"
         "Return a JSON array ONLY. Each item MUST be: "
@@ -48,14 +66,7 @@ def _build_system_instructions(prompt_desc: str, min_rating: float) -> str:
         "- Partial thoughts that cut off before the key beat/payoff.\n"
         "- Any segment that conflicts with the tone-specific negative examples.\n"
         "- Promotional segments such as sponsor reads, ads, or Patreon shoutouts.\n"
-        "SCORING GUIDE:\n"
-        "9–10: extremely aligned, highly engaging, shareable.\n"
-        "8: clearly strong, likely to resonate with most viewers.\n"
-        "7: decent; include only if there are few stronger options in this span.\n"
-        "6: borderline; noticeable issues with relevance, clarity, or engagement.\n"
-        "5: weak; minimal relevance or impact.\n"
-        "3–4: poor; off-target or confusing.\n"
-        "0–2: not relevant, incoherent, or unusable.\n"
+        f"{scoring_guide}"
         "POST-PROCESSING (automated filters applied after your response; craft clips that survive them):\n"
         "- Segments with promotional content are dropped—avoid promos entirely.\n"
         "- Start/end times snap to dialog boundaries and adjacent or overlapping clips may merge—pick clean boundaries and limit overlap.\n"
