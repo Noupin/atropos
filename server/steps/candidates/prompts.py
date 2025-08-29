@@ -18,6 +18,36 @@ FUNNY_PROMPT_DESC = (
     "Exclude promotional segments, sponsor mentions, or Patreon shoutouts."
 )
 
+
+GENERAL_RATING_DESCRIPTIONS: Dict[str, str] = {
+    "10": "extremely aligned, highly engaging, shareable.",
+    "9": "extremely aligned, highly engaging, shareable.",
+    "8": "clearly strong, likely to resonate with most viewers.",
+    "7": "decent; include only if there are few stronger options in this span.",
+    "6": "borderline; noticeable issues with relevance, clarity, or engagement.",
+    "5": "weak; minimal relevance or impact.",
+    "4": "poor; off-target or confusing.",
+    "3": "poor; off-target or confusing.",
+    "2": "not relevant, incoherent, or unusable.",
+    "1": "not relevant, incoherent, or unusable.",
+    "0": "not relevant, incoherent, or unusable.",
+}
+
+
+FUNNY_RATING_DESCRIPTIONS: Dict[str, str] = {
+    "10": "hysterical; likely to make most viewers burst out laughing.",
+    "9": "extremely funny with excellent setup and payoff.",
+    "8": "very funny; strong laugh for many viewers.",
+    "7": "solid joke; produces a clear chuckle.",
+    "6": "mildly amusing; may prompt a smile.",
+    "5": "weak humor; unlikely to get a laugh.",
+    "4": "poor joke or muddled setup.",
+    "3": "barely humorous; off-tone or confusing.",
+    "2": "not funny; flat or irrelevant.",
+    "1": "not funny at all; dull or contextless.",
+    "0": "actively unfunny or potentially offensive.",
+}
+
 INSPIRING_PROMPT_DESC = (
     "uplifting or motivational moments that stir positive emotion, showcase overcoming "
     "challenges, or deliver heartfelt advice. Exclude generic compliments, shallow positivity, or "
@@ -34,13 +64,7 @@ def _build_system_instructions(
     prompt_desc: str, min_rating: float, rating_descriptions: Optional[Dict[str, str]] = None
 ) -> str:
     scoring_lines = [
-        "9\u201310: extremely aligned, highly engaging, shareable.",
-        "8: clearly strong, likely to resonate with most viewers.",
-        "7: decent; include only if there are few stronger options in this span.",
-        "6: borderline; noticeable issues with relevance, clarity, or engagement.",
-        "5: weak; minimal relevance or impact.",
-        "3\u20134: poor; off-target or confusing.",
-        "0\u20132: not relevant, incoherent, or unusable.",
+        f"{rating}: {desc}" for rating, desc in GENERAL_RATING_DESCRIPTIONS.items()
     ]
     if rating_descriptions:
         for rating, desc in rating_descriptions.items():
@@ -82,5 +106,7 @@ __all__ = [
     "FUNNY_PROMPT_DESC",
     "INSPIRING_PROMPT_DESC",
     "EDUCATIONAL_PROMPT_DESC",
+    "GENERAL_RATING_DESCRIPTIONS",
+    "FUNNY_RATING_DESCRIPTIONS",
     "_build_system_instructions",
 ]
