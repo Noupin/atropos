@@ -5,7 +5,7 @@ from typing import List
 
 from . import ClipCandidate, find_clip_timestamps, find_clip_timestamps_batched
 from .config import FUNNY_MIN_RATING, FUNNY_MIN_WORDS
-from .prompts import FUNNY_PROMPT_DESC
+from .prompts import FUNNY_PROMPT_DESC, FUNNY_RATING_DESCRIPTIONS
 
 
 def find_funny_timestamps_batched(
@@ -21,6 +21,7 @@ def find_funny_timestamps_batched(
         transcript_path,
         prompt_desc=FUNNY_PROMPT_DESC,
         min_rating=min_rating,
+        rating_descriptions=FUNNY_RATING_DESCRIPTIONS,
         min_words=min_words,
         return_all_stages=return_all_stages,
         **kwargs,
@@ -40,6 +41,7 @@ def find_funny_timestamps(
         transcript_path,
         prompt_desc=FUNNY_PROMPT_DESC,
         min_rating=min_rating,
+        rating_descriptions=FUNNY_RATING_DESCRIPTIONS,
         min_words=min_words,
         return_all_stages=return_all_stages,
         **kwargs,
