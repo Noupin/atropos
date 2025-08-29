@@ -1,7 +1,28 @@
 {
   "version": "0.2",
   "language": "en",
-  "words": [],
-  "ignorePaths": ["node_modules", "dist", "build", "*.lock", "*.json"],
-  "flagWords": ["hte"]
+  "words": [
+    "cand",
+    "cbbff",
+    "dedupe",
+    "dotenv",
+    "fourcc",
+    "hmsms",
+    "KFAF",
+    "ksize",
+    "madebyatropos",
+    "ndarray",
+    "opencl",
+    "wtok"
+  ],
+  "ignorePaths": [
+    "node_modules",
+    "dist",
+    "build",
+    "*.lock",
+    "*.json"
+  ],
+  "flagWords": [
+    "hte"
+  ]
 }
