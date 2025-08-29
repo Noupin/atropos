@@ -13,7 +13,7 @@ from typing import Any, Dict
 
 import requests
 
-from common.token_store import TokenStore
+from ...common.token_store import TokenStore
 
 TOKEN_NAME = "facebook"
 OAUTH_SCOPES = (

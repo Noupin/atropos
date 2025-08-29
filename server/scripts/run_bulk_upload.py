@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from common.env import load_env
+from ..common.env import load_env
 
 
 # ---------------------------------------------------------------------------
@@ -34,14 +34,14 @@ def main() -> None:
     # Load environment and late imports (requires env)
     load_env()
 
-    from common.token_store import TokenStore
-    from common import caption_utils, file_utils, limits, backoff
-    from platforms.instagram import auth as ig_auth, upload as ig_upload
-    from platforms.facebook import auth as fb_auth, upload as fb_upload
-    from platforms.youtube import auth as yt_auth, upload as yt_upload
-    from platforms.tiktok import auth as tt_auth, upload as tt_upload
-    from platforms.snapchat import auth as sc_auth, upload as sc_upload
-    from platforms.x import auth as x_auth, upload as x_upload
+    from ..common.token_store import TokenStore
+    from ..common import caption_utils, file_utils, limits, backoff
+    from ..platforms.instagram import auth as ig_auth, upload as ig_upload
+    from ..platforms.facebook import auth as fb_auth, upload as fb_upload
+    from ..platforms.youtube import auth as yt_auth, upload as yt_upload
+    from ..platforms.tiktok import auth as tt_auth, upload as tt_upload
+    from ..platforms.snapchat import auth as sc_auth, upload as sc_upload
+    from ..platforms.x import auth as x_auth, upload as x_upload
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     logger = logging.getLogger("bulk")
