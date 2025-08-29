@@ -153,7 +153,7 @@ def _verify_tone(
 
 
 # -----------------------------
-# LLM (Ollama / gemma3) utilities
+# LLM (Ollama / google/gemma-3-4b) utilities
 # -----------------------------
 
 def find_clip_timestamps_batched(
@@ -163,7 +163,7 @@ def find_clip_timestamps_batched(
     min_rating: float = DEFAULT_MIN_RATING,
     rating_descriptions: Optional[Dict[str, str]] = None,
     min_words: int = DEFAULT_MIN_WORDS,
-    model: str = "gemma3",
+    model: str = "google/gemma-3-4b",
     options: Optional[dict] = None,
     max_chars_per_chunk: int = 12000,
     overlap_lines: int = 4,
@@ -300,7 +300,7 @@ def find_clip_timestamps(
     min_rating: float = DEFAULT_MIN_RATING,
     rating_descriptions: Optional[Dict[str, str]] = None,
     min_words: int = DEFAULT_MIN_WORDS,
-    model: str = "gemma3",
+    model: str = "google/gemma-3-4b",
     options: Optional[dict] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
     words: Optional[List[dict]] = None,
@@ -308,7 +308,7 @@ def find_clip_timestamps(
     merge_overlapping: bool = False,
     return_all_stages: bool = False,
 ) -> List[ClipCandidate] | tuple[List[ClipCandidate], List[ClipCandidate], List[ClipCandidate]]:
-    """Use a local Ollama model (gemma3) to score transcript lines and propose clip windows."""
+    """Use a local Ollama model (google/gemma-3-4b) to score transcript lines and propose clip windows."""
     items = parse_transcript(transcript_path)
     if not items:
         return []

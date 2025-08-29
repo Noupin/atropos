@@ -348,7 +348,7 @@ def process_video(yt_url: str) -> None:
                 prompt += f"Quote: {candidate.quote}"
             try:
                 tags = local_llm_call_json(
-                    model="gemma3",
+                    model="google/gemma-3-4b",
                     prompt=prompt,
                     options={"temperature": 0.0},
                 )
@@ -401,13 +401,13 @@ def process_video(yt_url: str) -> None:
 if __name__ == "__main__":
     # yt_url = "https://www.youtube.com/watch?v=GDbDRWzFfds" #KFAF 1
     # yt_url = "https://www.youtube.com/watch?v=zZYxqZFThls"  # KFAF 2
-    # yt_url = "https://www.youtube.com/watch?v=K9aFbYd6AUI" #Superman
+    # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVvLGotSXrDeZetca0jayby1" #DCEU(newest first)
     # yt_url = "https://www.youtube.com/watch?v=os2AyD_4RjM" #Dark phoenix
     # yt_url = "https://www.youtube.com/watch?v=JM1KbE-C9XE" #KFAF Nicks 40th birthday
     # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"  # KFAF Playlist(newest first)
-    yt_url = "https://www.youtube.com/playlist?list=PLlZTdvF5WOdwtw4pEsrxuP-5wfzgsUJY-" # AVP in review playlist(newest first order)
+    # yt_url = "https://www.youtube.com/playlist?list=PLlZTdvF5WOdwtw4pEsrxuP-5wfzgsUJY-" # AVP in review playlist(newest first order)
     # yt_url = "https://www.youtube.com/playlist?list=PL8F86WtVt7aboLYsBkbau1fxQrhAmBoxK" # MCU In review
-    # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVtQQqX1nezpnsbeok2U6K8h" # star wars (newest first)
+    yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVtQQqX1nezpnsbeok2U6K8h" # star wars (newest first)
     # yt_url = input("Enter YouTube video URL: ")
 
     urls = get_video_urls(yt_url)
