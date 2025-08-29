@@ -1,4 +1,4 @@
-"""OAuth authentication for Snapchat's Marketing API."""
+"""OAuth authentication for the TikTok Content Posting API."""
 
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ from typing import Any, Dict
 
 import requests
 
-from common.token_store import TokenStore
+from ...common.token_store import TokenStore
 
-TOKEN_NAME = "snapchat"
-SCOPES = "snapchat-content-api.snapchat-content-create"
+TOKEN_NAME = "tiktok"
+SCOPES = "video.upload,video.publish"
 
 
 def _get_code(auth_url: str, state: str) -> tuple[str, str]:
@@ -56,30 +56,29 @@ def authenticate(store: TokenStore, config: Dict[str, Any]) -> Dict[str, Any]:
     if token and token.get("expires_at", 0) > time.time():
         return token
 
-    client_id = os.environ["SNAPCHAT_CLIENT_ID"]
-    client_secret = os.environ["SNAPCHAT_CLIENT_SECRET"]
+    client_key = os.environ["TIKTOK_CLIENT_KEY"]
+    client_secret = os.environ["TIKTOK_CLIENT_SECRET"]
     state = uuid.uuid4().hex
     auth_url = (
-        "https://accounts.snapchat.com/login/oauth2/authorize?response_type=code"
-        f"&client_id={client_id}&scope={urllib.parse.quote(SCOPES)}"
+        "https://www.tiktok.com/v2/auth/authorize/?response_type=code"
+        f"&client_key={client_key}&scope={urllib.parse.quote(SCOPES)}"
         f"&state={state}&redirect_uri="
     )
     code, redirect_uri = _get_code(auth_url, state)
 
     resp = requests.post(
-        "https://accounts.snapchat.com/login/oauth2/access_token",
+        "https://open.tiktokapis.com/v2/oauth/token/",
         data={
-            "code": code,
-            "client_id": client_id,
+            "client_key": client_key,
             "client_secret": client_secret,
+            "code": code,
             "grant_type": "authorization_code",
             "redirect_uri": redirect_uri,
         },
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=30,
     )
     resp.raise_for_status()
-    data = resp.json()
+    data = resp.json()["data"]
     token = {
         "access_token": data["access_token"],
         "expires_at": time.time() + data.get("expires_in", 3600),

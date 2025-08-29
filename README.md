@@ -4,6 +4,12 @@ This repository includes a minimal framework for bulk uploading short videos
 with captions to multiple social platforms. The orchestrator script scans a
 folder for video files and paired caption text files, normalises captions, and
 then uploads the pairs to each enabled platform.
+All core modules now live under the `server/` directory. For example:
+
+```python
+from common.env import load_env
+```
+
 
 ## Setup
 
@@ -33,7 +39,7 @@ then uploads the pairs to each enabled platform.
    for the structure.
 
 3. Place the videos and caption files in the folder specified by
-   ``UPLOAD_FOLDER`` in ``scripts/run_bulk_upload.py`` (defaults to
+   ``UPLOAD_FOLDER`` in ``server/scripts/run_bulk_upload.py`` (defaults to
    ``upload_queue``). For each ``video.mp4`` provide a caption file named
    ``video_description.txt`` or ``video.txt`` in the same directory.
 
@@ -42,7 +48,7 @@ then uploads the pairs to each enabled platform.
 Install dependencies from ``requirements.txt`` and run:
 
 ```bash
-python scripts/run_bulk_upload.py
+python -m server.scripts.run_bulk_upload
 ```
 
 The script logs ``PLAN``/``OK``/``ERR`` lines and prints a summary of uploads
