@@ -11,6 +11,8 @@ import subprocess
 import os
 import shutil
 
+from .config import CAPTION_FONT_SCALE
+
 
 def render_vertical_with_captions(
     clip_path: str | Path,
@@ -23,7 +25,7 @@ def render_vertical_with_captions(
     fg_vertical_bias: float = 0.04,
     bottom_safe_ratio: float = 0.14,
     gap_below_fg: int = 28,
-    font_scale: float = 1.0,
+    font_scale: float = CAPTION_FONT_SCALE,  # baseline; may shrink to keep captions below FG
     thickness: int = 2,
     outline: int = 4,
     line_spacing: int = 10,
@@ -184,20 +186,27 @@ def render_vertical_with_captions(
 
     # --- Caption layout cache (recompute only when text changes) ---
     _last_text = None
+    _last_scale = None
+    _last_spacing = None
     _cached_lines: List[str] = []
     _cached_sizes: List[Tuple[int, int]] = []
     _cached_total_h: int = 0
 
-    def _measure_and_wrap(text: str):
-        nonlocal _last_text, _cached_lines, _cached_sizes, _cached_total_h
-        if (not cache_text_layout) or (text != _last_text):
+    def _measure_and_wrap(text: str, scale: float, spacing: int):
+        nonlocal _last_text, _last_scale, _last_spacing, _cached_lines, _cached_sizes, _cached_total_h
+        if (
+            (not cache_text_layout)
+            or (text != _last_text)
+            or (scale != _last_scale)
+            or (spacing != _last_spacing)
+        ):
             max_text_w = int(frame_width * wrap_width_px_ratio)
             words = text.replace("\n", " ").split()
             lines: List[str] = []
             cur = ""
             for wtok in words:
                 test = (cur + " " + wtok).strip()
-                (tw, th), _ = cv2.getTextSize(test, font, font_scale, thickness + outline)
+                (tw, _), _ = cv2.getTextSize(test, font, scale, thickness + outline)
                 if tw <= max_text_w or not cur:
                     cur = test
                 else:
@@ -205,9 +214,10 @@ def render_vertical_with_captions(
                     cur = wtok
             if cur:
                 lines.append(cur)
-            sizes = [cv2.getTextSize(ln, font, font_scale, thickness + outline)[0] for ln in lines]
-            total_h = sum(sz[1] for sz in sizes) + line_spacing * max(0, len(lines) - 1)
-            _last_text, _cached_lines, _cached_sizes, _cached_total_h = text, lines, sizes, total_h
+            sizes = [cv2.getTextSize(ln, font, scale, thickness + outline)[0] for ln in lines]
+            total_h = sum(sz[1] for sz in sizes) + spacing * max(0, len(lines) - 1)
+            _last_text, _last_scale, _last_spacing = text, scale, spacing
+            _cached_lines, _cached_sizes, _cached_total_h = lines, sizes, total_h
         return _cached_lines, _cached_sizes, _cached_total_h
 
     while True:
@@ -285,25 +295,41 @@ def render_vertical_with_captions(
 
         # --- Captions under FG, wrapped, centered, with outline ---
         if current_text:
-            lines, sizes, total_h = _measure_and_wrap(current_text)
+            fs = font_scale
+            spacing = line_spacing
+            lines, sizes, total_h = _measure_and_wrap(current_text, fs, spacing)
             bottom_safe = int(frame_height * bottom_safe_ratio)
             under_fg_y = y_fg + fg_h + gap_below_fg
+            available_h = frame_height - bottom_safe - under_fg_y
+            if total_h > available_h and available_h > 0:
+                fs = fs * (available_h / total_h)
+                spacing = max(1, int(line_spacing * fs / font_scale))
+                lines, sizes, total_h = _measure_and_wrap(current_text, fs, spacing)
             max_y = frame_height - bottom_safe - total_h
             y_text = max(0, min(under_fg_y, max_y))
 
             # draw each line centered with outline
             for ln in lines:
-                (tw, th), base = cv2.getTextSize(ln, font, font_scale, thickness + outline)
+                (tw, th), _ = cv2.getTextSize(ln, font, fs, thickness + outline)
                 x_text = (frame_width - tw) // 2
                 # outline
                 for dx in (-outline, 0, outline):
                     for dy in (-outline, 0, outline):
                         if dx == 0 and dy == 0:
                             continue
-                        cv2.putText(canvas, ln, (x_text + dx, y_text + th + dy), font, font_scale, outline_bgr, thickness + outline, line_type)
+                        cv2.putText(
+                            canvas,
+                            ln,
+                            (x_text + dx, y_text + th + dy),
+                            font,
+                            fs,
+                            outline_bgr,
+                            thickness + outline,
+                            line_type,
+                        )
                 # fill
-                cv2.putText(canvas, ln, (x_text, y_text + th), font, font_scale, fill_bgr, thickness, line_type)
-                y_text += th + line_spacing
+                cv2.putText(canvas, ln, (x_text, y_text + th), font, fs, fill_bgr, thickness, line_type)
+                y_text += th + spacing
 
         writer.write(canvas)
 
