@@ -389,19 +389,23 @@ def _enforce_non_overlap(
     max_duration_seconds: float = MAX_DURATION_SECONDS,
     min_duration_seconds: float = MIN_DURATION_SECONDS,
     min_gap: float = 0.10,
+    min_rating: float = 0.0,
     words: Optional[List[dict]] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
 ) -> List[ClipCandidate]:
-    """Adjusts candidate ends to segment boundaries and removes overlaps.
+    """Adjust candidate boundaries, enforce non-overlap, and filter by rating.
 
     Clips around 10–30 seconds are preferred; candidates shorter than
-    ``min_duration_seconds`` are discarded.
+    ``min_duration_seconds`` or with ``rating`` less than or equal to
+    ``min_rating`` are discarded.
     """
     if not candidates:
         return []
 
     adjusted: List[ClipCandidate] = []
     for c in candidates:
+        if c.rating <= min_rating:
+            continue
         s, e = refine_clip_window(
             c.start,
             c.end,

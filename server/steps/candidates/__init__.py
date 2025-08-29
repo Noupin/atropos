@@ -267,6 +267,7 @@ def find_clip_timestamps_batched(
         words=words,
         silences=silences,
         min_duration_seconds=min_duration_seconds,
+        min_rating=min_rating,
     )
     print(f"[Batch] {len(top_candidates)} candidates remain after overlap enforcement.")
     verified_candidates = [
@@ -377,6 +378,7 @@ def find_clip_timestamps(
         words=words,
         silences=silences,
         min_duration_seconds=min_duration_seconds,
+        min_rating=min_rating,
     )
     verified_candidates = [
         c

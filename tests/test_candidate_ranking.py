@@ -63,3 +63,12 @@ def test_clips_under_ten_seconds_excluded() -> None:
     assert len(result) == 1
     chosen = result[0]
     assert chosen.start == 0.0 and chosen.end == 20.0
+
+
+def test_min_rating_excludes_low_scores() -> None:
+    items = [(0.0, 5.0, "A"), (5.0, 10.0, "B")]
+    low = ClipCandidate(start=0.0, end=5.0, rating=4.0, reason="", quote="")
+    high = ClipCandidate(start=5.0, end=10.0, rating=6.0, reason="", quote="")
+    result = _enforce_non_overlap([low, high], items, min_rating=5.0)
+    assert len(result) == 1
+    assert result[0].rating == 6.0
