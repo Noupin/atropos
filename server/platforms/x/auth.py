@@ -11,7 +11,7 @@ from typing import Any, Dict
 
 from requests_oauthlib import OAuth1Session
 
-from ...common.token_store import TokenStore
+from common.token_store import TokenStore
 
 TOKEN_NAME = "x"
 
