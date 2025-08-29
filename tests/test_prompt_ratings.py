@@ -8,8 +8,13 @@ from server.steps.candidates.prompts import (
 
 def test_default_rating_descriptions_present() -> None:
     instructions = _build_system_instructions("desc", 5.0)
-    assert "10: extremely aligned" in instructions
-    assert "0: not relevant" in instructions
+    assert "10: perfect fit" in instructions
+    assert "0: reject" in instructions
+
+
+def test_instructions_require_json_array() -> None:
+    instructions = _build_system_instructions("desc", 5.0)
+    assert "return []" in instructions
 
 
 def test_custom_rating_descriptions_included() -> None:
@@ -17,7 +22,7 @@ def test_custom_rating_descriptions_included() -> None:
     instructions = _build_system_instructions(
         "desc", 5.0, rating_descriptions=custom
     )
-    assert "10: extremely aligned" in instructions
+    assert "10: perfect fit" in instructions
     assert "10: top tier" in instructions
 
 
@@ -26,5 +31,5 @@ def test_funny_rating_descriptions_included() -> None:
         "desc", 5.0, rating_descriptions=FUNNY_RATING_DESCRIPTIONS
     )
     assert "10: hysterical" in instructions
-    assert "0: actively unfunny" in instructions
+    assert "0: reject; offensive" in instructions
 

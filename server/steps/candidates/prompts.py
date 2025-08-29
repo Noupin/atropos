@@ -68,8 +68,9 @@ def _build_system_instructions(
 
     return (
         "<start_of_turn>user\n"
-        f"You are selecting transcript moments that best match this target tone:\n\n{prompt_desc}\n\n"
-        "Output ONLY a JSON array of objects with this exact shape (no prose):\n"
+        "You are a concise assistant selecting transcript moments that match this target tone:\n\n"
+        f"{prompt_desc}\n\n"
+        "Respond with a valid JSON array of objects matching this exact schema. If no moments qualify, return []:\n"
         "[{\"start\": number, \"end\": number, \"rating\": number, \"reason\": string, \"quote\": string, \"tags\": string[]}]\n\n"
         f"Include only items with rating > {min_rating}. Ratings use 0–10.\n"
         f"Duration must be between {MIN_DURATION_SECONDS:.0f} and {MAX_DURATION_SECONDS:.0f} seconds; ideal is {SWEET_SPOT_MIN_SECONDS:.0f}–{SWEET_SPOT_MAX_SECONDS:.0f} seconds.\n\n"
@@ -82,15 +83,13 @@ def _build_system_instructions(
         "NEGATIVE FILTERS (exclude):\n"
         "- Filler/housekeeping/bland agreement/mere exposition.\n"
         "- Partial thoughts that end before the payoff.\n"
-        "- Sponsor reads, ads, shoutouts, or promotional segments.\n\n"
+        "- Sponsor reads, ads, shoutouts, or promotional segments (Patreon, merch, etc.).\n\n"
         "POST-PROCESSING NOTES (craft clips that survive):\n"
         "- Starts/ends snap to dialog boundaries; adjacent/overlapping clips may merge.\n"
         "- Overlapping clips are pruned to keep only the strongest.\n"
         "- A secondary tone check drops off-tone or too-short clips.\n\n"
-        "SCORING GUIDE:\n"
-        + "\n".join([f"{rating}: {desc}" for rating, desc in GENERAL_RATING_DESCRIPTIONS.items()])
-        + ("\n" + "\n".join([f"{rating}: {desc}" for rating, desc in rating_descriptions.items()]) if rating_descriptions else "")
-        + "\n<end_of_turn>\n<start_of_turn>model"
+        f"{scoring_guide}"
+        "<end_of_turn>\n<start_of_turn>model"
     )
 
 
