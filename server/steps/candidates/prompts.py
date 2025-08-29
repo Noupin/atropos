@@ -10,53 +10,48 @@ from .config import (
 )
 
 FUNNY_PROMPT_DESC = (
-    "genuinely funny, laugh-inducing moments. Focus on bits that have a clear setup and a punchline, "
-    "or a sharp twist/surprise. Prioritize incongruity, exaggeration, taboo/embarrassment (PG–R), "
-    "playful insults/roasts, callbacks, misdirection, and deadpan contradictions. Avoid bland banter, "
-    "filler agreement, or mere information. Reject polite chuckles, self-referential commentary without a joke, "
-    "sarcasm lacking a payoff, or anything that only works with unseen visual context. "
-    "Exclude promotional segments, sponsor mentions, or Patreon shoutouts."
+    "Find self-contained funny beats. Prefer short setups with clear punchlines or absurd twists—deadpan contradictions, playful roasts, or quick shocking confessions. "
+    "Avoid long rambles, inside jokes that need unseen visuals, polite chuckles with no payoff, and any promo/sponsor content."
 )
 
 
 GENERAL_RATING_DESCRIPTIONS: Dict[str, str] = {
-    "10": "extremely aligned, highly engaging, shareable.",
-    "9": "extremely aligned, highly engaging, shareable.",
-    "8": "clearly strong, likely to resonate with most viewers.",
-    "7": "decent; include only if there are few stronger options in this span.",
-    "6": "borderline; noticeable issues with relevance, clarity, or engagement.",
-    "5": "weak; minimal relevance or impact.",
-    "4": "poor; off-target or confusing.",
-    "3": "poor; off-target or confusing.",
-    "2": "not relevant, incoherent, or unusable.",
-    "1": "not relevant, incoherent, or unusable.",
-    "0": "not relevant, incoherent, or unusable.",
+    "10": "perfect fit; instantly gripping and highly shareable",
+    "9":  "excellent fit; strong hook and clear payoff",
+    "8":  "very good; engaging and on-target",
+    "7":  "good; include if few stronger options exist",
+    "6":  "borderline; some issues with clarity or impact",
+    "5":  "weak; limited relevance or momentum",
+    "4":  "poor; off-target or confusing",
+    "3":  "poor; off-target or confusing",
+    "2":  "not usable; unclear or irrelevant",
+    "1":  "not usable; unclear or irrelevant",
+    "0":  "reject; misleading or inappropriate",
 }
 
 
 FUNNY_RATING_DESCRIPTIONS: Dict[str, str] = {
-    "10": "hysterical; likely to make most viewers burst out laughing.",
-    "9": "extremely funny with excellent setup and payoff.",
-    "8": "very funny; strong laugh for many viewers.",
-    "7": "solid joke; produces a clear chuckle.",
-    "6": "mildly amusing; may prompt a smile.",
-    "5": "weak humor; unlikely to get a laugh.",
-    "4": "poor joke or muddled setup.",
-    "3": "barely humorous; off-tone or confusing.",
-    "2": "not funny; flat or irrelevant.",
-    "1": "not funny at all; dull or contextless.",
-    "0": "actively unfunny or potentially offensive.",
+    "10": "hysterical; broad laugh for most viewers",
+    "9":  "extremely funny; tight setup and clean punchline",
+    "8":  "very funny; strong laugh for many",
+    "7":  "clearly funny; earns a chuckle",
+    "6":  "lightly amusing; smile more than laugh",
+    "5":  "weak humor; unlikely to land",
+    "4":  "poor joke; muddy setup or payoff",
+    "3":  "barely humorous; off-tone or confusing",
+    "2":  "not funny; flat or irrelevant",
+    "1":  "not funny at all",
+    "0":  "reject; offensive without comedic value",
 }
 
 INSPIRING_PROMPT_DESC = (
-    "uplifting or motivational moments that stir positive emotion, showcase overcoming "
-    "challenges, or deliver heartfelt advice. Exclude generic compliments, shallow positivity, or "
-    "promotional sound bites that lack an emotional arc."
+    "Find genuinely inspiring moments. Prefer concise stories of overcoming difficulty, heartfelt advice, or lines that motivate action. "
+    "Avoid generic positivity, vague pep talk, or promotional fluff."
 )
 
 EDUCATIONAL_PROMPT_DESC = (
-    "informative, insightful, or instructional moments that clearly teach a concept or "
-    "share useful facts. Reject vague opinions, hearsay, or marketing pitches that do not explain how or why."
+    "Find clear teaching moments. Prefer precise explanations, practical takeaways, and crisp how/why reasoning. "
+    "Avoid speculation, marketing claims, or opinions that do not explain anything."
 )
 
 
@@ -72,33 +67,30 @@ def _build_system_instructions(
     scoring_guide = "SCORING GUIDE:\n" + "\n".join(scoring_lines) + "\n"
 
     return (
-        f"You are ranking moments that are most aligned with this target: {prompt_desc}\n"
-        "Return a JSON array ONLY. Each item MUST be: "
-        '{"start": number, "end": number, "rating": 0-10 number, '
-        '"reason": string, "quote": string, "tags": string[]}\n'
-        f"Include ONLY items with rating > {min_rating}.\n"
-        "RUBRIC (all must be true for inclusion):\n"
-        "- Relevance: The moment strongly reflects the target described above.\n"
-        "- Coherence: It forms a self-contained beat; the audience will understand without extra context.\n"
-        "- Clipability: It is engaging and quotable; likely to grab attention in a short clip.\n"
-        f"- Duration: Must be between {MIN_DURATION_SECONDS:.0f} and {MAX_DURATION_SECONDS:.0f} seconds; "
-        f"clips in the {SWEET_SPOT_MIN_SECONDS:.0f}-{SWEET_SPOT_MAX_SECONDS:.0f}s range are ideal.\n"
-        "- Completeness: Start at the natural setup/lead-in (not mid-word) and end right after the payoff/beat lands.\n"
-        "- Strictness: If tone alignment is questionable or borderline, exclude the moment.\n"
-        "NEGATIVE FILTERS (exclude these):\n"
-        "- Filler, bland agreement, mere exposition, or housekeeping.\n"
-        "- Partial thoughts that cut off before the key beat/payoff.\n"
-        "- Any segment that conflicts with the tone-specific negative examples.\n"
-        "- Promotional segments such as sponsor reads, ads, or Patreon shoutouts.\n"
-        f"{scoring_guide}"
-        "POST-PROCESSING (automated filters applied after your response; craft clips that survive them):\n"
-        "- Segments with promotional content are dropped—avoid promos entirely.\n"
-        "- Start/end times snap to dialog boundaries and adjacent or overlapping clips may merge—pick clean boundaries and limit overlap.\n"
-        "- Overlapping clips are pruned so only the strongest remain—suggest distinct beats.\n"
-        "- A secondary tone check drops clips that are off-tone or too short—ensure each clearly fits the target tone.\n"
-        "TIMING RULES:\n"
-        "- Prefer segment boundaries; may extend across adjacent lines to capture the full beat.\n"
-        "- Do NOT invent timestamps outside provided ranges.\n"
+        "<start_of_turn>user\n"
+        f"You are selecting transcript moments that best match this target tone:\n\n{prompt_desc}\n\n"
+        "Output ONLY a JSON array of objects with this exact shape (no prose):\n"
+        "[{\"start\": number, \"end\": number, \"rating\": number, \"reason\": string, \"quote\": string, \"tags\": string[]}]\n\n"
+        f"Include only items with rating > {min_rating}. Ratings use 0–10.\n"
+        f"Duration must be between {MIN_DURATION_SECONDS:.0f} and {MAX_DURATION_SECONDS:.0f} seconds; ideal is {SWEET_SPOT_MIN_SECONDS:.0f}–{SWEET_SPOT_MAX_SECONDS:.0f} seconds.\n\n"
+        "RULES:\n"
+        "- Relevance: strongly reflects the target tone.\n"
+        "- Coherence: a self-contained beat; no missing context.\n"
+        "- Clipability: hook + payoff; quotable; attention-friendly.\n"
+        "- Boundaries: never start mid-word; end right after the beat lands.\n"
+        "- Strictness: if tone alignment is uncertain, exclude it.\n\n"
+        "NEGATIVE FILTERS (exclude):\n"
+        "- Filler/housekeeping/bland agreement/mere exposition.\n"
+        "- Partial thoughts that end before the payoff.\n"
+        "- Sponsor reads, ads, shoutouts, or promotional segments.\n\n"
+        "POST-PROCESSING NOTES (craft clips that survive):\n"
+        "- Starts/ends snap to dialog boundaries; adjacent/overlapping clips may merge.\n"
+        "- Overlapping clips are pruned to keep only the strongest.\n"
+        "- A secondary tone check drops off-tone or too-short clips.\n\n"
+        "SCORING GUIDE:\n"
+        + "\n".join([f"{rating}: {desc}" for rating, desc in GENERAL_RATING_DESCRIPTIONS.items()])
+        + ("\n" + "\n".join([f"{rating}: {desc}" for rating, desc in rating_descriptions.items()]) if rating_descriptions else "")
+        + "\n<end_of_turn>\n<start_of_turn>model"
     )
 
 
