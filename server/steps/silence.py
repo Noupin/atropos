@@ -7,12 +7,17 @@ from typing import Iterable, List, Tuple
 SILENCE_START_RE = re.compile(r"silence_start: (?P<time>\d+(?:\.\d+)?)")
 SILENCE_END_RE = re.compile(r"silence_end: (?P<time>\d+(?:\.\d+)?)")
 
+from ..config import (
+    SILENCE_DETECTION_NOISE,
+    SILENCE_DETECTION_MIN_DURATION,
+)
+
 
 def detect_silences(
     audio_path: str | Path,
     *,
-    noise: str = "-30dB",
-    min_duration: float = 0.3,
+    noise: str = SILENCE_DETECTION_NOISE,
+    min_duration: float = SILENCE_DETECTION_MIN_DURATION,
 ) -> List[Tuple[float, float]]:
     """Return a list of (start, end) silence segments for ``audio_path``."""
     cmd = [
