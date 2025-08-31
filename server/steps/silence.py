@@ -7,7 +7,7 @@ from typing import Iterable, List, Tuple
 SILENCE_START_RE = re.compile(r"silence_start: (?P<time>\d+(?:\.\d+)?)")
 SILENCE_END_RE = re.compile(r"silence_end: (?P<time>\d+(?:\.\d+)?)")
 
-from ..config import (
+from config import (
     SILENCE_DETECTION_NOISE,
     SILENCE_DETECTION_MIN_DURATION,
 )

@@ -19,7 +19,7 @@ EXPORT_RAW_CLIPS = False
 
 # Silence detection thresholds
 SILENCE_DETECTION_NOISE = "-30dB"
-SILENCE_DETECTION_MIN_DURATION = 0.3
+SILENCE_DETECTION_MIN_DURATION = 0.15
 
 # ---------------------------------------
 # Candidate selection heuristics

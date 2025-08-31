@@ -81,6 +81,7 @@ def _build_system_instructions(
         "- Tags: include 1–5 short, lowercase tags describing the moment (topic or device).\n"
         "- Non-overlap & spacing: clips must not overlap and must be spaced by ≥ 2.0s; if two candidates would overlap or be closer than 2.0s, keep only the higher-rated one.\n"
         "- Near-duplicate filter: if two candidates share the same punchline/wording or their `quote` has >60% overlap, output only the strongest single version.\n"
+        "- Unique reasons: each candidate's `reason` must differ; do not reuse identical explanations.\n"
         "- JSON only: return just the array; no commentary, markdown, or extra keys.\n"
         "- If uncertain whether a candidate meets the rules, exclude it.\n\n"
         "ALWAYS EXCLUDE (never return these):\n"
