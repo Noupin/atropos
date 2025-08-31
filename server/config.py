@@ -21,7 +21,7 @@ EXPORT_RAW_CLIPS = False
 # Candidate selection heuristics
 # ---------------------------------------
 MIN_DURATION_SECONDS = 3.0
-MAX_DURATION_SECONDS = 45.0
+MAX_DURATION_SECONDS = 75.0
 SWEET_SPOT_MIN_SECONDS = 5.0
 SWEET_SPOT_MAX_SECONDS = 15.0
 
