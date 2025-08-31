@@ -45,6 +45,8 @@ from config import (
     SNAP_TO_DIALOG,
     SNAP_TO_SENTENCE,
     EXPORT_RAW_CLIPS,
+    SILENCE_DETECTION_NOISE,
+    SILENCE_DETECTION_MIN_DURATION,
 )
 
 import sys
@@ -183,7 +185,15 @@ def process_video(yt_url: str) -> None:
     silences_path = project_dir / "silences.json"
 
     def step_silences() -> list[tuple[float, float]]:
-        silences = detect_silences(str(audio_output_path)) if audio_ok else []
+        silences = (
+            detect_silences(
+                str(audio_output_path),
+                noise=SILENCE_DETECTION_NOISE,
+                min_duration=SILENCE_DETECTION_MIN_DURATION,
+            )
+            if audio_ok
+            else []
+        )
         write_silences_json(silences, silences_path)
         return silences
 

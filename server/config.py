@@ -17,6 +17,10 @@ SNAP_TO_SENTENCE = True
 # Export silence-only "raw" clips for debugging comparisons
 EXPORT_RAW_CLIPS = False
 
+# Silence detection thresholds
+SILENCE_DETECTION_NOISE = "-30dB"
+SILENCE_DETECTION_MIN_DURATION = 0.3
+
 # ---------------------------------------
 # Candidate selection heuristics
 # ---------------------------------------
@@ -43,6 +47,8 @@ __all__ = [
     "SNAP_TO_DIALOG",
     "SNAP_TO_SENTENCE",
     "EXPORT_RAW_CLIPS",
+    "SILENCE_DETECTION_NOISE",
+    "SILENCE_DETECTION_MIN_DURATION",
     "MIN_DURATION_SECONDS",
     "MAX_DURATION_SECONDS",
     "SWEET_SPOT_MIN_SECONDS",
