@@ -11,6 +11,12 @@ from steps.download import (
 from steps.candidates.funny import find_funny_timestamps_batched
 from steps.candidates.inspiring import find_inspiring_timestamps_batched
 from steps.candidates.educational import find_educational_timestamps_batched
+from steps.candidates.config import (
+    FUNNY_MIN_RATING,
+    INSPIRING_MIN_RATING,
+    EDUCATIONAL_MIN_RATING,
+    DEFAULT_MIN_RATING,
+)
 from steps.candidates.helpers import (
     export_candidates_json,
     load_candidates_json,
@@ -60,7 +66,12 @@ def process_video(yt_url: str) -> None:
     overall_start = time.perf_counter()
 
     CLIP_TYPE = "funny"  # change to 'inspiring' or 'educational'
-    MIN_RATING = 7.0
+    rating_defaults = {
+        "funny": FUNNY_MIN_RATING,
+        "inspiring": INSPIRING_MIN_RATING,
+        "educational": EDUCATIONAL_MIN_RATING,
+    }
+    MIN_RATING = rating_defaults.get(CLIP_TYPE, DEFAULT_MIN_RATING)
 
     video_info = get_video_info(yt_url)
 

@@ -74,15 +74,54 @@ def _candidate_text(c: ClipCandidate, items: List[Tuple[float, float, str]]) -> 
     return " ".join(parts).strip()
 
 
+def _promo_ranges(
+    items: List[Tuple[float, float, str]],
+    *,
+    buffer_before: float = 2.0,
+    buffer_after: float = 30.0,
+) -> List[Tuple[float, float]]:
+    """Return merged time ranges that likely contain promotional content.
+
+    Any transcript line matching ``PROMO_RE`` is expanded slightly in both
+    directions to account for sponsor messages that continue without
+    repeating keywords.  Overlapping ranges are merged before returning.
+    """
+    spans: List[Tuple[float, float]] = []
+    for s, e, txt in items:
+        if PROMO_RE.search(txt):
+            spans.append((max(0.0, s - buffer_before), e + buffer_after))
+    if not spans:
+        return []
+    spans.sort()
+    merged: List[Tuple[float, float]] = [spans[0]]
+    for s, e in spans[1:]:
+        last_s, last_e = merged[-1]
+        if s <= last_e:
+            merged[-1] = (last_s, max(last_e, e))
+        else:
+            merged.append((s, e))
+    return merged
+
+
 def _filter_promotional_candidates(
     candidates: List[ClipCandidate],
     items: List[Tuple[float, float, str]],
 ) -> List[ClipCandidate]:
     """Remove candidates that appear to contain ad reads or sponsor shoutouts."""
     filtered: List[ClipCandidate] = []
+    promo_spans = _promo_ranges(items)
+
+    def overlaps_promo(c: ClipCandidate) -> bool:
+        for a, b in promo_spans:
+            if not (c.end <= a or c.start >= b):
+                return True
+        return False
+
     for c in candidates:
         text = _candidate_text(c, items).lower()
         if PROMO_RE.search(text):
+            continue
+        if overlaps_promo(c):
             continue
         filtered.append(c)
     return filtered
