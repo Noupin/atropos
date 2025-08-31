@@ -11,7 +11,7 @@ from .candidates.helpers import (
     _snap_start_to_segment_start,
     _snap_end_to_segment_end,
 )
-from .candidates.config import MAX_DURATION_SECONDS
+from ..config import MAX_DURATION_SECONDS
 
 
 def save_clip(

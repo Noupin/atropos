@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
-from .config import (
+from ...config import (
     MAX_DURATION_SECONDS,
     MIN_DURATION_SECONDS,
     SWEET_SPOT_MAX_SECONDS,

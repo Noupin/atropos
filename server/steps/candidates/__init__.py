@@ -6,7 +6,7 @@ import re
 
 from helpers.ai import local_llm_call_json, retry
 from interfaces.clip_candidate import ClipCandidate
-from .config import (
+from ...config import (
     DEFAULT_MIN_RATING,
     DEFAULT_MIN_WORDS,
     MAX_DURATION_SECONDS,
