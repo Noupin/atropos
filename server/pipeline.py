@@ -11,12 +11,6 @@ from steps.download import (
 from steps.candidates.funny import find_funny_timestamps_batched
 from steps.candidates.inspiring import find_inspiring_timestamps_batched
 from steps.candidates.educational import find_educational_timestamps_batched
-from steps.candidates.config import (
-    FUNNY_MIN_RATING,
-    INSPIRING_MIN_RATING,
-    EDUCATIONAL_MIN_RATING,
-    DEFAULT_MIN_RATING,
-)
 from steps.candidates.helpers import (
     export_candidates_json,
     load_candidates_json,
@@ -41,6 +35,16 @@ from steps.dialog import (
     detect_dialog_ranges,
     write_dialog_ranges_json,
     load_dialog_ranges_json,
+)
+from .config import (
+    FUNNY_MIN_RATING,
+    INSPIRING_MIN_RATING,
+    EDUCATIONAL_MIN_RATING,
+    DEFAULT_MIN_RATING,
+    SNAP_TO_SILENCE,
+    SNAP_TO_DIALOG,
+    SNAP_TO_SENTENCE,
+    EXPORT_RAW_CLIPS,
 )
 
 import sys
@@ -250,45 +254,55 @@ def process_video(yt_url: str) -> None:
     shorts_dir = project_dir / "shorts"
 
     clips_dir.mkdir(parents=True, exist_ok=True)
-    raw_clips_dir.mkdir(parents=True, exist_ok=True)
+    if EXPORT_RAW_CLIPS:
+        raw_clips_dir.mkdir(parents=True, exist_ok=True)
     subtitles_dir.mkdir(parents=True, exist_ok=True)
     shorts_dir.mkdir(parents=True, exist_ok=True)
 
-    # Silence-only clips
-    raw_candidates = [
-        ClipCandidate(
-            start=snap_start_to_silence(c.start, silences),
-            end=snap_end_to_silence(c.end, silences),
-            rating=c.rating,
-            reason=c.reason,
-            quote=c.quote,
-        )
-        for c in candidates
-    ]
-    raw_candidates = dedupe_candidates(raw_candidates)
+    if EXPORT_RAW_CLIPS:
+        # Silence-only clips
+        raw_candidates = [
+            ClipCandidate(
+                start=
+                snap_start_to_silence(c.start, silences) if SNAP_TO_SILENCE else c.start,
+                end=snap_end_to_silence(c.end, silences) if SNAP_TO_SILENCE else c.end,
+                rating=c.rating,
+                reason=c.reason,
+                quote=c.quote,
+            )
+            for c in candidates
+        ]
+        raw_candidates = dedupe_candidates(raw_candidates)
 
-    for idx, cand in enumerate(raw_candidates, start=1):
-        def step_cut_raw() -> Path | None:
-            return save_clip_from_candidate(video_output_path, raw_clips_dir, cand)
+        for idx, cand in enumerate(raw_candidates, start=1):
+            def step_cut_raw() -> Path | None:
+                return save_clip_from_candidate(
+                    video_output_path, raw_clips_dir, cand
+                )
 
-        run_step(
-            f"STEP 6R.{idx}: Cutting raw clip -> {raw_clips_dir}",
-            step_cut_raw,
-        )
+            run_step(
+                f"STEP 6R.{idx}: Cutting raw clip -> {raw_clips_dir}",
+                step_cut_raw,
+            )
 
     # Fully snapped clips
     refined_candidates = []
     for cand in candidates:
-        snapped_start = snap_start_to_dialog_start(cand.start, dialog_ranges)
-        snapped_end = snap_end_to_dialog_end(cand.end, dialog_ranges)
-        snapped_start = _snap_start_to_sentence_start(snapped_start, segments)
-        snapped_end = _snap_end_to_sentence_end(snapped_end, segments)
-        adj_start = snap_start_to_silence(snapped_start, silences)
-        adj_end = snap_end_to_silence(snapped_end, silences)
+        start = cand.start
+        end = cand.end
+        if SNAP_TO_DIALOG:
+            start = snap_start_to_dialog_start(start, dialog_ranges)
+            end = snap_end_to_dialog_end(end, dialog_ranges)
+        if SNAP_TO_SENTENCE:
+            start = _snap_start_to_sentence_start(start, segments)
+            end = _snap_end_to_sentence_end(end, segments)
+        if SNAP_TO_SILENCE:
+            start = snap_start_to_silence(start, silences)
+            end = snap_end_to_silence(end, silences)
         refined_candidates.append(
             ClipCandidate(
-                start=adj_start,
-                end=adj_end,
+                start=start,
+                end=end,
                 rating=cand.rating,
                 reason=cand.reason,
                 quote=cand.quote,

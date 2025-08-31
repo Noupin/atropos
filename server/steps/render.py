@@ -11,7 +11,7 @@ import subprocess
 import os
 import shutil
 
-from .config import CAPTION_FONT_SCALE
+from ..config import CAPTION_FONT_SCALE
 
 
 def render_vertical_with_captions(
