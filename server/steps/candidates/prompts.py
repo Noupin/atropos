@@ -10,8 +10,14 @@ from .config import (
 )
 
 FUNNY_PROMPT_DESC = (
-    "Find self-contained funny beats. Prefer short setups with clear punchlines or absurd twists—deadpan contradictions, playful roasts, or quick shocking confessions. "
-    "Avoid long rambles, inside jokes that need unseen visuals, polite chuckles with no payoff, and any promo/sponsor content."
+    "Find self-contained funny beats that will make most viewers laugh. "
+    "Prefer short setups with a clear punchline or twist (deadpan contradiction, playful roast, absurd confession, misdirection, escalation, wordplay). "
+    "The punchline must occur inside the clip window; do not return pure setup. Start slightly before the setup line and end just after the laugh/beat lands (≤1.5s). "
+    "Favor tight beats (often ≤25s) over long stories unless the payoff is exceptional. "
+    "Cues that often mark a punchline: audience laughter/\"(laughs)\", sudden contradiction (\"actually…\"), hyperbole or absurd comparisons, unexpected specifics, or a sharp reversal (\"turns out…\"). "
+    "Your `quote` should capture the punchline line verbatim. "
+    "`tags` must include at least one comedic device: [\"punchline\", \"roast\", \"callback\", \"absurdity\", \"wordplay\", \"misdirection\", \"deadpan\", \"escalation\"]. "
+    "Reject: long rambles, setup-only segments, inside jokes that need unseen visuals, polite chuckles with no payoff, sponsor/promotional reads, or mean-spirited remarks without wit."
 )
 
 
@@ -58,37 +64,36 @@ EDUCATIONAL_PROMPT_DESC = (
 def _build_system_instructions(
     prompt_desc: str, min_rating: float, rating_descriptions: Optional[Dict[str, str]] = None
 ) -> str:
-    scoring_lines = [
-        f"{rating}: {desc}" for rating, desc in GENERAL_RATING_DESCRIPTIONS.items()
-    ]
-    if rating_descriptions:
-        for rating, desc in rating_descriptions.items():
-            scoring_lines.append(f"{rating}: {desc}")
-    scoring_guide = "SCORING GUIDE:\n" + "\n".join(scoring_lines) + "\n"
-
     return (
         "<start_of_turn>user\n"
-        "You are a concise assistant selecting transcript moments that match this target tone:\n\n"
-        f"{prompt_desc}\n\n"
-        "Respond with a valid JSON array of objects matching this exact schema. If no moments qualify, return []:\n"
+        "You will extract high-quality, self-contained moments from a transcript. Follow these instructions exactly.\n\n"
+        "OUTPUT FORMAT (strict):\n"
+        "Return ONLY a valid JSON array, no prose, matching this schema:\n"
         "[{\"start\": number, \"end\": number, \"rating\": number, \"reason\": string, \"quote\": string, \"tags\": string[]}]\n\n"
-        f"Include only items with rating > {min_rating}. Ratings use 0–10.\n"
-        f"Duration must be between {MIN_DURATION_SECONDS:.0f} and {MAX_DURATION_SECONDS:.0f} seconds; ideal is {SWEET_SPOT_MIN_SECONDS:.0f}–{SWEET_SPOT_MAX_SECONDS:.0f} seconds.\n\n"
-        "RULES:\n"
-        "- Relevance: strongly reflects the target tone.\n"
-        "- Coherence: a self-contained beat; no missing context.\n"
-        "- Clipability: hook + payoff; quotable; attention-friendly.\n"
-        "- Boundaries: never start mid-word; end right after the beat lands.\n"
-        "- Strictness: if tone alignment is uncertain, exclude it.\n\n"
-        "NEGATIVE FILTERS (exclude):\n"
-        "- Filler/housekeeping/bland agreement/mere exposition.\n"
-        "- Partial thoughts that end before the payoff.\n"
-        "- Sponsor reads, ads, shoutouts, or promotional segments (Patreon, merch, etc.).\n\n"
-        "POST-PROCESSING NOTES (craft clips that survive):\n"
-        "- Starts/ends snap to dialog boundaries; adjacent/overlapping clips may merge.\n"
-        "- Overlapping clips are pruned to keep only the strongest.\n"
-        "- A secondary tone check drops off-tone or too-short clips.\n\n"
-        f"{scoring_guide}"
+        f"Quality threshold: include only items with rating > {min_rating} (0–10 numeric).\n"
+        f"Duration: each item must be between {MIN_DURATION_SECONDS:.0f} and {MAX_DURATION_SECONDS:.0f} seconds; ideal is {SWEET_SPOT_MIN_SECONDS:.0f}–{SWEET_SPOT_MAX_SECONDS:.0f} seconds.\n"
+        "Limit: return at most 30 items.\n\n"
+        "HARD RULES (must all be satisfied):\n"
+        "- Self-contained: clear beginning and end; no missing context.\n"
+        "- Boundaries: never start mid-word; begin at a natural lead-in and end just after the key beat lands (leave ~0.2–0.6s of tail room).\n"
+        "- Valid values: start < end; start ≥ 0; rating is a number 0–10 (not a string); no NaN/Infinity.\n"
+        "- Quote fidelity: `quote` must appear within [start, end] and capture the core line.\n"
+        "- Tags: include 1–5 short, lowercase tags describing the moment (topic or device).\n"
+        "- Non-overlap & spacing: clips must not overlap and must be spaced by ≥ 2.0s; if two candidates would overlap or be closer than 2.0s, keep only the higher-rated one.\n"
+        "- Near-duplicate filter: if two candidates share the same punchline/wording or their `quote` has >60% overlap, output only the strongest single version.\n"
+        "- JSON only: return just the array; no commentary, markdown, or extra keys.\n"
+        "- If uncertain whether a candidate meets the rules, exclude it.\n\n"
+        "ALWAYS EXCLUDE (never return these):\n"
+        "- Sponsor reads, ads, shout-outs, Patreon/merch/member plugs, pre-rolls/post-rolls, discount codes (e.g., \"use code\"), link/subscribe calls-to-action, or any promotional content.\n"
+        "- Filler/housekeeping, bland agreement, or mere logistics (\"what time is it\", \"we'll be right back\").\n"
+        "- Partial thoughts that end before the key beat/payoff.\n\n"
+        "SCORING GUIDE (general):\n"
+        + "\n".join([f"{rating}: {desc}" for rating, desc in GENERAL_RATING_DESCRIPTIONS.items()])
+        + ("\n\nTONE-SPECIFIC NOTES:\n" + "\n".join([f"{rating}: {desc}" for rating, desc in rating_descriptions.items()]) if rating_descriptions else "")
+        + "\n\n"
+        "INSTRUCTIONS SOURCE (for context, not a style target):\n"
+        f"{prompt_desc}\n"
+        "Return the JSON now.\n"
         "<end_of_turn>\n<start_of_turn>model"
     )
 
