@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List
 
 from . import ClipCandidate, find_clip_timestamps, find_clip_timestamps_batched
-from ...config import FUNNY_MIN_RATING, FUNNY_MIN_WORDS
+from config import FUNNY_MIN_RATING, FUNNY_MIN_WORDS
 from .prompts import FUNNY_PROMPT_DESC, FUNNY_RATING_DESCRIPTIONS
 
 

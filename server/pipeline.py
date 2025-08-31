@@ -36,7 +36,7 @@ from steps.dialog import (
     write_dialog_ranges_json,
     load_dialog_ranges_json,
 )
-from .config import (
+from config import (
     FUNNY_MIN_RATING,
     INSPIRING_MIN_RATING,
     EDUCATIONAL_MIN_RATING,

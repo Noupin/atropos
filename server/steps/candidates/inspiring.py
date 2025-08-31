@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List
 
 from . import ClipCandidate, find_clip_timestamps, find_clip_timestamps_batched
-from ...config import INSPIRING_MIN_RATING, INSPIRING_MIN_WORDS
+from config import INSPIRING_MIN_RATING, INSPIRING_MIN_WORDS
 from .prompts import INSPIRING_PROMPT_DESC
 
 

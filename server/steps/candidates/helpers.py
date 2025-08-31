@@ -7,7 +7,7 @@ from pathlib import Path
 from math import inf
 
 from interfaces.clip_candidate import ClipCandidate
-from ...config import (
+from config import (
     MAX_DURATION_SECONDS,
     MIN_DURATION_SECONDS,
     SWEET_SPOT_MAX_SECONDS,
