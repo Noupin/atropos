@@ -268,13 +268,12 @@ def find_clip_timestamps_batched(
                 continue
             if not (min_ts <= start < end <= max_ts):
                 continue
-            if rating <= min_rating:
-                continue
-            all_candidates.append(
-                ClipCandidate(
-                    start=start, end=end, rating=rating, reason=reason, quote=quote
-                )
+            candidate = ClipCandidate(
+                start=start, end=end, rating=rating, reason=reason, quote=quote
             )
+            all_candidates.append(candidate)
+            if rating > min_rating:
+                filtered_candidates.append(candidate)
 
     if exclude_ranges:
         def overlaps_any(c: ClipCandidate) -> bool:
@@ -283,9 +282,9 @@ def find_clip_timestamps_batched(
                     return True
             return False
 
-        filtered_candidates = [c for c in all_candidates if not overlaps_any(c)]
-    else:
-        filtered_candidates = all_candidates
+        filtered_candidates = [
+            c for c in filtered_candidates if not overlaps_any(c)
+        ]
     filtered_candidates = _filter_promotional_candidates(filtered_candidates, items)
 
     print(
@@ -381,6 +380,7 @@ def find_clip_timestamps(
     print("[Single] Sending transcript to model for timestamp extraction...")
     parsed = local_llm_call_json(model=model, prompt=prompt, options=options)
     print(f"[Single] Model returned {len(parsed)} raw candidates before filtering.")
+    all_candidates: List[ClipCandidate] = []
     candidates: List[ClipCandidate] = []
     for it in parsed:
         start = _to_float(_get_field(it, "start"))
@@ -392,17 +392,16 @@ def find_clip_timestamps(
             continue
         if not (min_ts <= start < end <= max_ts):
             continue
-        if rating <= min_rating:
-            continue
-        candidates.append(
-            ClipCandidate(
-                start=start, end=end, rating=rating, reason=reason, quote=quote
-            )
+        candidate = ClipCandidate(
+            start=start, end=end, rating=rating, reason=reason, quote=quote
         )
+        all_candidates.append(candidate)
+        if rating > min_rating:
+            candidates.append(candidate)
 
     candidates = _filter_promotional_candidates(candidates, items)
 
-    all_candidates = _merge_adjacent_candidates(
+    merged_candidates = _merge_adjacent_candidates(
         candidates,
         items,
         merge_gap_seconds=1.0,
@@ -412,7 +411,7 @@ def find_clip_timestamps(
         merge_overlaps=merge_overlapping,
     )
     top_candidates = _enforce_non_overlap(
-        all_candidates,
+        merged_candidates,
         items,
         words=words,
         silences=silences,
