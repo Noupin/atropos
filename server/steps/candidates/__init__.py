@@ -272,7 +272,7 @@ def find_clip_timestamps_batched(
                 start=start, end=end, rating=rating, reason=reason, quote=quote
             )
             all_candidates.append(candidate)
-            if rating > min_rating:
+            if rating >= min_rating:
                 filtered_candidates.append(candidate)
 
     if exclude_ranges:
