@@ -30,6 +30,6 @@ def test_funny_rating_descriptions_included() -> None:
     instructions = _build_system_instructions(
         "desc", 5.0, rating_descriptions=FUNNY_RATING_DESCRIPTIONS
     )
-    assert "10: hysterical" in instructions
-    assert "0: reject; offensive" in instructions
+    assert "10: hysterical or delightfully weird" in instructions
+    assert "0: reject; offensive without comedic value" in instructions
 
