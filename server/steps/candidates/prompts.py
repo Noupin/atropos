@@ -11,6 +11,7 @@ from config import (
 
 FUNNY_PROMPT_DESC = (
     "Find self-contained funny beats that will make most viewers laugh. "
+    "Embrace strange, weird, or delightfully crazy moments if they land a punchline. "
     "Prefer short setups with a clear punchline or twist (deadpan contradiction, playful roast, absurd confession, misdirection, escalation, wordplay). "
     "The punchline must occur inside the clip window; do not return pure setup. Start slightly before the setup line and end just after the laugh/beat lands (≤1.5s). "
     "Favor tight beats (often ≤25s) over long stories unless the payoff is exceptional. "
@@ -37,8 +38,8 @@ GENERAL_RATING_DESCRIPTIONS: Dict[str, str] = {
 
 
 FUNNY_RATING_DESCRIPTIONS: Dict[str, str] = {
-    "10": "hysterical; broad laugh for most viewers",
-    "9":  "extremely funny; tight setup and clean punchline",
+    "10": "hysterical or delightfully weird; broad laugh for most viewers",
+    "9":  "extremely funny; tight setup and clean punchline; may be cleverly absurd",
     "8":  "very funny; strong laugh for many",
     "7":  "clearly funny; earns a chuckle",
     "6":  "lightly amusing; smile more than laugh",
