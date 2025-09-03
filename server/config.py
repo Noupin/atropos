@@ -8,6 +8,8 @@ Sections are grouped by feature for easier editing.
 # ---------------------------------------
 # Default baseline caption font scale for rendered videos
 CAPTION_FONT_SCALE = 2.0
+# Constant frame-rate to avoid VFR issues on platforms like TikTok/Reels
+OUTPUT_FPS: float = 30.0
 
 # Clip boundary snapping options
 SNAP_TO_SILENCE = True

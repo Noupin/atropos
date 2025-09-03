@@ -11,7 +11,7 @@ import subprocess
 import os
 import shutil
 
-from config import CAPTION_FONT_SCALE
+from config import CAPTION_FONT_SCALE, OUTPUT_FPS
 
 
 def render_vertical_with_captions(
@@ -48,7 +48,7 @@ def render_vertical_with_captions(
     output = Path(output_path) if output_path is not None else Path(clip_path).with_name(Path(clip_path).stem + "_vertical.mp4")
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    temp_video = output.with_suffix('.video.mp4')
+    temp_video = output.with_suffix('.temp.mp4')
 
     # --- HW accel probes ---
     if use_opencl:
@@ -171,7 +171,8 @@ def render_vertical_with_captions(
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open video: {clip_path}")
 
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    # Force constant output FPS to keep timestamps sane for social platforms
+    fps = OUTPUT_FPS
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(
@@ -340,10 +341,19 @@ def render_vertical_with_captions(
     if mux_audio and shutil.which("ffmpeg") is not None:
         mux_cmd = [
             "ffmpeg", "-y",
-            "-i", str(temp_video),
-            "-i", str(clip_path),
+            "-i", str(temp_video),          # video (from OpenCV)
+            "-i", str(clip_path),           # original (for audio track)
             "-map", "0:v:0", "-map", "1:a:0?",
-            "-c:v", "copy", "-c:a", "copy",
+            # Re-encode video to H.264 + yuv420p, constant 30 fps (CFR), faststart
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-profile:v", "high", "-level", "4.1",
+            "-r", f"{OUTPUT_FPS}",
+            "-vsync", "cfr",
+            "-g", str(int(OUTPUT_FPS) * 2),
+            "-movflags", "+faststart",
+            # Normalize audio to AAC if present
+            "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
             "-shortest",
             str(output),
         ]
@@ -361,7 +371,7 @@ def render_vertical_with_captions(
                     temp_video.replace(output)
             except Exception:
                 pass
-            print("WARN: Audio mux failed; wrote video-only. STDERR head:\n" + (e.stderr.decode(errors='ignore')[:800] if e.stderr else ""))
+            print("WARN: Audio mux/transcode failed; wrote video-only. STDERR head:\n" + (e.stderr.decode(errors='ignore')[:800] if e.stderr else ""))
     else:
         # No mux: write video-only as final
         if temp_video.exists():
