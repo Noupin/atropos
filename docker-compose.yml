@@ -1,0 +1,9 @@
+version: '3.8'
+services:
+  uploader:
+    build: .
+    volumes:
+      - ./out:/app/out
+      - ./server/tokens:/app/server/tokens
+      - ./.env:/app/.env
+    restart: unless-stopped
