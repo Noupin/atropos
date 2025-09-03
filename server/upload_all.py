@@ -12,22 +12,22 @@ from pathlib import Path
 from typing import Callable, Dict
 import os
 
-from server import config as server_config
+from config import TIKTOK_CHUNK_SIZE, TIKTOK_PRIVACY_LEVEL, TOKENS_DIR, YOUTUBE_CATEGORY_ID, YOUTUBE_PRIVACY
 
-DEFAULT_VIDEO = Path("video.mp4")
-DEFAULT_DESC = Path("description.txt")
+DEFAULT_VIDEO = Path("../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_1340.20-1383.79_r9.5_vertical.mp4")
+DEFAULT_DESC = Path("../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_408.66-444.53_r9.5_description.txt")
 
 
 def _ensure_tiktok_tokens(tokens_file: Path) -> None:
     """Ensure TikTok tokens exist by running the auth flow if needed."""
     if not tokens_file.exists():
-        from .tiktok import auth as tiktok_auth
+        from integrations.tiktok import auth as tiktok_auth
 
         tiktok_auth.run()
 
 
 def _upload_youtube(video: Path, desc: Path, privacy: str, category_id: str) -> None:
-    from .youtube import upload as yt_upload
+    from integrations.youtube import upload as yt_upload
 
     title, description = yt_upload.read_description(desc)
     response = yt_upload.upload_video(video, title, description, privacy, category_id)
@@ -35,7 +35,7 @@ def _upload_youtube(video: Path, desc: Path, privacy: str, category_id: str) -> 
 
 
 def _upload_instagram(video: Path, desc: Path) -> None:
-    from .instagram import upload as ig_upload
+    from integrations.instagram import upload as ig_upload
 
     caption = ig_upload._read_caption(desc)
     client = ig_upload.build_client()
@@ -109,16 +109,16 @@ def run(
     sequentially, each expecting a matching ``.txt`` description file.
     """
 
-    tokens_dir = Path(tokens_dir) if tokens_dir else server_config.TOKENS_DIR
+    tokens_dir = Path(tokens_dir) if tokens_dir else TOKENS_DIR
     tokens_dir.mkdir(parents=True, exist_ok=True)
     os.environ["YT_TOKENS_FILE"] = str(tokens_dir / "youtube.json")
     os.environ["TIKTOK_TOKENS_FILE"] = str(tokens_dir / "tiktok.json")
     tokens_file = Path(os.environ["TIKTOK_TOKENS_FILE"])
 
-    yt_privacy = yt_privacy or server_config.YOUTUBE_PRIVACY
-    yt_category_id = yt_category_id or server_config.YOUTUBE_CATEGORY_ID
-    tt_chunk_size = tt_chunk_size or server_config.TIKTOK_CHUNK_SIZE
-    tt_privacy = tt_privacy or server_config.TIKTOK_PRIVACY_LEVEL
+    yt_privacy = yt_privacy or YOUTUBE_PRIVACY
+    yt_category_id = yt_category_id or YOUTUBE_CATEGORY_ID
+    tt_chunk_size = tt_chunk_size or TIKTOK_CHUNK_SIZE
+    tt_privacy = tt_privacy or TIKTOK_PRIVACY_LEVEL
 
     if folder:
         for vid in sorted(Path(folder).glob("*.mp4")):
@@ -158,11 +158,11 @@ def main() -> None:
     video = DEFAULT_VIDEO
     desc = DEFAULT_DESC
     folder = None
-    yt_privacy = server_config.YOUTUBE_PRIVACY
-    yt_category_id = server_config.YOUTUBE_CATEGORY_ID
-    tt_chunk_size = server_config.TIKTOK_CHUNK_SIZE
-    tt_privacy = server_config.TIKTOK_PRIVACY_LEVEL
-    tokens_dir = server_config.TOKENS_DIR
+    yt_privacy = YOUTUBE_PRIVACY
+    yt_category_id = YOUTUBE_CATEGORY_ID
+    tt_chunk_size = TIKTOK_CHUNK_SIZE
+    tt_privacy = TIKTOK_PRIVACY_LEVEL
+    tokens_dir = TOKENS_DIR
 
     run(
         video=video,
