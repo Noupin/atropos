@@ -368,7 +368,7 @@ def find_clip_timestamps(
     condensed = "\n".join(condensed)
 
     system_instructions = _build_system_instructions(
-        prompt_desc, min_rating, rating_descriptions
+        prompt_desc, rating_descriptions
     )
 
     prompt = (
@@ -396,7 +396,7 @@ def find_clip_timestamps(
             start=start, end=end, rating=rating, reason=reason, quote=quote
         )
         all_candidates.append(candidate)
-        if rating > min_rating:
+        if rating >= min_rating:
             candidates.append(candidate)
 
     candidates = _filter_promotional_candidates(candidates, items)

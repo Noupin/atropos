@@ -404,7 +404,7 @@ def _enforce_non_overlap(
 
     adjusted: List[ClipCandidate] = []
     for c in candidates:
-        if c.rating <= min_rating:
+        if c.rating < min_rating:
             continue
         s, e = refine_clip_window(
             c.start,

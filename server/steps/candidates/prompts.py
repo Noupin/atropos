@@ -65,7 +65,7 @@ EDUCATIONAL_PROMPT_DESC = (
 
 
 def _build_system_instructions(
-    prompt_desc: str, min_rating: float, rating_descriptions: Optional[Dict[str, str]] = None
+    prompt_desc: str, rating_descriptions: Optional[Dict[str, str]] = None
 ) -> str:
     return (
         "<start_of_turn>user\n"
