@@ -44,7 +44,7 @@ def export_candidates_json(candidates: List[ClipCandidate], path: str | Path) ->
         {
             "start": c.start,
             "end": c.end,
-            "rating": c.rating,
+            "rating": round(c.rating, 1),
             "reason": c.reason,
             "quote": c.quote,
         }
@@ -61,6 +61,8 @@ def load_candidates_json(path: str | Path) -> List[ClipCandidate]:
         start = _to_float(_get_field(it, "start"))
         end = _to_float(_get_field(it, "end"))
         rating = _to_float(_get_field(it, "rating"))
+        if rating is not None:
+            rating = round(rating, 1)
         reason = str(_get_field(it, "reason", ""))
         quote = str(_get_field(it, "quote", ""))
         if start is None or end is None or rating is None:
