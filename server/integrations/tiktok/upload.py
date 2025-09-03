@@ -6,10 +6,18 @@ import mimetypes
 import requests
 from pathlib import Path
 
+TOKENS_FILE = Path(
+    os.getenv("TIKTOK_TOKENS_FILE")
+    or Path(__file__).resolve().parents[2] / "tokens" / "tiktok.json"
+)
+
 # Load access token from JSON file
-with open(".tiktok_tokens.json", "r", encoding="utf-8") as f:
-    data = json.load(f)
-ACCESS_TOKEN = data["access_token"]
+try:
+    with open(TOKENS_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    ACCESS_TOKEN = data["access_token"]
+except FileNotFoundError:  # pragma: no cover - runtime setup
+    ACCESS_TOKEN = ""
 
 # ------------ CONFIG (edit these) ------------
 VIDEO_PATH   = Path("/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2_vertical.mp4")
