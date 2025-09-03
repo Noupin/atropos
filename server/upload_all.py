@@ -7,14 +7,18 @@ overridden at runtime via the :func:`run` function.
 
 from __future__ import annotations
 
+from dotenv import load_dotenv
+load_dotenv(dotenv_path="../.env")
+
 from importlib import import_module
 from pathlib import Path
 from typing import Callable, Dict
 import os
 
 from config import TIKTOK_CHUNK_SIZE, TIKTOK_PRIVACY_LEVEL, TOKENS_DIR, YOUTUBE_CATEGORY_ID, YOUTUBE_PRIVACY
+import integrations.tiktok.upload as tt_upload
 
-DEFAULT_VIDEO = Path("../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_1340.20-1383.79_r9.5_vertical.mp4")
+DEFAULT_VIDEO = Path("../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_408.66-444.53_r9.5_vertical.mp4")
 DEFAULT_DESC = Path("../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_408.66-444.53_r9.5_description.txt")
 
 
@@ -52,8 +56,6 @@ def _upload_tiktok(
     tokens_file: Path,
 ) -> None:
     _ensure_tiktok_tokens(tokens_file)
-    tt_upload = import_module("server.integrations.tiktok.upload")
-
     caption = tt_upload.read_caption(desc)
     size = video.stat().st_size
     publish_id, upload_url = tt_upload.init_direct_post(
