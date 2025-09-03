@@ -3,6 +3,8 @@
 Sections are grouped by feature for easier editing.
 """
 
+from pathlib import Path
+
 # ---------------------------------------
 # Rendering and clip boundary parameters
 # ---------------------------------------
@@ -43,6 +45,18 @@ EDUCATIONAL_MIN_WORDS = 8
 INSPIRING_MIN_RATING = 7.0
 INSPIRING_MIN_WORDS = 8
 
+# ---------------------------------------
+# Multi-platform upload settings
+# ---------------------------------------
+TOKENS_DIR = Path(__file__).with_name("tokens")
+
+YOUTUBE_PRIVACY = "public"
+YOUTUBE_CATEGORY_ID = "23"
+
+# PRIVACY_LEVEL can be PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS, or SELF_ONLY
+TIKTOK_PRIVACY_LEVEL = "SELF_ONLY"
+TIKTOK_CHUNK_SIZE = 10_000_000  # bytes
+
 __all__ = [
     "CAPTION_FONT_SCALE",
     "SNAP_TO_SILENCE",
@@ -63,4 +77,9 @@ __all__ = [
     "EDUCATIONAL_MIN_WORDS",
     "INSPIRING_MIN_RATING",
     "INSPIRING_MIN_WORDS",
+    "TOKENS_DIR",
+    "YOUTUBE_PRIVACY",
+    "YOUTUBE_CATEGORY_ID",
+    "TIKTOK_PRIVACY_LEVEL",
+    "TIKTOK_CHUNK_SIZE",
 ]

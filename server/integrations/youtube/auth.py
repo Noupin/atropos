@@ -1,7 +1,7 @@
 from __future__ import annotations
 """YouTube auth helper (single account).
 
-- Stores credentials for ONE account in a single file: .youtube_tokens.json
+- Stores credentials for ONE account in ``server/tokens/youtube.json``
 - Desktop OAuth (InstalledAppFlow.run_local_server)
 - Refreshes & persists tokens automatically.
 
@@ -28,7 +28,10 @@ from googleapiclient.discovery import build
 # --- Constants (edit here, no argparse) --------------------------------------
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 CLIENT_SECRETS_FILE = os.getenv("YT_CLIENT_SECRETS", "yt_client_secret.json")
-TOKENS_FILE = Path(os.getenv("YT_TOKENS_FILE", ".youtube_tokens.json"))
+TOKENS_FILE = Path(
+    os.getenv("YT_TOKENS_FILE")
+    or Path(__file__).resolve().parents[2] / "tokens" / "youtube.json"
+)
 
 
 # --- Token helpers ------------------------------------------------------------

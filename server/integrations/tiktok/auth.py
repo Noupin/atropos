@@ -1,14 +1,18 @@
 # tiktok_desktop_pkce_demo.py
 import os
+from pathlib import Path
 # Constants you edit once:
 CLIENT_KEY = os.environ.get("TIKTOK_CLIENT_KEY")
 CLIENT_SECRET = os.environ.get("TIKTOK_CLIENT_SECRET")  # some flows accept without; include if your app requires it
 SCOPES = ["user.info.basic", "video.publish"]          # comma-separated in URL (TikTok desktop spec)
 REDIRECT_PATH = "/tiktok/auth/callback/"  # note trailing slash (keep it stable)
 
-TOKENS_FILE = ".tiktok_tokens.json"
+TOKENS_FILE = Path(
+    os.getenv("TIKTOK_TOKENS_FILE")
+    or Path(__file__).resolve().parents[2] / "tokens" / "tiktok.json"
+)
 
-import http.server, socket, webbrowser, urllib.parse, hashlib, os, secrets, json, requests, threading
+import http.server, socket, webbrowser, urllib.parse, hashlib, secrets, json, requests, threading
 
 def random_free_port():
     s = socket.socket()
