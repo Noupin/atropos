@@ -103,7 +103,7 @@ def test_sponsor_continuation_rejected(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_prompt_mentions_promotional_filter() -> None:
-    prompt = _build_system_instructions(FUNNY_PROMPT_DESC, 7.0)
+    prompt = _build_system_instructions(FUNNY_PROMPT_DESC)
     lower = prompt.lower()
     assert "sponsor" in lower
     assert "patreon" in lower

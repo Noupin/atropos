@@ -78,7 +78,7 @@ def _build_system_instructions(
         "HARD RULES (must all be satisfied):\n"
         "- Self-contained: clear beginning and end; no missing context.\n"
         "- Boundaries: never start mid-word; begin at a natural lead-in and end just after the key beat lands (leave ~0.2–0.6s of tail room).\n"
-        "- Valid values: start < end; start ≥ 0; rating is a number 0–10 (not a string); no NaN/Infinity.\n"
+        "- Valid values: start < end; start ≥ 0; rating is a number 0–10 (not a string, float allowed, e.g., 5.2); no NaN/Infinity.\n"
         "- Quote fidelity: `quote` must appear within [start, end] and capture the core line.\n"
         "- Tags: include 1–5 short, lowercase tags describing the moment (topic or device).\n"
         "- Structure: every clip should present a setup, brief escalation, and a clear payoff.\n"

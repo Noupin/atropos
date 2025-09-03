@@ -225,7 +225,7 @@ def find_clip_timestamps_batched(
     print(f"[Batch] Processing {len(chunks)} transcript chunks...")
 
     system_instructions = _build_system_instructions(
-        prompt_desc, min_rating, rating_descriptions
+        prompt_desc, rating_descriptions
     )
 
     all_candidates: List[ClipCandidate] = []
