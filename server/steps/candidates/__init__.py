@@ -262,6 +262,8 @@ def find_clip_timestamps_batched(
             start = _to_float(_get_field(it, "start"))
             end = _to_float(_get_field(it, "end"))
             rating = _to_float(_get_field(it, "rating"))
+            if rating is not None:
+                rating = round(rating, 1)
             reason = str(_get_field(it, "reason", "")).strip()
             quote = str(_get_field(it, "quote", "")).strip()
             if start is None or end is None or rating is None:
@@ -386,6 +388,8 @@ def find_clip_timestamps(
         start = _to_float(_get_field(it, "start"))
         end = _to_float(_get_field(it, "end"))
         rating = _to_float(_get_field(it, "rating"))
+        if rating is not None:
+            rating = round(rating, 1)
         reason = str(_get_field(it, "reason", "")).strip()
         quote = str(_get_field(it, "quote", "")).strip()
         if start is None or end is None or rating is None:
