@@ -42,6 +42,41 @@ def read_description(path: Path) -> tuple[str, str]:
     # description is everything except the chosen title line
     rest_lines = [ln for ln in lines if ln is not title_line]
     desc_text = "\n".join(rest_lines).strip()
+
+    # --- Hashtag extraction and appending to title ---
+    import re
+    # Extract hashtags from the description text
+    hashtag_pattern = r"(?:^|\s)(#\w+)"
+    hashtags = re.findall(hashtag_pattern, desc_text)
+    hashtags = [tag.strip() for tag in hashtags if tag.strip()]
+    first_hashtags = hashtags[:3]  # up to 3
+    # Compose hashtags as a string to append
+    hashtags_str = " ".join(first_hashtags)
+    if hashtags_str:
+        # Try to append hashtags to title_clean, respecting 100 char limit
+        # Leave a space if needed
+        available = 100 - len(title_clean)
+        if available > 0:
+            # Add a space if title_clean doesn't already end with space and hashtags_str isn't empty
+            sep = "" if title_clean.endswith(" ") or not title_clean else " "
+            hashtags_to_add = hashtags_str
+            # If too long, truncate hashtags_str
+            if len(sep + hashtags_str) > available:
+                # Try to fit as many hashtags as possible
+                tags = []
+                total = len(sep)
+                for tag in first_hashtags:
+                    taglen = len(tag) + (1 if tags else 0)
+                    if total + taglen > available:
+                        break
+                    tags.append(tag)
+                    total += taglen
+                hashtags_to_add = " ".join(tags)
+            if hashtags_to_add:
+                title_clean = (title_clean + sep + hashtags_to_add).strip()
+        # Ensure final title is max 100 chars
+        title_clean = title_clean[:100]
+
     # keep within ~5000 chars
     if len(desc_text) > 4900:
         desc_text = desc_text[:4900]
