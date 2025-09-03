@@ -13,11 +13,13 @@ FUNNY_PROMPT_DESC = (
     "Find self-contained funny beats that will make most viewers laugh. "
     "Embrace strange, weird, or delightfully crazy moments if they land a punchline. "
     "Prefer short setups with a clear punchline or twist (deadpan contradiction, playful roast, absurd confession, misdirection, escalation, wordplay). "
+    "Highlight the comedic style (dry satire, slapstick, dark humor, etc.) when obvious and make the scenario's twist or contrast explicit. "
+    "Structure each beat with setup, escalation, and punchline; pacing matters. "
     "The punchline must occur inside the clip window; do not return pure setup. Start slightly before the setup line and end just after the laugh/beat lands (≤1.5s). "
     "Favor tight beats (often ≤25s) over long stories unless the payoff is exceptional. "
     "Cues that often mark a punchline: audience laughter/\"(laughs)\", sudden contradiction (\"actually…\"), hyperbole or absurd comparisons, unexpected specifics, or a sharp reversal (\"turns out…\"). "
     "Your `quote` should capture the punchline line verbatim. "
-    "`tags` must include at least one comedic device: [\"punchline\", \"roast\", \"callback\", \"absurdity\", \"wordplay\", \"misdirection\", \"deadpan\", \"escalation\"]. "
+    "`tags` must include at least one comedic device: [\"punchline\", \"roast\", \"callback\", \"absurdity\", \"wordplay\", \"misdirection\", \"deadpan\", \"escalation\"]; when possible add a tag for comedic style (e.g., \"slapstick\", \"dark\"). "
     "Reject: long rambles, setup-only segments, inside jokes that need unseen visuals, polite chuckles with no payoff, sponsor/promotional reads, or mean-spirited remarks without wit."
 )
 
@@ -80,6 +82,7 @@ def _build_system_instructions(
         "- Valid values: start < end; start ≥ 0; rating is a number 0–10 (not a string); no NaN/Infinity.\n"
         "- Quote fidelity: `quote` must appear within [start, end] and capture the core line.\n"
         "- Tags: include 1–5 short, lowercase tags describing the moment (topic or device).\n"
+        "- Structure: every clip should present a setup, brief escalation, and a clear payoff.\n"
         "- Non-overlap & spacing: clips must not overlap and must be spaced by ≥ 2.0s; if two candidates would overlap or be closer than 2.0s, keep only the higher-rated one.\n"
         "- Near-duplicate filter: if two candidates share the same punchline/wording or their `quote` has >60% overlap, output only the strongest single version.\n"
         "- Unique reasons: each candidate's `reason` must differ; do not reuse identical explanations.\n"
