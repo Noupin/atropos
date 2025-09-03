@@ -13,3 +13,9 @@ env
 
 .env
 upload_config.json
+.meta_tokens.json
+.tiktok_tokens.json
+.youtube_tokens.json
+server/integrations/instagram/instagrapi_session.json
+server/integrations/instagram/instagrapi_state.json
+yt_client_secret.json
