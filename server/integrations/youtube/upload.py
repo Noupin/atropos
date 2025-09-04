@@ -10,7 +10,7 @@ from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
 
 from .auth import ensure_creds
-from server.helpers.description import maybe_append_website_link
+from helpers.description import maybe_append_website_link
 
 # --- Configuration ---
 VIDEO_PATH = Path(
