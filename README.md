@@ -41,7 +41,7 @@ from common.env import load_env
 3. Place the videos and caption files in the folder specified by
    ``UPLOAD_FOLDER`` in ``server/scripts/run_bulk_upload.py`` (defaults to
    ``upload_queue``). For each ``video.mp4`` provide a caption file named
-   ``video_description.txt`` or ``video.txt`` in the same directory.
+   ``video.txt`` in the same directory.
 
 ## Running
 

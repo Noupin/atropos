@@ -42,6 +42,8 @@ def test_main_cleans_and_deletes(tmp_path: Path, monkeypatch) -> None:
     video.write_bytes(b"a")
     desc = video.with_suffix(".txt")
     desc.write_text("desc")
+    extra_clip = shorts / "clip.srt"
+    extra_clip.write_text("subs")
     extra_file = project / "note.txt"
     extra_file.write_text("junk")
     extra_dir = project / "raw"
@@ -62,6 +64,7 @@ def test_main_cleans_and_deletes(tmp_path: Path, monkeypatch) -> None:
     assert calls[0] == (video.relative_to(tmp_path), desc.relative_to(tmp_path))
     assert not video.exists()
     assert not desc.exists()
+    assert not extra_clip.exists()
     assert not extra_file.exists()
     assert not extra_dir.exists()
     assert not shorts.exists()

@@ -8,8 +8,12 @@ import time
 # --- Constants (no argparse, edit here) ---
 USERNAME = os.getenv("IG_USERNAME")
 PASSWORD = os.getenv("IG_PASSWORD")
-VIDEO_PATH = Path("/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2_vertical.mp4")
-DESC_PATH = Path("/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2_description.txt")
+VIDEO_PATH = Path(
+    "/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2.mp4"
+)
+DESC_PATH = Path(
+    "/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2.txt"
+)
 SESSION_PATH = Path(__file__).with_name("instagrapi_session.json")
 STATE_PATH = Path(__file__).with_name("instagrapi_state.json")  # optional debug
 

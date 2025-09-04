@@ -10,6 +10,8 @@ def test_run_folder_deletes_files(tmp_path, monkeypatch) -> None:
     video.write_bytes(b"a")
     desc = folder / "clip.txt"
     desc.write_text("d")
+    extra = folder / "clip.srt"
+    extra.write_text("subs")
 
     calls: list[tuple[Path, Path]] = []
 
@@ -38,4 +40,5 @@ def test_run_folder_deletes_files(tmp_path, monkeypatch) -> None:
     assert calls == [(video, desc)]
     assert not video.exists()
     assert not desc.exists()
+    assert not extra.exists()
 

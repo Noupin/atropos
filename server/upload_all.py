@@ -32,8 +32,12 @@ from .integrations.instagram.upload import (
     PASSWORD,
 )
 
-DEFAULT_VIDEO = Path("../out/Can_We_Spend_5_Gift_Cards_in_1_Hour__-_KF_AF_20190116/shorts/clip_1990.90-2080.90_r8.5_vertical.mp4")
-DEFAULT_DESC = Path("../out/Can_We_Spend_5_Gift_Cards_in_1_Hour__-_KF_AF_20190116/shorts/clip_1990.90-2080.90_r8.5_description.txt")
+DEFAULT_VIDEO = Path(
+    "../out/Can_We_Spend_5_Gift_Cards_in_1_Hour__-_KF_AF_20190116/shorts/clip_1990.90-2080.90_r8.5.mp4"
+)
+DEFAULT_DESC = Path(
+    "../out/Can_We_Spend_5_Gift_Cards_in_1_Hour__-_KF_AF_20190116/shorts/clip_1990.90-2080.90_r8.5.txt"
+)
 
 
 def _ensure_tiktok_tokens(tokens_file: Path) -> None:
@@ -172,8 +176,9 @@ def run(
                     tokens_file=tokens_file,
                 )
             finally:
-                desc_path.unlink(missing_ok=True)
-                vid.unlink(missing_ok=True)
+                for f in vid.parent.glob(f"{vid.stem}.*"):
+                    if f.is_file():
+                        f.unlink(missing_ok=True)
     else:
         video = Path(video) if video else DEFAULT_VIDEO
         desc = Path(desc) if desc else DEFAULT_DESC

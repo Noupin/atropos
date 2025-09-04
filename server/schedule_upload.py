@@ -65,8 +65,9 @@ def main() -> None:
     try:
         run(video=video, desc=desc)
     finally:
-        desc.unlink(missing_ok=True)
-        video.unlink(missing_ok=True)
+        for f in video.parent.glob(f"{video.stem}.*"):
+            if f.is_file():
+                f.unlink(missing_ok=True)
         _tidy_empty_dirs(video.parent, project)
 
 

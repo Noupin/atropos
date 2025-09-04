@@ -12,8 +12,12 @@ from googleapiclient.errors import HttpError
 from .auth import ensure_creds
 
 # --- Configuration ---
-VIDEO_PATH = Path("/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2_vertical.mp4")
-DESC_PATH = Path("/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2_description.txt")
+VIDEO_PATH = Path(
+    "/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2.mp4"
+)
+DESC_PATH = Path(
+    "/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2.txt"
+)
 PRIVACY = "public"        # or 'unlisted' or 'private'
 CATEGORY_ID = "23"        # e.g., 22 for People & Blogs, 23 for Comedy
 
