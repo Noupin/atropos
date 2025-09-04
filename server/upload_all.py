@@ -17,6 +17,9 @@ import os
 
 from config import TIKTOK_CHUNK_SIZE, TIKTOK_PRIVACY_LEVEL, TOKENS_DIR, YOUTUBE_CATEGORY_ID, YOUTUBE_PRIVACY
 import integrations.tiktok.upload as tt_upload
+from integrations.youtube.auth import ensure_creds
+from integrations.tiktok.auth import run as run_tiktok_auth
+from integrations.instagram.upload import login_or_resume, build_client, USERNAME, PASSWORD
 
 DEFAULT_VIDEO = Path("../out/Can_We_Spend_5_Gift_Cards_in_1_Hour__-_KF_AF_20190116/shorts/clip_1990.90-2080.90_r8.5_vertical.mp4")
 DEFAULT_DESC = Path("../out/Can_We_Spend_5_Gift_Cards_in_1_Hour__-_KF_AF_20190116/shorts/clip_1990.90-2080.90_r8.5_description.txt")
@@ -68,13 +71,12 @@ def _upload_tiktok(
 
 def _get_auth_refreshers() -> Dict[str, Callable[[], None]]:
     """Return callables to refresh auth for each platform."""
-    ig_mod = import_module("integrations.instagram.upload")
     return {
-        "youtube": lambda: import_module("integrations.youtube.auth").ensure_creds(),
-        "instagram": lambda: ig_mod.login_or_resume(
-            ig_mod.build_client(), ig_mod.USERNAME, ig_mod.PASSWORD
+        "youtube": ensure_creds,
+        "instagram": lambda: login_or_resume(
+            build_client(), USERNAME, PASSWORD
         ),
-        "tiktok": lambda: import_module("integrations.tiktok.auth").run(),
+        "tiktok": run_tiktok_auth,
     }
 
 
