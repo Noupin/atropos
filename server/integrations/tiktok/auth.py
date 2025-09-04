@@ -56,6 +56,38 @@ def exchange_code_for_tokens(code, redirect_uri, code_verifier):
     r.raise_for_status()
     return r.json()
 
+
+def refresh_tokens() -> bool:
+    """Attempt to refresh TikTok access token using stored refresh token.
+
+    Returns ``True`` if the token was refreshed and saved, ``False`` otherwise.
+    """
+    try:
+        data = json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+
+    refresh_token = data.get("refresh_token")
+    if not refresh_token:
+        return False
+
+    url = "https://open.tiktokapis.com/v2/oauth/token/"
+    body = {
+        "client_key": CLIENT_KEY,
+        "client_secret": CLIENT_SECRET,
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+    }
+    try:
+        resp = requests.post(url, data=body, timeout=30)
+        resp.raise_for_status()
+        new_tokens = resp.json()
+    except Exception:
+        return False
+
+    TOKENS_FILE.write_text(json.dumps(new_tokens, indent=2), encoding="utf-8")
+    return True
+
 def run():
     port = 3455
     redirect_uri = f"http://localhost:{port}{REDIRECT_PATH}"
