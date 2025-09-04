@@ -26,6 +26,12 @@ SILENCE_DETECTION_NOISE = "-30dB"
 SILENCE_DETECTION_MIN_DURATION = 0.075
 
 # ---------------------------------------
+# Transcript acquisition settings
+# ---------------------------------------
+# Preferred transcript source: "youtube" or "whisper"
+TRANSCRIPT_SOURCE = "youtube"
+
+# ---------------------------------------
 # Candidate selection heuristics
 # ---------------------------------------
 MIN_DURATION_SECONDS = 3.0
@@ -69,6 +75,7 @@ __all__ = [
     "EXPORT_RAW_CLIPS",
     "SILENCE_DETECTION_NOISE",
     "SILENCE_DETECTION_MIN_DURATION",
+    "TRANSCRIPT_SOURCE",
     "MIN_DURATION_SECONDS",
     "MAX_DURATION_SECONDS",
     "SWEET_SPOT_MIN_SECONDS",
