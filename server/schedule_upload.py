@@ -3,8 +3,9 @@ from __future__ import annotations
 """Select and upload the oldest clip in the ``out`` directory."""
 
 from pathlib import Path
+import shutil
 
-from upload_all import run
+from .upload_all import run
 
 OUT_DIR = Path("out")
 
@@ -32,13 +33,41 @@ def find_oldest_clip(base: Path = OUT_DIR) -> tuple[Path, Path] | None:
     return None
 
 
+def _clean_project_folder(project: Path) -> None:
+    """Remove all files and folders in ``project`` except ``shorts``."""
+
+    for item in project.iterdir():
+        if item.name == "shorts":
+            continue
+        if item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink()
+
+
+def _tidy_empty_dirs(shorts: Path, project: Path) -> None:
+    """Delete empty ``shorts`` and project directories."""
+
+    if not any(shorts.iterdir()):
+        shorts.rmdir()
+        if not any(project.iterdir()):
+            project.rmdir()
+
+
 def main() -> None:
     clip = find_oldest_clip()
     if not clip:
         print("No videos found for upload")
         return
     video, desc = clip
-    run(video=video, desc=desc)
+    project = video.parent.parent
+    _clean_project_folder(project)
+    try:
+        run(video=video, desc=desc)
+    finally:
+        desc.unlink(missing_ok=True)
+        video.unlink(missing_ok=True)
+        _tidy_empty_dirs(video.parent, project)
 
 
 if __name__ == "__main__":
