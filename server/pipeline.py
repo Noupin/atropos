@@ -481,6 +481,6 @@ if __name__ == "__main__":
 
     urls = get_video_urls(yt_url)
     urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    niche = None  # Set to a niche/account name to output under out/<niche>
-    for url in urls[1:2]:
+    niche = "funny"  # Set to a niche/account name to output under out/<niche>
+    for url in urls[3:4]:
         process_video(url, niche=niche)
