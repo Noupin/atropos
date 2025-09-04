@@ -47,6 +47,7 @@ from config import (
     EXPORT_RAW_CLIPS,
     SILENCE_DETECTION_NOISE,
     SILENCE_DETECTION_MIN_DURATION,
+    TRANSCRIPT_SOURCE,
 )
 
 import sys
@@ -151,36 +152,65 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
             languages=["en", "en-US", "en-GB", "ko"],
         )
 
-    yt_ok = run_step(
-        f"STEP 3: Attempting YouTube transcript -> {transcript_output_path}",
-        step_download_transcript,
-    )
-    if yt_ok:
-        print(f"{Fore.GREEN}STEP 3: Used YouTube transcript.{Style.RESET_ALL}")
-    else:
-        if not audio_ok:
-            print(
-                f"{Fore.RED}STEP 3: Cannot transcribe because audio acquisition failed.{Style.RESET_ALL}"
-            )
-            send_failure_email(
-                "Transcript unavailable",
-                f"No transcript could be retrieved or generated for video {yt_url} because audio acquisition failed.",
-            )
-        else:
+    def step_transcribe() -> bool:
+        result = transcribe_audio(
+            str(audio_output_path), model_size="large-v3-turbo"
+        )
+        write_transcript_txt(result, str(transcript_output_path))
+        return True
 
-            def step_transcribe() -> None:
-                result = transcribe_audio(
-                    str(audio_output_path), model_size="large-v3-turbo"
-                )
-                write_transcript_txt(result, str(transcript_output_path))
-
-            run_step(
+    if TRANSCRIPT_SOURCE == "whisper":
+        transcribed = False
+        if audio_ok:
+            transcribed = run_step(
                 "STEP 3: Transcribing with faster-whisper (large-v3-turbo)",
                 step_transcribe,
             )
-            print(
-                f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
+            if transcribed:
+                print(
+                    f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
+                )
+        if not transcribed:
+            yt_ok = run_step(
+                f"STEP 3: Attempting YouTube transcript -> {transcript_output_path}",
+                step_download_transcript,
             )
+            if yt_ok:
+                print(
+                    f"{Fore.GREEN}STEP 3: Used YouTube transcript.{Style.RESET_ALL}"
+                )
+            else:
+                print(
+                    f"{Fore.RED}STEP 3: Cannot transcribe because audio acquisition failed.{Style.RESET_ALL}"
+                )
+                send_failure_email(
+                    "Transcript unavailable",
+                    f"No transcript could be retrieved or generated for video {yt_url} because audio acquisition failed.",
+                )
+    else:
+        yt_ok = run_step(
+            f"STEP 3: Attempting YouTube transcript -> {transcript_output_path}",
+            step_download_transcript,
+        )
+        if yt_ok:
+            print(f"{Fore.GREEN}STEP 3: Used YouTube transcript.{Style.RESET_ALL}")
+        else:
+            if not audio_ok:
+                print(
+                    f"{Fore.RED}STEP 3: Cannot transcribe because audio acquisition failed.{Style.RESET_ALL}"
+                )
+                send_failure_email(
+                    "Transcript unavailable",
+                    f"No transcript could be retrieved or generated for video {yt_url} because audio acquisition failed.",
+                )
+            else:
+                run_step(
+                    "STEP 3: Transcribing with faster-whisper (large-v3-turbo)",
+                    step_transcribe,
+                )
+                print(
+                    f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
+                )
 
     # ----------------------
     # STEP 4: Detect Silence Segments
