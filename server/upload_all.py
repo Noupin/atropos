@@ -15,11 +15,22 @@ from pathlib import Path
 from typing import Callable, Dict
 import os
 
-from config import TIKTOK_CHUNK_SIZE, TIKTOK_PRIVACY_LEVEL, TOKENS_DIR, YOUTUBE_CATEGORY_ID, YOUTUBE_PRIVACY
-import integrations.tiktok.upload as tt_upload
-from integrations.youtube.auth import ensure_creds
-from integrations.tiktok.auth import run as run_tiktok_auth
-from integrations.instagram.upload import login_or_resume, build_client, USERNAME, PASSWORD
+from .config import (
+    TIKTOK_CHUNK_SIZE,
+    TIKTOK_PRIVACY_LEVEL,
+    TOKENS_DIR,
+    YOUTUBE_CATEGORY_ID,
+    YOUTUBE_PRIVACY,
+)
+from .integrations.tiktok import upload as tt_upload
+from .integrations.youtube.auth import ensure_creds
+from .integrations.tiktok.auth import run as run_tiktok_auth
+from .integrations.instagram.upload import (
+    login_or_resume,
+    build_client,
+    USERNAME,
+    PASSWORD,
+)
 
 DEFAULT_VIDEO = Path("../out/Can_We_Spend_5_Gift_Cards_in_1_Hour__-_KF_AF_20190116/shorts/clip_1990.90-2080.90_r8.5_vertical.mp4")
 DEFAULT_DESC = Path("../out/Can_We_Spend_5_Gift_Cards_in_1_Hour__-_KF_AF_20190116/shorts/clip_1990.90-2080.90_r8.5_description.txt")
@@ -150,15 +161,19 @@ def run(
             if not desc_path.exists():
                 print(f"No description for {vid}, skipping")
                 continue
-            upload_all(
-                vid,
-                desc_path,
-                yt_privacy=yt_privacy,
-                yt_category_id=yt_category_id,
-                tt_chunk_size=tt_chunk_size,
-                tt_privacy=tt_privacy,
-                tokens_file=tokens_file,
-            )
+            try:
+                upload_all(
+                    vid,
+                    desc_path,
+                    yt_privacy=yt_privacy,
+                    yt_category_id=yt_category_id,
+                    tt_chunk_size=tt_chunk_size,
+                    tt_privacy=tt_privacy,
+                    tokens_file=tokens_file,
+                )
+            finally:
+                desc_path.unlink(missing_ok=True)
+                vid.unlink(missing_ok=True)
     else:
         video = Path(video) if video else DEFAULT_VIDEO
         desc = Path(desc) if desc else DEFAULT_DESC
