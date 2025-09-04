@@ -15,20 +15,22 @@ from pathlib import Path
 from typing import Callable, Dict
 import os
 
-from .config import (
+from config import (
     TIKTOK_CHUNK_SIZE,
     TIKTOK_PRIVACY_LEVEL,
     TOKENS_DIR,
     YOUTUBE_CATEGORY_ID,
     YOUTUBE_PRIVACY,
 )
-from server.integrations.tiktok import upload as tt_upload
-from server.integrations.youtube.auth import ensure_creds, refresh_creds
-from server.integrations.tiktok.auth import (
+
+from integrations.tiktok import upload as tt_upload
+from integrations.youtube.auth import ensure_creds, refresh_creds
+from integrations.tiktok.auth import (
     run as run_tiktok_auth,
     refresh_tokens as refresh_tiktok_tokens,
 )
-from server.integrations.instagram.upload import (
+from integrations.instagram.upload import (
+
     login_or_resume,
     build_client,
     USERNAME,
@@ -36,10 +38,10 @@ from server.integrations.instagram.upload import (
 )
 
 DEFAULT_VIDEO = Path(
-    "../out/Can_We_Spend_5_Gift_Cards_in_1_Hour__-_KF_AF_20190116/shorts/clip_1990.90-2080.90_r8.5.mp4"
+    "../out/Remaking_The_Office_s_Best_Scenes_-_KF_AF_20190123/shorts/clip_1476.34-1502.96_r8.5.mp4"
 )
 DEFAULT_DESC = Path(
-    "../out/Can_We_Spend_5_Gift_Cards_in_1_Hour__-_KF_AF_20190116/shorts/clip_1990.90-2080.90_r8.5.txt"
+    "../out/Remaking_The_Office_s_Best_Scenes_-_KF_AF_20190123/shorts/clip_1476.34-1502.96_r8.5.txt"
 )
 
 
