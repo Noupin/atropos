@@ -66,6 +66,17 @@ def load_creds() -> Optional[Credentials]:
     return None
 
 
+def refresh_creds() -> bool:
+    """Attempt to load and refresh credentials without user interaction.
+
+    Returns ``True`` if valid credentials are available, ``False`` otherwise.
+    """
+    try:
+        return load_creds() is not None
+    except Exception:
+        return False
+
+
 def ensure_creds() -> Credentials:
     """Ensure we have valid credentials saved to .youtube_tokens.json.
     Opens a browser on first-time auth; then refreshes silently next runs.

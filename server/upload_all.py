@@ -22,10 +22,13 @@ from .config import (
     YOUTUBE_CATEGORY_ID,
     YOUTUBE_PRIVACY,
 )
-from .integrations.tiktok import upload as tt_upload
-from .integrations.youtube.auth import ensure_creds
-from .integrations.tiktok.auth import run as run_tiktok_auth
-from .integrations.instagram.upload import (
+from server.integrations.tiktok import upload as tt_upload
+from server.integrations.youtube.auth import ensure_creds, refresh_creds
+from server.integrations.tiktok.auth import (
+    run as run_tiktok_auth,
+    refresh_tokens as refresh_tiktok_tokens,
+)
+from server.integrations.instagram.upload import (
     login_or_resume,
     build_client,
     USERNAME,
@@ -43,13 +46,13 @@ DEFAULT_DESC = Path(
 def _ensure_tiktok_tokens(tokens_file: Path) -> None:
     """Ensure TikTok tokens exist by running the auth flow if needed."""
     if not tokens_file.exists():
-        from integrations.tiktok import auth as tiktok_auth
+        from server.integrations.tiktok import auth as tiktok_auth
 
         tiktok_auth.run()
 
 
 def _upload_youtube(video: Path, desc: Path, privacy: str, category_id: str) -> None:
-    from integrations.youtube import upload as yt_upload
+    from server.integrations.youtube import upload as yt_upload
 
     title, description = yt_upload.read_description(desc)
     response = yt_upload.upload_video(video, title, description, privacy, category_id)
@@ -57,7 +60,7 @@ def _upload_youtube(video: Path, desc: Path, privacy: str, category_id: str) -> 
 
 
 def _upload_instagram(video: Path, desc: Path) -> None:
-    from integrations.instagram import upload as ig_upload
+    from server.integrations.instagram import upload as ig_upload
 
     caption = ig_upload._read_caption(desc)
     client = ig_upload.build_client()
@@ -86,12 +89,21 @@ def _upload_tiktok(
 
 def _get_auth_refreshers() -> Dict[str, Callable[[], None]]:
     """Return callables to refresh auth for each platform."""
+
+    def yt_refresh() -> None:
+        if not refresh_creds():
+            ensure_creds()
+
+    def tt_refresh() -> None:
+        if not refresh_tiktok_tokens():
+            run_tiktok_auth()
+
     return {
-        "youtube": ensure_creds,
+        "youtube": yt_refresh,
         "instagram": lambda: login_or_resume(
             build_client(), USERNAME, PASSWORD
         ),
-        "tiktok": run_tiktok_auth,
+        "tiktok": tt_refresh,
     }
 
 
