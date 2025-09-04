@@ -6,8 +6,9 @@ def transcribe_audio(file_path, model_size="medium"):
     """Transcribe an audio file using faster_whisper."""
     with Timer() as t:
         model = WhisperModel(model_size, device="auto")
-        segments, info = model.transcribe(file_path)
-    text = "".join([s.text for s in segments])
+        segments_iter, info = model.transcribe(file_path)
+        segments = list(segments_iter)
+    text = "".join(s.text for s in segments)
     segment_list = [
         {
             "start": s.start,
