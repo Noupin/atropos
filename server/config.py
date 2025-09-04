@@ -57,6 +57,10 @@ YOUTUBE_CATEGORY_ID = "23"
 TIKTOK_PRIVACY_LEVEL = "SELF_ONLY"
 TIKTOK_CHUNK_SIZE = 10_000_000  # bytes
 
+# Optional website link to append to video descriptions
+INCLUDE_WEBSITE_LINK = True
+WEBSITE_URL = "https://atropos-video.com"
+
 __all__ = [
     "CAPTION_FONT_SCALE",
     "SNAP_TO_SILENCE",
@@ -82,4 +86,6 @@ __all__ = [
     "YOUTUBE_CATEGORY_ID",
     "TIKTOK_PRIVACY_LEVEL",
     "TIKTOK_CHUNK_SIZE",
+    "INCLUDE_WEBSITE_LINK",
+    "WEBSITE_URL",
 ]
