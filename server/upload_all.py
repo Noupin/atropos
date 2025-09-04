@@ -18,8 +18,8 @@ import os
 from config import TIKTOK_CHUNK_SIZE, TIKTOK_PRIVACY_LEVEL, TOKENS_DIR, YOUTUBE_CATEGORY_ID, YOUTUBE_PRIVACY
 import integrations.tiktok.upload as tt_upload
 
-DEFAULT_VIDEO = Path("../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_408.66-444.53_r9.5_vertical.mp4")
-DEFAULT_DESC = Path("../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_408.66-444.53_r9.5_description.txt")
+DEFAULT_VIDEO = Path("../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_571.31-639.69_r8.0_vertical.mp4")
+DEFAULT_DESC = Path("../out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_571.31-639.69_r8.0_description.txt")
 
 
 def _ensure_tiktok_tokens(tokens_file: Path) -> None:
