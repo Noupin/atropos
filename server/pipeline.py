@@ -69,7 +69,7 @@ from helpers.description import maybe_append_website_link
 from steps.candidates import ClipCandidate
 
 
-def process_video(yt_url: str) -> None:
+def process_video(yt_url: str, niche: str | None = None) -> None:
     overall_start = time.perf_counter()
 
     CLIP_TYPE = "funny"  # change to 'inspiring' or 'educational'
@@ -101,6 +101,8 @@ def process_video(yt_url: str) -> None:
 
     # Create a dedicated output directory for this run
     base_output_dir = Path(__file__).resolve().parent.parent / "out"
+    if niche:
+        base_output_dir /= niche
     project_dir = base_output_dir / non_suffix_filename
     project_dir.mkdir(parents=True, exist_ok=True)
 
@@ -449,5 +451,6 @@ if __name__ == "__main__":
 
     urls = get_video_urls(yt_url)
     urls.reverse() # If the playlist is newest first, reverse to process oldest first
+    niche = None  # Set to a niche/account name to output under out/<niche>
     for url in urls[1:2]:
-        process_video(url)
+        process_video(url, niche=niche)

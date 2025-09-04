@@ -1,16 +1,27 @@
 from __future__ import annotations
 
-"""Select and upload the oldest clip in the ``out`` directory."""
+"""Select and upload the oldest clip in the ``out`` directory.
+
+This module now supports multiple "niches" (or account kinds). Each niche has
+its own output folder under the top-level ``out`` directory. Tokens for each
+platform are also namespaced by niche during upload. The appropriate niche can
+be selected by passing the ``kind`` argument to :func:`main` or by setting the
+``ACCOUNT_KIND`` environment variable.
+"""
 
 from pathlib import Path
+import os
 import shutil
 
 from .upload_all import run
 
-OUT_DIR = Path("out")
+# Root directory that contains sub-folders for each niche. The default niche
+# uses this directory directly, e.g. ``out/<project>``. Other niches place their
+# projects under ``out/<kind>/<project>``.
+OUT_ROOT = Path("out")
 
 
-def find_oldest_clip(base: Path = OUT_DIR) -> tuple[Path, Path] | None:
+def find_oldest_clip(base: Path = OUT_ROOT) -> tuple[Path, Path] | None:
     """Return the oldest video and matching description from ``base``.
 
     The search iterates over folders in ``base``, choosing the oldest one and
@@ -54,8 +65,22 @@ def _tidy_empty_dirs(shorts: Path, project: Path) -> None:
             project.rmdir()
 
 
-def main() -> None:
-    clip = find_oldest_clip()
+def main(kind: str | None = None) -> None:
+    """Upload the oldest clip for the selected niche.
+
+    Parameters
+    ----------
+    kind:
+        The niche/account name. If ``None``, the value is read from the
+        ``ACCOUNT_KIND`` environment variable. When no niche is specified, the
+        default ``out`` directory is used.
+    """
+
+    kind = kind or os.environ.get("ACCOUNT_KIND")
+
+    out_dir = OUT_ROOT / kind if kind else OUT_ROOT
+
+    clip = find_oldest_clip(out_dir)
     if not clip:
         print("No videos found for upload")
         return
@@ -63,7 +88,7 @@ def main() -> None:
     project = video.parent.parent
     _clean_project_folder(project)
     try:
-        run(video=video, desc=desc)
+        run(video=video, desc=desc, niche=kind)
     finally:
         for f in video.parent.glob(f"{video.stem}.*"):
             if f.is_file():
