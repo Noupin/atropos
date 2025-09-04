@@ -353,7 +353,7 @@ def process_video(yt_url: str) -> None:
             f"STEP 7.{idx}: Generating subtitles -> {srt_path}", step_subtitles
         )
 
-        vertical_output = shorts_dir / f"{clip_path.stem}_vertical.mp4"
+        vertical_output = shorts_dir / f"{clip_path.stem}.mp4"
 
         def step_render() -> Path:
             return render_vertical_with_captions(
@@ -367,7 +367,7 @@ def process_video(yt_url: str) -> None:
             step_render,
         )
 
-        description_path = shorts_dir / f"{clip_path.stem}_description.txt"
+        description_path = shorts_dir / f"{clip_path.stem}.txt"
 
         def step_description() -> Path:
             prompt = (

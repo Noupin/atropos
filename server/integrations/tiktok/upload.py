@@ -20,8 +20,12 @@ except FileNotFoundError:  # pragma: no cover - runtime setup
     ACCESS_TOKEN = ""
 
 # ------------ CONFIG (edit these) ------------
-VIDEO_PATH   = Path("/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2_vertical.mp4")
-CAPTION_TXT  = Path("/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2_description.txt")
+VIDEO_PATH = Path(
+    "/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2.mp4"
+)
+CAPTION_TXT = Path(
+    "/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2.txt"
+)
 PRIVACY_LEVEL = "SELF_ONLY"  # or PUBLIC_TO_EVERYONE / MUTUAL_FOLLOW_FRIENDS / SELF_ONLY
 CHUNK_SIZE = 10_000_000  # decimal 10MB; TikTok validates against this exact value
 POLL_INTERVAL_SEC = 3
