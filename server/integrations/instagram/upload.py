@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional
 import json
 import os
 import time
@@ -85,7 +85,13 @@ def login_or_resume(cl: Client, username: str, password: str, session_path: Path
         pass
 
 
-def clip_upload_with_retries(cl: Client, video_path: Path, caption: str) -> dict:
+def clip_upload_with_retries(
+    cl: Client,
+    video_path: Path,
+    caption: str,
+    username: str = USERNAME,
+    password: str = PASSWORD,
+) -> dict:
     last_exc: Optional[Exception] = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -106,7 +112,7 @@ def clip_upload_with_retries(cl: Client, video_path: Path, caption: str) -> dict
             }
         except LoginRequired:
             print("Session expired: re-login…")
-            login_or_resume(cl, USERNAME, PASSWORD)
+            login_or_resume(cl, username, password)
         except PleaseWaitFewMinutes as e:
             print(f"Upload throttled (attempt {attempt}/{MAX_RETRIES}): {e}")
             time.sleep(RETRY_BACKOFF_SEC * attempt)
@@ -133,7 +139,7 @@ def main() -> None:
     cl = build_client()
     login_or_resume(cl, USERNAME, PASSWORD)
 
-    result = clip_upload_with_retries(cl, VIDEO_PATH, caption)
+    result = clip_upload_with_retries(cl, VIDEO_PATH, caption, USERNAME, PASSWORD)
     print("Uploaded:", result)
     save_state(STATE_PATH, {"uploaded": result, "video": str(VIDEO_PATH), "caption": caption})
 

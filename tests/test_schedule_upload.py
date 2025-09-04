@@ -50,10 +50,10 @@ def test_main_cleans_and_deletes(tmp_path: Path, monkeypatch) -> None:
     extra_dir.mkdir()
     (extra_dir / "raw.txt").write_text("raw")
 
-    calls: list[tuple[Path, Path]] = []
+    calls: list[tuple[Path, Path, str | None]] = []
 
-    def fake_run(*, video: Path, desc: Path) -> None:
-        calls.append((video, desc))
+    def fake_run(*, video: Path, desc: Path, niche=None, **kwargs) -> None:
+        calls.append((video, desc, niche))
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "run", fake_run)
@@ -61,7 +61,11 @@ def test_main_cleans_and_deletes(tmp_path: Path, monkeypatch) -> None:
     schedule_upload.main()
 
     assert len(calls) == 1
-    assert calls[0] == (video.relative_to(tmp_path), desc.relative_to(tmp_path))
+    assert calls[0] == (
+        video.relative_to(tmp_path),
+        desc.relative_to(tmp_path),
+        None,
+    )
     assert not video.exists()
     assert not desc.exists()
     assert not extra_clip.exists()
@@ -69,3 +73,33 @@ def test_main_cleans_and_deletes(tmp_path: Path, monkeypatch) -> None:
     assert not extra_dir.exists()
     assert not shorts.exists()
     assert not project.exists()
+
+
+def test_main_respects_kind(tmp_path: Path, monkeypatch) -> None:
+    out = tmp_path / "out" / "alt"
+    project = out / "proj"
+    shorts = project / "shorts"
+    shorts.mkdir(parents=True)
+    video = shorts / "clip.mp4"
+    video.write_bytes(b"a")
+    desc = video.with_suffix(".txt")
+    desc.write_text("desc")
+
+    calls: list[tuple[Path, Path, str | None]] = []
+
+    def fake_run(*, video: Path, desc: Path, niche=None, **kwargs) -> None:
+        calls.append((video, desc, niche))
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(schedule_upload, "run", fake_run)
+
+    schedule_upload.main(kind="alt")
+
+    assert len(calls) == 1
+    assert calls[0] == (
+        video.relative_to(tmp_path),
+        desc.relative_to(tmp_path),
+        "alt",
+    )
+    assert not video.exists()
+    assert not desc.exists()

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import server.upload_all as upload_all
 
@@ -23,10 +24,16 @@ def test_run_folder_deletes_files(tmp_path, monkeypatch) -> None:
         tt_chunk_size: int,
         tt_privacy: str,
         tokens_file: Path,
+        ig_username: str,
+        ig_password: str,
     ) -> None:
         calls.append((video, desc))
 
     monkeypatch.setattr(upload_all, "upload_all", fake_upload_all)
+
+    (tmp_path / "instagram.json").write_text(
+        json.dumps({"username": "u", "password": "p"})
+    )
 
     upload_all.run(
         folder=folder,

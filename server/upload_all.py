@@ -10,9 +10,9 @@ from __future__ import annotations
 from dotenv import load_dotenv
 load_dotenv(dotenv_path="../.env")
 
-from importlib import import_module
 from pathlib import Path
 from typing import Callable, Dict
+import json
 import os
 
 from config import (
@@ -30,11 +30,8 @@ from integrations.tiktok.auth import (
     refresh_tokens as refresh_tiktok_tokens,
 )
 from integrations.instagram.upload import (
-
     login_or_resume,
     build_client,
-    USERNAME,
-    PASSWORD,
 )
 
 DEFAULT_VIDEO = Path(
@@ -61,13 +58,15 @@ def _upload_youtube(video: Path, desc: Path, privacy: str, category_id: str) -> 
     print("YouTube upload ID:", response.get("id"))
 
 
-def _upload_instagram(video: Path, desc: Path) -> None:
+def _upload_instagram(video: Path, desc: Path, username: str, password: str) -> None:
     from server.integrations.instagram import upload as ig_upload
 
     caption = ig_upload._read_caption(desc)
     client = ig_upload.build_client()
-    ig_upload.login_or_resume(client, ig_upload.USERNAME, ig_upload.PASSWORD)
-    result = ig_upload.clip_upload_with_retries(client, video, caption)
+    ig_upload.login_or_resume(client, username, password)
+    result = ig_upload.clip_upload_with_retries(
+        client, video, caption, username, password
+    )
     print("Instagram upload:", result)
 
 
@@ -89,7 +88,13 @@ def _upload_tiktok(
     print("TikTok upload:", result)
 
 
-def _get_auth_refreshers() -> Dict[str, Callable[[], None]]:
+def _read_instagram_creds(path: Path) -> tuple[str, str]:
+    """Return Instagram username and password from ``path``."""
+    data = json.loads(path.read_text())
+    return data["username"], data["password"]
+
+
+def _get_auth_refreshers(username: str, password: str) -> Dict[str, Callable[[], None]]:
     """Return callables to refresh auth for each platform."""
 
     def yt_refresh() -> None:
@@ -103,7 +108,7 @@ def _get_auth_refreshers() -> Dict[str, Callable[[], None]]:
     return {
         "youtube": yt_refresh,
         "instagram": lambda: login_or_resume(
-            build_client(), USERNAME, PASSWORD
+            build_client(), username, password
         ),
         "tiktok": tt_refresh,
     }
@@ -118,17 +123,21 @@ def upload_all(
     tt_chunk_size: int,
     tt_privacy: str,
     tokens_file: Path,
+    ig_username: str,
+    ig_password: str,
 ) -> None:
     """Upload the given video and description to all platforms."""
 
     uploaders: Dict[str, Callable[[], None]] = {
         "youtube": lambda: _upload_youtube(video, desc, yt_privacy, yt_category_id),
-        "instagram": lambda: _upload_instagram(video, desc),
+        "instagram": lambda: _upload_instagram(
+            video, desc, ig_username, ig_password
+        ),
         "tiktok": lambda: _upload_tiktok(
             video, desc, tt_chunk_size, tt_privacy, tokens_file
         ),
     }
-    auth_refreshers = _get_auth_refreshers()
+    auth_refreshers = _get_auth_refreshers(ig_username, ig_password)
 
     for name, func in uploaders.items():
         print(f"== Uploading to {name} ==")
@@ -155,6 +164,7 @@ def run(
     tt_chunk_size: int | None = None,
     tt_privacy: str | None = None,
     tokens_dir: Path | None = None,
+    niche: str | None = None,
 ) -> None:
     """Run uploads using configuration defaults with optional overrides.
 
@@ -163,10 +173,14 @@ def run(
     """
 
     tokens_dir = Path(tokens_dir) if tokens_dir else TOKENS_DIR
+    if niche:
+        tokens_dir = tokens_dir / niche
     tokens_dir.mkdir(parents=True, exist_ok=True)
     os.environ["YT_TOKENS_FILE"] = str(tokens_dir / "youtube.json")
     os.environ["TIKTOK_TOKENS_FILE"] = str(tokens_dir / "tiktok.json")
     tokens_file = Path(os.environ["TIKTOK_TOKENS_FILE"])
+    ig_creds_file = tokens_dir / "instagram.json"
+    ig_username, ig_password = _read_instagram_creds(ig_creds_file)
 
     yt_privacy = yt_privacy or YOUTUBE_PRIVACY
     yt_category_id = yt_category_id or YOUTUBE_CATEGORY_ID
@@ -188,6 +202,8 @@ def run(
                     tt_chunk_size=tt_chunk_size,
                     tt_privacy=tt_privacy,
                     tokens_file=tokens_file,
+                    ig_username=ig_username,
+                    ig_password=ig_password,
                 )
             finally:
                 for f in vid.parent.glob(f"{vid.stem}.*"):
@@ -204,6 +220,8 @@ def run(
             tt_chunk_size=tt_chunk_size,
             tt_privacy=tt_privacy,
             tokens_file=tokens_file,
+            ig_username=ig_username,
+            ig_password=ig_password,
         )
 
 
@@ -221,6 +239,7 @@ def main() -> None:
     tt_chunk_size = TIKTOK_CHUNK_SIZE
     tt_privacy = TIKTOK_PRIVACY_LEVEL
     tokens_dir = TOKENS_DIR
+    niche = None
 
     run(
         video=video,
@@ -231,6 +250,7 @@ def main() -> None:
         tt_chunk_size=tt_chunk_size,
         tt_privacy=tt_privacy,
         tokens_dir=tokens_dir,
+        niche=niche,
     )
 
 
