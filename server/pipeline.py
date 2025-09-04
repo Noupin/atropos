@@ -65,6 +65,7 @@ from helpers.formatting import (
 from helpers.logging import run_step
 from helpers.notifications import send_failure_email
 from helpers.ai import local_llm_call_json
+from helpers.description import maybe_append_website_link
 from steps.candidates import ClipCandidate
 
 
@@ -416,9 +417,10 @@ def process_video(yt_url: str) -> None:
             description = (
                 f"Full video: {full_video_link}\n"
                 f"Credit: {video_info.get('uploader', 'Unknown Channel')}\n"
-                "Made by Atropos\n\n"
-                + " ".join(hashtags)
+                "Made by Atropos\n"
             )
+            description = maybe_append_website_link(description)
+            description += "\n" + " ".join(hashtags)
             description_path.write_text(description, encoding="utf-8")
             return description_path
 
