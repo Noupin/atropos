@@ -66,6 +66,18 @@ def _upload_tiktok(
     print("TikTok upload:", result)
 
 
+def _get_auth_refreshers() -> Dict[str, Callable[[], None]]:
+    """Return callables to refresh auth for each platform."""
+    ig_mod = import_module("integrations.instagram.upload")
+    return {
+        "youtube": lambda: import_module("integrations.youtube.auth").ensure_creds(),
+        "instagram": lambda: ig_mod.login_or_resume(
+            ig_mod.build_client(), ig_mod.USERNAME, ig_mod.PASSWORD
+        ),
+        "tiktok": lambda: import_module("integrations.tiktok.auth").run(),
+    }
+
+
 def upload_all(
     video: Path,
     desc: Path,
@@ -85,6 +97,7 @@ def upload_all(
             video, desc, tt_chunk_size, tt_privacy, tokens_file
         ),
     }
+    auth_refreshers = _get_auth_refreshers()
 
     for name, func in uploaders.items():
         print(f"== Uploading to {name} ==")
@@ -92,6 +105,13 @@ def upload_all(
             func()
         except Exception as exc:  # pragma: no cover - defensive logging
             print(f"{name} upload failed: {exc}")
+            refresher = auth_refreshers.get(name)
+            if refresher:
+                try:
+                    refresher()
+                    func()
+                except Exception as exc2:  # pragma: no cover - defensive logging
+                    print(f"{name} retry failed: {exc2}")
 
 
 def run(
