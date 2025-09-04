@@ -10,7 +10,7 @@ Usage (bootstrap tokens):
     python server/integrations/youtube/auth.py
 
 In code:
-    from server.integrations.youtube.auth import ensure_creds, build_service
+    from integrations.youtube.auth import ensure_creds, build_service
     creds = ensure_creds()
     yt = build_service()
 """

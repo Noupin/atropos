@@ -1,1 +1,1 @@
-0 9,14,19 * * * root cd /app && python -m server.schedule_upload >> /var/log/cron.log 2>&1
+0 9,17,21 * * * root cd /app && python -m server.schedule_upload >> /var/log/cron.log 2>&1

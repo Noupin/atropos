@@ -35,23 +35,23 @@ from integrations.instagram.upload import (
 )
 
 DEFAULT_VIDEO = Path(
-    "../out/Remaking_The_Office_s_Best_Scenes_-_KF_AF_20190123/shorts/clip_1476.34-1502.96_r8.5.mp4"
+    "../out/Remaking_The_Office_s_Best_Scenes_-_KF_AF_20190123/shorts/clip_1916.30-1951.25_r8.5.mp4"
 )
 DEFAULT_DESC = Path(
-    "../out/Remaking_The_Office_s_Best_Scenes_-_KF_AF_20190123/shorts/clip_1476.34-1502.96_r8.5.txt"
+    "../out/Remaking_The_Office_s_Best_Scenes_-_KF_AF_20190123/shorts/clip_1916.30-1951.25_r8.5.txt"
 )
 
 
 def _ensure_tiktok_tokens(tokens_file: Path) -> None:
     """Ensure TikTok tokens exist by running the auth flow if needed."""
     if not tokens_file.exists():
-        from server.integrations.tiktok import auth as tiktok_auth
+        from integrations.tiktok import auth as tiktok_auth
 
         tiktok_auth.run()
 
 
 def _upload_youtube(video: Path, desc: Path, privacy: str, category_id: str) -> None:
-    from server.integrations.youtube import upload as yt_upload
+    from integrations.youtube import upload as yt_upload
 
     title, description = yt_upload.read_description(desc)
     response = yt_upload.upload_video(video, title, description, privacy, category_id)
@@ -59,7 +59,7 @@ def _upload_youtube(video: Path, desc: Path, privacy: str, category_id: str) -> 
 
 
 def _upload_instagram(video: Path, desc: Path, username: str, password: str) -> None:
-    from server.integrations.instagram import upload as ig_upload
+    from integrations.instagram import upload as ig_upload
 
     caption = ig_upload._read_caption(desc)
     client = ig_upload.build_client()
