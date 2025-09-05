@@ -13,12 +13,14 @@ from pathlib import Path
 import os
 import shutil
 
-from .upload_all import run
+from upload_all import run
 
 # Root directory that contains sub-folders for each niche. The default niche
 # uses this directory directly, e.g. ``out/<project>``. Other niches place their
 # projects under ``out/<kind>/<project>``.
-OUT_ROOT = Path("out")
+# Inside the container, the volume is mounted at /app/out, while locally it may be ./out
+# User can override via environment variable OUT_ROOT
+OUT_ROOT = Path(os.environ.get("OUT_ROOT", "/app/out"))
 
 
 def find_oldest_clip(base: Path = OUT_ROOT) -> tuple[Path, Path] | None:
@@ -28,6 +30,9 @@ def find_oldest_clip(base: Path = OUT_ROOT) -> tuple[Path, Path] | None:
     then the oldest ``.mp4`` in its ``shorts`` subdirectory that has a
     corresponding ``.txt`` description file.
     """
+
+    if not base.exists() or not base.is_dir():
+        return None
 
     folders = sorted(
         (p for p in base.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime
@@ -82,7 +87,7 @@ def main(kind: str | None = None) -> None:
 
     clip = find_oldest_clip(out_dir)
     if not clip:
-        print("No videos found for upload")
+        print(f"No videos found for upload (searched: {out_dir})")
         return
     video, desc = clip
     project = video.parent.parent
