@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Sequence
 import os
 import time
 
@@ -103,3 +104,26 @@ def test_main_respects_kind(tmp_path: Path, monkeypatch) -> None:
     )
     assert not video.exists()
     assert not desc.exists()
+
+
+def test_main_accepts_platforms(tmp_path: Path, monkeypatch) -> None:
+    out = tmp_path / "out"
+    project = out / "proj"
+    shorts = project / "shorts"
+    shorts.mkdir(parents=True)
+    video = shorts / "clip.mp4"
+    video.write_bytes(b"a")
+    desc = video.with_suffix(".txt")
+    desc.write_text("desc")
+
+    platforms_seen: list[Sequence[str] | None] = []
+
+    def fake_run(*, video: Path, desc: Path, niche=None, platforms=None, **kw) -> None:
+        platforms_seen.append(platforms)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(schedule_upload, "run", fake_run)
+
+    schedule_upload.main(platforms=["youtube", "tiktok"])
+
+    assert platforms_seen == [["youtube", "tiktok"]]
