@@ -88,14 +88,15 @@ def detect_dialog_ranges(
 
     items = parse_transcript(transcript_path)
 
-    if getattr(config, "DETECT_DIALOG_WITH_LLM", False):
+    if config.DETECT_DIALOG_WITH_LLM:
         try:
             ranges = _llm_dialog_ranges(items)
             if ranges:
                 return ranges
-        except Exception:
-            pass
+        except Exception as e:
+            print("Exception:", e)
 
+    print("LLM Dialog failed defaulting to heuristic")
     return _heuristic_dialog_ranges(items, gap)
 
 

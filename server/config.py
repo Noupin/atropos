@@ -25,7 +25,7 @@ SNAP_TO_SENTENCE = True
 REFINE_SEGMENTS_WITH_LLM = True
 
 # Toggle LLM-based detection of dialog ranges
-DETECT_DIALOG_WITH_LLM = False
+DETECT_DIALOG_WITH_LLM = True
 
 # Export silence-only "raw" clips for debugging comparisons
 EXPORT_RAW_CLIPS = False
