@@ -10,6 +10,8 @@ from pathlib import Path
 # ---------------------------------------
 # Default baseline caption font scale for rendered videos
 CAPTION_FONT_SCALE = 2.0
+# Maximum number of lines per caption before splitting
+CAPTION_MAX_LINES: int = 2
 # Constant frame-rate to avoid VFR issues on platforms like TikTok/Reels
 OUTPUT_FPS: float = 30.0
 
@@ -72,6 +74,7 @@ WEBSITE_URL = "https://atropos-video.com"
 
 __all__ = [
     "CAPTION_FONT_SCALE",
+    "CAPTION_MAX_LINES",
     "SNAP_TO_SILENCE",
     "SNAP_TO_DIALOG",
     "SNAP_TO_SENTENCE",
