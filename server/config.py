@@ -40,7 +40,7 @@ SILENCE_DETECTION_MIN_DURATION = 0.075
 # Preferred transcript source: "youtube" or "whisper"
 TRANSCRIPT_SOURCE = "whisper"
 # Model used for faster-whisper transcription
-WHISPER_MODEL = "large-v3-turbo"
+WHISPER_MODEL = "tiny"
 
 # ---------------------------------------
 # Candidate selection heuristics

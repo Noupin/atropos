@@ -84,7 +84,9 @@ def refine_segments_with_llm(
             options={"temperature": 0.0},
             timeout=timeout,
         )
-    except Exception:
+    except Exception as e:
+        print("Exception:", e)
+        print("Refining segments with llm failed, defaulting to un refined.")
         return segments
 
     refined: List[Tuple[float, float, str]] = []

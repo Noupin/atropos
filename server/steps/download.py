@@ -115,9 +115,6 @@ def download_audio(url, output_path: str = "output_audio.mp3"):
             {
                 "format": "bestaudio/best",
                 "outtmpl": output_path,
-                "postprocessors": [
-                    {"key": "FFmpegExtractAudio", "preferredcodec": "mp3"}
-                ],
             }
         ) as ydl:
             ydl.download([url])
