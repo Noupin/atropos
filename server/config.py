@@ -24,6 +24,9 @@ SNAP_TO_SENTENCE = True
 # Toggle LLM-based refinement of transcript segments
 REFINE_SEGMENTS_WITH_LLM = True
 
+# Toggle LLM-based detection of dialog ranges
+DETECT_DIALOG_WITH_LLM = False
+
 # Export silence-only "raw" clips for debugging comparisons
 EXPORT_RAW_CLIPS = False
 
@@ -82,6 +85,7 @@ __all__ = [
     "SNAP_TO_DIALOG",
     "SNAP_TO_SENTENCE",
     "REFINE_SEGMENTS_WITH_LLM",
+    "DETECT_DIALOG_WITH_LLM",
     "EXPORT_RAW_CLIPS",
     "SILENCE_DETECTION_NOISE",
     "SILENCE_DETECTION_MIN_DURATION",
