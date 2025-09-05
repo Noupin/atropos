@@ -10,6 +10,7 @@ be selected by passing the ``kind`` argument to :func:`main` or by setting the
 """
 
 from pathlib import Path
+from typing import Sequence
 import os
 import shutil
 
@@ -20,7 +21,7 @@ from upload_all import run
 # projects under ``out/<kind>/<project>``.
 # Inside the container, the volume is mounted at /app/out, while locally it may be ./out
 # User can override via environment variable OUT_ROOT
-OUT_ROOT = Path(os.environ.get("OUT_ROOT", "/app/out"))
+OUT_ROOT = Path(os.environ.get("OUT_ROOT", "out"))
 
 
 def find_oldest_clip(base: Path = OUT_ROOT) -> tuple[Path, Path] | None:
@@ -70,7 +71,7 @@ def _tidy_empty_dirs(shorts: Path, project: Path) -> None:
             project.rmdir()
 
 
-def main(kind: str | None = None) -> None:
+def main(kind: str | None = None, platforms: Sequence[str] | None = None) -> None:
     """Upload the oldest clip for the selected niche.
 
     Parameters
@@ -79,6 +80,9 @@ def main(kind: str | None = None) -> None:
         The niche/account name. If ``None``, the value is read from the
         ``ACCOUNT_KIND`` environment variable. When no niche is specified, the
         default ``out`` directory is used.
+    platforms:
+        Optional iterable of platform names to upload to. When omitted, uploads
+        are attempted on all supported platforms.
     """
 
     kind = kind or os.environ.get("ACCOUNT_KIND")
@@ -93,7 +97,7 @@ def main(kind: str | None = None) -> None:
     project = video.parent.parent
     _clean_project_folder(project)
     try:
-        run(video=video, desc=desc, niche=kind)
+        run(video=video, desc=desc, niche=kind, platforms=platforms)
     finally:
         for f in video.parent.glob(f"{video.stem}.*"):
             if f.is_file():
@@ -102,4 +106,6 @@ def main(kind: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    main(platforms=sys.argv[1:])

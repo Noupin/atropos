@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Sequence
 import json
 
 import server.upload_all as upload_all
@@ -26,6 +27,7 @@ def test_run_folder_deletes_files(tmp_path, monkeypatch) -> None:
         tokens_file: Path,
         ig_username: str,
         ig_password: str,
+        platforms: Sequence[str] | None = None,
     ) -> None:
         calls.append((video, desc))
 

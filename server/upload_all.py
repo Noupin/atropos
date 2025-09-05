@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path="../.env")
 
 from pathlib import Path
-from typing import Callable, Dict
+from typing import Callable, Dict, Sequence
 import json
 import os
 
@@ -125,8 +125,24 @@ def upload_all(
     tokens_file: Path,
     ig_username: str,
     ig_password: str,
+    platforms: Sequence[str] | None = None,
 ) -> None:
-    """Upload the given video and description to all platforms."""
+    """Upload the given video and description to selected platforms.
+
+    Parameters
+    ----------
+    video:
+        Video file path to upload.
+    desc:
+        Path to the accompanying description text file.
+    yt_privacy, yt_category_id, tt_chunk_size, tt_privacy, tokens_file,
+    ig_username, ig_password:
+        See :func:`run` for details.
+    platforms:
+        Optional iterable of platform names to upload to. If ``None`` or empty,
+        all supported platforms are used. Valid names are ``"youtube"``,
+        ``"instagram"`` and ``"tiktok"``.
+    """
 
     uploaders: Dict[str, Callable[[], None]] = {
         "youtube": lambda: _upload_youtube(video, desc, yt_privacy, yt_category_id),
@@ -137,6 +153,9 @@ def upload_all(
             video, desc, tt_chunk_size, tt_privacy, tokens_file
         ),
     }
+    if platforms:
+        allowed = {name for name in platforms}
+        uploaders = {n: f for n, f in uploaders.items() if n in allowed}
     auth_refreshers = _get_auth_refreshers(ig_username, ig_password)
 
     for name, func in uploaders.items():
@@ -165,11 +184,13 @@ def run(
     tt_privacy: str | None = None,
     tokens_dir: Path | None = None,
     niche: str | None = None,
+    platforms: Sequence[str] | None = None,
 ) -> None:
     """Run uploads using configuration defaults with optional overrides.
 
     If ``folder`` is provided, all ``.mp4`` files inside it will be uploaded
     sequentially, each expecting a matching ``.txt`` description file.
+    ``platforms`` can restrict uploads to a subset of supported targets.
     """
 
     tokens_dir = Path(tokens_dir) if tokens_dir else TOKENS_DIR
@@ -204,6 +225,7 @@ def run(
                     tokens_file=tokens_file,
                     ig_username=ig_username,
                     ig_password=ig_password,
+                    platforms=platforms,
                 )
             finally:
                 for f in vid.parent.glob(f"{vid.stem}.*"):
@@ -222,6 +244,7 @@ def run(
             tokens_file=tokens_file,
             ig_username=ig_username,
             ig_password=ig_password,
+            platforms=platforms,
         )
 
 
