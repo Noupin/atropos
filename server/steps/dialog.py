@@ -8,6 +8,8 @@ from .candidates.helpers import parse_transcript
 
 _KEYWORDS = {"haha", "lol", "joke", "laugh", "laughter"}
 
+MAX_PROMPT_CHARS = 12_000
+
 
 def _heuristic_dialog_ranges(
     items: List[Tuple[float, float, str]], gap: float
@@ -43,37 +45,79 @@ def _heuristic_dialog_ranges(
     return ranges
 
 
+def _chunk_items(
+    items: List[Tuple[float, float, str]], *, max_chars: int, overlap_lines: int = 2
+) -> List[List[Tuple[float, float, str]]]:
+    """Chunk transcript items under ``max_chars`` with small line overlaps."""
+    chunks: List[List[Tuple[float, float, str]]] = []
+    buf: List[Tuple[float, float, str]] = []
+    count = 0
+    for triplet in items:
+        s, e, t = triplet
+        line = f"[{s:.2f}-{e:.2f}] {t}"
+        ln = len(line) + 1
+        if buf and count + ln > max_chars:
+            chunks.append(buf[:])
+            tail = buf[-overlap_lines:] if overlap_lines > 0 else []
+            buf = tail[:]
+            count = sum(len(f"[{a:.2f}-{b:.2f}] {c}") + 1 for a, b, c in buf)
+        buf.append(triplet)
+        count += ln
+    if buf:
+        chunks.append(buf)
+    return chunks
+
+
+def _merge_ranges(ranges: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+    """Merge overlapping ranges."""
+    if not ranges:
+        return []
+    ranges.sort(key=lambda r: r[0])
+    merged: List[Tuple[float, float]] = []
+    cur_s, cur_e = ranges[0]
+    for s, e in ranges[1:]:
+        if s <= cur_e:
+            cur_e = max(cur_e, e)
+        else:
+            merged.append((cur_s, cur_e))
+            cur_s, cur_e = s, e
+    merged.append((cur_s, cur_e))
+    return merged
+
+
 def _llm_dialog_ranges(
     items: List[Tuple[float, float, str]], *, model: str = "google/gemma-3-4b", timeout: int = 120
 ) -> List[Tuple[float, float]]:
-    """Detect dialog ranges using an LLM."""
-    prompt_lines = [
-        "Determine the start and end times of coherent dialog in the following",  # noqa: E501
-        "transcript lines. Return a JSON array of objects with `start` and",
-        "`end` fields. Only output JSON.",
-        "",
-        "Lines:",
-    ]
-    prompt_lines.extend(f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in items)
-    prompt = "\n".join(prompt_lines)
-
-    out = local_llm_call_json(
-        model=model,
-        prompt=prompt,
-        options={"temperature": 0.0},
-        timeout=timeout,
-    )
-
-    ranges: List[Tuple[float, float]] = []
-    if isinstance(out, list):
-        for obj in out:
-            try:
-                s = float(obj.get("start"))
-                e = float(obj.get("end"))
-            except Exception:
-                continue
-            ranges.append((s, e))
-    return ranges
+    """Detect dialog ranges using an LLM with chunked prompts."""
+    chunks = _chunk_items(items, max_chars=MAX_PROMPT_CHARS)
+    all_ranges: List[Tuple[float, float]] = []
+    for chunk in chunks:
+        prompt_lines = [
+            "Determine the start and end times of coherent dialog in the following",  # noqa: E501
+            "transcript lines. Return a JSON array of objects with `start` and",
+            "`end` fields. Only output JSON.",
+            "",
+            "Lines:",
+        ]
+        prompt_lines.extend(
+            [f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in chunk]
+        )
+        prompt = "\n".join(prompt_lines)
+        out = local_llm_call_json(
+            model=model,
+            prompt=prompt,
+            options={"temperature": 0.0},
+            timeout=timeout,
+        )
+        if isinstance(out, list):
+            for obj in out:
+                try:
+                    s = float(obj.get("start"))
+                    e = float(obj.get("end"))
+                except Exception:
+                    continue
+                all_ranges.append((s, e))
+    return _merge_ranges(all_ranges)
 
 
 def detect_dialog_ranges(
