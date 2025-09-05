@@ -10,6 +10,8 @@ from helpers.ai import local_llm_call_json
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
+MAX_PROMPT_CHARS = 12_000
+
 
 def segment_transcript_items(
     items: List[Tuple[float, float, str]]
@@ -41,6 +43,29 @@ def segment_transcript_items(
     return segments
 
 
+def _chunk_segments(
+    segments: List[Tuple[float, float, str]], *, max_chars: int, overlap_lines: int = 2
+) -> List[List[Tuple[float, float, str]]]:
+    """Chunk segments under ``max_chars`` with small overlaps."""
+    chunks: List[List[Tuple[float, float, str]]] = []
+    buf: List[Tuple[float, float, str]] = []
+    count = 0
+    for triplet in segments:
+        s, e, t = triplet
+        line = f"[{s:.2f}-{e:.2f}] {t}"
+        ln = len(line) + 1
+        if buf and count + ln > max_chars:
+            chunks.append(buf[:])
+            tail = buf[-overlap_lines:] if overlap_lines > 0 else []
+            buf = tail[:]
+            count = sum(len(f"[{a:.2f}-{b:.2f}] {c}") + 1 for a, b, c in buf)
+        buf.append(triplet)
+        count += ln
+    if buf:
+        chunks.append(buf)
+    return chunks
+
+
 def refine_segments_with_llm(
     segments: List[Tuple[float, float, str]],
     *,
@@ -65,43 +90,53 @@ def refine_segments_with_llm(
         or returns an empty list.
     """
 
-    prompt_lines = [
-        "Combine or split the following transcript segments so each is a",
-        "complete sentence or phrase. Return a JSON array of objects with",
-        "`start`, `end`, and `text` fields. Use provided times when merging",
-        "segments; if splitting, divide the time span proportionally by",
-        "sentence length. Output only JSON.",
-        "",
-        "Segments:",
-    ]
-    prompt_lines.extend(f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in segments)
-    prompt = "\n".join(prompt_lines)
-
-    try:
-        out = local_llm_call_json(
-            model=model,
-            prompt=prompt,
-            options={"temperature": 0.0},
-            timeout=timeout,
+    chunks = _chunk_segments(segments, max_chars=MAX_PROMPT_CHARS)
+    all_refined: List[Tuple[float, float, str]] = []
+    seen: set[tuple[float, float, str]] = set()
+    for chunk in chunks:
+        prompt_lines = [
+            "Combine or split the following transcript segments so each is a",
+            "complete sentence or phrase. Return a JSON array of objects with",
+            "`start`, `end`, and `text` fields. Use provided times when merging",
+            "segments; if splitting, divide the time span proportionally by",
+            "sentence length. Output only JSON.",
+            "",
+            "Segments:",
+        ]
+        prompt_lines.extend(
+            [f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in chunk]
         )
-    except Exception as e:
-        print("Exception:", e)
-        print("Refining segments with llm failed, defaulting to un refined.")
-        return segments
-
-    refined: List[Tuple[float, float, str]] = []
-    if isinstance(out, list):
-        for obj in out:
-            try:
-                s = float(obj.get("start"))
-                e = float(obj.get("end"))
-                t = str(obj.get("text", "")).strip()
-            except Exception:
-                continue
-            if t:
-                refined.append((s, e, t))
-
-    return refined or segments
+        prompt = "\n".join(prompt_lines)
+        try:
+            out = local_llm_call_json(
+                model=model,
+                prompt=prompt,
+                options={"temperature": 0.0},
+                timeout=timeout,
+            )
+        except Exception as e:
+            print("Exception:", e)
+            all_refined.extend(chunk)
+            continue
+        refined_chunk: List[Tuple[float, float, str]] = []
+        if isinstance(out, list):
+            for obj in out:
+                try:
+                    s = float(obj.get("start"))
+                    e = float(obj.get("end"))
+                    t = str(obj.get("text", "")).strip()
+                except Exception:
+                    continue
+                if t:
+                    key = (s, e, t)
+                    if key not in seen:
+                        refined_chunk.append((s, e, t))
+                        seen.add(key)
+        if refined_chunk:
+            all_refined.extend(refined_chunk)
+        else:
+            all_refined.extend(chunk)
+    return all_refined or segments
 
 
 def maybe_refine_segments_with_llm(
