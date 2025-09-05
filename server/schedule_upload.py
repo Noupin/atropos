@@ -21,7 +21,7 @@ from upload_all import run
 # projects under ``out/<kind>/<project>``.
 # Inside the container, the volume is mounted at /app/out, while locally it may be ./out
 # User can override via environment variable OUT_ROOT
-OUT_ROOT = Path(os.environ.get("OUT_ROOT", "out"))
+OUT_ROOT = Path(os.environ.get("OUT_ROOT", "/app/out"))
 
 
 def find_oldest_clip(base: Path = OUT_ROOT) -> tuple[Path, Path] | None:
