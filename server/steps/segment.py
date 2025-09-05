@@ -5,6 +5,9 @@ import re
 from pathlib import Path
 from typing import List, Tuple
 
+import config
+from helpers.ai import local_llm_call_json
+
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
 
@@ -36,6 +39,76 @@ def segment_transcript_items(
             segments.append((cur, seg_end, sent))
             cur = seg_end
     return segments
+
+
+def refine_segments_with_llm(
+    segments: List[Tuple[float, float, str]],
+    *,
+    model: str = "google/gemma-3-4b",
+    timeout: int = 120,
+) -> List[Tuple[float, float, str]]:
+    """Use an LLM to merge or split segments into complete sentences.
+
+    Parameters
+    ----------
+    segments:
+        Existing list of ``(start, end, text)`` entries.
+    model:
+        Local LLM model identifier.
+    timeout:
+        Request timeout in seconds for the LLM call.
+
+    Returns
+    -------
+    List[Tuple[float, float, str]]
+        Adjusted segments or the original ``segments`` if the LLM call fails
+        or returns an empty list.
+    """
+
+    prompt_lines = [
+        "Combine or split the following transcript segments so each is a",
+        "complete sentence or phrase. Return a JSON array of objects with",
+        "`start`, `end`, and `text` fields. Use provided times when merging",
+        "segments; if splitting, divide the time span proportionally by",
+        "sentence length. Output only JSON.",
+        "",
+        "Segments:",
+    ]
+    prompt_lines.extend(f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in segments)
+    prompt = "\n".join(prompt_lines)
+
+    try:
+        out = local_llm_call_json(
+            model=model,
+            prompt=prompt,
+            options={"temperature": 0.0},
+            timeout=timeout,
+        )
+    except Exception:
+        return segments
+
+    refined: List[Tuple[float, float, str]] = []
+    if isinstance(out, list):
+        for obj in out:
+            try:
+                s = float(obj.get("start"))
+                e = float(obj.get("end"))
+                t = str(obj.get("text", "")).strip()
+            except Exception:
+                continue
+            if t:
+                refined.append((s, e, t))
+
+    return refined or segments
+
+
+def maybe_refine_segments_with_llm(
+    segments: List[Tuple[float, float, str]], **kwargs
+) -> List[Tuple[float, float, str]]:
+    """Refine segments with an LLM if enabled in configuration."""
+    if not config.REFINE_SEGMENTS_WITH_LLM:
+        return segments
+    return refine_segments_with_llm(segments, **kwargs)
 
 
 def write_segments_json(
