@@ -7,6 +7,7 @@ from steps.download import (
     download_video,
     get_video_info,
     get_video_urls,
+    is_twitch_url,
 )
 from steps.candidates.funny import find_funny_timestamps_batched
 from steps.candidates.inspiring import find_inspiring_timestamps_batched
@@ -78,6 +79,8 @@ from steps.candidates import ClipCandidate
 
 def process_video(yt_url: str, niche: str | None = None) -> None:
     overall_start = time.perf_counter()
+    twitch = is_twitch_url(yt_url)
+    transcript_source = "whisper" if twitch else TRANSCRIPT_SOURCE
 
     CLIP_TYPE = "funny"  # change to 'inspiring' or 'educational'
     rating_defaults = {
@@ -165,7 +168,7 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
         write_transcript_txt(result, str(transcript_output_path))
         return True
 
-    if TRANSCRIPT_SOURCE == "whisper":
+    if transcript_source == "whisper":
         transcribed = False
         if audio_ok:
             transcribed = run_step(
