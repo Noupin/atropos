@@ -1,8 +1,9 @@
 from faster_whisper import WhisperModel
 from interfaces.timer import Timer
+from config import WHISPER_MODEL
 
 
-def transcribe_audio(file_path, model_size="medium"):
+def transcribe_audio(file_path, model_size=WHISPER_MODEL):
     """Transcribe an audio file using faster_whisper."""
     with Timer() as t:
         model = WhisperModel(model_size, device="auto")
@@ -31,8 +32,7 @@ def transcribe_audio(file_path, model_size="medium"):
 
 if __name__ == "__main__":
     audio_path = "kfaf1.mp3"
-    model_name = "large-v3-turbo"
-    result = transcribe_audio(audio_path, model_name)
+    result = transcribe_audio(audio_path)
     print("Transcription text (first 500 chars):")
     print(result["text"][:500])
     print("\nFirst 12 segments:")

@@ -3,6 +3,7 @@
 Sections are grouped by feature for easier editing.
 """
 
+import os
 from pathlib import Path
 
 # ---------------------------------------
@@ -35,6 +36,8 @@ SILENCE_DETECTION_MIN_DURATION = 0.075
 # ---------------------------------------
 # Preferred transcript source: "youtube" or "whisper"
 TRANSCRIPT_SOURCE = "whisper"
+# Model used for faster-whisper transcription
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "large-v3-turbo")
 
 # ---------------------------------------
 # Candidate selection heuristics
@@ -83,6 +86,7 @@ __all__ = [
     "SILENCE_DETECTION_NOISE",
     "SILENCE_DETECTION_MIN_DURATION",
     "TRANSCRIPT_SOURCE",
+    "WHISPER_MODEL",
     "MIN_DURATION_SECONDS",
     "MAX_DURATION_SECONDS",
     "SWEET_SPOT_MIN_SECONDS",
