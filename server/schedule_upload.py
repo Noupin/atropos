@@ -108,4 +108,4 @@ def main(kind: str | None = None, platforms: Sequence[str] | None = None) -> Non
 if __name__ == "__main__":
     import sys
 
-    main(platforms=sys.argv[1:])
+    main(kind="funny", platforms=sys.argv[1:])
