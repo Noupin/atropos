@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 import sys
 
@@ -11,6 +13,7 @@ from server.steps.segment import (
     refine_segments_with_llm,
     maybe_refine_segments_with_llm,
 )
+
 
 
 def test_refine_segments_with_llm_merges(monkeypatch) -> None:

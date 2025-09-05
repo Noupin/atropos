@@ -32,7 +32,7 @@ SILENCE_DETECTION_MIN_DURATION = 0.075
 # Transcript acquisition settings
 # ---------------------------------------
 # Preferred transcript source: "youtube" or "whisper"
-TRANSCRIPT_SOURCE = "youtube"
+TRANSCRIPT_SOURCE = "whisper"
 
 # ---------------------------------------
 # Candidate selection heuristics
