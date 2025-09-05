@@ -43,10 +43,10 @@ def read_description(path: Path) -> tuple[str, str]:
     hashtag_pattern = r"(?:^|\s)(#\w+)"
     hashtags = [tag.strip() for tag in re.findall(hashtag_pattern, desc_text)]
     title_hashtags = hashtags[:4]
+    title_clean = "Made by Atropos "
     if title_hashtags:
-        title_clean = " ".join(title_hashtags)
-    else:
-        title_clean = "Untitled clip"
+        title_clean += " ".join(title_hashtags)
+
     title_clean = title_clean.strip()[:100]
 
     if len(desc_text) > 4900:

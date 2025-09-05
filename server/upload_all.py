@@ -35,10 +35,10 @@ from integrations.instagram.upload import (
 )
 
 DEFAULT_VIDEO = Path(
-    "../shorts/clip_70.41-98.62_r8.1.mp4"
+    "../out/funny/We_Celebrate_Shower_With_A_Friend_Day_-_KF_AF_20190206/shorts/clip_2504.05-2511.18_r8.5.mp4"
 )
 DEFAULT_DESC = Path(
-    "../shorts/clip_70.41-98.62_r8.1.txt"
+    "../out/funny/We_Celebrate_Shower_With_A_Friend_Day_-_KF_AF_20190206/shorts/clip_2504.05-2511.18_r8.5.txt"
 )
 
 

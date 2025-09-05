@@ -455,11 +455,12 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
             hashtags.extend(["#shorts", "#madebyatropos"])
             full_video_link = youtube_timestamp_url(yt_url, candidate.start)
             description = (
-                f"Full video: {full_video_link}\n"
+                f"Full video: {full_video_link}\n\n"
                 f"Credit: {video_info.get('uploader', 'Unknown Channel')}\n"
                 "Made by Atropos\n"
             )
             description = maybe_append_website_link(description)
+            description += "\nIf you know any more creators who don't do clips, leave them in the comments below!\n"
             description += "\n" + " ".join(hashtags)
             description_path.write_text(description, encoding="utf-8")
             return description_path
@@ -490,5 +491,5 @@ if __name__ == "__main__":
     urls = get_video_urls(yt_url)
     urls.reverse() # If the playlist is newest first, reverse to process oldest first
     niche = "funny"  # Set to a niche/account name to output under out/<niche>
-    for url in urls[3:4]:
+    for url in urls[5:6]:
         process_video(url, niche=niche)
