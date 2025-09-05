@@ -23,7 +23,8 @@ from steps.candidates.helpers import (
 )
 from steps.segment import (
     segment_transcript_items,
-    refine_segments_with_llm,
+    maybe_refine_segments_with_llm,
+
     write_segments_json,
 )
 from steps.cut import save_clip_from_candidate
@@ -280,7 +281,8 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
     # Parse transcript once for snapping boundaries
     items = parse_transcript(transcript_output_path)
     segments = segment_transcript_items(items)
-    segments = refine_segments_with_llm(segments)
+    segments = maybe_refine_segments_with_llm(segments)
+
     write_segments_json(segments, project_dir / "segments.json")
 
     dialog_ranges_path = project_dir / "dialog_ranges.json"

@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from typing import List, Tuple
 
+import config
 from helpers.ai import local_llm_call_json
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
@@ -99,6 +100,15 @@ def refine_segments_with_llm(
                 refined.append((s, e, t))
 
     return refined or segments
+
+
+def maybe_refine_segments_with_llm(
+    segments: List[Tuple[float, float, str]], **kwargs
+) -> List[Tuple[float, float, str]]:
+    """Refine segments with an LLM if enabled in configuration."""
+    if not config.REFINE_SEGMENTS_WITH_LLM:
+        return segments
+    return refine_segments_with_llm(segments, **kwargs)
 
 
 def write_segments_json(
