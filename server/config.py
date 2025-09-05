@@ -18,7 +18,7 @@ OUTPUT_FPS: float = 30.0
 
 # Clip boundary snapping options
 SNAP_TO_SILENCE = True
-SNAP_TO_DIALOG = False
+SNAP_TO_DIALOG = True
 SNAP_TO_SENTENCE = True
 
 # Toggle LLM-based refinement of transcript segments
@@ -50,7 +50,7 @@ SWEET_SPOT_MAX_SECONDS = 15.0
 DEFAULT_MIN_RATING = 7.0
 DEFAULT_MIN_WORDS = 0
 
-FUNNY_MIN_RATING = 8.1
+FUNNY_MIN_RATING = 8.6
 FUNNY_MIN_WORDS = 5
 
 EDUCATIONAL_MIN_RATING = 7.0
