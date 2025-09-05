@@ -11,7 +11,7 @@ import subprocess
 import os
 import shutil
 
-from config import CAPTION_FONT_SCALE, OUTPUT_FPS
+from config import CAPTION_FONT_SCALE, CAPTION_MAX_LINES, OUTPUT_FPS
 
 
 def render_vertical_with_captions(
@@ -29,6 +29,7 @@ def render_vertical_with_captions(
     thickness: int = 2,
     outline: int = 4,
     line_spacing: int = 10,
+    max_lines: int = CAPTION_MAX_LINES,
     wrap_width_px_ratio: float = 0.86,  # caption max width as ratio of frame_width
     blur_ksize: int = 31,               # must be odd; background blur amount
     fill_bgr: Tuple[int, int, int] = (255, 187, 28),   # hex 1cbbff -> RGB(28,187,255) -> BGR(255,187,28)
@@ -220,6 +221,36 @@ def render_vertical_with_captions(
             _last_text, _last_scale, _last_spacing = text, scale, spacing
             _cached_lines, _cached_sizes, _cached_total_h = lines, sizes, total_h
         return _cached_lines, _cached_sizes, _cached_total_h
+
+    def _split_long_captions(
+        caps: List[Tuple[float, float, str]],
+        max_lines: int,
+    ) -> List[Tuple[float, float, str]]:
+        out: List[Tuple[float, float, str]] = []
+        for s, e, txt in caps:
+            lines, _, _ = _measure_and_wrap(txt, font_scale, line_spacing)
+            if len(lines) <= max_lines:
+                out.append((s, e, txt))
+                continue
+            total_lines = len(lines)
+            duration = e - s
+            idx = 0
+            cur_start = s
+            while idx < total_lines:
+                seg_lines = lines[idx:idx + max_lines]
+                seg_text = " ".join(seg_lines)
+                seg_count = len(seg_lines)
+                seg_duration = duration * (seg_count / total_lines)
+                out.append((cur_start, cur_start + seg_duration, seg_text))
+                cur_start += seg_duration
+                idx += seg_count
+        return out
+
+    captions_norm = _split_long_captions(captions_norm, max_lines)
+    _last_text = _last_scale = _last_spacing = None
+    _cached_lines = []
+    _cached_sizes = []
+    _cached_total_h = 0
 
     while True:
         ret, frame = cap.read()
