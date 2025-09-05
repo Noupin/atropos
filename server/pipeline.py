@@ -53,6 +53,7 @@ from config import (
     SILENCE_DETECTION_NOISE,
     SILENCE_DETECTION_MIN_DURATION,
     TRANSCRIPT_SOURCE,
+    WHISPER_MODEL,
 )
 
 import sys
@@ -159,7 +160,7 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
 
     def step_transcribe() -> bool:
         result = transcribe_audio(
-            str(audio_output_path), model_size="large-v3-turbo"
+            str(audio_output_path), model_size=WHISPER_MODEL
         )
         write_transcript_txt(result, str(transcript_output_path))
         return True
@@ -168,7 +169,7 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
         transcribed = False
         if audio_ok:
             transcribed = run_step(
-                "STEP 3: Transcribing with faster-whisper (large-v3-turbo)",
+                f"STEP 3: Transcribing with faster-whisper ({WHISPER_MODEL})",
                 step_transcribe,
             )
             if transcribed:
@@ -210,7 +211,7 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
                 )
             else:
                 run_step(
-                    "STEP 3: Transcribing with faster-whisper (large-v3-turbo)",
+                    f"STEP 3: Transcribing with faster-whisper ({WHISPER_MODEL})",
                     step_transcribe,
                 )
                 print(

@@ -44,3 +44,11 @@ def test_transcribe_audio_handles_generator():
     ]
     assert result["timing"]["total_time"] >= 0
 
+
+def test_whisper_model_env_override(monkeypatch):
+    monkeypatch.setenv("WHISPER_MODEL", "tiny-test")
+    import importlib
+    import config
+    importlib.reload(config)
+    assert config.WHISPER_MODEL == "tiny-test"
+
