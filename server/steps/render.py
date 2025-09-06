@@ -330,16 +330,20 @@ def render_vertical_with_captions(
             bg_u = cv2.resize(frame_u, sz_bg)
             y0 = max(0, (sz_bg[1] - frame_height) // 2)
             x0 = max(0, (sz_bg[0] - frame_width) // 2)
-            bg_u = bg_u[y0:y0 + frame_height, x0:x0 + frame_width]
+
+            # Convert to ndarray before ROI — UMat is not subscriptable
+            bg_nd = bg_u.get()
+            bg_nd = bg_nd[y0:y0 + frame_height, x0:x0 + frame_width]
 
             # Pyramid blur (downsample -> blur small -> upsample) for speed
             small_w = max(2, frame_width // 4)
             small_h = max(2, frame_height // 4)
-            small = cv2.resize(bg_u, (small_w, small_h))
+            small = cv2.resize(bg_nd, (small_w, small_h))
             k_small = 9 if blur_ksize >= 9 else (blur_ksize if blur_ksize % 2 == 1 else blur_ksize + 1)
             small = cv2.GaussianBlur(small, (k_small, k_small), 0)
-            bg_u = cv2.resize(small, (frame_width, frame_height))
-            bg = bg_u.get()
+            bg = cv2.resize(small, (frame_width, frame_height))
+
+            # Dim
             bg = cv2.addWeighted(bg, 0.55, np.zeros_like(bg), 0.45, 0)
 
             # Foreground scaled to target height
