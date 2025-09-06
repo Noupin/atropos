@@ -13,6 +13,7 @@ from config import (
     WINDOW_SIZE_SECONDS,
     WINDOW_OVERLAP_SECONDS,
     WINDOW_CONTEXT_SECONDS,
+    LOCAL_LLM_MODEL,
 )
 from . import ClipCandidate
 from .helpers import (
@@ -78,7 +79,7 @@ def find_educational_timestamps_batched(
         )
         try:
             arr = local_llm_call_json(
-                model="google/gemma-3-4b",
+                model=LOCAL_LLM_MODEL,
                 prompt=prompt,
                 options={"temperature": 0.2},
             )

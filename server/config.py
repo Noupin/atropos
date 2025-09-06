@@ -4,6 +4,7 @@ Sections are grouped by feature for easier editing.
 """
 
 import os
+import platform
 from pathlib import Path
 
 # ---------------------------------------
@@ -29,6 +30,13 @@ SEG_LLM_MAX_CHARS = 12_000
 DETECT_DIALOG_WITH_LLM = False
 MAX_LLM_CHARS = 24_000
 LLM_API_TIMEOUT = 12000
+
+# Choose local LLM provider and model
+LOCAL_LLM_PROVIDER = os.environ.get(
+    "LOCAL_LLM_PROVIDER",
+    "lmstudio" if platform.system() == "Darwin" else "ollama",
+)
+LOCAL_LLM_MODEL = os.environ.get("LOCAL_LLM_MODEL", "google/gemma-3-4b")
 
 # Export silence-only "raw" clips for debugging comparisons
 EXPORT_RAW_CLIPS = False
@@ -116,6 +124,8 @@ __all__ = [
     "USE_LLM_FOR_SEGMENTS",
     "SEG_LLM_MAX_CHARS",
     "DETECT_DIALOG_WITH_LLM",
+    "LOCAL_LLM_PROVIDER",
+    "LOCAL_LLM_MODEL",
     "EXPORT_RAW_CLIPS",
     "RAW_LIMIT",
     "SILENCE_DETECTION_NOISE",

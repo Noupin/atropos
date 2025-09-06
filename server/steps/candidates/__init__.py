@@ -13,6 +13,7 @@ from config import (
     MAX_DURATION_SECONDS,
     MAX_LLM_CHARS,
     MIN_DURATION_SECONDS,
+    LOCAL_LLM_MODEL,
 )
 
 from .helpers import (
@@ -194,7 +195,7 @@ def _verify_tone(
 
 
 # -----------------------------
-# LLM (Ollama / google/gemma-3-4b) utilities
+# LLM utilities
 # -----------------------------
 
 def find_clip_timestamps_batched(
@@ -204,7 +205,7 @@ def find_clip_timestamps_batched(
     min_rating: float = DEFAULT_MIN_RATING,
     rating_descriptions: Optional[Dict[str, str]] = None,
     min_words: int = DEFAULT_MIN_WORDS,
-    model: str = "google/gemma-3-4b",
+    model: str = LOCAL_LLM_MODEL,
     options: Optional[dict] = None,
     max_chars_per_chunk: int = MAX_LLM_CHARS,
     overlap_lines: int = 4,
@@ -343,7 +344,7 @@ def find_clip_timestamps(
     min_rating: float = DEFAULT_MIN_RATING,
     rating_descriptions: Optional[Dict[str, str]] = None,
     min_words: int = DEFAULT_MIN_WORDS,
-    model: str = "google/gemma-3-4b",
+    model: str = LOCAL_LLM_MODEL,
     options: Optional[dict] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
     words: Optional[List[dict]] = None,
@@ -351,7 +352,7 @@ def find_clip_timestamps(
     merge_overlapping: bool = False,
     return_all_stages: bool = False,
 ) -> List[ClipCandidate] | tuple[List[ClipCandidate], List[ClipCandidate], List[ClipCandidate]]:
-    """Use a local Ollama model (google/gemma-3-4b) to score transcript lines and propose clip windows."""
+    """Use a local LLM model to score transcript lines and propose clip windows."""
     items = parse_transcript(transcript_path)
     if not items:
         return []
