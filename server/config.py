@@ -23,11 +23,15 @@ SNAP_TO_DIALOG = True
 SNAP_TO_SENTENCE = True
 
 # Toggle LLM usage for transcript segmentation
-USE_LLM_FOR_SEGMENTS = True
+USE_LLM_FOR_SEGMENTS = False
 # Toggle LLM-based detection of dialog ranges
 DETECT_DIALOG_WITH_LLM = True
 MAX_LLM_CHARS = 24_000
 LLM_API_TIMEOUT = 600  # seconds
+# LLM segmentation and worker configuration
+SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS = 20
+LLM_MAX_WORKERS = 2
+LLM_PER_CHUNK_TIMEOUT = 60  # seconds
 
 # Choose local LLM provider and model
 LOCAL_LLM_PROVIDER = os.environ.get(
@@ -49,7 +53,7 @@ SILENCE_DETECTION_MIN_DURATION = 0.075
 # Transcript acquisition settings
 # ---------------------------------------
 # Preferred transcript source: "youtube" or "whisper"
-TRANSCRIPT_SOURCE = "whisper"
+TRANSCRIPT_SOURCE = "youtube"
 # Model used for faster-whisper transcription
 WHISPER_MODEL = "large-v3-turbo" # (tiny, tiny.en, base, base.en, small, small.en, distil-small.en, medium, medium.en, distil-medium.en, large-v1, large-v2, large-v3, large, distil-large-v2, distil-large-v3, large-v3-turbo, or turbo)
 
@@ -123,6 +127,11 @@ __all__ = [
     "DETECT_DIALOG_WITH_LLM",
     "LOCAL_LLM_PROVIDER",
     "LOCAL_LLM_MODEL",
+    "MAX_LLM_CHARS",
+    "LLM_API_TIMEOUT",
+    "SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS",
+    "LLM_MAX_WORKERS",
+    "LLM_PER_CHUNK_TIMEOUT",
     "EXPORT_RAW_CLIPS",
     "RAW_LIMIT",
     "SILENCE_DETECTION_NOISE",

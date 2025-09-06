@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from pathlib import Path
 from typing import List, Tuple
 
@@ -9,7 +11,6 @@ import config
 from helpers.ai import local_llm_call_json
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
-
 
 
 def segment_transcript_items(
@@ -43,9 +44,9 @@ def segment_transcript_items(
 
 
 def _chunk_segments(
-    segments: List[Tuple[float, float, str]], *, max_chars: int, overlap_lines: int = 2
+    segments: List[Tuple[float, float, str]], *, max_chars: int, overlap_lines: int = 2, max_items: int | None = None
 ) -> List[List[Tuple[float, float, str]]]:
-    """Chunk segments under ``max_chars`` with small overlaps."""
+    """Chunk segments under ``max_chars`` and optional ``max_items`` with small overlaps."""
     chunks: List[List[Tuple[float, float, str]]] = []
     buf: List[Tuple[float, float, str]] = []
     count = 0
@@ -53,7 +54,9 @@ def _chunk_segments(
         s, e, t = triplet
         line = f"[{s:.2f}-{e:.2f}] {t}"
         ln = len(line) + 1
-        if buf and count + ln > max_chars:
+        would_exceed_chars = buf and count + ln > max_chars
+        would_exceed_items = max_items is not None and buf and len(buf) >= max_items
+        if would_exceed_chars or would_exceed_items:
             chunks.append(buf[:])
             tail = buf[-overlap_lines:] if overlap_lines > 0 else []
             buf = tail[:]
@@ -65,6 +68,17 @@ def _chunk_segments(
     return chunks
 
 
+_END_PUNCT = set(".!?")
+def _chunk_is_sentence_like(chunk: List[Tuple[float, float, str]]) -> bool:
+    if not chunk:
+        return True
+    ends_ok = sum(1 for _, _, t in chunk if t and t.strip()[-1:] in _END_PUNCT)
+    ratio = ends_ok / max(1, len(chunk))
+    avg_len = sum(len(t) for _, _, t in chunk) / max(1, len(chunk))
+    # Skip LLM if ≥70% already end with sentence punctuation and avg length is reasonable
+    return ratio >= 0.7 and 24 <= avg_len <= 240
+
+
 def refine_segments_with_llm(
     segments: List[Tuple[float, float, str]],
     *,
@@ -73,52 +87,55 @@ def refine_segments_with_llm(
 ) -> List[Tuple[float, float, str]]:
     """Use an LLM to merge or split segments into complete sentences.
 
-    Parameters
-    ----------
-    segments:
-        Existing list of ``(start, end, text)`` entries.
-    model:
-        Local LLM model identifier.
-    timeout:
-        Request timeout in seconds for the LLM call.
-
-    Returns
-    -------
-    List[Tuple[float, float, str]]
-        Adjusted segments or the original ``segments`` if the LLM call fails
-        or returns an empty list.
+    Returns adjusted segments or the original segments on failure/timeout.
     """
+    chunks = _chunk_segments(
+        segments, max_chars=config.MAX_LLM_CHARS, overlap_lines=2, max_items=config.SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS
+    )
 
-    chunks = _chunk_segments(segments, max_chars=config.MAX_LLM_CHARS)
-    all_refined: List[Tuple[float, float, str]] = []
-    seen: set[tuple[float, float, str]] = set()
-    for i, chunk in enumerate(chunks):
-        print(f"Chunk {i+1}/{len(chunks)}")
-        prompt_lines = [
-            "Combine or split the following transcript segments so each is a",
-            "complete sentence or phrase. Return a JSON array of objects with",
-            "`start`, `end`, and `text` fields. Use provided times when merging",
-            "segments; if splitting, divide the time span proportionally by",
-            "sentence length. Output only JSON.",
+    print(f"[segments] Starting refinement with {len(chunks)} chunks.")
+
+    def _build_prompt(chunk: List[Tuple[float, float, str]]) -> str:
+        # Compact, JSON-only prompt to reduce tokens and latency
+        lines = [
+            "You are given transcript lines with timestamps.",
+            "Goal: merge/split into complete sentences/phrases only.",
+            "Rules:",
+            "1) Keep natural sentence boundaries; do not cut words.",
+            "2) When merging, start=min(starts), end=max(ends).",
+            "3) When splitting a span, divide time proportionally by sentence length.",
+            "4) Return ONLY JSON array: [{\"start\": float, \"end\": float, \"text\": string}, ...].",
+            "5) Use seconds with decimals (e.g., 12.3).",
             "",
             "Segments:",
         ]
-        prompt_lines.extend(
-            [f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in chunk]
-        )
-        prompt = "\n".join(prompt_lines)
+        lines.extend(f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in chunk)
+        return "\n".join(lines)
+
+    def _process_chunk(idx: int, chunk: List[Tuple[float, float, str]]):
+        # Skip LLM if chunk already looks good
+        if _chunk_is_sentence_like(chunk):
+            print(f"[segments] Chunk {idx}: skipping LLM, looks sentence-like.")
+            return chunk
+
+        print(f"[segments] Chunk {idx}: calling LLM for refinement.")
+        prompt = _build_prompt(chunk)
         try:
             out = local_llm_call_json(
                 model=model,
                 prompt=prompt,
-                options={"temperature": 0.0},
-                timeout=timeout,
+                options={
+                    "temperature": 0.0,
+                    "top_p": 0.9,
+                    "num_predict": 512,
+                },
+                timeout=min(timeout, config.LLM_PER_CHUNK_TIMEOUT),
             )
         except Exception as e:
-            print("Exception:", e)
-            all_refined.extend(chunk)
-            continue
-        refined_chunk: List[Tuple[float, float, str]] = []
+            print(f"[segments] Chunk {idx}: LLM exception -> {e}")
+            return chunk
+
+        refined: List[Tuple[float, float, str]] = []
         if isinstance(out, list):
             for obj in out:
                 try:
@@ -127,15 +144,42 @@ def refine_segments_with_llm(
                     t = str(obj.get("text", "")).strip()
                 except Exception:
                     continue
-                if t:
-                    key = (s, e, t)
-                    if key not in seen:
-                        refined_chunk.append((s, e, t))
-                        seen.add(key)
-        if refined_chunk:
-            all_refined.extend(refined_chunk)
-        else:
-            all_refined.extend(chunk)
+                if t and e >= s:
+                    refined.append((s, e, t))
+        print(f"[segments] Chunk {idx}: LLM returned {len(refined)} refined sentences (original {len(chunk)}).")
+        return refined or chunk
+
+    all_refined: List[Tuple[float, float, str]] = []
+    seen: set[tuple[float, float, str]] = set()
+
+    if config.LLM_PER_CHUNK_TIMEOUT in (0, None):
+        print("[segments] Per-chunk timeout is disabled; waiting indefinitely for each chunk.")
+    with ThreadPoolExecutor(max_workers=config.LLM_MAX_WORKERS) as ex:
+        futures = []
+        for i, chunk in enumerate(chunks):
+            futures.append(ex.submit(_process_chunk, i + 1, chunk))
+
+        for i, fut in enumerate(futures, 1):
+            try:
+                timeout_val = config.LLM_PER_CHUNK_TIMEOUT
+                if timeout_val in (0, None):
+                    chunk_out = fut.result()
+                else:
+                    chunk_out = fut.result(timeout=timeout_val)
+            except FuturesTimeout:
+                print(f"[segments] Chunk {i}: timeout; using original.")
+                chunk_out = chunks[i - 1]
+            except Exception as e:
+                print(f"[segments] Chunk {i}: error {e}; using original.")
+                chunk_out = chunks[i - 1]
+
+            for s, e, t in chunk_out:
+                key = (s, e, t)
+                if key not in seen:
+                    all_refined.append((s, e, t))
+                    seen.add(key)
+
+    print(f"[segments] Refinement complete: total {len(all_refined)} final segments.")
     return all_refined or segments
 
 
