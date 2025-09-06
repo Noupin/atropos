@@ -27,7 +27,7 @@ USE_LLM_FOR_SEGMENTS = False
 SEG_LLM_MAX_CHARS = 12_000
 # Toggle LLM-based detection of dialog ranges
 DETECT_DIALOG_WITH_LLM = False
-MAX_LLM_CHARS = 48_000
+MAX_LLM_CHARS = 6_000
 LLM_API_TIMEOUT = 12000
 
 # Export silence-only "raw" clips for debugging comparisons
@@ -43,7 +43,7 @@ SILENCE_DETECTION_MIN_DURATION = 0.075
 # Transcript acquisition settings
 # ---------------------------------------
 # Preferred transcript source: "youtube" or "whisper"
-TRANSCRIPT_SOURCE = "youtube"
+TRANSCRIPT_SOURCE = "whisper"
 # Model used for faster-whisper transcription
 WHISPER_MODEL = "tiny"
 
@@ -51,14 +51,14 @@ WHISPER_MODEL = "tiny"
 # Candidate selection heuristics
 # ---------------------------------------
 MIN_DURATION_SECONDS = 6.0
-MAX_DURATION_SECONDS = 60.0
+MAX_DURATION_SECONDS = 90.0
 SWEET_SPOT_MIN_SECONDS = 8.0
-SWEET_SPOT_MAX_SECONDS = 20.0
+SWEET_SPOT_MAX_SECONDS = 35.0
 
 DEFAULT_MIN_RATING = 7.0
 DEFAULT_MIN_WORDS = 0
 
-FUNNY_MIN_RATING = 8.0
+FUNNY_MIN_RATING = 9.1
 FUNNY_MIN_WORDS = 5
 
 EDUCATIONAL_MIN_RATING = 7.0
