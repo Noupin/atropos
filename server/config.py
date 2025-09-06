@@ -22,12 +22,12 @@ SNAP_TO_DIALOG = True
 SNAP_TO_SENTENCE = True
 
 # Toggle LLM usage for transcript segmentation
-USE_LLM_FOR_SEGMENTS = True
+USE_LLM_FOR_SEGMENTS = False
 # Maximum transcript length to allow LLM segment refinement
 SEG_LLM_MAX_CHARS = 12_000
 # Toggle LLM-based detection of dialog ranges
-DETECT_DIALOG_WITH_LLM = True
-MAX_LLM_CHARS = 6_000
+DETECT_DIALOG_WITH_LLM = False
+MAX_LLM_CHARS = 24_000
 LLM_API_TIMEOUT = 12000
 
 # Export silence-only "raw" clips for debugging comparisons
@@ -43,7 +43,7 @@ SILENCE_DETECTION_MIN_DURATION = 0.075
 # Transcript acquisition settings
 # ---------------------------------------
 # Preferred transcript source: "youtube" or "whisper"
-TRANSCRIPT_SOURCE = "whisper"
+TRANSCRIPT_SOURCE = "youtube"
 # Model used for faster-whisper transcription
 WHISPER_MODEL = "tiny"
 

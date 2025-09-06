@@ -55,5 +55,8 @@ per platform.
 
 ## Docker Automation
 
-docker compose build uploader
-docker compose up -d --force-recreate uploader
+`docker compose build uploader`
+`docker compose up -d --force-recreate uploader`
+
+To view logs after upping with -d
+`docker compose logs -f uploader`
