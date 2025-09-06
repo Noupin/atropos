@@ -114,6 +114,15 @@ def _get_auth_refreshers(username: str, password: str) -> Dict[str, Callable[[],
     }
 
 
+def _tidy_empty_dirs(shorts: Path, project: Path) -> None:
+    """Delete empty ``shorts`` and project directories."""
+
+    if not any(shorts.iterdir()):
+        shorts.rmdir()
+        if not any(project.iterdir()):
+            project.rmdir()
+
+
 def upload_all(
     video: Path,
     desc: Path,
@@ -209,7 +218,8 @@ def run(
     tt_privacy = tt_privacy or TIKTOK_PRIVACY_LEVEL
 
     if folder:
-        for vid in sorted(Path(folder).glob("*.mp4")):
+        folder = Path(folder)
+        for vid in sorted(folder.glob("*.mp4")):
             desc_path = vid.with_suffix(".txt")
             if not desc_path.exists():
                 print(f"No description for {vid}, skipping")
@@ -231,6 +241,8 @@ def run(
                 for f in vid.parent.glob(f"{vid.stem}.*"):
                     if f.is_file():
                         f.unlink(missing_ok=True)
+        if folder.exists():
+            _tidy_empty_dirs(folder, folder.parent)
     else:
         video = Path(video) if video else DEFAULT_VIDEO
         desc = Path(desc) if desc else DEFAULT_DESC
