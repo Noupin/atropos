@@ -4,12 +4,38 @@ from pathlib import Path
 from typing import List, Tuple, Optional, Union
 
 import cv2
+cv2.ocl.setUseOpenCL(True)
+cv2.setUseOptimized(True)
+try:
+    # Optional: cap OpenCV threads to avoid CPU oversubscription
+    import multiprocessing as mp
+    cv2.setNumThreads(max(1, mp.cpu_count() - 1))
+except Exception:
+    pass
 import numpy as np
 import re
 import json
 import subprocess
 import os
 import shutil
+
+# --- Diagnostics: show whether OpenCL/FFMPEG are available (once per import) ---
+def _log_build_info_once():
+    try:
+        info = cv2.getBuildInformation()
+        lines = []
+        for ln in info.splitlines():
+            if any(k in ln for k in ("OpenCL", "CUDA", "FFMPEG")):
+                lines.append(ln.strip())
+        print("[render] OpenCV build:", *lines[:10], sep="\n  ")
+    except Exception:
+        pass
+
+try:
+    print(f"[render] OpenCL available={cv2.ocl.haveOpenCL()} useOpenCL={cv2.ocl.useOpenCL()}")
+    _log_build_info_once()
+except Exception:
+    pass
 
 from config import CAPTION_FONT_SCALE, CAPTION_MAX_LINES, OUTPUT_FPS
 
@@ -168,17 +194,19 @@ def render_vertical_with_captions(
                 return txt
         return ""
 
-    cap = cv2.VideoCapture(str(clip_path))
+    cap = cv2.VideoCapture(str(clip_path), cv2.CAP_FFMPEG)
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open video: {clip_path}")
 
     # Force constant output FPS to keep timestamps sane for social platforms
     fps = OUTPUT_FPS
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(
-        str(temp_video), fourcc, fps, (frame_width, frame_height)
-    )
+    # Prefer H.264 writer; fall back to mp4v if unavailable
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")
+    writer = cv2.VideoWriter(str(temp_video), fourcc, fps, (frame_width, frame_height))
+    if not writer.isOpened():
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(str(temp_video), fourcc, fps, (frame_width, frame_height))
     if not writer.isOpened():
         cap.release()
         raise RuntimeError(f"Cannot create writer for: {output}")
@@ -294,20 +322,31 @@ def render_vertical_with_captions(
             gpu_fg = cv2.cuda.resize(gpu_frame, sz_fg)
             fg = gpu_fg.download()
         else:
-            # CPU fallback
+            # CPU/UMat fallback (uses OpenCL if available)
+            frame_u = cv2.UMat(frame)
+
+            # Background: cover resize on UMat
             sz_bg = (int(w * scale_bg), int(h * scale_bg))
-            bg = cv2.resize(frame, sz_bg)
-            y0 = max(0, (bg.shape[0] - frame_height) // 2)
-            x0 = max(0, (bg.shape[1] - frame_width) // 2)
-            bg = bg[y0:y0 + frame_height, x0:x0 + frame_width]
-            k = blur_ksize if blur_ksize % 2 == 1 else blur_ksize + 1
-            bg = cv2.GaussianBlur(bg, (k, k), 0)
+            bg_u = cv2.resize(frame_u, sz_bg)
+            y0 = max(0, (sz_bg[1] - frame_height) // 2)
+            x0 = max(0, (sz_bg[0] - frame_width) // 2)
+            bg_u = bg_u[y0:y0 + frame_height, x0:x0 + frame_width]
+
+            # Pyramid blur (downsample -> blur small -> upsample) for speed
+            small_w = max(2, frame_width // 4)
+            small_h = max(2, frame_height // 4)
+            small = cv2.resize(bg_u, (small_w, small_h))
+            k_small = 9 if blur_ksize >= 9 else (blur_ksize if blur_ksize % 2 == 1 else blur_ksize + 1)
+            small = cv2.GaussianBlur(small, (k_small, k_small), 0)
+            bg_u = cv2.resize(small, (frame_width, frame_height))
+            bg = bg_u.get()
             bg = cv2.addWeighted(bg, 0.55, np.zeros_like(bg), 0.45, 0)
 
+            # Foreground scaled to target height
             fg_target_h = max(100, int(frame_height * fg_height_ratio))
             scale_fg = fg_target_h / h
-            fg_w, fg_h = int(w * scale_fg), int(h * scale_fg)
-            fg = cv2.resize(frame, (fg_w, fg_h))
+            sz_fg = (int(w * scale_fg), int(h * scale_fg))
+            fg = cv2.resize(frame_u, sz_fg).get()
 
         # Foreground placement
         fg_h = fg.shape[0]
