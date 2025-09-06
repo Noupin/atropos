@@ -1,6 +1,8 @@
 from dotenv import load_dotenv
 load_dotenv(dotenv_path="../.env")
 
+import json
+
 from steps.transcribe import transcribe_audio
 from steps.download import (
     download_transcript,
@@ -55,6 +57,10 @@ from config import (
     SILENCE_DETECTION_MIN_DURATION,
     TRANSCRIPT_SOURCE,
     WHISPER_MODEL,
+    MIN_DURATION_SECONDS,
+    MAX_DURATION_SECONDS,
+    FORCE_REBUILD,
+    MIN_EXTENSION_MARGIN,
 )
 
 import sys
@@ -64,6 +70,7 @@ from pathlib import Path
 
 from helpers.audio import ensure_audio
 from helpers.transcript import write_transcript_txt
+from helpers.transcript_quality import score_transcript_quality
 from helpers.formatting import (
     Fore,
     Style,
@@ -75,6 +82,8 @@ from helpers.notifications import send_failure_email
 from helpers.ai import local_llm_call_json
 from helpers.description import maybe_append_website_link
 from steps.candidates import ClipCandidate
+
+
 
 
 def process_video(yt_url: str, niche: str | None = None) -> None:
@@ -184,16 +193,31 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
                 f"STEP 3: Attempting YouTube transcript -> {transcript_output_path}",
                 step_download_transcript,
             )
-            if yt_ok:
+        if yt_ok:
+            text = transcript_output_path.read_text(encoding="utf-8")
+            quality = score_transcript_quality(text)
+            print(
+                f"STEP 3: YouTube transcript quality {quality:.2f}"
+            )
+            if quality < 0.60 and audio_ok:
+                print("STEP 3: Quality below threshold, transcribing with Whisper")
+                run_step(
+                    f"STEP 3: Transcribing with faster-whisper ({WHISPER_MODEL})",
+                    step_transcribe,
+                )
                 print(
-                    f"{Fore.GREEN}STEP 3: Used YouTube transcript.{Style.RESET_ALL}"
+                    f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
                 )
             else:
                 print(
-                    f"{Fore.RED}STEP 3: Cannot transcribe because audio acquisition failed.{Style.RESET_ALL}"
+                    f"{Fore.GREEN}STEP 3: Used YouTube transcript.{Style.RESET_ALL}"
                 )
-                send_failure_email(
-                    "Transcript unavailable",
+        else:
+            print(
+                f"{Fore.RED}STEP 3: Cannot transcribe because audio acquisition failed.{Style.RESET_ALL}"
+            )
+            send_failure_email(
+                "Transcript unavailable",
                     f"No transcript could be retrieved or generated for video {yt_url} because audio acquisition failed.",
                 )
     else:
@@ -202,7 +226,20 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
             step_download_transcript,
         )
         if yt_ok:
-            print(f"{Fore.GREEN}STEP 3: Used YouTube transcript.{Style.RESET_ALL}")
+            text = transcript_output_path.read_text(encoding="utf-8")
+            quality = score_transcript_quality(text)
+            print(f"STEP 3: YouTube transcript quality {quality:.2f}")
+            if quality < 0.60 and audio_ok:
+                print("STEP 3: Quality below threshold, transcribing with Whisper")
+                run_step(
+                    f"STEP 3: Transcribing with faster-whisper ({WHISPER_MODEL})",
+                    step_transcribe,
+                )
+                print(
+                    f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
+                )
+            else:
+                print(f"{Fore.GREEN}STEP 3: Used YouTube transcript.{Style.RESET_ALL}")
         else:
             if not audio_ok:
                 print(
@@ -244,7 +281,45 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
     )
 
     # ----------------------
-    # STEP 5: Find Clip Candidates
+    # STEP 5: Build Transcript Structure
+    # ----------------------
+    segments_path = project_dir / "segments.json"
+
+    if segments_path.exists() and not FORCE_REBUILD:
+        segments_data = json.loads(segments_path.read_text(encoding="utf-8"))
+        segments = [(d["start"], d["end"], d["text"]) for d in segments_data]
+    else:
+        def step_segments() -> list[tuple[float, float, str]]:
+            items = parse_transcript(transcript_output_path)
+            segs = segment_transcript_items(items)
+            segs = maybe_refine_segments_with_llm(segs)
+            write_segments_json(segs, segments_path)
+            return segs
+
+        segments = run_step(
+            f"STEP 5: Segmenting transcript -> {segments_path}", step_segments
+        )
+
+    dialog_ranges_path = project_dir / "dialog_ranges.json"
+    if dialog_ranges_path.exists() and not FORCE_REBUILD:
+        dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
+    else:
+        def step_dialog_ranges() -> list[tuple[float, float]]:
+            print(
+                f"[Pipeline] Starting dialog detection using transcript: {transcript_output_path}"
+            )
+            ranges = detect_dialog_ranges(transcript_output_path)
+            write_dialog_ranges_json(ranges, dialog_ranges_path)
+            return ranges
+
+        dialog_ranges = run_step(
+            f"STEP 5: Detecting dialog ranges -> {dialog_ranges_path}",
+            step_dialog_ranges,
+        )
+        dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
+
+    # ----------------------
+    # STEP 6: Find Clip Candidates
     # ----------------------
     candidates_path = project_dir / "candidates.json"
     candidates_all_path = project_dir / "candidates_all.json"
@@ -264,46 +339,35 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
             str(transcript_output_path),
             min_rating=MIN_RATING,
             return_all_stages=True,
+            segments=segments,
+            dialog_ranges=dialog_ranges,
+            silences=silences,
         )
 
-    candidates, top_candidates, all_candidates = run_step(
-        "STEP 5: Finding clip candidates from transcript", step_candidates
-    )
+    if (
+        candidates_path.exists()
+        and candidates_all_path.exists()
+        and candidates_top_path.exists()
+        and not FORCE_REBUILD
+    ):
+        candidates = load_candidates_json(candidates_path)
+        top_candidates = load_candidates_json(candidates_top_path)
+        all_candidates = load_candidates_json(candidates_all_path)
+    else:
+        candidates, top_candidates, all_candidates = run_step(
+            "STEP 6: Finding clip candidates from transcript", step_candidates
+        )
+        export_candidates_json(all_candidates, candidates_all_path)
+        export_candidates_json(top_candidates, candidates_top_path)
+        export_candidates_json(candidates, candidates_path)
 
-    export_candidates_json(all_candidates, candidates_all_path)
-    export_candidates_json(top_candidates, candidates_top_path)
-    export_candidates_json(candidates, candidates_path)
     if not candidates:
-        print(f"{Fore.RED}STEP 5: No clip candidates found.{Style.RESET_ALL}")
+        print(f"{Fore.RED}STEP 6: No clip candidates found.{Style.RESET_ALL}")
         send_failure_email(
             "No clip candidates found",
             f"No clip candidates were found for video {yt_url}",
         )
         sys.exit()
-    # candidates = load_candidates_json('../out/funny/Top_10_Star_Wars__Episode_IX_Titles_-_KF_AF_20190213/candidates.json')
-
-    # Parse transcript once for snapping boundaries
-    items = parse_transcript(transcript_output_path)
-    print(f"[Pipeline] Segment refinement starting")
-    segments = segment_transcript_items(items)
-    segments = maybe_refine_segments_with_llm(segments)
-    print(f"[Pipeline] Segment refinement complete: {len(segments)} segments.")
-
-    write_segments_json(segments, project_dir / "segments.json")
-
-    dialog_ranges_path = project_dir / "dialog_ranges.json"
-
-    def step_dialog_ranges() -> list[tuple[float, float]]:
-        print(f"[Pipeline] Starting dialog detection using transcript: {transcript_output_path}")
-        ranges = detect_dialog_ranges(transcript_output_path)
-        write_dialog_ranges_json(ranges, dialog_ranges_path)
-        return ranges
-
-    dialog_ranges = run_step(
-        f"STEP 5: Detecting dialog ranges -> {dialog_ranges_path}",
-        step_dialog_ranges,
-    )
-    dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
 
     clips_dir = project_dir / "clips"
     raw_clips_dir = project_dir / "clips_raw"
@@ -349,13 +413,33 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
         end = cand.end
         if SNAP_TO_DIALOG:
             start = snap_start_to_dialog_start(start, dialog_ranges)
-            end = snap_end_to_dialog_end(end, dialog_ranges)
         if SNAP_TO_SENTENCE:
             start = _snap_start_to_sentence_start(start, segments)
-            end = _snap_end_to_sentence_end(end, segments)
         if SNAP_TO_SILENCE:
             start = snap_start_to_silence(start, silences)
+
+        if SNAP_TO_SENTENCE:
+            end = _snap_end_to_sentence_end(end, segments)
+        if SNAP_TO_DIALOG:
+            end = snap_end_to_dialog_end(end, dialog_ranges)
+        if SNAP_TO_SILENCE:
             end = snap_end_to_silence(end, silences)
+
+        dur = end - start
+        if dur < MIN_DURATION_SECONDS:
+            target = start + MIN_DURATION_SECONDS + MIN_EXTENSION_MARGIN
+            if SNAP_TO_SENTENCE:
+                for _, seg_end, _ in segments:
+                    if seg_end >= target:
+                        end = seg_end
+                        break
+                else:
+                    end = start + MIN_DURATION_SECONDS
+            else:
+                end = start + MIN_DURATION_SECONDS
+        elif dur > MAX_DURATION_SECONDS:
+            end = start + MAX_DURATION_SECONDS
+
         refined_candidates.append(
             ClipCandidate(
                 start=start,

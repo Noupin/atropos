@@ -7,6 +7,11 @@ from config import (
     MIN_DURATION_SECONDS,
     SWEET_SPOT_MAX_SECONDS,
     SWEET_SPOT_MIN_SECONDS,
+    RATING_MIN,
+    RATING_MAX,
+    WINDOW_SIZE_SECONDS,
+    WINDOW_OVERLAP_SECONDS,
+    WINDOW_CONTEXT_SECONDS,
 )
 
 FUNNY_PROMPT_DESC = (
@@ -80,7 +85,7 @@ def _build_system_instructions(
         "- Boundaries: never start mid-word; begin at a natural lead-in and end just after the key beat lands (leave ~0.2–0.6s of tail room); prefer entering at the hook when possible. Always end at the end of a full sentence, not mid-thought.\n"
         "- Hook priority: the first 1–2 seconds must contain a clear hook (surprising line, bold claim, sharp question, or punchy setup). Trim silence/filler; avoid slow ramps. Prefer entering on the hook rather than several seconds of preamble.\n"
         "- Intro music: if there is intro music or a theme song at the start, begin the clip after the intro; never include music-only intros.\n"
-        "- Valid values: start < end; start ≥ 0; rating is a number 0.0–10.0 with one decimal place (e.g., 5.2, 6.7, 9.1). Do not restrict to .0 endings — use fractional decimals for nuance. No NaN/Infinity.\n"
+        f"- Valid values: start < end; start ≥ 0; rating is a number {RATING_MIN:.1f}–{RATING_MAX:.1f} with one decimal place (e.g., 5.2, 6.7, 9.1). Do not restrict to .0 endings — use fractional decimals for nuance. No NaN/Infinity.\n"
         "- Quote fidelity: `quote` must appear within [start, end] and capture the core line.\n"
         "- Tags: include 1–5 short, lowercase tags describing the moment (topic or device).\n"
         "- Structure: every clip should present a setup, brief escalation, and a clear payoff.\n"
@@ -105,6 +110,18 @@ def _build_system_instructions(
     )
 
 
+
+
+def build_window_prompt(prompt_desc: str, text: str) -> str:
+    """Construct a complete prompt for a transcript window."""
+    system_instructions = _build_system_instructions(prompt_desc)
+    return (
+        f"{system_instructions}\n\n"
+        f"TRANSCRIPT WINDOW (≈{WINDOW_SIZE_SECONDS:.0f}s, overlap {WINDOW_OVERLAP_SECONDS:.0f}s, context {WINDOW_CONTEXT_SECONDS:.0f}s):\n{text}\n\n"
+        "Return JSON now."
+    )
+
+
 __all__ = [
     "FUNNY_PROMPT_DESC",
     "INSPIRING_PROMPT_DESC",
@@ -112,4 +129,5 @@ __all__ = [
     "GENERAL_RATING_DESCRIPTIONS",
     "FUNNY_RATING_DESCRIPTIONS",
     "_build_system_instructions",
+    "build_window_prompt",
 ]
