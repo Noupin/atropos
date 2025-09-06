@@ -39,6 +39,30 @@ except Exception:
 
 from config import CAPTION_FONT_SCALE, CAPTION_MAX_LINES, OUTPUT_FPS
 
+def _open_writer(path, fps, size):
+    w, h = size
+    trials = [
+        # Prefer MSMF (Windows native) first
+        (cv2.CAP_MSMF, cv2.VideoWriter_fourcc(*"H264")),
+        (cv2.CAP_MSMF, cv2.VideoWriter_fourcc(*"avc1")),
+        (cv2.CAP_MSMF, cv2.VideoWriter_fourcc(*"mp4v")),
+        # Then FFMPEG, but avoid openh264 by using mp4v first
+        (cv2.CAP_FFMPEG, cv2.VideoWriter_fourcc(*"mp4v")),
+        (cv2.CAP_FFMPEG, cv2.VideoWriter_fourcc(*"avc1")),
+        # Absolute last resort: MJPG in .avi (huge files, but unblocks you)
+        (cv2.CAP_ANY,   cv2.VideoWriter_fourcc(*"MJPG")),
+    ]
+    for api, fourcc in trials:
+        try:
+            vw = cv2.VideoWriter(str(path), api, fourcc, fps, (w, h))
+            if vw.isOpened():
+                print(f"[render] VideoWriter OK → api={api} fourcc={fourcc}")
+                return vw
+        except Exception:
+            pass
+    return None
+
+
 
 def render_vertical_with_captions(
     clip_path: str | Path,
@@ -202,14 +226,10 @@ def render_vertical_with_captions(
     fps = OUTPUT_FPS
 
     # Prefer H.264 writer; fall back to mp4v if unavailable
-    fourcc = cv2.VideoWriter_fourcc(*"avc1")
-    writer = cv2.VideoWriter(str(temp_video), fourcc, fps, (frame_width, frame_height))
-    if not writer.isOpened():
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        writer = cv2.VideoWriter(str(temp_video), fourcc, fps, (frame_width, frame_height))
-    if not writer.isOpened():
+    writer = _open_writer(temp_video, fps, (frame_width, frame_height))
+    if writer is None:
         cap.release()
-        raise RuntimeError(f"Cannot create writer for: {output}")
+        raise RuntimeError("Cannot create VideoWriter (failed all backends/fourcc).")
 
     line_type = cv2.LINE_AA
     font = cv2.FONT_HERSHEY_SIMPLEX

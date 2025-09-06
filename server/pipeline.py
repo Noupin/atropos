@@ -66,7 +66,6 @@ from config import (
     FORCE_REBUILD_DIALOG,
     MIN_EXTENSION_MARGIN,
     USE_LLM_FOR_SEGMENTS,
-    SEG_LLM_MAX_CHARS,
     CLEANUP_NON_SHORTS,
 )
 
@@ -303,7 +302,7 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
             items = parse_transcript(transcript_output_path)
             segs = segment_transcript_items(items)
             text = transcript_output_path.read_text(encoding="utf-8")
-            if USE_LLM_FOR_SEGMENTS and len(text) < SEG_LLM_MAX_CHARS:
+            if USE_LLM_FOR_SEGMENTS:
                 segs = maybe_refine_segments_with_llm(segs)
             write_segments_json(segs, segments_path)
             return segs
@@ -600,5 +599,5 @@ if __name__ == "__main__":
     urls = get_video_urls(yt_url)
     urls.reverse() # If the playlist is newest first, reverse to process oldest first
     niche = "funny"  # Set to a niche/account name to output under out/<niche>
-    for url in urls[5:6]:
+    for url in urls[6:]:
         process_video(url, niche=niche)
