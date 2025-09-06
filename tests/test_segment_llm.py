@@ -63,7 +63,7 @@ def test_maybe_refine_segments_with_llm_respects_config(monkeypatch) -> None:
         raise AssertionError("refine_segments_with_llm should not be called")
 
     monkeypatch.setattr(seg_pkg, "refine_segments_with_llm", fake_refine)
-    monkeypatch.setattr(seg_pkg.config, "REFINE_SEGMENTS_WITH_LLM", False)
+    monkeypatch.setattr(seg_pkg.config, "USE_LLM_FOR_SEGMENTS", False)
 
     refined = maybe_refine_segments_with_llm(segments)
     assert refined == segments

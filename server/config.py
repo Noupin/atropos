@@ -21,10 +21,12 @@ SNAP_TO_SILENCE = True
 SNAP_TO_DIALOG = True
 SNAP_TO_SENTENCE = True
 
-# Toggle LLM-based refinement of transcript segments
-REFINE_SEGMENTS_WITH_LLM = True
+# Toggle LLM usage for transcript segmentation
+USE_LLM_FOR_SEGMENTS = False
+# Maximum transcript length to allow LLM segment refinement
+SEG_LLM_MAX_CHARS = 12_000
 # Toggle LLM-based detection of dialog ranges
-DETECT_DIALOG_WITH_LLM = True
+DETECT_DIALOG_WITH_LLM = False
 MAX_LLM_CHARS = 48_000
 LLM_API_TIMEOUT = 12000
 
@@ -105,7 +107,8 @@ __all__ = [
     "SNAP_TO_SILENCE",
     "SNAP_TO_DIALOG",
     "SNAP_TO_SENTENCE",
-    "REFINE_SEGMENTS_WITH_LLM",
+    "USE_LLM_FOR_SEGMENTS",
+    "SEG_LLM_MAX_CHARS",
     "DETECT_DIALOG_WITH_LLM",
     "EXPORT_RAW_CLIPS",
     "RAW_LIMIT",
