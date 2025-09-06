@@ -91,7 +91,7 @@ def _llm_dialog_ranges(
     chunks = _chunk_items(items, max_chars=config.MAX_LLM_CHARS)
     all_ranges: List[Tuple[float, float]] = []
     for i, chunk in enumerate(chunks):
-        print(f"Chunk {i}/{len(chunks)}")
+        print(f"Chunk {i+1}/{len(chunks)}")
         prompt_lines = [
             "Determine the start and end times of coherent dialog in the following",  # noqa: E501
             "transcript lines. Return a JSON array of objects with `start` and",

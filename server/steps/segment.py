@@ -93,7 +93,7 @@ def refine_segments_with_llm(
     all_refined: List[Tuple[float, float, str]] = []
     seen: set[tuple[float, float, str]] = set()
     for i, chunk in enumerate(chunks):
-        print(f"Chunk {i}/{len(chunks)}")
+        print(f"Chunk {i+1}/{len(chunks)}")
         prompt_lines = [
             "Combine or split the following transcript segments so each is a",
             "complete sentence or phrase. Return a JSON array of objects with",
