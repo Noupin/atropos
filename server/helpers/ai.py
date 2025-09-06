@@ -24,6 +24,15 @@ LOCAL_LLM_PROVIDER = os.environ.get(
 )
 
 
+# Some models occasionally emit stray control characters that break ``json.loads``.
+# Strip everything except standard whitespace before attempting to parse.
+_CTRL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
+
+
+def _strip_control_chars(text: str) -> str:
+    return _CTRL_RE.sub("", text)
+
+
 def ollama_generate(
     model: str,
     prompt: str,
@@ -65,6 +74,7 @@ def ollama_call_json(
             options=options,
             timeout=timeout,
         )
+        raw = _strip_control_chars(raw)
     except RequestException as e:
         raise RuntimeError(f"Ollama request failed: {e}")
     try:
@@ -78,7 +88,7 @@ def ollama_call_json(
     m = extract_re.search(raw)
     if not m:
         raise ValueError(f"Model did not return JSON array. Raw head: {raw[:300]}")
-    return json.loads(m.group(0))
+    return json.loads(_strip_control_chars(m.group(0)))
 
 
 def lmstudio_generate(
@@ -133,6 +143,7 @@ def lmstudio_call_json(
             options=options,
             timeout=timeout,
         )
+        raw = _strip_control_chars(raw)
     except RequestException as e:
         raise RuntimeError(f"LM Studio request failed: {e}")
     try:
@@ -146,7 +157,7 @@ def lmstudio_call_json(
     m = extract_re.search(raw)
     if not m:
         raise ValueError(f"Model did not return JSON array. Raw head: {raw[:300]}")
-    return json.loads(m.group(0))
+    return json.loads(_strip_control_chars(m.group(0)))
 
 
 def local_llm_call_json(
