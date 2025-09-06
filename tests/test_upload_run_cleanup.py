@@ -6,8 +6,9 @@ import server.upload_all as upload_all
 
 
 def test_run_folder_deletes_files(tmp_path, monkeypatch) -> None:
-    folder = tmp_path / "clips"
-    folder.mkdir()
+    project = tmp_path / "proj"
+    folder = project / "shorts"
+    folder.mkdir(parents=True)
     video = folder / "clip.mp4"
     video.write_bytes(b"a")
     desc = folder / "clip.txt"
@@ -50,4 +51,6 @@ def test_run_folder_deletes_files(tmp_path, monkeypatch) -> None:
     assert not video.exists()
     assert not desc.exists()
     assert not extra.exists()
+    assert not folder.exists()
+    assert not project.exists()
 
