@@ -19,7 +19,9 @@ COPY . .
 
 # Cron setup
 COPY docker/cron /etc/cron.d/uploader
-RUN chmod 0644 /etc/cron.d/uploader && crontab /etc/cron.d/uploader
+RUN sed -i 's/\r$//' /etc/cron.d/uploader \
+    && chmod 0644 /etc/cron.d/uploader \
+    && crontab /etc/cron.d/uploader
 RUN touch /var/log/cron.log
 
 CMD ["sh", "-c", "cron && tail -f /var/log/cron.log"]
