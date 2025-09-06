@@ -83,6 +83,12 @@ RATING_MAX = 10.0
 MIN_EXTENSION_MARGIN = 0.3
 
 # ---------------------------------------
+# Post-pipeline cleanup
+# ---------------------------------------
+# Remove all non-short artifacts after pipeline run
+CLEANUP_NON_SHORTS = False
+
+# ---------------------------------------
 # Multi-platform upload settings
 # ---------------------------------------
 TOKENS_DIR = Path(__file__).with_name("tokens")
@@ -137,6 +143,7 @@ __all__ = [
     "RATING_MIN",
     "RATING_MAX",
     "MIN_EXTENSION_MARGIN",
+    "CLEANUP_NON_SHORTS",
     "TOKENS_DIR",
     "YOUTUBE_PRIVACY",
     "YOUTUBE_CATEGORY_ID",

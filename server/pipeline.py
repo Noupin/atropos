@@ -66,6 +66,7 @@ from config import (
     MIN_EXTENSION_MARGIN,
     USE_LLM_FOR_SEGMENTS,
     SEG_LLM_MAX_CHARS,
+    CLEANUP_NON_SHORTS,
 )
 
 import sys
@@ -87,6 +88,7 @@ from helpers.notifications import send_failure_email
 from helpers.ai import local_llm_call_json
 from helpers.description import maybe_append_website_link
 from steps.candidates import ClipCandidate
+from helpers.cleanup import cleanup_project_dir
 
 
 
@@ -578,6 +580,8 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
     print(
         f"{Fore.MAGENTA}Full pipeline completed in {total_elapsed:.2f}s{Style.RESET_ALL}"
     )
+    if CLEANUP_NON_SHORTS:
+        cleanup_project_dir(project_dir)
 
 
 if __name__ == "__main__":
