@@ -53,6 +53,7 @@ from config import (
     SNAP_TO_DIALOG,
     SNAP_TO_SENTENCE,
     EXPORT_RAW_CLIPS,
+    RAW_LIMIT,
     SILENCE_DETECTION_NOISE,
     SILENCE_DETECTION_MIN_DURATION,
     TRANSCRIPT_SOURCE,
@@ -60,6 +61,8 @@ from config import (
     MIN_DURATION_SECONDS,
     MAX_DURATION_SECONDS,
     FORCE_REBUILD,
+    FORCE_REBUILD_SEGMENTS,
+    FORCE_REBUILD_DIALOG,
     MIN_EXTENSION_MARGIN,
 )
 
@@ -167,7 +170,7 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
         return download_transcript(
             yt_url,
             str(transcript_output_path),
-            languages=["en", "en-US", "en-GB", "ko"],
+            languages=["en", "en-US", "en-GB"],
         )
 
     def step_transcribe() -> bool:
@@ -178,6 +181,7 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
         return True
 
     if transcript_source == "whisper":
+        yt_ok = False
         transcribed = False
         if audio_ok:
             transcribed = run_step(
@@ -212,14 +216,14 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
                 print(
                     f"{Fore.GREEN}STEP 3: Used YouTube transcript.{Style.RESET_ALL}"
                 )
-        else:
+        elif not transcribed:
             print(
                 f"{Fore.RED}STEP 3: Cannot transcribe because audio acquisition failed.{Style.RESET_ALL}"
             )
             send_failure_email(
                 "Transcript unavailable",
-                    f"No transcript could be retrieved or generated for video {yt_url} because audio acquisition failed.",
-                )
+                f"No transcript could be retrieved or generated for video {yt_url} because audio acquisition failed.",
+            )
     else:
         yt_ok = run_step(
             f"STEP 3: Attempting YouTube transcript -> {transcript_output_path}",
@@ -279,13 +283,14 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
     silences = run_step(
         f"STEP 4: Detecting silences -> {silences_path}", step_silences
     )
+    print(f"[Pipeline] Detected {len(silences)} silences")
 
     # ----------------------
     # STEP 5: Build Transcript Structure
     # ----------------------
     segments_path = project_dir / "segments.json"
 
-    if segments_path.exists() and not FORCE_REBUILD:
+    if segments_path.exists() and not (FORCE_REBUILD or FORCE_REBUILD_SEGMENTS):
         segments_data = json.loads(segments_path.read_text(encoding="utf-8"))
         segments = [(d["start"], d["end"], d["text"]) for d in segments_data]
     else:
@@ -299,9 +304,10 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
         segments = run_step(
             f"STEP 5: Segmenting transcript -> {segments_path}", step_segments
         )
+    print(f"[Pipeline] Loaded {len(segments)} segments")
 
     dialog_ranges_path = project_dir / "dialog_ranges.json"
-    if dialog_ranges_path.exists() and not FORCE_REBUILD:
+    if dialog_ranges_path.exists() and not (FORCE_REBUILD or FORCE_REBUILD_DIALOG):
         dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
     else:
         def step_dialog_ranges() -> list[tuple[float, float]]:
@@ -316,7 +322,7 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
             f"STEP 5: Detecting dialog ranges -> {dialog_ranges_path}",
             step_dialog_ranges,
         )
-        dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
+    print(f"[Pipeline] Loaded {len(dialog_ranges)} dialog ranges")
 
     # ----------------------
     # STEP 6: Find Clip Candidates
@@ -360,6 +366,9 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
         export_candidates_json(all_candidates, candidates_all_path)
         export_candidates_json(top_candidates, candidates_top_path)
         export_candidates_json(candidates, candidates_path)
+    print(
+        f"[Pipeline] Candidates: {len(candidates)} final, {len(top_candidates)} top, {len(all_candidates)} total"
+    )
 
     if not candidates:
         print(f"{Fore.RED}STEP 6: No clip candidates found.{Style.RESET_ALL}")
@@ -393,7 +402,8 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
             )
             for c in candidates
         ]
-        raw_candidates = dedupe_candidates(raw_candidates)
+        raw_candidates = dedupe_candidates(raw_candidates)[:RAW_LIMIT]
+        print(f"[Pipeline] Exporting {len(raw_candidates)} raw candidates")
 
         for idx, cand in enumerate(raw_candidates, start=1):
             def step_cut_raw() -> Path | None:

@@ -201,7 +201,7 @@ if __name__ == "__main__":
         print(f"Saving audio as: {audio_output_path}")
         # download_video(yt_url, video_output_path)
         # extract_audio_from_video(video_output_path, audio_output_path)
-        download_transcript(yt_url, transcript_output_path, languages=['en', 'en-US', 'en-GB', 'ko'])
+        download_transcript(yt_url, transcript_output_path, languages=['en', 'en-US', 'en-GB'])
         # download_audio(yt_url, audio_output_path)
     else:
         print("Failed to retrieve video information.")
