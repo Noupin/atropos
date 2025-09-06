@@ -64,6 +64,8 @@ from config import (
     FORCE_REBUILD_SEGMENTS,
     FORCE_REBUILD_DIALOG,
     MIN_EXTENSION_MARGIN,
+    USE_LLM_FOR_SEGMENTS,
+    SEG_LLM_MAX_CHARS,
 )
 
 import sys
@@ -297,7 +299,9 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
         def step_segments() -> list[tuple[float, float, str]]:
             items = parse_transcript(transcript_output_path)
             segs = segment_transcript_items(items)
-            segs = maybe_refine_segments_with_llm(segs)
+            text = transcript_output_path.read_text(encoding="utf-8")
+            if USE_LLM_FOR_SEGMENTS and len(text) < SEG_LLM_MAX_CHARS:
+                segs = maybe_refine_segments_with_llm(segs)
             write_segments_json(segs, segments_path)
             return segs
 
