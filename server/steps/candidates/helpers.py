@@ -467,23 +467,38 @@ def dedupe_candidates(
     candidates: List[ClipCandidate],
     *,
     time_tolerance: float = 0.05,
+    iou_threshold: float = 0.6,
 ) -> List[ClipCandidate]:
-    """Remove candidates with identical timestamps within ``time_tolerance``.
+    """Remove highly overlapping candidates, keeping the highest-rated.
 
-    For clips sharing the same start and end times (within the tolerance), the
-    highest-rated candidate is kept.
+    Candidates with Intersection-over-Union (IoU) greater than ``iou_threshold``
+    are considered duplicates.  The higher-rated candidate is retained.
+    ``time_tolerance`` is accepted for backward compatibility but no longer
+    used for deduping.
     """
     if not candidates:
         return []
 
-    buckets: dict[tuple[int, int], ClipCandidate] = {}
-    for cand in candidates:
-        key = (round(cand.start / time_tolerance), round(cand.end / time_tolerance))
-        best = buckets.get(key)
-        if best is None or cand.rating > best.rating:
-            buckets[key] = cand
+    sorted_cands = sorted(candidates, key=lambda c: c.rating, reverse=True)
+    kept: List[ClipCandidate] = []
+    for cand in sorted_cands:
+        keep = True
+        for other in kept:
+            inter_start = max(cand.start, other.start)
+            inter_end = min(cand.end, other.end)
+            inter = max(0.0, inter_end - inter_start)
+            if inter <= 0:
+                continue
+            union = (cand.end - cand.start) + (other.end - other.start) - inter
+            if union <= 0:
+                continue
+            if inter / union > iou_threshold:
+                keep = False
+                break
+        if keep:
+            kept.append(cand)
 
-    return sorted(buckets.values(), key=lambda c: (c.start, c.end))
+    return sorted(kept, key=lambda c: (c.start, c.end))
 
 
 __all__ = [

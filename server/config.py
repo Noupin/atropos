@@ -46,10 +46,10 @@ WHISPER_MODEL = "tiny"
 # ---------------------------------------
 # Candidate selection heuristics
 # ---------------------------------------
-MIN_DURATION_SECONDS = 3.0
-MAX_DURATION_SECONDS = 90.0
-SWEET_SPOT_MIN_SECONDS = 5.0
-SWEET_SPOT_MAX_SECONDS = 15.0
+MIN_DURATION_SECONDS = 6.0
+MAX_DURATION_SECONDS = 60.0
+SWEET_SPOT_MIN_SECONDS = 8.0
+SWEET_SPOT_MAX_SECONDS = 20.0
 
 DEFAULT_MIN_RATING = 7.0
 DEFAULT_MIN_WORDS = 0
@@ -62,6 +62,17 @@ EDUCATIONAL_MIN_WORDS = 8
 
 INSPIRING_MIN_RATING = 7.0
 INSPIRING_MIN_WORDS = 8
+
+# ---------------------------------------
+# Pipeline and batching controls
+# ---------------------------------------
+FORCE_REBUILD = False
+WINDOW_SIZE_SECONDS = 30.0
+WINDOW_OVERLAP_SECONDS = 10.0
+WINDOW_CONTEXT_SECONDS = 2.0
+RATING_MIN = 0.0
+RATING_MAX = 10.0
+MIN_EXTENSION_MARGIN = 0.3
 
 # ---------------------------------------
 # Multi-platform upload settings
@@ -104,6 +115,13 @@ __all__ = [
     "EDUCATIONAL_MIN_WORDS",
     "INSPIRING_MIN_RATING",
     "INSPIRING_MIN_WORDS",
+    "FORCE_REBUILD",
+    "WINDOW_SIZE_SECONDS",
+    "WINDOW_OVERLAP_SECONDS",
+    "WINDOW_CONTEXT_SECONDS",
+    "RATING_MIN",
+    "RATING_MAX",
+    "MIN_EXTENSION_MARGIN",
     "TOKENS_DIR",
     "YOUTUBE_PRIVACY",
     "YOUTUBE_CATEGORY_ID",
