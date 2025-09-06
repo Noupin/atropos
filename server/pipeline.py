@@ -250,48 +250,51 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
     candidates_all_path = project_dir / "candidates_all.json"
     candidates_top_path = project_dir / "candidates_top.json"
 
-    CLIP_FINDERS = {
-        "funny": find_funny_timestamps_batched,
-        "inspiring": find_inspiring_timestamps_batched,
-        "educational": find_educational_timestamps_batched,
-    }
+    # CLIP_FINDERS = {
+    #     "funny": find_funny_timestamps_batched,
+    #     "inspiring": find_inspiring_timestamps_batched,
+    #     "educational": find_educational_timestamps_batched,
+    # }
 
-    def step_candidates() -> tuple[list[ClipCandidate], list[ClipCandidate], list[ClipCandidate]]:
-        finder = CLIP_FINDERS.get(CLIP_TYPE)
-        if finder is None:
-            raise ValueError(f"Unsupported clip type: {CLIP_TYPE}")
-        return finder(
-            str(transcript_output_path),
-            min_rating=MIN_RATING,
-            return_all_stages=True,
-        )
+    # def step_candidates() -> tuple[list[ClipCandidate], list[ClipCandidate], list[ClipCandidate]]:
+    #     finder = CLIP_FINDERS.get(CLIP_TYPE)
+    #     if finder is None:
+    #         raise ValueError(f"Unsupported clip type: {CLIP_TYPE}")
+    #     return finder(
+    #         str(transcript_output_path),
+    #         min_rating=MIN_RATING,
+    #         return_all_stages=True,
+    #     )
 
-    candidates, top_candidates, all_candidates = run_step(
-        "STEP 5: Finding clip candidates from transcript", step_candidates
-    )
+    # candidates, top_candidates, all_candidates = run_step(
+    #     "STEP 5: Finding clip candidates from transcript", step_candidates
+    # )
 
-    export_candidates_json(all_candidates, candidates_all_path)
-    export_candidates_json(top_candidates, candidates_top_path)
-    export_candidates_json(candidates, candidates_path)
-    if not candidates:
-        print(f"{Fore.RED}STEP 5: No clip candidates found.{Style.RESET_ALL}")
-        send_failure_email(
-            "No clip candidates found",
-            f"No clip candidates were found for video {yt_url}",
-        )
-        sys.exit()
-    # candidates = load_candidates_json('../out/Nick_s_40th_Birthday_Surprise__-KFAF_20200115/candidates_top.json')
+    # export_candidates_json(all_candidates, candidates_all_path)
+    # export_candidates_json(top_candidates, candidates_top_path)
+    # export_candidates_json(candidates, candidates_path)
+    # if not candidates:
+    #     print(f"{Fore.RED}STEP 5: No clip candidates found.{Style.RESET_ALL}")
+    #     send_failure_email(
+    #         "No clip candidates found",
+    #         f"No clip candidates were found for video {yt_url}",
+    #     )
+    #     sys.exit()
+    candidates = load_candidates_json('../out/funny/Top_10_Star_Wars__Episode_IX_Titles_-_KF_AF_20190213/candidates.json')
 
     # Parse transcript once for snapping boundaries
     items = parse_transcript(transcript_output_path)
+    print(f"[Pipeline] Segment refinement starting")
     segments = segment_transcript_items(items)
     segments = maybe_refine_segments_with_llm(segments)
+    print(f"[Pipeline] Segment refinement complete: {len(segments)} segments.")
 
     write_segments_json(segments, project_dir / "segments.json")
 
     dialog_ranges_path = project_dir / "dialog_ranges.json"
 
     def step_dialog_ranges() -> list[tuple[float, float]]:
+        print(f"[Pipeline] Starting dialog detection using transcript: {transcript_output_path}")
         ranges = detect_dialog_ranges(transcript_output_path)
         write_dialog_ranges_json(ranges, dialog_ranges_path)
         return ranges

@@ -22,4 +22,4 @@ COPY docker/cron /etc/cron.d/uploader
 RUN chmod 0644 /etc/cron.d/uploader && crontab /etc/cron.d/uploader
 RUN touch /var/log/cron.log
 
-CMD ["cron", "-f"]
+CMD ["sh", "-c", "cron && tail -f /var/log/cron.log"]

@@ -10,11 +10,10 @@ All core modules now live under the `server/` directory. For example:
 from common.env import load_env
 ```
 
-
 ## Setup
 
-1. Create a ``.env`` file in the repository root with API secrets and a
-   ``TOKEN_FERNET_KEY`` used to encrypt the token store. Each provider requires
+1. Create a `.env` file in the repository root with API secrets and a
+   `TOKEN_FERNET_KEY` used to encrypt the token store. Each provider requires
    its own credentials:
 
    ```env
@@ -34,23 +33,27 @@ from common.env import load_env
    X_CONSUMER_SECRET=...
    ```
 
-2. Optional: create ``upload_config.json`` with non-secret identifiers such as
-   page or channel IDs required by providers. See ``upload_config.example.json``
+2. Optional: create `upload_config.json` with non-secret identifiers such as
+   page or channel IDs required by providers. See `upload_config.example.json`
    for the structure.
 
 3. Place the videos and caption files in the folder specified by
-   ``UPLOAD_FOLDER`` in ``server/scripts/run_bulk_upload.py`` (defaults to
-   ``upload_queue``). For each ``video.mp4`` provide a caption file named
-   ``video.txt`` in the same directory.
+   `UPLOAD_FOLDER` in `server/scripts/run_bulk_upload.py` (defaults to
+   `upload_queue`). For each `video.mp4` provide a caption file named
+   `video.txt` in the same directory.
 
 ## Running
 
-Install dependencies from ``requirements.txt`` and run:
+Install dependencies from `requirements.txt` and run:
 
 ```bash
 python -m server.scripts.run_bulk_upload
 ```
 
-The script logs ``PLAN``/``OK``/``ERR`` lines and prints a summary of uploads
+The script logs `PLAN`/`OK`/`ERR` lines and prints a summary of uploads
 per platform.
 
+## Docker Automation
+
+docker compose build uploader
+docker compose up -d --force-recreate uploader

@@ -8,6 +8,8 @@ from typing import Any, Callable, Dict, List, Optional
 import requests
 from requests.exceptions import HTTPError, RequestException
 
+from config import LLM_API_TIMEOUT
+
 # Default URLs for local model servers. Can be overridden via environment.
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 LMSTUDIO_URL = os.environ.get("LMSTUDIO_URL", "http://127.0.0.1:1234")
@@ -27,7 +29,7 @@ def ollama_generate(
     prompt: str,
     json_format: bool = True,
     options: Optional[dict] = None,
-    timeout: int = 120,
+    timeout: int = LLM_API_TIMEOUT,
 ) -> str:
     """Call Ollama's /api/generate endpoint and return the raw response string."""
     payload = {
@@ -51,7 +53,7 @@ def ollama_call_json(
     prompt: str,
     *,
     options: Optional[dict] = None,
-    timeout: int = 120,
+    timeout: int = LLM_API_TIMEOUT,
     extract_re: re.Pattern[str] = DEFAULT_JSON_EXTRACT,
 ) -> List[Dict]:
     """Call Ollama and return parsed JSON array with robust fallback."""
@@ -84,7 +86,7 @@ def lmstudio_generate(
     prompt: str,
     json_format: bool = True,
     options: Optional[dict] = None,
-    timeout: int = 120,
+    timeout: int = LLM_API_TIMEOUT,
 ) -> str:
     """Call LM Studio's OpenAI compatible endpoint and return raw content."""
     payload: Dict[str, Any] = {
@@ -119,7 +121,7 @@ def lmstudio_call_json(
     prompt: str,
     *,
     options: Optional[dict] = None,
-    timeout: int = 120,
+    timeout: int = LLM_API_TIMEOUT,
     extract_re: re.Pattern[str] = DEFAULT_JSON_EXTRACT,
 ) -> List[Dict]:
     """Call LM Studio and return parsed JSON array with robust fallback."""
@@ -152,7 +154,7 @@ def local_llm_call_json(
     prompt: str,
     *,
     options: Optional[dict] = None,
-    timeout: int = 120,
+    timeout: int = LLM_API_TIMEOUT,
     extract_re: re.Pattern[str] = DEFAULT_JSON_EXTRACT,
 ) -> List[Dict]:
     """Call the configured local LLM provider and parse JSON array output."""

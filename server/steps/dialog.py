@@ -8,7 +8,6 @@ from .candidates.helpers import parse_transcript
 
 _KEYWORDS = {"haha", "lol", "joke", "laugh", "laughter"}
 
-MAX_PROMPT_CHARS = 12_000
 
 
 def _heuristic_dialog_ranges(
@@ -86,12 +85,13 @@ def _merge_ranges(ranges: List[Tuple[float, float]]) -> List[Tuple[float, float]
 
 
 def _llm_dialog_ranges(
-    items: List[Tuple[float, float, str]], *, model: str = "google/gemma-3-4b", timeout: int = 120
+    items: List[Tuple[float, float, str]], *, model: str = "google/gemma-3-4b", timeout: int = config.LLM_API_TIMEOUT
 ) -> List[Tuple[float, float]]:
     """Detect dialog ranges using an LLM with chunked prompts."""
-    chunks = _chunk_items(items, max_chars=MAX_PROMPT_CHARS)
+    chunks = _chunk_items(items, max_chars=config.MAX_LLM_CHARS)
     all_ranges: List[Tuple[float, float]] = []
     for chunk in chunks:
+        print(f"Chunk {chunk}/{chunks}")
         prompt_lines = [
             "Determine the start and end times of coherent dialog in the following",  # noqa: E501
             "transcript lines. Return a JSON array of objects with `start` and",

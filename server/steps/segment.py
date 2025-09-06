@@ -10,7 +10,6 @@ from helpers.ai import local_llm_call_json
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
-MAX_PROMPT_CHARS = 12_000
 
 
 def segment_transcript_items(
@@ -70,7 +69,7 @@ def refine_segments_with_llm(
     segments: List[Tuple[float, float, str]],
     *,
     model: str = "google/gemma-3-4b",
-    timeout: int = 120,
+    timeout: int = config.LLM_API_TIMEOUT,
 ) -> List[Tuple[float, float, str]]:
     """Use an LLM to merge or split segments into complete sentences.
 
@@ -90,10 +89,11 @@ def refine_segments_with_llm(
         or returns an empty list.
     """
 
-    chunks = _chunk_segments(segments, max_chars=MAX_PROMPT_CHARS)
+    chunks = _chunk_segments(segments, max_chars=config.MAX_LLM_CHARS)
     all_refined: List[Tuple[float, float, str]] = []
     seen: set[tuple[float, float, str]] = set()
     for chunk in chunks:
+        print(f"Chunk {chunk}/{chunks}")
         prompt_lines = [
             "Combine or split the following transcript segments so each is a",
             "complete sentence or phrase. Return a JSON array of objects with",

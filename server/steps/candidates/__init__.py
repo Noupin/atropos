@@ -9,7 +9,9 @@ from interfaces.clip_candidate import ClipCandidate
 from config import (
     DEFAULT_MIN_RATING,
     DEFAULT_MIN_WORDS,
+    LLM_API_TIMEOUT,
     MAX_DURATION_SECONDS,
+    MAX_LLM_CHARS,
     MIN_DURATION_SECONDS,
 )
 
@@ -38,7 +40,7 @@ __all__ = ["ClipCandidate", "find_clip_timestamps_batched", "find_clip_timestamp
 def _chunk_transcript_items(
     items: List[Tuple[float, float, str]],
     *,
-    max_chars: int = 12000,
+    max_chars: int = MAX_LLM_CHARS,
     overlap_lines: int = 4,
 ) -> List[List[Tuple[float, float, str]]]:
     """Chunk transcript into pieces under a character budget with a small line overlap to avoid split jokes."""
@@ -204,9 +206,9 @@ def find_clip_timestamps_batched(
     min_words: int = DEFAULT_MIN_WORDS,
     model: str = "google/gemma-3-4b",
     options: Optional[dict] = None,
-    max_chars_per_chunk: int = 12000,
+    max_chars_per_chunk: int = MAX_LLM_CHARS,
     overlap_lines: int = 4,
-    request_timeout: int = 180,
+    request_timeout: int = LLM_API_TIMEOUT,
     exclude_ranges: Optional[List[Tuple[float, float]]] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
     words: Optional[List[dict]] = None,
@@ -358,12 +360,11 @@ def find_clip_timestamps(
     max_ts = max(e for _, e, _ in items)
 
     condensed_lines = [f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in items]
-    MAX_SINGLE_CHARS = 12000
     condensed = []
     total = 0
     for line in condensed_lines:
         ln = len(line) + 1
-        if total + ln > MAX_SINGLE_CHARS:
+        if total + ln > MAX_LLM_CHARS:
             break
         condensed.append(line)
         total += ln
@@ -430,7 +431,7 @@ def find_clip_timestamps(
             prompt_desc,
             min_words=min_words,
             model=model,
-            request_timeout=180,
+            request_timeout=LLM_API_TIMEOUT,
         )
         if c is not None
     ]
