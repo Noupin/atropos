@@ -73,6 +73,9 @@ def find_inspiring_timestamps_batched(
         ]
         text = "\n".join(f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in ctx_items)
         prompt = build_window_prompt(INSPIRING_PROMPT_DESC, text)
+        print(
+            f"[Finder] processing window {win_start:.2f}-{win_end:.2f}:\n{text}"
+        )
         try:
             arr = local_llm_call_json(
                 model="google/gemma-3-4b",
