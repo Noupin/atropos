@@ -58,6 +58,7 @@ def test_main_cleans_and_deletes(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "run", fake_run)
+    monkeypatch.setattr(schedule_upload, "OUT_ROOT", Path("out"))
 
     schedule_upload.main()
 
@@ -73,6 +74,50 @@ def test_main_cleans_and_deletes(tmp_path: Path, monkeypatch) -> None:
     assert not extra_file.exists()
     assert not extra_dir.exists()
     assert not shorts.exists()
+    assert not project.exists()
+
+
+def test_project_not_deleted_until_last_short(tmp_path: Path, monkeypatch) -> None:
+    out = tmp_path / "out"
+    project = out / "proj"
+    shorts = project / "shorts"
+    shorts.mkdir(parents=True)
+    video1 = shorts / "a.mp4"
+    video1.write_bytes(b"a")
+    desc1 = video1.with_suffix(".txt")
+    desc1.write_text("desc1")
+    video2 = shorts / "b.mp4"
+    video2.write_bytes(b"b")
+    desc2 = video2.with_suffix(".txt")
+    desc2.write_text("desc2")
+    extra = project / "note.txt"
+    extra.write_text("keep")
+
+    calls: list[tuple[Path, Path, str | None]] = []
+
+    def fake_run(*, video: Path, desc: Path, niche=None, **kwargs) -> None:
+        calls.append((video, desc, niche))
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(schedule_upload, "run", fake_run)
+    monkeypatch.setattr(schedule_upload, "OUT_ROOT", Path("out"))
+
+    # First upload removes only the first short and leaves the project intact
+    schedule_upload.main()
+    assert len(calls) == 1
+    assert not video1.exists()
+    assert not desc1.exists()
+    assert video2.exists()
+    assert desc2.exists()
+    assert extra.exists()
+    assert project.exists()
+
+    # Second upload removes remaining files and the project folder
+    schedule_upload.main()
+    assert len(calls) == 2
+    assert not video2.exists()
+    assert not desc2.exists()
+    assert not extra.exists()
     assert not project.exists()
 
 
@@ -93,6 +138,7 @@ def test_main_respects_kind(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "run", fake_run)
+    monkeypatch.setattr(schedule_upload, "OUT_ROOT", Path("out"))
 
     schedule_upload.main(kind="alt")
 
@@ -123,6 +169,7 @@ def test_main_accepts_platforms(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "run", fake_run)
+    monkeypatch.setattr(schedule_upload, "OUT_ROOT", Path("out"))
 
     schedule_upload.main(platforms=["youtube", "tiktok"])
 

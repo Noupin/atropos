@@ -50,25 +50,11 @@ def find_oldest_clip(base: Path = OUT_ROOT) -> tuple[Path, Path] | None:
     return None
 
 
-def _clean_project_folder(project: Path) -> None:
-    """Remove all files and folders in ``project`` except ``shorts``."""
-
-    for item in project.iterdir():
-        if item.name == "shorts":
-            continue
-        if item.is_dir():
-            shutil.rmtree(item)
-        else:
-            item.unlink()
-
-
 def _tidy_empty_dirs(shorts: Path, project: Path) -> None:
-    """Delete empty ``shorts`` and project directories."""
+    """Delete the project directory when ``shorts`` becomes empty."""
 
     if not any(shorts.iterdir()):
-        shorts.rmdir()
-        if not any(project.iterdir()):
-            project.rmdir()
+        shutil.rmtree(project)
 
 
 def main(kind: str | None = None, platforms: Sequence[str] | None = None) -> None:
@@ -95,7 +81,6 @@ def main(kind: str | None = None, platforms: Sequence[str] | None = None) -> Non
         return
     video, desc = clip
     project = video.parent.parent
-    _clean_project_folder(project)
     try:
         run(video=video, desc=desc, niche=kind, platforms=platforms)
     finally:
