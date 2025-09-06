@@ -22,11 +22,11 @@ SNAP_TO_DIALOG = True
 SNAP_TO_SENTENCE = True
 
 # Toggle LLM usage for transcript segmentation
-USE_LLM_FOR_SEGMENTS = False
+USE_LLM_FOR_SEGMENTS = True
 # Maximum transcript length to allow LLM segment refinement
 SEG_LLM_MAX_CHARS = 12_000
 # Toggle LLM-based detection of dialog ranges
-DETECT_DIALOG_WITH_LLM = False
+DETECT_DIALOG_WITH_LLM = True
 MAX_LLM_CHARS = 6_000
 LLM_API_TIMEOUT = 12000
 
