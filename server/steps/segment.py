@@ -68,7 +68,7 @@ def _chunk_segments(
 def refine_segments_with_llm(
     segments: List[Tuple[float, float, str]],
     *,
-    model: str = "google/gemma-3-4b",
+    model: str = config.LOCAL_LLM_MODEL,
     timeout: int = config.LLM_API_TIMEOUT,
 ) -> List[Tuple[float, float, str]]:
     """Use an LLM to merge or split segments into complete sentences.

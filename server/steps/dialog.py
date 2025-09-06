@@ -85,7 +85,10 @@ def _merge_ranges(ranges: List[Tuple[float, float]]) -> List[Tuple[float, float]
 
 
 def _llm_dialog_ranges(
-    items: List[Tuple[float, float, str]], *, model: str = "google/gemma-3-4b", timeout: int = config.LLM_API_TIMEOUT
+    items: List[Tuple[float, float, str]],
+    *,
+    model: str = config.LOCAL_LLM_MODEL,
+    timeout: int = config.LLM_API_TIMEOUT,
 ) -> List[Tuple[float, float]]:
     """Detect dialog ranges using an LLM with chunked prompts."""
     chunks = _chunk_items(items, max_chars=config.MAX_LLM_CHARS)

@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path="../.env")
 
 import json
+import config
 
 from steps.transcribe import transcribe_audio
 from steps.download import (
@@ -530,7 +531,7 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
                 prompt += f"Quote: {candidate.quote}"
             try:
                 tags = local_llm_call_json(
-                    model="google/gemma-3-4b",
+                    model=config.LOCAL_LLM_MODEL,
                     prompt=prompt,
                     options={"temperature": 0.0},
                 )
