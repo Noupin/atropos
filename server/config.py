@@ -25,7 +25,7 @@ SNAP_TO_SENTENCE = True
 # Toggle LLM usage for transcript segmentation
 USE_LLM_FOR_SEGMENTS = False
 # Maximum transcript length to allow LLM segment refinement
-SEG_LLM_MAX_CHARS = 12_000
+SEG_LLM_MAX_CHARS = 24_000
 # Toggle LLM-based detection of dialog ranges
 DETECT_DIALOG_WITH_LLM = False
 MAX_LLM_CHARS = 24_000
@@ -53,7 +53,7 @@ SILENCE_DETECTION_MIN_DURATION = 0.075
 # Preferred transcript source: "youtube" or "whisper"
 TRANSCRIPT_SOURCE = "youtube"
 # Model used for faster-whisper transcription
-WHISPER_MODEL = "tiny"
+WHISPER_MODEL = "large-v3-turbo" # (tiny, tiny.en, base, base.en, small, small.en, distil-small.en, medium, medium.en, distil-medium.en, large-v1, large-v2, large-v3, large, distil-large-v2, distil-large-v3, large-v3-turbo, or turbo)
 
 # ---------------------------------------
 # Candidate selection heuristics

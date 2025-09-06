@@ -117,7 +117,7 @@ def build_window_prompt(prompt_desc: str, text: str) -> str:
     system_instructions = _build_system_instructions(prompt_desc)
     return (
         f"{system_instructions}\n\n"
-        f"TRANSCRIPT WINDOW (≈{WINDOW_SIZE_SECONDS:.0f}s, overlap {WINDOW_OVERLAP_SECONDS:.0f}s, context {WINDOW_CONTEXT_SECONDS:.0f}s)\n\n"
+        f"TRANSCRIPT WINDOW (≈{WINDOW_SIZE_SECONDS:.0f}s, overlap {WINDOW_OVERLAP_SECONDS:.0f}s, context {WINDOW_CONTEXT_SECONDS:.0f}s):\n{text}\n\n"
         "Return JSON now."
     )
 
