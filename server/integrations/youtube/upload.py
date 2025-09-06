@@ -11,6 +11,7 @@ from googleapiclient.errors import HttpError
 
 from .auth import ensure_creds
 from helpers.description import maybe_append_website_link
+from config import YOUTUBE_DESC_LIMIT
 
 # --- Configuration ---
 VIDEO_PATH = Path(
@@ -49,9 +50,7 @@ def read_description(path: Path) -> tuple[str, str]:
 
     title_clean = title_clean.strip()[:100]
 
-    if len(desc_text) > 4900:
-        desc_text = desc_text[:4900]
-
+    desc_text = desc_text[:YOUTUBE_DESC_LIMIT]
     return title_clean, desc_text
 
 
@@ -112,3 +111,4 @@ if __name__ == "__main__":
     except HttpError as err:
         print("YouTube API error:", err)
         sys.exit(1)
+

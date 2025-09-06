@@ -30,6 +30,8 @@ LLM_API_TIMEOUT = 12000
 
 # Export silence-only "raw" clips for debugging comparisons
 EXPORT_RAW_CLIPS = False
+# Limit number of raw clips to avoid excessive disk use
+RAW_LIMIT = 10
 
 # Silence detection thresholds
 SILENCE_DETECTION_NOISE = "-30dB"
@@ -66,7 +68,11 @@ INSPIRING_MIN_WORDS = 8
 # ---------------------------------------
 # Pipeline and batching controls
 # ---------------------------------------
+# Whether to rebuild all cached artifacts
 FORCE_REBUILD = False
+# Fine-grained rebuild toggles
+FORCE_REBUILD_SEGMENTS = False
+FORCE_REBUILD_DIALOG = False
 WINDOW_SIZE_SECONDS = 30.0
 WINDOW_OVERLAP_SECONDS = 10.0
 WINDOW_CONTEXT_SECONDS = 2.0
@@ -89,6 +95,9 @@ TIKTOK_CHUNK_SIZE = 10_000_000  # bytes
 # Optional website link to append to video descriptions
 INCLUDE_WEBSITE_LINK = True
 WEBSITE_URL = "https://atropos-video.com"
+# Platform-specific description length limits
+YOUTUBE_DESC_LIMIT = 5000
+TIKTOK_DESC_LIMIT = 2000
 
 __all__ = [
     "CAPTION_FONT_SCALE",
@@ -99,6 +108,7 @@ __all__ = [
     "REFINE_SEGMENTS_WITH_LLM",
     "DETECT_DIALOG_WITH_LLM",
     "EXPORT_RAW_CLIPS",
+    "RAW_LIMIT",
     "SILENCE_DETECTION_NOISE",
     "SILENCE_DETECTION_MIN_DURATION",
     "TRANSCRIPT_SOURCE",
@@ -116,6 +126,8 @@ __all__ = [
     "INSPIRING_MIN_RATING",
     "INSPIRING_MIN_WORDS",
     "FORCE_REBUILD",
+    "FORCE_REBUILD_SEGMENTS",
+    "FORCE_REBUILD_DIALOG",
     "WINDOW_SIZE_SECONDS",
     "WINDOW_OVERLAP_SECONDS",
     "WINDOW_CONTEXT_SECONDS",
@@ -129,4 +141,6 @@ __all__ = [
     "TIKTOK_CHUNK_SIZE",
     "INCLUDE_WEBSITE_LINK",
     "WEBSITE_URL",
+    "YOUTUBE_DESC_LIMIT",
+    "TIKTOK_DESC_LIMIT",
 ]

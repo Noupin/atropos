@@ -6,6 +6,8 @@ import mimetypes
 import requests
 from pathlib import Path
 
+from config import TIKTOK_DESC_LIMIT
+
 TOKENS_FILE = Path(
     os.getenv("TIKTOK_TOKENS_FILE")
     or Path(__file__).resolve().parents[2] / "tokens" / "tiktok.json"
@@ -64,7 +66,7 @@ def _chunk_plan(video_size: int, chunk_size: int):
 def read_caption(path: Path) -> str:
     text = path.read_text(encoding="utf-8").strip()
     # TikTok supports hashtags (#tag) and mentions (@handle) in title; max ~2200 UTF-16 units
-    return text[:2000]  # conservative safety clip
+    return text[:TIKTOK_DESC_LIMIT]
 
 def init_direct_post(video_size: int, chunk_size: int, title: str, privacy_level: str):
     headers = {
