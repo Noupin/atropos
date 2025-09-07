@@ -55,3 +55,18 @@ def test_dialog_snapping(tmp_path: Path) -> None:
     # outside range remains unchanged
     assert snap_start_to_dialog_start(0.5, ranges) == 0.5
     assert snap_end_to_dialog_end(3.5, ranges) == 3.5
+
+
+def test_pronoun_based_dialog(tmp_path: Path) -> None:
+    transcript = tmp_path / "sample.txt"
+    transcript.write_text(
+        "\n".join(
+            [
+                "[0.0 -> 1.0] You should go.",
+                "[1.0 -> 2.0] I will.",
+                "[3.0 -> 4.0] Something else.",
+            ]
+        )
+    )
+    ranges = detect_dialog_ranges(str(transcript))
+    assert ranges == [(0.0, 2.0)]

@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from typing import Iterable, List, Tuple
 from concurrent.futures import TimeoutError as FuturesTimeout
@@ -16,25 +17,56 @@ from common.llm_utils import (
 )
 
 _KEYWORDS = {"haha", "lol", "joke", "laugh", "laughter"}
+_PRONOUNS = {
+    "i",
+    "you",
+    "we",
+    "he",
+    "she",
+    "they",
+    "me",
+    "my",
+    "your",
+    "our",
+    "us",
+}
+_RE_WORD = re.compile(r"\b\w+\b")
+
+
+def _is_dialog_line(text: str) -> bool:
+    """Return ``True`` if ``text`` likely belongs to dialog."""
+    lowered = text.lower()
+    words = set(_RE_WORD.findall(lowered))
+    score = 0
+    if "?" in text or "!" in text:
+        score += 1
+    if any(p in words for p in _PRONOUNS):
+        score += 1
+    if any(key in lowered for key in _KEYWORDS):
+        score += 1
+    if (
+        '"' in text
+        or "“" in text
+        or "”" in text
+        or text.strip().startswith(("'", "‘", "’"))
+    ):
+        score += 1
+    if len(text) <= 80:
+        score += 1
+    return score >= 2
 
 
 
 def _heuristic_dialog_ranges(
     items: List[Tuple[float, float, str]], gap: float
 ) -> List[Tuple[float, float]]:
-    """Detect dialog ranges using a simple keyword heuristic."""
+    """Detect dialog ranges using a lightweight heuristic."""
     ranges: List[Tuple[float, float]] = []
     current_start: float | None = None
     current_end: float | None = None
 
     for start, end, text in items:
-        lowered = text.lower()
-        is_dialog = (
-            "?" in text
-            or "!" in text
-            or any(key in lowered for key in _KEYWORDS)
-        )
-        if is_dialog:
+        if _is_dialog_line(text):
             if current_start is None:
                 current_start, current_end = start, end
             elif start - current_end <= gap:
@@ -180,7 +212,10 @@ def detect_dialog_ranges(
             print("[dialog] Using LLM path…")
             ranges = _llm_dialog_ranges(items)
             if ranges:
-                return ranges
+                first_start, last_end = items[0][0], items[-1][1]
+                if not (len(ranges) == 1 and ranges[0] == (first_start, last_end)):
+                    return ranges
+                print("[dialog] LLM returned trivial span; using heuristic")
         except Exception as e:
             print(f"[dialog] LLM exception -> {e}; falling back to heuristic")
 
