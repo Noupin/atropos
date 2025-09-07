@@ -14,6 +14,11 @@ from pathlib import Path
 CAPTION_FONT_SCALE = 2.0
 # Maximum number of lines per caption before splitting
 CAPTION_MAX_LINES: int = 2
+# Toggle whether rendered captions use custom colors
+CAPTION_USE_COLORS = True
+# Default caption fill and outline colors in BGR (blue-green-red) order
+CAPTION_FILL_BGR = (255, 187, 28)  # hex 1cbbff -> RGB(28,187,255) -> BGR(255,187,28)
+CAPTION_OUTLINE_BGR = (236, 236, 236)  # hex ececec
 # Constant frame-rate to avoid VFR issues on platforms like TikTok/Reels
 OUTPUT_FPS: float = 30.0
 
@@ -133,6 +138,9 @@ TIKTOK_DESC_LIMIT = 2000
 __all__ = [
     "CAPTION_FONT_SCALE",
     "CAPTION_MAX_LINES",
+    "CAPTION_USE_COLORS",
+    "CAPTION_FILL_BGR",
+    "CAPTION_OUTLINE_BGR",
     "SNAP_TO_SILENCE",
     "SNAP_TO_DIALOG",
     "SNAP_TO_SENTENCE",
