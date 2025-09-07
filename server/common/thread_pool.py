@@ -32,8 +32,9 @@ def process_with_thread_pool(
         exceptions.
     """
     results: List[R] = []
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        futures = [ex.submit(func, i + 1, ch) for i, ch in enumerate(chunks)]
+    ex = ThreadPoolExecutor(max_workers=max_workers)
+    futures = [ex.submit(func, i + 1, ch) for i, ch in enumerate(chunks)]
+    try:
         for i, fut in enumerate(futures, 1):
             try:
                 if timeout in (0, None):
@@ -45,6 +46,12 @@ def process_with_thread_pool(
             except Exception as e:  # pragma: no cover - passthrough to handler
                 res = on_error(i, chunks[i - 1], e)
             results.append(res)
+    except KeyboardInterrupt:  # pragma: no cover - user requested termination
+        for f in futures:
+            f.cancel()
+        ex.shutdown(wait=False, cancel_futures=True)
+        raise
+    ex.shutdown(wait=True)
     return results
 
 

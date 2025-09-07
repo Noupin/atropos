@@ -11,7 +11,7 @@ from config import LLM_API_TIMEOUT, LOCAL_LLM_PROVIDER
 
 # Default URLs for local model servers. Can be overridden via environment.
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-LMSTUDIO_URL = os.environ.get("LMSTUDIO_URL", "http://127.0.0.1:1234")
+LMSTUDIO_URL = os.environ.get("LMSTUDIO_URL", "http://localhost:1234")
 
 # Regex to salvage the first JSON array from a response.
 DEFAULT_JSON_EXTRACT = re.compile(r"\[(?:.|\n)*\]")
@@ -83,6 +83,7 @@ def ollama_call_json(
             for value in parsed.values():
                 if isinstance(value, list):
                     return value
+            return [parsed]
     except Exception:
         pass
     m = extract_re.search(raw)
@@ -156,6 +157,7 @@ def lmstudio_call_json(
             for value in parsed.values():
                 if isinstance(value, list):
                     return value
+            return [parsed]
     except Exception:
         pass
     m = extract_re.search(raw)
