@@ -45,10 +45,10 @@ GENERAL_RATING_DESCRIPTIONS: Dict[str, str] = {
 
 
 FUNNY_RATING_DESCRIPTIONS: Dict[str, str] = {
-    "10": "hysterical or delightfully weird; broad laugh for most viewers",
-    "9":  "extremely funny; tight setup and clean punchline; may be cleverly absurd",
-    "8":  "very funny; strong laugh for many",
-    "7":  "clearly funny; earns a chuckle",
+    "10": "can't stop laughing; universal hysterics",
+    "9":  "guaranteed laugh; laugh-out-loud every time",
+    "8":  "big laugh for most; very funny",
+    "7":  "solid laugh; clearly funny",
     "6":  "lightly amusing; smile more than laugh",
     "5":  "weak humor; unlikely to land",
     "4":  "poor joke; muddy setup or payoff",
