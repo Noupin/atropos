@@ -30,9 +30,9 @@ FUNNY_PROMPT_DESC = (
 
 
 GENERAL_RATING_DESCRIPTIONS: Dict[str, str] = {
-    "10": "perfect fit; instantly gripping and highly shareable",
-    "9":  "excellent fit; strong hook and clear payoff",
-    "8":  "very good; engaging and on-target",
+    "10": "rare, exceptional clip; perfect fit; instantly gripping and highly shareable",
+    "9":  "rare, exceptional clip; excellent fit; strong hook and clear payoff",
+    "8":  "very good; engaging and on-target (common; most clips fall here or below)",
     "7":  "good; include if few stronger options exist",
     "6":  "borderline; some issues with clarity or impact",
     "5":  "weak; limited relevance or momentum",

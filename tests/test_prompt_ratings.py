@@ -8,7 +8,7 @@ from server.steps.candidates.prompts import (
 
 def test_default_rating_descriptions_present() -> None:
     instructions = _build_system_instructions("desc")
-    assert "10: perfect fit" in instructions
+    assert "10: rare, exceptional clip" in instructions
     assert "0: reject" in instructions
 
 
@@ -22,7 +22,7 @@ def test_custom_rating_descriptions_included() -> None:
     instructions = _build_system_instructions(
         "desc", rating_descriptions=custom
     )
-    assert "10: perfect fit" in instructions
+    assert "10: rare, exceptional clip" in instructions
     assert "10: top tier" in instructions
 
 
