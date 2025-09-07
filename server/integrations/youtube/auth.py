@@ -52,29 +52,31 @@ def _save_token_json(creds: Credentials) -> None:
 # --- Credential helpers -------------------------------------------------------
 
 def load_creds() -> Optional[Credentials]:
-    """Load creds from disk and refresh if needed; returns None if missing/invalid."""
+    """Load credentials from disk without refreshing them."""
     tok = _load_token_json()
     if not tok:
         return None
-    creds = Credentials.from_authorized_user_info(tok, SCOPES)
-    if creds and creds.valid:
-        return creds
-    if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        _save_token_json(creds)
-        return creds
-    return None
+    try:
+        return Credentials.from_authorized_user_info(tok, SCOPES)
+    except Exception:
+        return None
 
 
 def refresh_creds() -> bool:
-    """Attempt to load and refresh credentials without user interaction.
+    """Refresh stored credentials via Google's OAuth refresh endpoint.
 
-    Returns ``True`` if valid credentials are available, ``False`` otherwise.
+    Returns ``True`` if the refresh succeeded, ``False`` otherwise.
     """
+    tok = _load_token_json()
+    if not tok:
+        return False
     try:
-        return load_creds() is not None
+        creds = Credentials.from_authorized_user_info(tok, SCOPES)
+        creds.refresh(Request())
     except Exception:
         return False
+    _save_token_json(creds)
+    return True
 
 
 def ensure_creds() -> Credentials:
@@ -90,7 +92,14 @@ def ensure_creds() -> Credentials:
 
     creds = load_creds()
     if creds:
-        return creds
+        if creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                _save_token_json(creds)
+            except Exception:
+                pass
+        if creds.valid:
+            return creds
 
     flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
     creds = flow.run_local_server(port=0)
