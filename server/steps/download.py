@@ -2,8 +2,11 @@ import subprocess
 from datetime import datetime
 
 import yt_dlp
+from yt_dlp.utils import DownloadError
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import NoTranscriptFound, TranscriptsDisabled
+
+from ..helpers.notifications import send_failure_email
 
 
 def is_youtube_url(url: str) -> bool:
@@ -48,8 +51,15 @@ def get_video_urls(url: str) -> list[str]:
         "force_flat_playlist": True,
         "no_warnings": True,
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except DownloadError as exc:
+        send_failure_email(
+            "Private or unlisted video",
+            f"Skipping {url}: {exc}",
+        )
+        return []
 
     if not info:
         return []
@@ -77,23 +87,34 @@ def get_video_info(url: str):
         "no_warnings": True,
         "format": "bestvideo+bestaudio/best",
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        if info is None:
-            return None
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except DownloadError as exc:
+        send_failure_email(
+            "Private or unlisted video",
+            f"Skipping {url}: {exc}",
+        )
+        return None
+    if info is None:
+        send_failure_email(
+            "Video info retrieval failed",
+            f"Skipping {url}: no information returned",
+        )
+        return None
 
-        title = info.get("title", "Unknown Title")
-        upload_date = info.get("upload_date") or info.get("release_date")
-        if not upload_date and info.get("timestamp"):
-            upload_date = datetime.utcfromtimestamp(info["timestamp"]).strftime("%Y%m%d")
-        if not upload_date:
-            upload_date = "Unknown Date"
-        uploader = info.get("uploader") or info.get("channel") or "Unknown Channel"
-        return {
-            "title": title,
-            "upload_date": upload_date,
-            "uploader": uploader,
-        }
+    title = info.get("title", "Unknown Title")
+    upload_date = info.get("upload_date") or info.get("release_date")
+    if not upload_date and info.get("timestamp"):
+        upload_date = datetime.utcfromtimestamp(info["timestamp"]).strftime("%Y%m%d")
+    if not upload_date:
+        upload_date = "Unknown Date"
+    uploader = info.get("uploader") or info.get("channel") or "Unknown Channel"
+    return {
+        "title": title,
+        "upload_date": upload_date,
+        "uploader": uploader,
+    }
 
 def download_video(url, output_path: str = "output_video.mp4"):
     try:
