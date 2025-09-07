@@ -14,7 +14,7 @@ from pathlib import Path
 CAPTION_FONT_SCALE = 2.0
 # Maximum number of lines per caption before splitting
 CAPTION_MAX_LINES: int = 2
-# Fallback frame-rate if source FPS cannot be determined
+# Constant frame-rate to avoid VFR issues on platforms like TikTok/Reels
 OUTPUT_FPS: float = 30.0
 
 # Clip boundary snapping options
