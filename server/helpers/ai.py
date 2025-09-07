@@ -83,6 +83,7 @@ def ollama_call_json(
             for value in parsed.values():
                 if isinstance(value, list):
                     return value
+            return [parsed]
     except Exception:
         pass
     m = extract_re.search(raw)
@@ -156,6 +157,7 @@ def lmstudio_call_json(
             for value in parsed.values():
                 if isinstance(value, list):
                     return value
+            return [parsed]
     except Exception:
         pass
     m = extract_re.search(raw)
