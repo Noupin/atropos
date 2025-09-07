@@ -222,8 +222,10 @@ def render_vertical_with_captions(
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open video: {clip_path}")
 
-    # Force constant output FPS to keep timestamps sane for social platforms
-    fps = OUTPUT_FPS
+    # Match source FPS to avoid playback speed changes; fall back to default
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if not fps or np.isnan(fps) or fps <= 0:
+        fps = OUTPUT_FPS
 
     # Prefer H.264 writer; fall back to mp4v if unavailable
     writer = _open_writer(temp_video, fps, (frame_width, frame_height))
@@ -433,18 +435,19 @@ def render_vertical_with_captions(
 
     # --- Optional: Mux original audio (disabled if ffmpeg not present or mux_audio=False) ---
     if mux_audio and shutil.which("ffmpeg") is not None:
+        gop = max(1, int(round(fps)) * 2)
         mux_cmd = [
             "ffmpeg", "-y",
             "-i", str(temp_video),          # video (from OpenCV)
             "-i", str(clip_path),           # original (for audio track)
             "-map", "0:v:0", "-map", "1:a:0?",
-            # Re-encode video to H.264 + yuv420p, constant 30 fps (CFR), faststart
+            # Re-encode video to H.264 + yuv420p at source FPS, faststart
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",
             "-profile:v", "high", "-level", "4.1",
-            "-r", f"{OUTPUT_FPS}",
+            "-r", f"{fps}",
             "-vsync", "cfr",
-            "-g", str(int(OUTPUT_FPS) * 2),
+            "-g", str(gop),
             "-movflags", "+faststart",
             # Normalize audio to AAC if present
             "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
