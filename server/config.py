@@ -23,7 +23,7 @@ SNAP_TO_DIALOG = True
 SNAP_TO_SENTENCE = True
 
 # Toggle LLM usage for transcript segmentation
-USE_LLM_FOR_SEGMENTS = False
+USE_LLM_FOR_SEGMENTS = True
 # Toggle LLM-based detection of dialog ranges
 DETECT_DIALOG_WITH_LLM = True
 MAX_LLM_CHARS = 24_000
@@ -31,6 +31,8 @@ LLM_API_TIMEOUT = 600  # seconds
 # LLM segmentation and worker configuration
 SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS = 20
 LLM_MAX_WORKERS = 2
+SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS = 25
+LLM_MAX_WORKERS = 1
 LLM_PER_CHUNK_TIMEOUT = 60  # seconds
 
 # Choose local LLM provider and model
@@ -53,7 +55,7 @@ SILENCE_DETECTION_MIN_DURATION = 0.075
 # Transcript acquisition settings
 # ---------------------------------------
 # Preferred transcript source: "youtube" or "whisper"
-TRANSCRIPT_SOURCE = "youtube"
+TRANSCRIPT_SOURCE = "whisper"
 # Model used for faster-whisper transcription
 WHISPER_MODEL = "large-v3-turbo" # (tiny, tiny.en, base, base.en, small, small.en, distil-small.en, medium, medium.en, distil-medium.en, large-v1, large-v2, large-v3, large, distil-large-v2, distil-large-v3, large-v3-turbo, or turbo)
 
@@ -68,7 +70,7 @@ SWEET_SPOT_MAX_SECONDS = 35.0
 DEFAULT_MIN_RATING = 7.0
 DEFAULT_MIN_WORDS = 0
 
-FUNNY_MIN_RATING = 9.5
+FUNNY_MIN_RATING = 8.0
 FUNNY_MIN_WORDS = 5
 
 EDUCATIONAL_MIN_RATING = 7.0
