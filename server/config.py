@@ -60,6 +60,12 @@ TRANSCRIPT_SOURCE = "whisper"
 WHISPER_MODEL = "large-v3-turbo" # (tiny, tiny.en, base, base.en, small, small.en, distil-small.en, medium, medium.en, distil-medium.en, large-v1, large-v2, large-v3, large, distil-large-v2, distil-large-v3, large-v3-turbo, or turbo)
 
 # ---------------------------------------
+# Clip selection
+# ---------------------------------------
+# Choose which type of clips to generate
+CLIP_TYPE = "funny"  # or "inspiring" or "educational"
+
+# ---------------------------------------
 # Candidate selection heuristics
 # ---------------------------------------
 MIN_DURATION_SECONDS = 6.0
@@ -140,6 +146,7 @@ __all__ = [
     "SILENCE_DETECTION_MIN_DURATION",
     "TRANSCRIPT_SOURCE",
     "WHISPER_MODEL",
+    "CLIP_TYPE",
     "MIN_DURATION_SECONDS",
     "MAX_DURATION_SECONDS",
     "SWEET_SPOT_MIN_SECONDS",

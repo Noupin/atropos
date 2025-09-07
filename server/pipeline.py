@@ -50,6 +50,7 @@ from config import (
     INSPIRING_MIN_RATING,
     EDUCATIONAL_MIN_RATING,
     DEFAULT_MIN_RATING,
+    CLIP_TYPE,
     SNAP_TO_SILENCE,
     SNAP_TO_DIALOG,
     SNAP_TO_SENTENCE,
@@ -97,8 +98,6 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
     overall_start = time.perf_counter()
     twitch = is_twitch_url(yt_url)
     transcript_source = "whisper" if twitch else TRANSCRIPT_SOURCE
-
-    CLIP_TYPE = "funny"  # change to 'inspiring' or 'educational'
     rating_defaults = {
         "funny": FUNNY_MIN_RATING,
         "inspiring": INSPIRING_MIN_RATING,
