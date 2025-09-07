@@ -109,12 +109,8 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
     video_info = get_video_info(yt_url)
 
     if not video_info:
-        send_failure_email(
-            "Video info retrieval failed",
-            f"Failed to retrieve video information for {yt_url}",
-        )
         print(f"{Fore.RED}Failed to retrieve video information.{Style.RESET_ALL}")
-        sys.exit()
+        return
 
     upload_date = video_info["upload_date"]
     sanitized_title = sanitize_filename(video_info["title"])
