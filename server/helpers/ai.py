@@ -47,7 +47,10 @@ def ollama_generate(
     resp = requests.post(url, json=payload, timeout=timeout)
     resp.raise_for_status()
     data = resp.json()
-    return data.get("response", "").strip()
+    raw = data.get("response", "")
+    if isinstance(raw, (dict, list)):
+        raw = json.dumps(raw)
+    return str(raw).strip()
 
 
 def ollama_call_json(
@@ -72,10 +75,14 @@ def ollama_call_json(
         raise RuntimeError(f"Ollama request failed: {e}")
     try:
         parsed = json.loads(raw)
-        if isinstance(parsed, dict) and "items" in parsed:
-            parsed = parsed["items"]
         if isinstance(parsed, list):
             return parsed
+        if isinstance(parsed, dict):
+            if isinstance(parsed.get("items"), list):
+                return parsed["items"]
+            for value in parsed.values():
+                if isinstance(value, list):
+                    return value
     except Exception:
         pass
     m = extract_re.search(raw)
@@ -141,10 +148,14 @@ def lmstudio_call_json(
         raise RuntimeError(f"LM Studio request failed: {e}")
     try:
         parsed = json.loads(raw)
-        if isinstance(parsed, dict) and "items" in parsed:
-            parsed = parsed["items"]
         if isinstance(parsed, list):
             return parsed
+        if isinstance(parsed, dict):
+            if isinstance(parsed.get("items"), list):
+                return parsed["items"]
+            for value in parsed.values():
+                if isinstance(value, list):
+                    return value
     except Exception:
         pass
     m = extract_re.search(raw)
