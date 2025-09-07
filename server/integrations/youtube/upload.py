@@ -44,11 +44,20 @@ def read_description(path: Path) -> tuple[str, str]:
     hashtag_pattern = r"(?:^|\s)(#\w+)"
     hashtags = [tag.strip() for tag in re.findall(hashtag_pattern, desc_text)]
     title_hashtags = hashtags[:4]
-    title_clean = "Made by Atropos "
-    if title_hashtags:
-        title_clean += " ".join(title_hashtags)
 
-    title_clean = title_clean.strip()[:100]
+    credit_line = ""
+    for line in desc_text.splitlines():
+        if line.lower().startswith("credit:"):
+            credit_line = line.strip()
+            break
+
+    title_parts: list[str] = []
+    if credit_line:
+        title_parts.append(credit_line)
+    if title_hashtags:
+        title_parts.append(" ".join(title_hashtags))
+
+    title_clean = " ".join(title_parts).strip()[:100]
 
     desc_text = desc_text[:YOUTUBE_DESC_LIMIT]
     return title_clean, desc_text
