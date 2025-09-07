@@ -1,25 +1,22 @@
 import json
 from pathlib import Path
 from typing import Iterable, List, Tuple
-import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+from concurrent.futures import TimeoutError as FuturesTimeout
 
 import config
 from helpers.ai import local_llm_call_json
 from .candidates.helpers import parse_transcript
+from common.chunk_utils import chunk_by_chars, chunk_is_sentence_like
+from common.thread_pool import process_with_thread_pool
+from common.llm_utils import (
+    format_transcript_lines,
+    default_llm_options,
+    chunk_span,
+    parse_llm_spans,
+)
 
 _KEYWORDS = {"haha", "lol", "joke", "laugh", "laughter"}
 
-_END_PUNCT = set(".!?")
-
-def _chunk_is_sentence_like(chunk: List[Tuple[float, float, str]]) -> bool:
-    """Return True if the chunk already looks like sentence-bounded text."""
-    if not chunk:
-        return True
-    ends_ok = sum(1 for _, _, t in chunk if t and t.strip()[-1:] in _END_PUNCT)
-    ratio = ends_ok / max(1, len(chunk))
-    avg_len = sum(len(t) for _, _, t in chunk) / max(1, len(chunk))
-    return ratio >= 0.7 and 24 <= avg_len <= 240
 
 
 def _heuristic_dialog_ranges(
@@ -56,31 +53,6 @@ def _heuristic_dialog_ranges(
     return ranges
 
 
-def _chunk_items(
-    items: List[Tuple[float, float, str]], *, max_chars: int, overlap_lines: int = 2, max_items: int | None = None
-) -> List[List[Tuple[float, float, str]]]:
-    """Chunk transcript items under ``max_chars`` and ``max_items`` with a small line overlap."""
-    chunks: List[List[Tuple[float, float, str]]] = []
-    buf: List[Tuple[float, float, str]] = []
-    count = 0
-    for triplet in items:
-        s, e, t = triplet
-        line = f"[{s:.2f}-{e:.2f}] {t}"
-        ln = len(line) + 1
-        would_exceed_chars = buf and count + ln > max_chars
-        would_exceed_items = max_items is not None and buf and len(buf) >= max_items
-        if would_exceed_chars or would_exceed_items:
-            chunks.append(buf[:])
-            tail = buf[-overlap_lines:] if overlap_lines > 0 else []
-            buf = tail[:]
-            count = sum(len(f"[{a:.2f}-{b:.2f}] {c}") + 1 for a, b, c in buf)
-        buf.append(triplet)
-        count += ln
-    if buf:
-        chunks.append(buf)
-    return chunks
-
-
 def _merge_ranges(ranges: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
     """Merge overlapping ranges."""
     if not ranges:
@@ -108,7 +80,7 @@ def _llm_dialog_ranges(
     Uses only per-chunk timeout (config.LLM_PER_CHUNK_TIMEOUT). If that is 0/None,
     waits indefinitely per chunk. Falls back heuristically per chunk on error.
     """
-    chunks = _chunk_items(
+    chunks = chunk_by_chars(
         items,
         max_chars=config.MAX_LLM_CHARS,
         overlap_lines=2,
@@ -133,14 +105,13 @@ def _llm_dialog_ranges(
             "",
             "Segments:",
         ]
-        lines.extend(f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in chunk)
+        lines.extend(format_transcript_lines(chunk))
         return "\n".join(lines)
 
     def _process_chunk(idx: int, chunk: List[Tuple[float, float, str]]):
-        if _chunk_is_sentence_like(chunk) and len(chunk) <= 6:
+        if chunk_is_sentence_like(chunk) and len(chunk) <= 6:
             print(f"[dialog] Chunk {idx}: heuristic skip (sentence-like).")
-            s0 = min(s for s, _, _ in chunk)
-            e0 = max(e for _, e, _ in chunk)
+            s0, e0 = chunk_span(chunk)
             return [(s0, e0)]
 
         prompt = _build_prompt(chunk)
@@ -148,7 +119,7 @@ def _llm_dialog_ranges(
         kwargs = dict(
             model=model,
             prompt=prompt,
-            options={"temperature": 0.0, "top_p": 0.9, "num_predict": 384},
+            options=default_llm_options(384),
         )
         if call_timeout is not None:
             kwargs["timeout"] = call_timeout
@@ -157,53 +128,35 @@ def _llm_dialog_ranges(
             out = local_llm_call_json(**kwargs)
         except Exception as e:
             print(f"[dialog] Chunk {idx}: LLM exception -> {e}")
-            s0 = min(s for s, _, _ in chunk)
-            e0 = max(e for _, e, _ in chunk)
+            s0, e0 = chunk_span(chunk)
             return [(s0, e0)]
 
-        spans: List[Tuple[float, float]] = []
-        if isinstance(out, list):
-            for obj in out:
-                try:
-                    s = float(obj.get("start"))
-                    e = float(obj.get("end"))
-                    if e >= s:
-                        spans.append((s, e))
-                except Exception:
-                    continue
-
+        spans = parse_llm_spans(out)
         if not spans:
-            s0 = min(s for s, _, _ in chunk)
-            e0 = max(e for _, e, _ in chunk)
+            s0, e0 = chunk_span(chunk)
             spans = [(s0, e0)]
         print(f"[dialog] Chunk {idx}: spans={len(spans)}")
         return spans
 
     all_ranges: List[Tuple[float, float]] = []
-    with ThreadPoolExecutor(max_workers=config.LLM_MAX_WORKERS) as ex:
-        futures = []
-        for i, chunk in enumerate(chunks, 1):
-            futures.append(ex.submit(_process_chunk, i, chunk))
 
-        for i, fut in enumerate(futures, 1):
-            try:
-                if config.LLM_PER_CHUNK_TIMEOUT and config.LLM_PER_CHUNK_TIMEOUT > 0:
-                    res = fut.result(timeout=config.LLM_PER_CHUNK_TIMEOUT)
-                else:
-                    res = fut.result()
-                all_ranges.extend(res)
-            except FuturesTimeout:
-                print(f"[dialog] Chunk {i}: timed out; using coarse span.")
-                ch = chunks[i - 1]
-                s0 = min(s for s, _, _ in ch)
-                e0 = max(e for _, e, _ in ch)
-                all_ranges.append((s0, e0))
-            except Exception as e:
-                print(f"[dialog] Chunk {i}: future error -> {e}")
-                ch = chunks[i - 1]
-                s0 = min(s for s, _, _ in ch)
-                e0 = max(e for _, e, _ in ch)
-                all_ranges.append((s0, e0))
+    def _on_error(idx: int, chunk: List[Tuple[float, float, str]], exc: Exception):
+        if isinstance(exc, FuturesTimeout):
+            print(f"[dialog] Chunk {idx}: timed out; using coarse span.")
+        else:
+            print(f"[dialog] Chunk {idx}: future error -> {exc}")
+        s0, e0 = chunk_span(chunk)
+        return [(s0, e0)]
+
+    results = process_with_thread_pool(
+        chunks,
+        _process_chunk,
+        max_workers=config.LLM_MAX_WORKERS,
+        timeout=config.LLM_PER_CHUNK_TIMEOUT,
+        on_error=_on_error,
+    )
+    for spans in results:
+        all_ranges.extend(spans)
 
     merged = _merge_ranges(all_ranges)
     print(f"[dialog] Done. merged spans={len(merged)}")
