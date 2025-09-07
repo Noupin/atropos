@@ -65,6 +65,18 @@ def refine_segments_with_llm(
 
     print(f"[segments] Starting refinement with {len(chunks)} chunks.")
 
+    # Quick connectivity check so we fail fast if the local LLM server is down.
+    try:
+        local_llm_call_json(
+            model=model,
+            prompt="return []",
+            options=default_llm_options(16),
+            timeout=min(timeout, 5),
+        )
+    except Exception as e:
+        print(f"[segments] LLM unavailable: {e}; skipping refinement.")
+        return segments
+
     def _build_prompt(chunk: List[Tuple[float, float, str]]) -> str:
         # Compact, JSON-only prompt to reduce tokens and latency
         lines = [
