@@ -16,6 +16,8 @@ from config import (
 
 FUNNY_PROMPT_DESC = (
     "Find self-contained funny beats that will make most viewers laugh. "
+    "Edgy, inappropriate, or raunchy humor is allowed and should be scored if it delivers a comedic payoff. "
+    "Only discard when the content is hateful, non-consensual, or purely offensive without wit. "
     "Embrace strange, weird, or delightfully crazy moments if they land a punchline. "
     "Prefer short setups with a clear punchline or twist (deadpan contradiction, playful roast, absurd confession, misdirection, escalation, wordplay). "
     "Highlight the comedic style (dry satire, slapstick, dark humor, etc.) when obvious and make the scenario's twist or contrast explicit. "
@@ -25,7 +27,7 @@ FUNNY_PROMPT_DESC = (
     "Cues that often mark a punchline: audience laughter/\"(laughs)\", sudden contradiction (\"actually…\"), hyperbole or absurd comparisons, unexpected specifics, or a sharp reversal (\"turns out…\"). "
     "Your `quote` should capture the punchline line verbatim. "
     "`tags` must include at least one comedic device: [\"punchline\", \"roast\", \"callback\", \"absurdity\", \"wordplay\", \"misdirection\", \"deadpan\", \"escalation\"]; when possible add a tag for comedic style (e.g., \"slapstick\", \"dark\"). "
-    "Reject: long rambles, setup-only segments, inside jokes that need unseen visuals, polite chuckles with no payoff, sponsor/promotional reads, or mean-spirited remarks without wit."
+    "Reject: long rambles, setup-only segments, inside jokes that need unseen visuals, polite chuckles with no payoff, sponsor/promotional reads, or mean-spirited or hateful remarks without wit."
 )
 
 
@@ -50,12 +52,12 @@ FUNNY_RATING_DESCRIPTIONS: Dict[str, str] = {
     "8":  "big laugh for most; very funny",
     "7":  "solid laugh; clearly funny",
     "6":  "lightly amusing; smile more than laugh",
-    "5":  "weak humor; unlikely to land",
+    "5":  "weak humor; raunchy or crude without payoff",
     "4":  "poor joke; muddy setup or payoff",
     "3":  "barely humorous; off-tone or confusing",
     "2":  "not funny; flat or irrelevant",
-    "1":  "not funny at all",
-    "0":  "reject; offensive without comedic value",
+    "1":  "not funny at all; offensive or crude with no humor",
+    "0":  "reject; hateful or non-consensual content without comedic value",
 }
 
 INSPIRING_PROMPT_DESC = (
