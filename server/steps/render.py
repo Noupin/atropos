@@ -37,7 +37,14 @@ try:
 except Exception:
     pass
 
-from config import CAPTION_FONT_SCALE, CAPTION_MAX_LINES, OUTPUT_FPS
+from config import (
+    CAPTION_FONT_SCALE,
+    CAPTION_MAX_LINES,
+    CAPTION_FILL_BGR,
+    CAPTION_OUTLINE_BGR,
+    CAPTION_USE_COLORS,
+    OUTPUT_FPS,
+)
 
 def _open_writer(path, fps, size):
     w, h = size
@@ -82,8 +89,9 @@ def render_vertical_with_captions(
     max_lines: int = CAPTION_MAX_LINES,
     wrap_width_px_ratio: float = 0.86,  # caption max width as ratio of frame_width
     blur_ksize: int = 31,               # must be odd; background blur amount
-    fill_bgr: Tuple[int, int, int] = (255, 187, 28),   # hex 1cbbff -> RGB(28,187,255) -> BGR(255,187,28)
-    outline_bgr: Tuple[int, int, int] = (236, 236, 236),  # hex ececec
+    use_caption_colors: bool = CAPTION_USE_COLORS,
+    fill_bgr: Tuple[int, int, int] = CAPTION_FILL_BGR,
+    outline_bgr: Tuple[int, int, int] = CAPTION_OUTLINE_BGR,
     # NEW performance toggles
     use_cuda: bool = True,
     use_opencl: bool = True,
@@ -100,6 +108,9 @@ def render_vertical_with_captions(
     output.parent.mkdir(parents=True, exist_ok=True)
 
     temp_video = output.with_suffix('.temp.mp4')
+
+    fill_color = fill_bgr if use_caption_colors else (255, 255, 255)
+    outline_color = outline_bgr if use_caption_colors else (0, 0, 0)
 
     # --- HW accel probes ---
     if use_opencl:
@@ -420,12 +431,21 @@ def render_vertical_with_captions(
                             (x_text + dx, y_text + th + dy),
                             font,
                             fs,
-                            outline_bgr,
+                            outline_color,
                             thickness + outline,
                             line_type,
                         )
                 # fill
-                cv2.putText(canvas, ln, (x_text, y_text + th), font, fs, fill_bgr, thickness, line_type)
+                cv2.putText(
+                    canvas,
+                    ln,
+                    (x_text, y_text + th),
+                    font,
+                    fs,
+                    fill_color,
+                    thickness,
+                    line_type,
+                )
                 y_text += th + spacing
 
         writer.write(canvas)
