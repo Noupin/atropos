@@ -35,11 +35,16 @@ def test_read_description_appends_link_to_description_only(monkeypatch, tmp_path
     )
     desc_file = tmp_path / "desc.txt"
     desc_file.write_text(
-        "Full video line\nCredit line\n#funny #cool #wow #amazing #extra",
+        (
+            "Full video line\nCredit: line\nMade by Atropos\n"
+            "#funny #cool #wow #amazing #extra"
+        ),
         encoding="utf-8",
     )
     title, description = read_description(desc_file)
-    assert title == "#funny #cool #wow #amazing"
+    assert title == "Credit: line #funny #cool #wow #amazing"
     assert "https://atropos-video.com" not in title
+    assert "Made by Atropos" in description
+    assert "Made by Atropos" not in title
     assert description.endswith("https://atropos-video.com")
 
