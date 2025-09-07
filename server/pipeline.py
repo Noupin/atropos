@@ -12,9 +12,6 @@ from steps.download import (
     get_video_urls,
     is_twitch_url,
 )
-from steps.candidates.funny import find_funny_timestamps_batched
-from steps.candidates.inspiring import find_inspiring_timestamps_batched
-from steps.candidates.educational import find_educational_timestamps_batched
 from steps.candidates.helpers import (
     export_candidates_json,
     load_candidates_json,
@@ -46,10 +43,6 @@ from steps.dialog import (
     load_dialog_ranges_json,
 )
 from config import (
-    FUNNY_MIN_RATING,
-    INSPIRING_MIN_RATING,
-    EDUCATIONAL_MIN_RATING,
-    DEFAULT_MIN_RATING,
     SNAP_TO_SILENCE,
     SNAP_TO_DIALOG,
     SNAP_TO_SENTENCE,
@@ -89,22 +82,20 @@ from helpers.ai import local_llm_call_json
 from helpers.description import maybe_append_website_link
 from steps.candidates import ClipCandidate
 from helpers.cleanup import cleanup_project_dir
+from common.tone import Tone
 
 
 
 
-def process_video(yt_url: str, niche: str | None = None) -> None:
+def process_video(
+    yt_url: str, tone: Tone = Tone.FUNNY, niche: str | None = None
+) -> None:
     overall_start = time.perf_counter()
     twitch = is_twitch_url(yt_url)
     transcript_source = "whisper" if twitch else TRANSCRIPT_SOURCE
 
-    CLIP_TYPE = "funny"  # change to 'inspiring' or 'educational'
-    rating_defaults = {
-        "funny": FUNNY_MIN_RATING,
-        "inspiring": INSPIRING_MIN_RATING,
-        "educational": EDUCATIONAL_MIN_RATING,
-    }
-    MIN_RATING = rating_defaults.get(CLIP_TYPE, DEFAULT_MIN_RATING)
+    spec = tone.value
+    MIN_RATING = spec.min_rating
 
     video_info = get_video_info(yt_url)
 
@@ -337,17 +328,10 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
     candidates_all_path = project_dir / "candidates_all.json"
     candidates_top_path = project_dir / "candidates_top.json"
 
-    CLIP_FINDERS = {
-        "funny": find_funny_timestamps_batched,
-        "inspiring": find_inspiring_timestamps_batched,
-        "educational": find_educational_timestamps_batched,
-    }
-
-    def step_candidates() -> tuple[list[ClipCandidate], list[ClipCandidate], list[ClipCandidate]]:
-        finder = CLIP_FINDERS.get(CLIP_TYPE)
-        if finder is None:
-            raise ValueError(f"Unsupported clip type: {CLIP_TYPE}")
-        return finder(
+    def step_candidates() -> tuple[
+        list[ClipCandidate], list[ClipCandidate], list[ClipCandidate]
+    ]:
+        return spec.finder(
             str(transcript_output_path),
             min_rating=MIN_RATING,
             return_all_stages=True,
