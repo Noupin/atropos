@@ -100,6 +100,11 @@ RATING_MIN = 0.0
 RATING_MAX = 10.0
 MIN_EXTENSION_MARGIN = 0.3
 
+# Step control
+# Allows skipping the first N pipeline steps by setting START_AT_STEP
+# via environment variable. Defaults to 1 (run all steps).
+START_AT_STEP = int(os.environ.get("START_AT_STEP", "1"))
+
 # ---------------------------------------
 # Post-pipeline cleanup
 # ---------------------------------------
@@ -168,6 +173,7 @@ __all__ = [
     "RATING_MIN",
     "RATING_MAX",
     "MIN_EXTENSION_MARGIN",
+    "START_AT_STEP",
     "CLEANUP_NON_SHORTS",
     "TOKENS_DIR",
     "YOUTUBE_PRIVACY",
