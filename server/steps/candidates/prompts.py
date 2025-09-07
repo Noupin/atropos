@@ -103,6 +103,8 @@ def _build_system_instructions(
         + "\n".join([f"{rating}: {desc}" for rating, desc in GENERAL_RATING_DESCRIPTIONS.items()])
         + ("\n\nTONE-SPECIFIC NOTES:\n" + "\n".join([f"{rating}: {desc}" for rating, desc in rating_descriptions.items()]) if rating_descriptions else "")
         + "\n\n"
+        "Scores above 8 are reserved for truly standout clips; when uncertain, "
+        "default to a lower score.\n\n"
         "INSTRUCTIONS SOURCE (for context, not a style target):\n"
         f"{prompt_desc}\n"
         "Return the JSON now.\n"
