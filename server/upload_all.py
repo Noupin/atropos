@@ -1,5 +1,4 @@
 """Upload video(s) to all configured integrations.
-
 This module authenticates with each platform and posts the provided video and
 description. Platform defaults live in :mod:`server.config` and can be
 overridden at runtime via the :func:`run` function.
@@ -7,13 +6,13 @@ overridden at runtime via the :func:`run` function.
 
 from __future__ import annotations
 
-from dotenv import load_dotenv
-load_dotenv(dotenv_path="../.env")
-
-from pathlib import Path
-from typing import Callable, Dict, Sequence
 import json
 import os
+from pathlib import Path
+from typing import Callable, Dict, Sequence
+
+from dotenv import load_dotenv
+load_dotenv(dotenv_path="../.env")
 
 from config import (
     TIKTOK_CHUNK_SIZE,
@@ -22,6 +21,7 @@ from config import (
     YOUTUBE_CATEGORY_ID,
     YOUTUBE_PRIVACY,
 )
+from helpers.notifications import send_failure_email
 
 from integrations.tiktok import upload as tt_upload
 from integrations.youtube.auth import ensure_creds, refresh_creds
@@ -98,12 +98,22 @@ def _get_auth_refreshers(username: str, password: str) -> Dict[str, Callable[[],
     """Return callables to refresh auth for each platform."""
 
     def yt_refresh() -> None:
-        if not refresh_creds():
-            ensure_creds()
+        if refresh_creds():
+            return
+        send_failure_email(
+            "YouTube authentication required",
+            "Automatic refresh failed for YouTube. A full re-auth was attempted.",
+        )
+        ensure_creds()
 
     def tt_refresh() -> None:
-        if not refresh_tiktok_tokens():
-            run_tiktok_auth()
+        if refresh_tiktok_tokens():
+            return
+        send_failure_email(
+            "TikTok authentication required",
+            "Automatic refresh failed for TikTok. A full re-auth was attempted.",
+        )
+        run_tiktok_auth()
 
     return {
         "youtube": yt_refresh,
@@ -178,8 +188,18 @@ def upload_all(
                 try:
                     refresher()
                     func()
+                    continue
                 except Exception as exc2:  # pragma: no cover - defensive logging
                     print(f"{name} retry failed: {exc2}")
+                    send_failure_email(
+                        f"{name} upload failed",
+                        f"{name} retry after re-authentication failed: {exc2}",
+                    )
+                    continue
+            send_failure_email(
+                f"{name} upload failed",
+                f"{name} upload failed with error: {exc}",
+            )
 
 
 def run(

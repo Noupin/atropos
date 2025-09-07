@@ -78,14 +78,23 @@ def refresh_tokens() -> bool:
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
     }
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cache-Control": "no-cache",
+    }
+
     try:
-        resp = requests.post(url, data=body, timeout=30)
+        resp = requests.post(url, data=body, headers=headers, timeout=30)
         resp.raise_for_status()
-        new_tokens = resp.json()
+        payload = resp.json()
     except Exception:
         return False
 
-    TOKENS_FILE.write_text(json.dumps(new_tokens, indent=2), encoding="utf-8")
+    # TikTok returns an error field on failure even with HTTP 200
+    if payload.get("error") or "access_token" not in payload:
+        return False
+
+    TOKENS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return True
 
 def run():

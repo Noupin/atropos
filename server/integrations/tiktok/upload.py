@@ -13,13 +13,14 @@ TOKENS_FILE = Path(
     or Path(__file__).resolve().parents[2] / "tokens" / "tiktok.json"
 )
 
-# Load access token from JSON file
-try:
-    with open(TOKENS_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    ACCESS_TOKEN = data["access_token"]
-except FileNotFoundError:  # pragma: no cover - runtime setup
-    ACCESS_TOKEN = ""
+
+def _load_access_token() -> str:
+    """Return the current TikTok access token from ``TOKENS_FILE``."""
+    try:
+        data = json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
+        return data.get("access_token", "")
+    except Exception:  # pragma: no cover - runtime setup
+        return ""
 
 # ------------ CONFIG (edit these) ------------
 VIDEO_PATH = Path(
@@ -70,7 +71,7 @@ def read_caption(path: Path) -> str:
 
 def init_direct_post(video_size: int, chunk_size: int, title: str, privacy_level: str):
     headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Authorization": f"Bearer {_load_access_token()}",
         "Content-Type": "application/json; charset=UTF-8",
     }
     declared_chunk_size, total_chunk_count, full_chunks, remainder = _chunk_plan(video_size, chunk_size)
@@ -161,7 +162,7 @@ def upload_video(upload_url: str, video_path: Path, chunk_size: int):
 
 def poll_status(publish_id: str, timeout_sec: int = POLL_TIMEOUT_SEC, interval_sec: int = POLL_INTERVAL_SEC):
     headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Authorization": f"Bearer {_load_access_token()}",
         "Content-Type": "application/json; charset=UTF-8",
     }
     start = time.time()
