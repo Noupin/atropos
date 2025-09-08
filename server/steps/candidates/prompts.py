@@ -61,24 +61,104 @@ FUNNY_RATING_DESCRIPTIONS: Dict[str, str] = {
 }
 
 SPACE_PROMPT_DESC = (
-    "Find mind-expanding space or astronomy moments that spark curiosity. "
-    "Prefer surprising facts, clear explanations of cosmic phenomena, or awe-inspiring discoveries."
+    "Find mind-expanding astronomy or spaceflight beats that trigger awe and curiosity. "
+    "Prefer surprising facts, crisp explanations of cosmic phenomena, or mission milestones that feel consequential (e.g., firsts, failures with insight, dramatic course corrections). "
+    "Keep clips self-contained: give just enough context to understand the phenomenon and why it matters, then land a memorable takeaway or image. "
+    "Structure each beat with a clear claim or question, a concise explanation/analogy, and a satisfying mini-conclusion. "
+    "Cues of strong moments: vivid scale analogies, clear numbers (distances, timescales), comparisons to everyday objects, breakthroughs/\"we finally\" statements, high-stakes mission updates, or counterintuitive corrections (common misconceptions). "
+    "Your `quote` should capture the core awe/insight line verbatim. "
+    "`tags` should include a topic or device (e.g., [\"black holes\", \"analogy\", \"mission update\", \"scale\", \"explanation\"]). "
+    "Reject: rambling catalogues of facts, context that never lands a takeaway, overly technical math without a punchy insight, sponsor/CTA content, or speculation framed as certainty."
 )
 
 HISTORY_PROMPT_DESC = (
-    "Find compelling historical anecdotes or insights. "
-    "Prefer vivid stories, unexpected connections, or lessons drawn from the past."
+    "Find compelling historical beats that feel like crisp mini-stories. "
+    "Prefer vivid anecdotes, sharp cause-and-effect, or surprising connections to the present. "
+    "Keep clips self-contained: establish who/when/where in a phrase or two, highlight the twist or decision point, and conclude with the consequence or lesson. "
+    "Structure: setup (context), pivot (decision, accident, reveal), and payoff (result, lesson, irony). "
+    "Cues of strong moments: unlikely alliances, last-minute reversals, quotes from principals, declassified details, mistaken assumptions exposed, or numbers that reframe the scale of events. "
+    "Your `quote` should capture the twist or most quotable line. "
+    "`tags` should include event/topic or device (e.g., [\"ww2\", \"turning point\", \"irony\", \"primary source\", \"consequence\"]). "
+    "Reject: date-dumps without narrative, lists of rulers/battles with no through-line, myth repeated without caveat, sponsor/CTA content, or moralizing without evidence."
 )
 
 TECH_PROMPT_DESC = (
-    "Find interesting or useful technology insights. "
-    "Prefer practical tips, clear explanations of how things work, or notable industry commentary."
+    "Find practical or eye-opening technology beats that deliver clear value quickly. "
+    "Prefer actionable tips, clean explanations of how something works, crisp comparisons, or grounded takes on industry shifts (trade-offs included). "
+    "Keep clips self-contained: define the thing in plain language, show the why (benefit or risk), and land a take-away the viewer could use or remember. "
+    "Structure: hook claim/question, concise explanation/demo, and punchy takeaway (rule of thumb, gotcha, or decision criterion). "
+    "Cues of strong moments: counterintuitive benchmarks, before/after demos, minimal repro steps, pros/cons in one breath, cost/time trade-offs, or clarified misconceptions. "
+    "Your `quote` should capture the core takeaway or the most memorable claim. "
+    "`tags` should include topic or device (e.g., [\"ai\", \"benchmark\", \"how-it-works\", \"tradeoff\", \"tip\"]). "
+    "Reject: vague hype, product pitches, endless caveats without guidance, sponsor/CTA content, or arguments that hinge on missing visuals or private context."
 )
 
 HEALTH_PROMPT_DESC = (
-    "Find engaging health or wellness takeaways. "
-    "Prefer actionable advice, myth-busting explanations, or evidence-based insights."
+    "Find engaging, responsible health or wellness beats that offer clear, evidence-aware takeaways. "
+    "Prefer actionable tips, myth-busting with nuance, or simple frameworks (\"if X then consider Y\") that respect safety and individual variability. "
+    "Keep clips self-contained: define terms plainly, cite the type of evidence when stated (e.g., RCT vs. anecdote), and finish with a conservative, useful takeaway. "
+    "Structure: hook (question, misconception, or everyday pain), short explanation with guardrails, and a specific next step or heuristic. "
+    "Cues of strong moments: quantified effects, practical substitutions, dose/frequency clarity, common pitfalls, or \"red flag\" checks. "
+    "Your `quote` should capture the key advice or myth-busting line. "
+    "`tags` should include topic or device (e.g., [\"sleep\", \"myth-bust\", \"habit\", \"nutrition\", \"safety\"]). "
+    "Reject: medical claims without support, unsafe instructions, overconfident prescriptions, sponsor/CTA content, or shaming language."
 )
+
+SPACE_RATING_DESCRIPTIONS = {
+    "10": "jaw-dropping; unforgettable sense of scale or breakthrough; crystal clarity",
+    "9":  "profound awe; crisp explanation and memorable takeaway",
+    "8":  "strong curiosity spark; clear and engaging",
+    "7":  "good; informative with a decent hook",
+    "6":  "borderline; needs tighter framing or clearer why",
+    "5":  "weak; facts without a point or takeaway",
+    "4":  "poor; meandering jargon or half-claim",
+    "3":  "poor; confusing or unfocused",
+    "2":  "not usable; unclear, speculative without grounding",
+    "1":  "not usable; misleading or off-topic",
+    "0":  "reject; sensational claim without evidence or unsafe misinformation",
+}
+
+HISTORY_RATING_DESCRIPTIONS = {
+    "10": "mini-epic; perfect twist/payoff with crisp context",
+    "9":  "excellent story; memorable and insightful",
+    "8":  "very good; clear narrative and point",
+    "7":  "good; solid anecdote with acceptable context",
+    "6":  "borderline; needs clearer stakes or payoff",
+    "5":  "weak; dates/facts but no story",
+    "4":  "poor; disjointed or confusing",
+    "3":  "poor; off-track or trivial",
+    "2":  "not usable; unsubstantiated or misleading",
+    "1":  "not usable; moralizing without evidence",
+    "0":  "reject; misinformation or hateful content",
+}
+
+TECH_RATING_DESCRIPTIONS = {
+    "10": "instant bookmark; actionable and insight-dense",
+    "9":  "excellent takeaway; clear trade-offs or demo",
+    "8":  "very useful; practical and well-explained",
+    "7":  "good; helpful but could be tighter",
+    "6":  "borderline; some value but muddy",
+    "5":  "weak; generic or hypey",
+    "4":  "poor; unclear or hand-wavy",
+    "3":  "poor; off-topic or inaccurate",
+    "2":  "not usable; wrong or unsafe guidance",
+    "1":  "not usable; salesy with no substance",
+    "0":  "reject; deceptive claims or undisclosed promotion",
+}
+
+HEALTH_RATING_DESCRIPTIONS = {
+    "10": "gold-standard clarity; safe, nuanced, and actionable",
+    "9":  "excellent; strong guardrails and memorable tip",
+    "8":  "very good; evidence-aware and useful",
+    "7":  "good; helpful but could be clearer",
+    "6":  "borderline; missing guardrails or precise terms",
+    "5":  "weak; generic or oversimplified",
+    "4":  "poor; confusing or potentially misleading",
+    "3":  "poor; off-topic or anecdotal-only",
+    "2":  "not usable; unsafe or unsupported",
+    "1":  "not usable; shaming/absolute claims",
+    "0":  "reject; dangerous misinformation",
+}
 
 
 def _build_system_instructions(
@@ -144,6 +224,10 @@ __all__ = [
     "HEALTH_PROMPT_DESC",
     "GENERAL_RATING_DESCRIPTIONS",
     "FUNNY_RATING_DESCRIPTIONS",
+    "SPACE_RATING_DESCRIPTIONS",
+    "HISTORY_RATING_DESCRIPTIONS",
+    "TECH_RATING_DESCRIPTIONS",
+    "HEALTH_RATING_DESCRIPTIONS",
     "_build_system_instructions",
     "build_window_prompt",
 ]
