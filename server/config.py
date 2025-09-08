@@ -62,7 +62,10 @@ SILENCE_DETECTION_MIN_DURATION = 0.075
 # Preferred transcript source: "youtube" or "whisper"
 TRANSCRIPT_SOURCE = "whisper"
 # Model used for faster-whisper transcription
-WHISPER_MODEL = "large-v3-turbo" # (tiny, tiny.en, base, base.en, small, small.en, distil-small.en, medium, medium.en, distil-medium.en, large-v1, large-v2, large-v3, large, distil-large-v2, distil-large-v3, large-v3-turbo, or turbo)
+WHISPER_MODEL = os.environ.get(
+    "WHISPER_MODEL",
+    "large-v3-turbo",  # (tiny, tiny.en, base, base.en, small, small.en, distil-small.en, medium, medium.en, distil-medium.en, large-v1, large-v2, large-v3, large, distil-large-v2, distil-large-v3, large-v3-turbo, or turbo)
+)
 
 # ---------------------------------------
 # Clip selection
@@ -114,7 +117,7 @@ START_AT_STEP = int(os.environ.get("START_AT_STEP", "1"))
 # Post-pipeline cleanup
 # ---------------------------------------
 # Remove all non-short artifacts after pipeline run
-CLEANUP_NON_SHORTS = True
+CLEANUP_NON_SHORTS = False
 
 # ---------------------------------------
 # Multi-platform upload settings

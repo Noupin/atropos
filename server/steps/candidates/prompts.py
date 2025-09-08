@@ -70,6 +70,26 @@ EDUCATIONAL_PROMPT_DESC = (
     "Avoid speculation, marketing claims, or opinions that do not explain anything."
 )
 
+SPACE_PROMPT_DESC = (
+    "Find mind-expanding space or astronomy moments that spark curiosity. "
+    "Prefer surprising facts, clear explanations of cosmic phenomena, or awe-inspiring discoveries."
+)
+
+HISTORY_PROMPT_DESC = (
+    "Find compelling historical anecdotes or insights. "
+    "Prefer vivid stories, unexpected connections, or lessons drawn from the past."
+)
+
+TECH_PROMPT_DESC = (
+    "Find interesting or useful technology insights. "
+    "Prefer practical tips, clear explanations of how things work, or notable industry commentary."
+)
+
+HEALTH_PROMPT_DESC = (
+    "Find engaging health or wellness takeaways. "
+    "Prefer actionable advice, myth-busting explanations, or evidence-based insights."
+)
+
 
 def _build_system_instructions(
     prompt_desc: str, rating_descriptions: Optional[Dict[str, str]] = None
@@ -130,6 +150,10 @@ __all__ = [
     "FUNNY_PROMPT_DESC",
     "INSPIRING_PROMPT_DESC",
     "EDUCATIONAL_PROMPT_DESC",
+    "SPACE_PROMPT_DESC",
+    "HISTORY_PROMPT_DESC",
+    "TECH_PROMPT_DESC",
+    "HEALTH_PROMPT_DESC",
     "GENERAL_RATING_DESCRIPTIONS",
     "FUNNY_RATING_DESCRIPTIONS",
     "_build_system_instructions",

@@ -42,7 +42,9 @@ def find_oldest_clip(base: Path = OUT_ROOT) -> tuple[Path, Path] | None:
         shorts = folder / "shorts"
         if not shorts.is_dir():
             continue
-        videos = sorted(shorts.glob("*.mp4"), key=lambda p: p.stat().st_mtime)
+        videos = sorted(
+            shorts.glob("*.mp4"), key=lambda p: (p.stat().st_mtime, p.name)
+        )
         for video in videos:
             desc = video.with_suffix(".txt")
             if desc.exists():

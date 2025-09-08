@@ -7,16 +7,19 @@ def transcribe_audio(file_path, model_size=WHISPER_MODEL):
     """Transcribe an audio file using faster_whisper."""
     with Timer() as t:
         model = WhisperModel(model_size, device="auto")
-        segments_iter, info = model.transcribe(
-            file_path,
-            chunk_length=10,
-            beam_size=1,
-            temperature=0.0,
-            vad_filter=True,
-            vad_parameters=dict(threshold=0.6),
-            no_speech_threshold=0.6,
-            condition_on_previous_text=False
-        )
+        try:
+            segments_iter, info = model.transcribe(
+                file_path,
+                chunk_length=10,
+                beam_size=1,
+                temperature=0.0,
+                vad_filter=True,
+                vad_parameters=dict(threshold=0.6),
+                no_speech_threshold=0.6,
+                condition_on_previous_text=False,
+            )
+        except TypeError:
+            segments_iter, info = model.transcribe(file_path)
         segments = list(segments_iter)
     text = "".join(s.text for s in segments)
     segment_list = [

@@ -335,6 +335,10 @@ def _merge_adjacent_candidates(
             silences=silences,
             max_extension=max_duration_seconds,
         )
+        if s != c.start or e != c.end:
+            print(
+                f"[Snap] ({c.start:.2f}-{c.end:.2f}) -> ({s:.2f}-{e:.2f})"
+            )
         if e <= s:
             continue
         if (e - s) > max_duration_seconds:
@@ -361,6 +365,9 @@ def _merge_adjacent_candidates(
             new_start = min(cur.start, nxt.start)
             new_end = max(cur.end, nxt.end)
             if (new_end - new_start) <= max_duration_seconds:
+                print(
+                    f"[Merge] ({cur.start:.2f}-{cur.end:.2f}) + ({nxt.start:.2f}-{nxt.end:.2f}) -> ({new_start:.2f}-{new_end:.2f})"
+                )
                 cur = ClipCandidate(
                     start=new_start,
                     end=new_end,

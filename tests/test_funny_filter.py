@@ -12,6 +12,7 @@ from server.steps.candidates.funny import (
     find_funny_timestamps,
     find_funny_timestamps_batched,
 )
+from server.steps.candidates.tone import find_candidates_by_tone, Tone
 
 
 def test_non_funny_segments_rejected(tmp_path: Path, monkeypatch) -> None:
@@ -121,4 +122,33 @@ def test_default_rating_filters_below_eight(tmp_path: Path, monkeypatch) -> None
 
     result = find_funny_timestamps(str(transcript), min_words=1)
     assert result == []
+
+
+def test_generic_tone_funny(tmp_path: Path, monkeypatch) -> None:
+    transcript = tmp_path / "t.txt"
+    transcript.write_text(
+        "[0.00 -> 3.00] setup line.\n[3.00 -> 6.00] punchline here.\n",
+        encoding="utf-8",
+    )
+
+    def fake_local_llm_call_json(model, prompt, options=None, timeout=None):
+        if not hasattr(fake_local_llm_call_json, "calls"):
+            fake_local_llm_call_json.calls = 0
+        fake_local_llm_call_json.calls += 1
+        if fake_local_llm_call_json.calls == 1:
+            return [
+                {
+                    "start": 0.0,
+                    "end": 3.0,
+                    "rating": 9.0,
+                    "reason": "funny",
+                    "quote": "setup line",
+                }
+            ]
+        return {"match": True}
+
+    monkeypatch.setattr(cand_pkg, "local_llm_call_json", fake_local_llm_call_json)
+
+    result = find_candidates_by_tone(str(transcript), tone=Tone.FUNNY, min_words=1)
+    assert len(result) == 1
 
