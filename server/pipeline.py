@@ -690,11 +690,12 @@ if __name__ == "__main__":
     # yt_url = "https://www.youtube.com/playlist?list=PLlZTdvF5WOdwtw4pEsrxuP-5wfzgsUJY-" # AVP in review playlist(newest first order)
     # yt_url = "https://www.youtube.com/playlist?list=PL8F86WtVt7aboLYsBkbau1fxQrhAmBoxK" # MCU In review
     # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVtQQqX1nezpnsbeok2U6K8h" # star wars (newest first)
-    yt_url = "https://www.youtube.com/playlist?list=PLtwJaMpWoTgRs3MKjNJwQcshOsVVNyDfM" # sp7
+    # yt_url = "https://www.youtube.com/playlist?list=PLtwJaMpWoTgRs3MKjNJwQcshOsVVNyDfM" # sp7
+    yt_url = "https://www.youtube.com/watch?v=dww8Hekngmg"
     # yt_url = input("Enter YouTube video URL: ")
 
     urls = get_video_urls(yt_url)
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    niche = "sp7"  # Set to a niche/account name to output under out/<niche>
+    niche = "space"  # Set to a niche/account name to output under out/<niche>
     for url in urls[:]:
         process_video(url, niche=niche)
