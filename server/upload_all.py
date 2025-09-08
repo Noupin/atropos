@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, Sequence
 
@@ -40,6 +41,18 @@ DEFAULT_VIDEO = Path(
 DEFAULT_DESC = Path(
     "../out/funny/We_Celebrate_Shower_With_A_Friend_Day_-_KF_AF_20190206/shorts/clip_3255.02-3268.96_r9.0.txt"
 )
+
+
+def _failure_details(platform: str, video: Path, niche: str | None, error: str) -> str:
+    """Return a formatted failure message with contextual information."""
+    timestamp = datetime.utcnow().isoformat()
+    return (
+        f"Niche: {niche or 'unknown'}\n"
+        f"Video: {video}\n"
+        f"Platform: {platform}\n"
+        f"Time: {timestamp}\n"
+        f"Error: {error}"
+    )
 
 
 def _ensure_tiktok_tokens(tokens_file: Path) -> None:
@@ -94,25 +107,33 @@ def _read_instagram_creds(path: Path) -> tuple[str, str]:
     return data["username"], data["password"]
 
 
-def _get_auth_refreshers(username: str, password: str) -> Dict[str, Callable[[], None]]:
+def _get_auth_refreshers(
+    username: str, password: str, video: Path, niche: str | None
+) -> Dict[str, Callable[[], None]]:
     """Return callables to refresh auth for each platform."""
 
     def yt_refresh() -> None:
         if refresh_creds():
             return
-        send_failure_email(
-            "YouTube authentication required",
+        body = _failure_details(
+            "youtube",
+            video,
+            niche,
             "Automatic refresh failed for YouTube. A full re-auth was attempted.",
         )
+        send_failure_email("YouTube authentication required", body)
         ensure_creds()
 
     def tt_refresh() -> None:
         if refresh_tiktok_tokens():
             return
-        send_failure_email(
-            "TikTok authentication required",
+        body = _failure_details(
+            "tiktok",
+            video,
+            niche,
             "Automatic refresh failed for TikTok. A full re-auth was attempted.",
         )
+        send_failure_email("TikTok authentication required", body)
         run_tiktok_auth()
 
     return {
@@ -144,6 +165,7 @@ def upload_all(
     tokens_file: Path,
     ig_username: str,
     ig_password: str,
+    niche: str | None = None,
     platforms: Sequence[str] | None = None,
 ) -> None:
     """Upload the given video and description to selected platforms.
@@ -175,7 +197,7 @@ def upload_all(
     if platforms:
         allowed = {name for name in platforms}
         uploaders = {n: f for n, f in uploaders.items() if n in allowed}
-    auth_refreshers = _get_auth_refreshers(ig_username, ig_password)
+    auth_refreshers = _get_auth_refreshers(ig_username, ig_password, video, niche)
 
     for name, func in uploaders.items():
         print(f"== Uploading to {name} ==")
@@ -191,15 +213,16 @@ def upload_all(
                     continue
                 except Exception as exc2:  # pragma: no cover - defensive logging
                     print(f"{name} retry failed: {exc2}")
-                    send_failure_email(
-                        f"{name} upload failed",
+                    body = _failure_details(
+                        name,
+                        video,
+                        niche,
                         f"{name} retry after re-authentication failed: {exc2}",
                     )
+                    send_failure_email(f"{name} upload failed", body)
                     continue
-            send_failure_email(
-                f"{name} upload failed",
-                f"{name} upload failed with error: {exc}",
-            )
+            body = _failure_details(name, video, niche, str(exc))
+            send_failure_email(f"{name} upload failed", body)
 
 
 def run(
@@ -255,6 +278,7 @@ def run(
                     tokens_file=tokens_file,
                     ig_username=ig_username,
                     ig_password=ig_password,
+                    niche=niche,
                     platforms=platforms,
                 )
             finally:
@@ -276,6 +300,7 @@ def run(
             tokens_file=tokens_file,
             ig_username=ig_username,
             ig_password=ig_password,
+            niche=niche,
             platforms=platforms,
         )
 

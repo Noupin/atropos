@@ -54,7 +54,11 @@ def get_video_urls(url: str) -> list[str]:
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-    except DownloadError:
+    except DownloadError as exc:
+        send_failure_email(
+            "Playlist retrieval failed",
+            f"Skipping {url}: {exc}",
+        )
         return []
 
     if not info:
