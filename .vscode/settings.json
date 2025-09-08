@@ -1,8 +1,3 @@
 {
-  "chatgpt.openOnStartup": true,
-  "workbench.colorCustomizations": {
-    "activityBar.background": "#183234",
-    "titleBar.activeBackground": "#214649",
-    "titleBar.activeForeground": "#F7FBFB"
-  }
+  "chatgpt.openOnStartup": true
 }

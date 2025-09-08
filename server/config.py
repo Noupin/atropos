@@ -24,13 +24,13 @@ OUTPUT_FPS: float = 30.0
 
 # Clip boundary snapping options
 SNAP_TO_SILENCE = True
-SNAP_TO_DIALOG = True
+SNAP_TO_DIALOG = False
 SNAP_TO_SENTENCE = True
 
 # Toggle LLM usage for transcript segmentation
 USE_LLM_FOR_SEGMENTS = True
 # Toggle LLM-based detection of dialog ranges
-DETECT_DIALOG_WITH_LLM = True
+DETECT_DIALOG_WITH_LLM = False
 MAX_LLM_CHARS = 24_000
 LLM_API_TIMEOUT = 600  # seconds
 # LLM segmentation and worker configuration
@@ -60,7 +60,7 @@ SILENCE_DETECTION_MIN_DURATION = 0.075
 # Transcript acquisition settings
 # ---------------------------------------
 # Preferred transcript source: "youtube" or "whisper"
-TRANSCRIPT_SOURCE = "whisper"
+TRANSCRIPT_SOURCE = "youtube"
 # Model used for faster-whisper transcription
 WHISPER_MODEL = os.environ.get(
     "WHISPER_MODEL",
@@ -84,7 +84,7 @@ SWEET_SPOT_MAX_SECONDS = 35.0
 DEFAULT_MIN_RATING = 7.0
 DEFAULT_MIN_WORDS = 0
 
-FUNNY_MIN_RATING = 8.0
+FUNNY_MIN_RATING = 9.0
 FUNNY_MIN_WORDS = 5
 
 # ---------------------------------------

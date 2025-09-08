@@ -14,7 +14,7 @@ from config import (
     FUNNY_MIN_WORDS,
 )
 
-from server.types.tone import Tone, ToneStrategy
+from custom_types.tone import Tone, ToneStrategy
 
 from . import ClipCandidate, _filter_promotional_candidates
 from .helpers import (

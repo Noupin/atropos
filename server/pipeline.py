@@ -13,7 +13,7 @@ from steps.download import (
     is_twitch_url,
 )
 from steps.candidates.tone import find_candidates_by_tone
-from server.types.tone import Tone
+from custom_types.tone import Tone
 from steps.candidates.helpers import (
     export_candidates_json,
     load_candidates_json,
@@ -694,7 +694,7 @@ if __name__ == "__main__":
     # yt_url = input("Enter YouTube video URL: ")
 
     urls = get_video_urls(yt_url)
-    urls.reverse() # If the playlist is newest first, reverse to process oldest first
+    # urls.reverse() # If the playlist is newest first, reverse to process oldest first
     niche = "sp7"  # Set to a niche/account name to output under out/<niche>
     for url in urls[:]:
         process_video(url, niche=niche)
