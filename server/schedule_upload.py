@@ -11,6 +11,7 @@ be selected by passing the ``kind`` argument to :func:`main` or by setting the
 
 from pathlib import Path
 from typing import Sequence
+import argparse
 import os
 import shutil
 
@@ -59,6 +60,31 @@ def _tidy_empty_dirs(shorts: Path, project: Path) -> None:
         shutil.rmtree(project)
 
 
+def list_niches(base: Path = OUT_ROOT) -> list[str | None]:
+    """Return all niches with available projects under ``base``.
+
+    The default niche (projects directly inside ``base``) is represented by
+    ``None``. Additional niches are subdirectories of ``base`` that contain at
+    least one project folder with a ``shorts`` subdirectory.
+    """
+
+    if not base.exists() or not base.is_dir():
+        return []
+
+    niches: list[str | None] = []
+
+    if any((p / "shorts").is_dir() for p in base.iterdir() if p.is_dir()):
+        niches.append(None)
+
+    for d in base.iterdir():
+        if not d.is_dir():
+            continue
+        if any((p / "shorts").is_dir() for p in d.iterdir() if p.is_dir()):
+            niches.append(d.name)
+
+    return niches
+
+
 def main(kind: str | None = None, platforms: Sequence[str] | None = None) -> None:
     """Upload the oldest clip for the selected niche.
 
@@ -92,7 +118,46 @@ def main(kind: str | None = None, platforms: Sequence[str] | None = None) -> Non
         _tidy_empty_dirs(video.parent, project)
 
 
-if __name__ == "__main__":
-    import sys
+def batch(
+    niches: Sequence[str | None] | None = None,
+    platforms: Sequence[str] | None = None,
+) -> None:
+    """Upload the oldest clip for each selected niche.
 
-    main(kind="funny", platforms=sys.argv[1:])
+    Parameters
+    ----------
+    niches:
+        Iterable of niche names. ``None`` processes the default niche. When the
+        iterable is omitted, all niches discovered under :data:`OUT_ROOT` are
+        processed sequentially.
+    platforms:
+        Optional iterable of platform names to upload to. When omitted, uploads
+        are attempted on all supported platforms.
+    """
+
+    if niches is None:
+        niches = list_niches()
+
+    for niche in niches:
+        main(kind=niche, platforms=platforms)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Upload the oldest clip per niche")
+    parser.add_argument(
+        "-n",
+        "--niche",
+        dest="niches",
+        nargs="*",
+        help="Niche names to process. If omitted, all niches are processed.",
+    )
+    parser.add_argument(
+        "-p",
+        "--platform",
+        dest="platforms",
+        nargs="*",
+        help="Platform names to upload to (e.g. youtube, tiktok)",
+    )
+    args = parser.parse_args()
+
+    batch(niches=args.niches, platforms=args.platforms)
