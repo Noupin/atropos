@@ -8,7 +8,8 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "server"))
 
 import server.steps.candidates as cand_pkg
-from server.steps.candidates.funny import find_funny_timestamps
+from server.steps.candidates.tone import find_candidates_by_tone
+from server.types.tone import Tone
 from server.steps.candidates.prompts import _build_system_instructions, FUNNY_PROMPT_DESC
 
 
@@ -37,7 +38,7 @@ def test_promotional_segments_rejected(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr(cand_pkg, "local_llm_call_json", fake_local_llm_call_json)
 
-    result = find_funny_timestamps(str(transcript), min_words=1)
+    result = find_candidates_by_tone(str(transcript), tone=Tone.FUNNY, min_words=1)
     assert result == []
 
 
@@ -66,7 +67,7 @@ def test_sponsorship_segments_rejected(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr(cand_pkg, "local_llm_call_json", fake_local_llm_call_json)
 
-    result = find_funny_timestamps(str(transcript), min_words=1)
+    result = find_candidates_by_tone(str(transcript), tone=Tone.FUNNY, min_words=1)
     assert result == []
 
 
@@ -98,7 +99,7 @@ def test_sponsor_continuation_rejected(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr(cand_pkg, "local_llm_call_json", fake_local_llm_call_json)
 
-    result = find_funny_timestamps(str(transcript), min_words=1)
+    result = find_candidates_by_tone(str(transcript), tone=Tone.FUNNY, min_words=1)
     assert result == []
 
 
