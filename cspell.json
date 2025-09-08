@@ -13,7 +13,14 @@
     "madebyatropos",
     "ndarray",
     "opencl",
-    "wtok"
+    "wtok",
+    "pytest",
+    "docstrings",
+    "fernet",
+    "FERNET",
+    "Autouploader",
+    "autouploader",
+    "tiktokautouploader"
   ],
   "ignorePaths": [
     "node_modules",

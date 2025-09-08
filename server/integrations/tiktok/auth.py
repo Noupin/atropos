@@ -1,4 +1,7 @@
 # tiktok_desktop_pkce_demo.py
+# Deprecated path: set TIKTOK_UPLOAD_BACKEND='api' to re-enable. Default is
+# 'autouploader' until TikTok app is approved. TODO: remove when feature flag is
+# dropped.
 import os
 from pathlib import Path
 # Constants you edit once:

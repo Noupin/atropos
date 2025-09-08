@@ -17,6 +17,7 @@ load_dotenv(dotenv_path="../.env")
 from config import (
     TIKTOK_CHUNK_SIZE,
     TIKTOK_PRIVACY_LEVEL,
+    TIKTOK_UPLOAD_BACKEND,
     TOKENS_DIR,
     YOUTUBE_CATEGORY_ID,
     YOUTUBE_PRIVACY,
@@ -24,6 +25,7 @@ from config import (
 from helpers.notifications import send_failure_email
 
 from integrations.tiktok import upload as tt_upload
+from integrations.tiktok.post import post_to_tiktok
 from integrations.youtube.auth import ensure_creds, refresh_creds
 from integrations.tiktok.auth import (
     run as run_tiktok_auth,
@@ -77,14 +79,10 @@ def _upload_tiktok(
     privacy_level: str,
     tokens_file: Path,
 ) -> None:
-    _ensure_tiktok_tokens(tokens_file)
     caption = tt_upload.read_caption(desc)
-    size = video.stat().st_size
-    publish_id, upload_url = tt_upload.init_direct_post(
-        size, chunk_size, caption, privacy_level
-    )
-    tt_upload.upload_video(upload_url, video, chunk_size)
-    result = tt_upload.poll_status(publish_id)
+    if TIKTOK_UPLOAD_BACKEND == "api":
+        _ensure_tiktok_tokens(tokens_file)
+    result = post_to_tiktok(str(video), caption)
     print("TikTok upload:", result)
 
 

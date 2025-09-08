@@ -2,7 +2,7 @@
 
 This repository includes a minimal framework for bulk uploading short videos
 with captions to multiple social platforms. The orchestrator script scans a
-folder for video files and paired caption text files, normalises captions, and
+folder for video files and paired caption text files, normalizes captions, and
 then uploads the pairs to each enabled platform.
 All core modules now live under the `server/` directory. For example:
 
@@ -60,3 +60,11 @@ per platform.
 
 To view logs after upping with -d
 `docker compose logs -f uploader`
+
+## TikTok backend
+
+TikTok uploads use a browser automation path by default. Set
+`TIKTOK_UPLOAD_BACKEND=api` to use the official API instead. Browser uploads rely
+on persisted cookies stored in `server/tokens/tiktok_cookies.json` and are
+controlled via additional `TIKTOK_AUTO_*` environment variables (see
+`server/config.py` for defaults).

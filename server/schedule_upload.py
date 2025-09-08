@@ -16,6 +16,7 @@ import os
 import shutil
 
 from upload_all import run
+from integrations.tiktok.post import post_to_tiktok  # noqa: F401
 
 # Root directory that contains sub-folders for each niche. The default niche
 # uses this directory directly, e.g. ``out/<project>``. Other niches place their

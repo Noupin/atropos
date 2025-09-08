@@ -125,6 +125,27 @@ YOUTUBE_CATEGORY_ID = "23"
 TIKTOK_PRIVACY_LEVEL = "SELF_ONLY"
 TIKTOK_CHUNK_SIZE = 10_000_000  # bytes
 
+# Upload backend can be "api" or "autouploader"
+TIKTOK_UPLOAD_BACKEND = os.environ.get("TIKTOK_UPLOAD_BACKEND", "autouploader")
+
+# Settings for the browser-based uploader
+TIKTOK_AUTO_HEADLESS = (
+    os.environ.get("TIKTOK_AUTO_HEADLESS", "false").lower() == "true"
+)
+TIKTOK_AUTO_BROWSER = os.environ.get("TIKTOK_AUTO_BROWSER", "chromium")
+TIKTOK_AUTO_COOKIES_PATH = Path(
+    os.environ.get(
+        "TIKTOK_AUTO_COOKIES_PATH", TOKENS_DIR / "tiktok_cookies.json"
+    )
+)
+TIKTOK_AUTO_TIMEOUT_SEC = int(os.environ.get("TIKTOK_AUTO_TIMEOUT_SEC", "180"))
+TIKTOK_AUTO_MAX_RETRIES = int(os.environ.get("TIKTOK_AUTO_MAX_RETRIES", "2"))
+TIKTOK_AUTO_RETRY_BACKOFF_SEC = int(
+    os.environ.get("TIKTOK_AUTO_RETRY_BACKOFF_SEC", "8")
+)
+TIKTOK_AUTO_PROXY = os.environ.get("TIKTOK_AUTO_PROXY", "")
+TIKTOK_AUTO_UPLOAD_URL = os.environ.get("TIKTOK_AUTO_UPLOAD_URL", "")
+
 # Optional website link to append to video descriptions
 INCLUDE_WEBSITE_LINK = True
 WEBSITE_URL = "https://atropos-video.com"
@@ -181,6 +202,15 @@ __all__ = [
     "YOUTUBE_CATEGORY_ID",
     "TIKTOK_PRIVACY_LEVEL",
     "TIKTOK_CHUNK_SIZE",
+    "TIKTOK_UPLOAD_BACKEND",
+    "TIKTOK_AUTO_HEADLESS",
+    "TIKTOK_AUTO_BROWSER",
+    "TIKTOK_AUTO_COOKIES_PATH",
+    "TIKTOK_AUTO_TIMEOUT_SEC",
+    "TIKTOK_AUTO_MAX_RETRIES",
+    "TIKTOK_AUTO_RETRY_BACKOFF_SEC",
+    "TIKTOK_AUTO_PROXY",
+    "TIKTOK_AUTO_UPLOAD_URL",
     "INCLUDE_WEBSITE_LINK",
     "WEBSITE_URL",
     "YOUTUBE_DESC_LIMIT",

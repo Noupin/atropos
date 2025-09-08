@@ -1,3 +1,10 @@
+"""TikTok API uploader (deprecated).
+
+Deprecated path: set ``TIKTOK_UPLOAD_BACKEND='api'`` to re-enable. Default is
+``'autouploader'`` until TikTok app is approved. TODO: remove when feature flag
+is dropped.
+"""
+
 import os
 import time
 import math
