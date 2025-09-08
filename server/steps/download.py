@@ -6,7 +6,7 @@ from yt_dlp.utils import DownloadError
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import NoTranscriptFound, TranscriptsDisabled
 
-from ..helpers.notifications import send_failure_email
+from helpers.notifications import send_failure_email
 
 
 def is_youtube_url(url: str) -> bool:
@@ -54,11 +54,7 @@ def get_video_urls(url: str) -> list[str]:
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-    except DownloadError as exc:
-        send_failure_email(
-            "Private or unlisted video",
-            f"Skipping {url}: {exc}",
-        )
+    except DownloadError:
         return []
 
     if not info:
