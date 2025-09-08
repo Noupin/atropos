@@ -17,6 +17,7 @@ class Tone(Enum):
 @dataclass
 class ToneStrategy:
     prompt_desc: str
+    rating_descriptions: dict[str, str] | None = None
     min_rating: float = DEFAULT_MIN_RATING
     min_words: int = DEFAULT_MIN_WORDS
     snap_to_sentence: bool = True

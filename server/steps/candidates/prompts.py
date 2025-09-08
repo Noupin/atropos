@@ -160,7 +160,6 @@ HEALTH_RATING_DESCRIPTIONS = {
     "0":  "reject; dangerous misinformation",
 }
 
-
 def _build_system_instructions(
     prompt_desc: str, rating_descriptions: Optional[Dict[str, str]] = None
 ) -> str:
@@ -206,9 +205,15 @@ def _build_system_instructions(
 
 
 
-def build_window_prompt(prompt_desc: str, text: str) -> str:
+def build_window_prompt(
+    prompt_desc: str,
+    text: str,
+    rating_descriptions: Optional[Dict[str, str]] = None,
+) -> str:
     """Construct a complete prompt for a transcript window."""
-    system_instructions = _build_system_instructions(prompt_desc)
+    system_instructions = _build_system_instructions(
+        prompt_desc, rating_descriptions
+    )
     return (
         f"{system_instructions}\n\n"
         f"TRANSCRIPT WINDOW (≈{WINDOW_SIZE_SECONDS:.0f}s, overlap {WINDOW_OVERLAP_SECONDS:.0f}s, context {WINDOW_CONTEXT_SECONDS:.0f}s):\n{text}\n\n"
