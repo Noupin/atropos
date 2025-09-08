@@ -3,8 +3,9 @@ from __future__ import annotations
 from server.steps.candidates.prompts import (
     _build_system_instructions,
     FUNNY_PROMPT_DESC,
-    FUNNY_RATING_DESCRIPTIONS,
 )
+from server.custom_types.tone import Tone
+from server.steps.candidates.tone import STRATEGY_REGISTRY
 
 
 def test_default_rating_descriptions_present() -> None:
@@ -28,12 +29,19 @@ def test_custom_rating_descriptions_included() -> None:
 
 
 def test_funny_rating_descriptions_included() -> None:
+    strategy = STRATEGY_REGISTRY[Tone.FUNNY]
     instructions = _build_system_instructions(
-        "desc", rating_descriptions=FUNNY_RATING_DESCRIPTIONS
+        strategy.prompt_desc, strategy.rating_descriptions
     )
-    assert "10: can't stop laughing" in instructions
-    assert "5: weak humor; raunchy or crude without payoff" in instructions
-    assert "0: reject; hateful or non-consensual content without comedic value" in instructions
+    assert (
+        f"10: {strategy.rating_descriptions['10']}" in instructions
+    )
+    assert (
+        f"5: {strategy.rating_descriptions['5']}" in instructions
+    )
+    assert (
+        f"0: {strategy.rating_descriptions['0']}" in instructions
+    )
 
 
 def test_funny_prompt_mentions_raunch() -> None:

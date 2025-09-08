@@ -14,7 +14,7 @@ from config import (
     FUNNY_MIN_WORDS,
 )
 
-from custom_types.tone import Tone, ToneStrategy
+from server.custom_types.tone import Tone, ToneStrategy
 
 from . import ClipCandidate, _filter_promotional_candidates
 from .helpers import (
@@ -35,6 +35,11 @@ from .prompts import (
     HISTORY_PROMPT_DESC,
     TECH_PROMPT_DESC,
     HEALTH_PROMPT_DESC,
+    FUNNY_RATING_DESCRIPTIONS,
+    SPACE_RATING_DESCRIPTIONS,
+    HISTORY_RATING_DESCRIPTIONS,
+    TECH_RATING_DESCRIPTIONS,
+    HEALTH_RATING_DESCRIPTIONS,
     build_window_prompt,
 )
 
@@ -42,13 +47,26 @@ from .prompts import (
 STRATEGY_REGISTRY: dict[Tone, ToneStrategy] = {
     Tone.FUNNY: ToneStrategy(
         prompt_desc=FUNNY_PROMPT_DESC,
+        rating_descriptions=FUNNY_RATING_DESCRIPTIONS,
         min_rating=FUNNY_MIN_RATING,
         min_words=FUNNY_MIN_WORDS,
     ),
-    Tone.SPACE: ToneStrategy(prompt_desc=SPACE_PROMPT_DESC),
-    Tone.HISTORY: ToneStrategy(prompt_desc=HISTORY_PROMPT_DESC),
-    Tone.TECH: ToneStrategy(prompt_desc=TECH_PROMPT_DESC),
-    Tone.HEALTH: ToneStrategy(prompt_desc=HEALTH_PROMPT_DESC),
+    Tone.SPACE: ToneStrategy(
+        prompt_desc=SPACE_PROMPT_DESC,
+        rating_descriptions=SPACE_RATING_DESCRIPTIONS,
+    ),
+    Tone.HISTORY: ToneStrategy(
+        prompt_desc=HISTORY_PROMPT_DESC,
+        rating_descriptions=HISTORY_RATING_DESCRIPTIONS,
+    ),
+    Tone.TECH: ToneStrategy(
+        prompt_desc=TECH_PROMPT_DESC,
+        rating_descriptions=TECH_RATING_DESCRIPTIONS,
+    ),
+    Tone.HEALTH: ToneStrategy(
+        prompt_desc=HEALTH_PROMPT_DESC,
+        rating_descriptions=HEALTH_RATING_DESCRIPTIONS,
+    ),
 }
 
 
@@ -105,7 +123,11 @@ def find_candidates_by_tone(
             if it[1] > win_start - WINDOW_CONTEXT_SECONDS and it[0] < win_end + WINDOW_CONTEXT_SECONDS
         ]
         text = "\n".join(f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in ctx_items)
-        prompt = build_window_prompt(strategy.prompt_desc, text)
+        prompt = build_window_prompt(
+            strategy.prompt_desc,
+            text,
+            strategy.rating_descriptions,
+        )
         print(f"[Tone] window {win_start:.2f}-{win_end:.2f}")
         start_t = time.perf_counter()
         try:
