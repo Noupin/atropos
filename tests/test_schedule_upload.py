@@ -174,3 +174,40 @@ def test_main_accepts_platforms(tmp_path: Path, monkeypatch) -> None:
     schedule_upload.main(platforms=["youtube", "tiktok"])
 
     assert platforms_seen == [["youtube", "tiktok"]]
+
+
+def test_batch_processes_all_niches(tmp_path: Path, monkeypatch) -> None:
+    out = tmp_path / "out"
+    (out / "proj" / "shorts").mkdir(parents=True)
+    (out / "alt" / "proj" / "shorts").mkdir(parents=True)
+
+    kinds_seen: list[str | None] = []
+
+    def fake_main(*, kind=None, platforms=None):
+        kinds_seen.append(kind)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(schedule_upload, "main", fake_main)
+    monkeypatch.setattr(schedule_upload, "OUT_ROOT", Path("out"))
+
+    schedule_upload.batch()
+
+    assert kinds_seen == [None, "alt"]
+
+
+def test_batch_respects_niches_argument(tmp_path: Path, monkeypatch) -> None:
+    out = tmp_path / "out" / "alt" / "proj" / "shorts"
+    out.mkdir(parents=True)
+
+    kinds_seen: list[str | None] = []
+
+    def fake_main(*, kind=None, platforms=None):
+        kinds_seen.append(kind)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(schedule_upload, "main", fake_main)
+    monkeypatch.setattr(schedule_upload, "OUT_ROOT", Path("out"))
+
+    schedule_upload.batch(niches=["alt"])
+
+    assert kinds_seen == ["alt"]
