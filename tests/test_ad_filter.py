@@ -8,7 +8,8 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "server"))
 
 import server.steps.candidates as cand_pkg
-from server.steps.candidates.tone import find_candidates_by_tone, Tone
+from server.steps.candidates.tone import find_candidates_by_tone
+from server.types.tone import Tone
 from server.steps.candidates.prompts import _build_system_instructions, FUNNY_PROMPT_DESC
 
 

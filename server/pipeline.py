@@ -12,7 +12,8 @@ from steps.download import (
     get_video_urls,
     is_twitch_url,
 )
-from steps.candidates.tone import find_candidates_by_tone, Tone
+from steps.candidates.tone import find_candidates_by_tone
+from server.types.tone import Tone
 from steps.candidates.helpers import (
     export_candidates_json,
     load_candidates_json,
@@ -44,8 +45,6 @@ from steps.dialog import (
     load_dialog_ranges_json,
 )
 from config import (
-    FUNNY_MIN_RATING,
-    DEFAULT_MIN_RATING,
     CLIP_TYPE,
     SNAP_TO_SILENCE,
     SNAP_TO_DIALOG,
@@ -95,8 +94,6 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
     overall_start = time.perf_counter()
     twitch = is_twitch_url(yt_url)
     transcript_source = "whisper" if twitch else TRANSCRIPT_SOURCE
-    rating_defaults = {"funny": FUNNY_MIN_RATING}
-    MIN_RATING = rating_defaults.get(CLIP_TYPE, DEFAULT_MIN_RATING)
 
     def should_run(step: int) -> bool:
         return START_AT_STEP <= step
@@ -411,7 +408,6 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
             return find_candidates_by_tone(
                 str(transcript_output_path),
                 tone=tone,
-                min_rating=MIN_RATING,
                 return_all_stages=True,
                 segments=segments,
                 dialog_ranges=dialog_ranges,

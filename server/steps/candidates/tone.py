@@ -1,15 +1,10 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
-import time
-from enum import Enum
 from pathlib import Path
 from typing import Any, List, Tuple
 
 from config import (
-    DEFAULT_MIN_RATING,
-    DEFAULT_MIN_WORDS,
     WINDOW_CONTEXT_SECONDS,
     WINDOW_OVERLAP_SECONDS,
     WINDOW_SIZE_SECONDS,
@@ -18,6 +13,8 @@ from config import (
     FUNNY_MIN_RATING,
     FUNNY_MIN_WORDS,
 )
+
+from server.types.tone import Tone, ToneStrategy
 
 from . import ClipCandidate, _filter_promotional_candidates
 from .helpers import (
@@ -40,25 +37,6 @@ from .prompts import (
     HEALTH_PROMPT_DESC,
     build_window_prompt,
 )
-
-
-class Tone(Enum):
-    FUNNY = "funny"
-    SPACE = "space"
-    HISTORY = "history"
-    TECH = "tech"
-    HEALTH = "health"
-
-
-@dataclass
-    
-class ToneStrategy:
-    prompt_desc: str
-    min_rating: float = DEFAULT_MIN_RATING
-    min_words: int = DEFAULT_MIN_WORDS
-    snap_to_sentence: bool = True
-    snap_to_dialog: bool = True
-    snap_to_silence: bool = True
 
 
 STRATEGY_REGISTRY: dict[Tone, ToneStrategy] = {
@@ -200,5 +178,5 @@ def find_candidates_by_tone(
     return top
 
 
-__all__ = ["Tone", "ToneStrategy", "STRATEGY_REGISTRY", "find_candidates_by_tone"]
+__all__ = ["STRATEGY_REGISTRY", "find_candidates_by_tone"]
 
