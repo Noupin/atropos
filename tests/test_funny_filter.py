@@ -8,10 +8,6 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "server"))
 
 import server.steps.candidates as cand_pkg
-from server.steps.candidates.funny import (
-    find_funny_timestamps,
-    find_funny_timestamps_batched,
-)
 from server.steps.candidates.tone import find_candidates_by_tone, Tone
 
 
@@ -37,7 +33,7 @@ def test_non_funny_segments_rejected(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr(cand_pkg, "local_llm_call_json", fake_local_llm_call_json)
 
-    result = find_funny_timestamps(str(transcript), min_words=1)
+    result = find_candidates_by_tone(str(transcript), tone=Tone.FUNNY, min_words=1)
     assert result == []
 
 
@@ -73,7 +69,9 @@ def test_batched_min_rating_inclusive(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr(cand_pkg, "local_llm_call_json", fake_local_llm_call_json)
 
-    result = find_funny_timestamps_batched(str(transcript), min_rating=9.5, min_words=1)
+    result = find_candidates_by_tone(
+        str(transcript), tone=Tone.FUNNY, min_rating=9.5, min_words=1
+    )
     assert len(result) == 1
     assert result[0].rating == 9.5
 
@@ -97,7 +95,9 @@ def test_rating_threshold_excludes_below_min(tmp_path: Path, monkeypatch) -> Non
 
     monkeypatch.setattr(cand_pkg, "local_llm_call_json", fake_local_llm_call_json)
 
-    result = find_funny_timestamps(str(transcript), min_rating=7.0, min_words=1)
+    result = find_candidates_by_tone(
+        str(transcript), tone=Tone.FUNNY, min_rating=7.0, min_words=1
+    )
     assert result == []
 
 
@@ -120,7 +120,7 @@ def test_default_rating_filters_below_eight(tmp_path: Path, monkeypatch) -> None
 
     monkeypatch.setattr(cand_pkg, "local_llm_call_json", fake_local_llm_call_json)
 
-    result = find_funny_timestamps(str(transcript), min_words=1)
+    result = find_candidates_by_tone(str(transcript), tone=Tone.FUNNY, min_words=1)
     assert result == []
 
 

@@ -71,7 +71,7 @@ WHISPER_MODEL = os.environ.get(
 # Clip selection
 # ---------------------------------------
 # Choose which type of clips to generate
-CLIP_TYPE = "funny"  # or "inspiring" or "educational"
+CLIP_TYPE = "funny"  # or "space", "history", "tech", "health"
 
 # ---------------------------------------
 # Candidate selection heuristics
@@ -86,12 +86,6 @@ DEFAULT_MIN_WORDS = 0
 
 FUNNY_MIN_RATING = 8.0
 FUNNY_MIN_WORDS = 5
-
-EDUCATIONAL_MIN_RATING = 7.0
-EDUCATIONAL_MIN_WORDS = 8
-
-INSPIRING_MIN_RATING = 7.0
-INSPIRING_MIN_WORDS = 8
 
 # ---------------------------------------
 # Pipeline and batching controls
@@ -171,10 +165,6 @@ __all__ = [
     "DEFAULT_MIN_WORDS",
     "FUNNY_MIN_RATING",
     "FUNNY_MIN_WORDS",
-    "EDUCATIONAL_MIN_RATING",
-    "EDUCATIONAL_MIN_WORDS",
-    "INSPIRING_MIN_RATING",
-    "INSPIRING_MIN_WORDS",
     "FORCE_REBUILD",
     "FORCE_REBUILD_SEGMENTS",
     "FORCE_REBUILD_DIALOG",

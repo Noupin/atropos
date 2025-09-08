@@ -45,8 +45,6 @@ from steps.dialog import (
 )
 from config import (
     FUNNY_MIN_RATING,
-    INSPIRING_MIN_RATING,
-    EDUCATIONAL_MIN_RATING,
     DEFAULT_MIN_RATING,
     CLIP_TYPE,
     SNAP_TO_SILENCE,
@@ -97,11 +95,7 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
     overall_start = time.perf_counter()
     twitch = is_twitch_url(yt_url)
     transcript_source = "whisper" if twitch else TRANSCRIPT_SOURCE
-    rating_defaults = {
-        "funny": FUNNY_MIN_RATING,
-        "inspiring": INSPIRING_MIN_RATING,
-        "educational": EDUCATIONAL_MIN_RATING,
-    }
+    rating_defaults = {"funny": FUNNY_MIN_RATING}
     MIN_RATING = rating_defaults.get(CLIP_TYPE, DEFAULT_MIN_RATING)
 
     def should_run(step: int) -> bool:
@@ -396,8 +390,6 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
         "history": Tone.HISTORY,
         "tech": Tone.TECH,
         "health": Tone.HEALTH,
-        "inspiring": Tone.HEALTH,
-        "educational": Tone.HISTORY,
     }
 
     clips_dir = project_dir / "clips"

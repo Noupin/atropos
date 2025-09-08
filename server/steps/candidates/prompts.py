@@ -60,16 +60,6 @@ FUNNY_RATING_DESCRIPTIONS: Dict[str, str] = {
     "0":  "reject; hateful or non-consensual content without comedic value",
 }
 
-INSPIRING_PROMPT_DESC = (
-    "Find genuinely inspiring moments. Prefer concise stories of overcoming difficulty, heartfelt advice, or lines that motivate action. "
-    "Avoid generic positivity, vague pep talk, or promotional fluff."
-)
-
-EDUCATIONAL_PROMPT_DESC = (
-    "Find clear teaching moments. Prefer precise explanations, practical takeaways, and crisp how/why reasoning. "
-    "Avoid speculation, marketing claims, or opinions that do not explain anything."
-)
-
 SPACE_PROMPT_DESC = (
     "Find mind-expanding space or astronomy moments that spark curiosity. "
     "Prefer surprising facts, clear explanations of cosmic phenomena, or awe-inspiring discoveries."
@@ -148,8 +138,6 @@ def build_window_prompt(prompt_desc: str, text: str) -> str:
 
 __all__ = [
     "FUNNY_PROMPT_DESC",
-    "INSPIRING_PROMPT_DESC",
-    "EDUCATIONAL_PROMPT_DESC",
     "SPACE_PROMPT_DESC",
     "HISTORY_PROMPT_DESC",
     "TECH_PROMPT_DESC",
