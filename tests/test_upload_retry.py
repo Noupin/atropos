@@ -20,7 +20,9 @@ def test_retry_auth_on_failure(monkeypatch, tmp_path):
         upload_all, "_upload_tiktok", lambda v, d, cs, p, tf: None
     )
     monkeypatch.setattr(
-        upload_all, "_get_auth_refreshers", lambda u, p: {"youtube": mock_auth}
+        upload_all,
+        "_get_auth_refreshers",
+        lambda u, p, v, n: {"youtube": mock_auth},
     )
 
     upload_all.upload_all(
@@ -33,6 +35,7 @@ def test_retry_auth_on_failure(monkeypatch, tmp_path):
         tokens_file=tmp_path / "t.json",
         ig_username="u",
         ig_password="p",
+        niche="fun",
     )
 
     assert calls == {"upload": 2, "auth": 1}

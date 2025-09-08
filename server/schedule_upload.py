@@ -136,7 +136,7 @@ def batch(
     """
 
     if niches is None:
-        niches = list_niches()
+        niches = list_niches(OUT_ROOT)
 
     for niche in niches:
         main(kind=niche, platforms=platforms)
