@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT / "server"))
 
 import server.steps.candidates as cand_pkg
 from server.steps.candidates.tone import find_candidates_by_tone
-from server.custom_types.tone import Tone
+from server.custom_types.ETone import Tone
 
 
 def test_non_funny_segments_rejected(tmp_path: Path, monkeypatch) -> None:

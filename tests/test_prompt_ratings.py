@@ -4,7 +4,7 @@ from server.steps.candidates.prompts import (
     _build_system_instructions,
     FUNNY_PROMPT_DESC,
 )
-from server.custom_types.tone import Tone
+from server.custom_types.ETone import Tone
 from server.steps.candidates.tone import STRATEGY_REGISTRY
 
 

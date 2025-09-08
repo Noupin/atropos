@@ -13,7 +13,7 @@ from steps.download import (
     is_twitch_url,
 )
 from steps.candidates.tone import find_candidates_by_tone
-from custom_types.tone import Tone
+from custom_types.ETone import Tone
 from steps.candidates.helpers import (
     export_candidates_json,
     load_candidates_json,
@@ -402,7 +402,7 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
 
     if should_run(6):
         def step_candidates() -> tuple[list[ClipCandidate], list[ClipCandidate], list[ClipCandidate]]:
-            tone = TONE_MAP.get(CLIP_TYPE)
+            tone = CLIP_TYPE
             if tone is None:
                 raise ValueError(f"Unsupported clip type: {CLIP_TYPE}")
             return find_candidates_by_tone(

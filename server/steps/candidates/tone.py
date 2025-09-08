@@ -14,7 +14,8 @@ from config import (
     FUNNY_MIN_WORDS,
 )
 
-from custom_types.tone import Tone, ToneStrategy
+from custom_types.tone import ToneStrategy
+from custom_types.ETone import Tone
 
 from . import ClipCandidate, _filter_promotional_candidates
 from .helpers import (

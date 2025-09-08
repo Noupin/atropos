@@ -6,6 +6,7 @@ Sections are grouped by feature for easier editing.
 import os
 import platform
 from pathlib import Path
+from custom_types.ETone import Tone
 
 # ---------------------------------------
 # Rendering and clip boundary parameters
@@ -71,7 +72,7 @@ WHISPER_MODEL = os.environ.get(
 # Clip selection
 # ---------------------------------------
 # Choose which type of clips to generate
-CLIP_TYPE = "funny"  # or "space", "history", "tech", "health"
+CLIP_TYPE = Tone.SPACE  # or "space", "history", "tech", "health"
 
 # ---------------------------------------
 # Candidate selection heuristics
