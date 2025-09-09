@@ -35,6 +35,138 @@ __all__ = ["ClipCandidate", "find_clip_timestamps_batched", "find_clip_timestamp
 
 
 # -----------------------------
+# Final-pass merge helpers
+# -----------------------------
+
+def _group_overlapping_or_touching(
+    clips: List[ClipCandidate],
+    *,
+    max_gap: float = 0.4,
+) -> List[List[ClipCandidate]]:
+    """Group clips that overlap or are within ``max_gap`` seconds.
+    Assumes clips are in seconds and sorted by ``start``.
+    """
+    if not clips:
+        return []
+    clips_sorted = sorted(clips, key=lambda c: (c.start, c.end))
+    groups: List[List[ClipCandidate]] = []
+    cur: List[ClipCandidate] = [clips_sorted[0]]
+    for c in clips_sorted[1:]:
+        last = cur[-1]
+        if c.start <= last.end + max_gap:
+            cur.append(c)
+        else:
+            groups.append(cur)
+            cur = [c]
+    groups.append(cur)
+    return groups
+
+
+def _merge_groups_using_originals(
+    snapped: List[ClipCandidate],
+    originals: List[ClipCandidate],
+    *,
+    max_gap: float = 0.4,
+) -> List[ClipCandidate]:
+    """If multiple *snapped* clips form a contiguous run, merge them by
+    looking back at the *original* (pre-snap) candidates that overlap each
+    snapped member. We then emit a single candidate spanning the min(original.start)
+    to max(original.end) for that run.
+
+    Singles are passed through unchanged.
+    """
+    if not snapped:
+        return []
+
+    # Build quick overlap index from originals
+    def _overlaps(a: ClipCandidate, b: ClipCandidate) -> bool:
+        return not (a.end <= b.start or a.start >= b.end)
+
+    grouped = _group_overlapping_or_touching(snapped, max_gap=max_gap)
+    merged: List[ClipCandidate] = []
+    for grp in grouped:
+        if len(grp) == 1:
+            # Single: keep as-is
+            merged.append(grp[0])
+            continue
+        # Multi: collect corresponding original windows
+        os: List[ClipCandidate] = []
+        for s in grp:
+            for o in originals:
+                if _overlaps(o, s):
+                    os.append(o)
+        if not os:
+            # Fallback to snapped span if we couldn't find originals
+            start = min(c.start for c in grp)
+            end = max(c.end for c in grp)
+        else:
+            start = min(c.start for c in os)
+            end = max(c.end for c in os)
+        # Keep the best rating/metadata from the group
+        best = max(grp, key=lambda c: (c.rating or 0))
+        merged.append(
+            ClipCandidate(
+                start=start,
+                end=end,
+                rating=best.rating,
+                reason=best.reason,
+                quote=best.quote,
+            )
+        )
+    return merged
+
+
+def _final_merge_and_resnap(
+    snapped: List[ClipCandidate],
+    originals: List[ClipCandidate],
+    items: List[Tuple[float, float, str]],
+    *,
+    words: Optional[List[dict]] = None,
+    silences: Optional[List[Tuple[float, float]]] = None,
+    min_duration_seconds: float = MIN_DURATION_SECONDS,
+    min_rating: float = DEFAULT_MIN_RATING,
+) -> List[ClipCandidate]:
+    """Apply the user's requested final-pass merging procedure:
+      1) Group snapped clips that overlap or are within a small gap.
+      2) Merge them using the *original* windows.
+      3) Run the existing merge/snap pipeline again to clean boundaries.
+    """
+    if not snapped:
+        return []
+    merged_from_originals = _merge_groups_using_originals(snapped, originals)
+
+    # Re-run the normal merging and snapping pipeline
+    stage1 = _merge_adjacent_candidates(
+        merged_from_originals,
+        items,
+        merge_gap_seconds=1.0,
+        max_duration_seconds=MAX_DURATION_SECONDS,
+        words=words,
+        silences=silences,
+        merge_overlaps=True,
+    )
+    stage2 = _enforce_non_overlap(
+        stage1,
+        items,
+        words=words,
+        silences=silences,
+        min_duration_seconds=min_duration_seconds,
+        min_rating=min_rating,
+    )
+    # One more tiny coalesce to catch fencepost effects
+    final = _merge_adjacent_candidates(
+        stage2,
+        items,
+        merge_gap_seconds=0.5,
+        max_duration_seconds=MAX_DURATION_SECONDS,
+        words=words,
+        silences=silences,
+        merge_overlaps=True,
+    )
+    return final
+
+
+# -----------------------------
 # Transcript chunking utilities
 # -----------------------------
 
@@ -322,6 +454,16 @@ def find_clip_timestamps_batched(
         silences=silences,
         merge_overlaps=True,
     )
+    # === New: final pass merge using original windows, then resnap ===
+    top_candidates = _final_merge_and_resnap(
+        top_candidates,
+        filtered_candidates,  # originals before snapping
+        items,
+        words=words,
+        silences=silences,
+        min_duration_seconds=min_duration_seconds,
+        min_rating=min_rating,
+    )
     print(f"[Batch] {len(top_candidates)} candidates remain after final merge pass.")
     verified_candidates = [
         c
@@ -442,6 +584,16 @@ def find_clip_timestamps(
         words=words,
         silences=silences,
         merge_overlaps=True,
+    )
+    # === New: final pass merge using original windows, then resnap ===
+    top_candidates = _final_merge_and_resnap(
+        top_candidates,
+        merged_candidates,  # originals before snapping
+        items,
+        words=words,
+        silences=silences,
+        min_duration_seconds=min_duration_seconds,
+        min_rating=min_rating,
     )
     print(
         f"[Single] {len(top_candidates)} candidates remain after final merge pass."
