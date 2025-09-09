@@ -43,11 +43,11 @@ DEFAULT_DESC = Path(
 )
 
 
-def _failure_details(platform: str, video: Path, niche: str | None, error: str) -> str:
+def _failure_details(platform: str, video: Path, account: str | None, error: str) -> str:
     """Return a formatted failure message with contextual information."""
     timestamp = datetime.utcnow().isoformat()
     return (
-        f"Niche: {niche or 'unknown'}\n"
+        f"Account: {account or 'unknown'}\n"
         f"Video: {video}\n"
         f"Platform: {platform}\n"
         f"Time: {timestamp}\n"
@@ -108,7 +108,7 @@ def _read_instagram_creds(path: Path) -> tuple[str, str]:
 
 
 def _get_auth_refreshers(
-    username: str, password: str, video: Path, niche: str | None
+    username: str, password: str, video: Path, account: str | None
 ) -> Dict[str, Callable[[], None]]:
     """Return callables to refresh auth for each platform."""
 
@@ -118,7 +118,7 @@ def _get_auth_refreshers(
         body = _failure_details(
             "youtube",
             video,
-            niche,
+            account,
             "Automatic refresh failed for YouTube. A full re-auth was attempted.",
         )
         send_failure_email("YouTube authentication required", body)
@@ -130,7 +130,7 @@ def _get_auth_refreshers(
         body = _failure_details(
             "tiktok",
             video,
-            niche,
+            account,
             "Automatic refresh failed for TikTok. A full re-auth was attempted.",
         )
         send_failure_email("TikTok authentication required", body)
@@ -165,7 +165,7 @@ def upload_all(
     tokens_file: Path,
     ig_username: str,
     ig_password: str,
-    niche: str | None = None,
+    account: str | None = None,
     platforms: Sequence[str] | None = None,
 ) -> None:
     """Upload the given video and description to selected platforms.
@@ -197,7 +197,7 @@ def upload_all(
     if platforms:
         allowed = {name for name in platforms}
         uploaders = {n: f for n, f in uploaders.items() if n in allowed}
-    auth_refreshers = _get_auth_refreshers(ig_username, ig_password, video, niche)
+    auth_refreshers = _get_auth_refreshers(ig_username, ig_password, video, account)
 
     for name, func in uploaders.items():
         print(f"== Uploading to {name} ==")
@@ -216,12 +216,12 @@ def upload_all(
                     body = _failure_details(
                         name,
                         video,
-                        niche,
+                        account,
                         f"{name} retry after re-authentication failed: {exc2}",
                     )
                     send_failure_email(f"{name} upload failed", body)
                     continue
-            body = _failure_details(name, video, niche, str(exc))
+            body = _failure_details(name, video, account, str(exc))
             send_failure_email(f"{name} upload failed", body)
 
 
@@ -235,19 +235,30 @@ def run(
     tt_chunk_size: int | None = None,
     tt_privacy: str | None = None,
     tokens_dir: Path | None = None,
-    niche: str | None = None,
+    account: str | None = None,
     platforms: Sequence[str] | None = None,
 ) -> None:
     """Run uploads using configuration defaults with optional overrides.
 
+    Parameters
+    ----------
+    video, desc, folder, yt_privacy, yt_category_id, tt_chunk_size,
+    tt_privacy, tokens_dir:
+        See :func:`upload_all` for descriptions.
+    account:
+        Optional account name used to namespace token files under
+        ``tokens/<account>``.
+    platforms:
+        Optional iterable restricting which platforms to upload to.
+
     If ``folder`` is provided, all ``.mp4`` files inside it will be uploaded
-    sequentially, each expecting a matching ``.txt`` description file.
-    ``platforms`` can restrict uploads to a subset of supported targets.
+    sequentially, each expecting a matching ``.txt`` description file. When
+    omitted, ``video`` and ``desc`` specify a single upload.
     """
 
     tokens_dir = Path(tokens_dir) if tokens_dir else TOKENS_DIR
-    if niche:
-        tokens_dir = tokens_dir / niche
+    if account:
+        tokens_dir = tokens_dir / account
     tokens_dir.mkdir(parents=True, exist_ok=True)
     os.environ["YT_TOKENS_FILE"] = str(tokens_dir / "youtube.json")
     os.environ["TIKTOK_TOKENS_FILE"] = str(tokens_dir / "tiktok.json")
@@ -278,7 +289,7 @@ def run(
                     tokens_file=tokens_file,
                     ig_username=ig_username,
                     ig_password=ig_password,
-                    niche=niche,
+                    account=account,
                     platforms=platforms,
                 )
             finally:
@@ -300,7 +311,7 @@ def run(
             tokens_file=tokens_file,
             ig_username=ig_username,
             ig_password=ig_password,
-            niche=niche,
+            account=account,
             platforms=platforms,
         )
 
@@ -319,7 +330,7 @@ def main() -> None:
     tt_chunk_size = TIKTOK_CHUNK_SIZE
     tt_privacy = TIKTOK_PRIVACY_LEVEL
     tokens_dir = TOKENS_DIR
-    niche = None
+    account = None
 
     run(
         video=video,
@@ -330,7 +341,7 @@ def main() -> None:
         tt_chunk_size=tt_chunk_size,
         tt_privacy=tt_privacy,
         tokens_dir=tokens_dir,
-        niche=niche,
+        account=account,
     )
 
 

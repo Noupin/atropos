@@ -90,7 +90,19 @@ from helpers.cleanup import cleanup_project_dir
 
 
 
-def process_video(yt_url: str, niche: str | None = None) -> None:
+def process_video(yt_url: str, account: str | None = None, tone: Tone | None = None) -> None:
+    """Run the clipping pipeline for ``yt_url``.
+
+    Parameters
+    ----------
+    yt_url:
+        YouTube or Twitch URL to process.
+    account:
+        Optional account name to namespace outputs under ``out/<account>``.
+    tone:
+        Optional tone override. When omitted, :data:`config.CLIP_TYPE` is used.
+    """
+
     overall_start = time.perf_counter()
     twitch = is_twitch_url(yt_url)
     transcript_source = "whisper" if twitch else TRANSCRIPT_SOURCE
@@ -115,8 +127,8 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
 
     # Create a dedicated output directory for this run
     base_output_dir = Path(__file__).resolve().parent.parent / "out"
-    if niche:
-        base_output_dir /= niche
+    if account:
+        base_output_dir /= account
     project_dir = base_output_dir / non_suffix_filename
     project_dir.mkdir(parents=True, exist_ok=True)
 
@@ -402,12 +414,12 @@ def process_video(yt_url: str, niche: str | None = None) -> None:
 
     if should_run(6):
         def step_candidates() -> tuple[list[ClipCandidate], list[ClipCandidate], list[ClipCandidate]]:
-            tone = CLIP_TYPE
-            if tone is None:
+            selected_tone = tone or CLIP_TYPE
+            if selected_tone is None:
                 raise ValueError(f"Unsupported clip type: {CLIP_TYPE}")
             return find_candidates_by_tone(
                 str(transcript_output_path),
-                tone=tone,
+                tone=selected_tone,
                 return_all_stages=True,
                 segments=segments,
                 dialog_ranges=dialog_ranges,
@@ -696,6 +708,7 @@ if __name__ == "__main__":
 
     urls = get_video_urls(yt_url)
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    niche = "space"  # Set to a niche/account name to output under out/<niche>
+    account = "space"  # Set to an account name to output under out/<account>
+    tone = Tone.SPACE  # Choose tone independently of account
     for url in urls[:]:
-        process_video(url, niche=niche)
+        process_video(url, account=account, tone=tone)

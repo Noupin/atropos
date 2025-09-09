@@ -11,7 +11,7 @@ def test_failure_email_contains_context(monkeypatch, tmp_path):
     monkeypatch.setattr(upload_all, "_upload_instagram", lambda *a, **k: None)
     monkeypatch.setattr(upload_all, "_upload_tiktok", lambda *a, **k: None)
     monkeypatch.setattr(
-        upload_all, "_get_auth_refreshers", lambda u, p, v, n: {}
+        upload_all, "_get_auth_refreshers", lambda u, p, v, a: {}
     )
 
     emails: list[tuple[str, str]] = []
@@ -32,7 +32,7 @@ def test_failure_email_contains_context(monkeypatch, tmp_path):
         tokens_file=tmp_path / "t.json",
         ig_username="u",
         ig_password="p",
-        niche="fun",
+        account="fun",
     )
 
     assert len(emails) == 1

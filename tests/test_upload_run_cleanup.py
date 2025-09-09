@@ -29,7 +29,7 @@ def test_run_folder_deletes_files(tmp_path, monkeypatch) -> None:
         ig_username: str,
         ig_password: str,
         *,
-        niche: str | None = None,
+        account: str | None = None,
         platforms: Sequence[str] | None = None,
     ) -> None:
         calls.append((video, desc))

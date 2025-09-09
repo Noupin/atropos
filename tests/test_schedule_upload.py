@@ -53,8 +53,8 @@ def test_main_cleans_and_deletes(tmp_path: Path, monkeypatch) -> None:
 
     calls: list[tuple[Path, Path, str | None]] = []
 
-    def fake_run(*, video: Path, desc: Path, niche=None, **kwargs) -> None:
-        calls.append((video, desc, niche))
+    def fake_run(*, video: Path, desc: Path, account=None, **kwargs) -> None:
+        calls.append((video, desc, account))
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "run", fake_run)
@@ -95,8 +95,8 @@ def test_project_not_deleted_until_last_short(tmp_path: Path, monkeypatch) -> No
 
     calls: list[tuple[Path, Path, str | None]] = []
 
-    def fake_run(*, video: Path, desc: Path, niche=None, **kwargs) -> None:
-        calls.append((video, desc, niche))
+    def fake_run(*, video: Path, desc: Path, account=None, **kwargs) -> None:
+        calls.append((video, desc, account))
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "run", fake_run)
@@ -121,7 +121,7 @@ def test_project_not_deleted_until_last_short(tmp_path: Path, monkeypatch) -> No
     assert not project.exists()
 
 
-def test_main_respects_kind(tmp_path: Path, monkeypatch) -> None:
+def test_main_respects_account(tmp_path: Path, monkeypatch) -> None:
     out = tmp_path / "out" / "alt"
     project = out / "proj"
     shorts = project / "shorts"
@@ -133,14 +133,14 @@ def test_main_respects_kind(tmp_path: Path, monkeypatch) -> None:
 
     calls: list[tuple[Path, Path, str | None]] = []
 
-    def fake_run(*, video: Path, desc: Path, niche=None, **kwargs) -> None:
-        calls.append((video, desc, niche))
+    def fake_run(*, video: Path, desc: Path, account=None, **kwargs) -> None:
+        calls.append((video, desc, account))
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "run", fake_run)
     monkeypatch.setattr(schedule_upload, "OUT_ROOT", Path("out"))
 
-    schedule_upload.main(kind="alt")
+    schedule_upload.main(account="alt")
 
     assert len(calls) == 1
     assert calls[0] == (
@@ -164,7 +164,7 @@ def test_main_accepts_platforms(tmp_path: Path, monkeypatch) -> None:
 
     platforms_seen: list[Sequence[str] | None] = []
 
-    def fake_run(*, video: Path, desc: Path, niche=None, platforms=None, **kw) -> None:
+    def fake_run(*, video: Path, desc: Path, account=None, platforms=None, **kw) -> None:
         platforms_seen.append(platforms)
 
     monkeypatch.chdir(tmp_path)
@@ -176,15 +176,15 @@ def test_main_accepts_platforms(tmp_path: Path, monkeypatch) -> None:
     assert platforms_seen == [["youtube", "tiktok"]]
 
 
-def test_batch_processes_all_niches(tmp_path: Path, monkeypatch) -> None:
+def test_batch_processes_all_accounts(tmp_path: Path, monkeypatch) -> None:
     out = tmp_path / "out"
     (out / "proj" / "shorts").mkdir(parents=True)
     (out / "alt" / "proj" / "shorts").mkdir(parents=True)
 
-    kinds_seen: list[str | None] = []
+    accounts_seen: list[str | None] = []
 
-    def fake_main(*, kind=None, platforms=None):
-        kinds_seen.append(kind)
+    def fake_main(*, account=None, platforms=None):
+        accounts_seen.append(account)
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "main", fake_main)
@@ -192,22 +192,22 @@ def test_batch_processes_all_niches(tmp_path: Path, monkeypatch) -> None:
 
     schedule_upload.batch()
 
-    assert kinds_seen == [None, "alt"]
+    assert accounts_seen == [None, "alt"]
 
 
-def test_batch_respects_niches_argument(tmp_path: Path, monkeypatch) -> None:
+def test_batch_respects_accounts_argument(tmp_path: Path, monkeypatch) -> None:
     out = tmp_path / "out" / "alt" / "proj" / "shorts"
     out.mkdir(parents=True)
 
-    kinds_seen: list[str | None] = []
+    accounts_seen: list[str | None] = []
 
-    def fake_main(*, kind=None, platforms=None):
-        kinds_seen.append(kind)
+    def fake_main(*, account=None, platforms=None):
+        accounts_seen.append(account)
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "main", fake_main)
     monkeypatch.setattr(schedule_upload, "OUT_ROOT", Path("out"))
 
-    schedule_upload.batch(niches=["alt"])
+    schedule_upload.batch(accounts=["alt"])
 
-    assert kinds_seen == ["alt"]
+    assert accounts_seen == ["alt"]

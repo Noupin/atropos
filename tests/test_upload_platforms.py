@@ -15,7 +15,7 @@ def test_upload_all_platform_subset(monkeypatch, tmp_path):
     monkeypatch.setattr(upload_all, "_upload_instagram", mock_upload("instagram"))
     monkeypatch.setattr(upload_all, "_upload_tiktok", mock_upload("tiktok"))
     monkeypatch.setattr(
-        upload_all, "_get_auth_refreshers", lambda u, p, v, n: {}
+        upload_all, "_get_auth_refreshers", lambda u, p, v, a: {}
     )
 
     upload_all.upload_all(
@@ -28,7 +28,7 @@ def test_upload_all_platform_subset(monkeypatch, tmp_path):
         tokens_file=tmp_path / "t.json",
         ig_username="u",
         ig_password="p",
-        niche="fun",
+        account="fun",
         platforms=["youtube", "tiktok"],
     )
 
