@@ -365,23 +365,36 @@ def _merge_adjacent_candidates(
             new_start = min(cur.start, nxt.start)
             new_end = max(cur.end, nxt.end)
             if (new_end - new_start) <= max_duration_seconds:
+                merged_rating = max(cur.rating, nxt.rating)
+                merged_reason = (
+                    cur.reason
+                    + (" | " if cur.reason and nxt.reason else "")
+                    + nxt.reason
+                ).strip()
+                merged_quote = (
+                    cur.quote
+                    + (" | " if cur.quote and nxt.quote else "")
+                    + nxt.quote
+                ).strip()
+                s, e = refine_clip_window(
+                    new_start,
+                    new_end,
+                    items,
+                    words=words,
+                    silences=silences,
+                    max_extension=max_duration_seconds,
+                )
+                if e - s > max_duration_seconds:
+                    e = s + max_duration_seconds
                 print(
-                    f"[Merge] ({cur.start:.2f}-{cur.end:.2f}) + ({nxt.start:.2f}-{nxt.end:.2f}) -> ({new_start:.2f}-{new_end:.2f})"
+                    f"[Merge] ({cur.start:.2f}-{cur.end:.2f}) + ({nxt.start:.2f}-{nxt.end:.2f}) -> ({s:.2f}-{e:.2f})"
                 )
                 cur = ClipCandidate(
-                    start=new_start,
-                    end=new_end,
-                    rating=max(cur.rating, nxt.rating),
-                    reason=(
-                        cur.reason
-                        + (" | " if cur.reason and nxt.reason else "")
-                        + nxt.reason
-                    ).strip(),
-                    quote=(
-                        cur.quote
-                        + (" | " if cur.quote and nxt.quote else "")
-                        + nxt.quote
-                    ).strip(),
+                    start=s,
+                    end=e,
+                    rating=merged_rating,
+                    reason=merged_reason,
+                    quote=merged_quote,
                 )
                 continue
         merged.append(cur)
