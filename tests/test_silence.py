@@ -62,3 +62,10 @@ def test_snap_helpers() -> None:
     # ``snap_end_to_silence`` should extend through the following silent segment
     # ensuring trailing silence remains.
     assert snap_end_to_silence(4.0, silences) == 6.0
+
+
+def test_snap_helpers_accept_str() -> None:
+    """Both helpers should handle string inputs gracefully."""
+    silences = [(0.0, 1.0), (5.0, 6.0)]
+    assert snap_start_to_silence("2.5", silences) == 0.0
+    assert snap_end_to_silence("4.0", silences) == 6.0
