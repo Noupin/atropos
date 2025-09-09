@@ -393,14 +393,6 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
     candidates_all_path = project_dir / "candidates_all.json"
     candidates_top_path = project_dir / "candidates_top.json"
 
-    TONE_MAP = {
-        "funny": Tone.FUNNY,
-        "space": Tone.SPACE,
-        "history": Tone.HISTORY,
-        "tech": Tone.TECH,
-        "health": Tone.HEALTH,
-    }
-
     clips_dir = project_dir / "clips"
     raw_clips_dir = project_dir / "clips_raw"
     subtitles_dir = project_dir / "subtitles"
@@ -698,17 +690,17 @@ if __name__ == "__main__":
     # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVvLGotSXrDeZetca0jayby1" #DCEU(newest first)
     # yt_url = "https://www.youtube.com/watch?v=os2AyD_4RjM" #Dark phoenix
     # yt_url = "https://www.youtube.com/watch?v=JM1KbE-C9XE" #KFAF Nicks 40th birthday
-    # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"  # KFAF Playlist(newest first)
+    yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"  # KFAF Playlist(newest first)
     # yt_url = "https://www.youtube.com/playlist?list=PLlZTdvF5WOdwtw4pEsrxuP-5wfzgsUJY-" # AVP in review playlist(newest first order)
     # yt_url = "https://www.youtube.com/playlist?list=PL8F86WtVt7aboLYsBkbau1fxQrhAmBoxK" # MCU In review
     # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVtQQqX1nezpnsbeok2U6K8h" # star wars (newest first)
     # yt_url = "https://www.youtube.com/playlist?list=PLtwJaMpWoTgRs3MKjNJwQcshOsVVNyDfM" # sp7
-    yt_url = "https://www.youtube.com/watch?v=dww8Hekngmg"
+    # yt_url = "https://www.youtube.com/watch?v=dww8Hekngmg"
     # yt_url = input("Enter YouTube video URL: ")
 
     urls = get_video_urls(yt_url)
-    # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    account = "space"  # Set to an account name to output under out/<account>
+    urls.reverse() # If the playlist is newest first, reverse to process oldest first
+    account = "funnykinda"  # Set to an account name to output under out/<account>
     tone = Tone.SPACE  # Choose tone independently of account
-    for url in urls[:]:
+    for url in urls[7:]:
         process_video(url, account=account, tone=tone)

@@ -18,13 +18,14 @@ CAPTION_MAX_LINES: int = 2
 # Toggle whether rendered captions use custom colors
 CAPTION_USE_COLORS = True
 # Default caption fill and outline colors in BGR (blue-green-red) order
-CAPTION_FILL_BGR = (255, 187, 28)  # hex 1cbbff -> RGB(28,187,255) -> BGR(255,187,28)
+# hex 1cbbff -> RGB(28,187,255) -> BGR(255,187,28)
+CAPTION_FILL_BGR = (255, 187, 28)
 CAPTION_OUTLINE_BGR = (236, 236, 236)  # hex ececec
 # Constant frame-rate to avoid VFR issues on platforms like TikTok/Reels
 OUTPUT_FPS: float = 30.0
 
 # Clip boundary snapping options
-SNAP_TO_SILENCE = False
+SNAP_TO_SILENCE = True
 SNAP_TO_DIALOG = False
 SNAP_TO_SENTENCE = True
 
@@ -35,9 +36,7 @@ DETECT_DIALOG_WITH_LLM = False
 MAX_LLM_CHARS = 24_000
 LLM_API_TIMEOUT = 600  # seconds
 # LLM segmentation and worker configuration
-SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS = 20
-LLM_MAX_WORKERS = 2
-SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS = 25
+SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS = 100
 LLM_MAX_WORKERS = 1
 LLM_PER_CHUNK_TIMEOUT = 60  # seconds
 
@@ -61,7 +60,7 @@ SILENCE_DETECTION_MIN_DURATION = 0.075
 # Transcript acquisition settings
 # ---------------------------------------
 # Preferred transcript source: "youtube" or "whisper"
-TRANSCRIPT_SOURCE = "youtube"
+TRANSCRIPT_SOURCE = "whisper"
 # Model used for faster-whisper transcription
 WHISPER_MODEL = os.environ.get(
     "WHISPER_MODEL",
@@ -96,9 +95,9 @@ FORCE_REBUILD = False
 # Fine-grained rebuild toggles
 FORCE_REBUILD_SEGMENTS = False
 FORCE_REBUILD_DIALOG = False
-WINDOW_SIZE_SECONDS = 30.0
-WINDOW_OVERLAP_SECONDS = 10.0
-WINDOW_CONTEXT_SECONDS = 2.0
+WINDOW_SIZE_SECONDS = 90.0
+WINDOW_OVERLAP_SECONDS = 30.0
+WINDOW_CONTEXT_SECONDS = 10.0
 RATING_MIN = 0.0
 RATING_MAX = 10.0
 MIN_EXTENSION_MARGIN = 0.3
@@ -106,7 +105,7 @@ MIN_EXTENSION_MARGIN = 0.3
 # Step control
 # Allows skipping the first N pipeline steps by setting START_AT_STEP
 # via environment variable. Defaults to 1 (run all steps).
-START_AT_STEP = int(os.environ.get("START_AT_STEP", "1"))
+START_AT_STEP = int(os.environ.get("START_AT_STEP", "4"))
 
 # ---------------------------------------
 # Post-pipeline cleanup
