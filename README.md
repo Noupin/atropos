@@ -67,3 +67,8 @@ To view logs after upping with -d
   fraction of each window's duration.
 - Legacy chunk-based LLM settings (`MAX_LLM_CHARS`, `LLM_API_TIMEOUT`, and related
   options) now live at the bottom of `server/config.py` and are deprecated.
+
+## GitHub Reverting Commits
+
+git reset --hard 1f1447a524813af10a18b2426d1674b227dc0bcb
+git push --force-with-lease origin main
