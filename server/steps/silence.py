@@ -64,38 +64,52 @@ def load_silences_json(path: str | Path) -> List[Tuple[float, float]]:
     return [(float(item["start"]), float(item["end"])) for item in data]
 
 
-def snap_start_to_silence(start: float, silences: List[Tuple[float, float]]) -> float:
+def snap_start_to_silence(start: float | str, silences: List[Tuple[float, float]]) -> float:
     """Snap ``start`` to the beginning of the preceding silence.
 
-    The previous behaviour returned the end of the last silence before the
-    clip.  This meant the clip began *after* the silence, effectively trimming
-    quiet padding.  We instead want the clip to include that padding so we snap
-    to the **start** of that silence.  If ``start`` already lies within a
-    silence, we still snap to the start of that region.  If no preceding
+    ``start`` may be provided as either a ``float`` or a string representing a
+    float.  The value is coerced to ``float`` to tolerate inputs loaded from
+    JSON.  The previous behaviour returned the end of the last silence before
+    the clip.  This meant the clip began *after* the silence, effectively
+    trimming quiet padding.  We instead want the clip to include that padding so
+    we snap to the **start** of that silence.  If ``start`` already lies within
+    a silence, we still snap to the start of that region.  If no preceding
     silence exists, ``start`` is returned unchanged.
     """
 
-    for s_start, s_end in reversed(silences):
+    try:
+        start_val = float(start)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"start must be float-like, got {start!r}") from exc
+
+    for s_start, _ in reversed(silences):
         # When the start falls within a silence or after one, snap to the
         # beginning of that silence to include the quiet lead-in.
-        if s_start <= start:
+        if s_start <= start_val:
             return s_start
-    return start
+    return start_val
 
 
-def snap_end_to_silence(end: float, silences: List[Tuple[float, float]]) -> float:
+def snap_end_to_silence(end: float | str, silences: List[Tuple[float, float]]) -> float:
     """Snap ``end`` to the conclusion of the following silence.
 
-    Previously we snapped to the **start** of the next silence which cut off
-    any trailing quiet section.  To extend clips through the silence we now
-    snap to the silence's end.  If ``end`` already lies inside a silence, the
-    end of that same silence is used.  When no subsequent silence exists, the
-    original ``end`` is returned.
+    ``end`` may be provided as either a ``float`` or a string representing a
+    float.  It is coerced to ``float`` so values read from JSON files are
+    handled seamlessly.  Previously we snapped to the **start** of the next
+    silence which cut off any trailing quiet section.  To extend clips through
+    the silence we now snap to the silence's end.  If ``end`` already lies
+    inside a silence, the end of that same silence is used.  When no subsequent
+    silence exists, the original ``end`` is returned.
     """
 
-    for s_start, s_end in silences:
+    try:
+        end_val = float(end)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"end must be float-like, got {end!r}") from exc
+
+    for _, s_end in silences:
         # If the clip ends before or inside this silence, extend to its end.
-        if s_end >= end:
+        if s_end >= end_val:
             return s_end
-    return end
+    return end_val
 
