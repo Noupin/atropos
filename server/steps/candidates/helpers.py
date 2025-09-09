@@ -360,41 +360,40 @@ def _merge_adjacent_candidates(
         if overlap or tiny_gap:
             new_orig_start = min(cur_orig_start, nxt_orig_start)
             new_orig_end = max(cur_orig_end, nxt_orig_end)
-            if (new_orig_end - new_orig_start) <= max_duration_seconds:
-                merged_rating = max(cur.rating, nxt.rating)
-                merged_reason = (
-                    cur.reason
-                    + (" | " if cur.reason and nxt.reason else "")
-                    + nxt.reason
-                ).strip()
-                merged_quote = (
-                    cur.quote
-                    + (" | " if cur.quote and nxt.quote else "")
-                    + nxt.quote
-                ).strip()
-                s, e = refine_clip_window(
-                    new_orig_start,
-                    new_orig_end,
-                    items,
-                    words=words,
-                    silences=silences,
-                    max_extension=max_duration_seconds,
-                )
-                if e - s > max_duration_seconds:
-                    e = s + max_duration_seconds
-                print(
-                    f"[Merge] ({cur.start:.2f}-{cur.end:.2f}) + ({nxt.start:.2f}-{nxt.end:.2f}) -> ({s:.2f}-{e:.2f})"
-                )
-                cur_orig_start = new_orig_start
-                cur_orig_end = new_orig_end
-                cur = ClipCandidate(
-                    start=s,
-                    end=e,
-                    rating=merged_rating,
-                    reason=merged_reason,
-                    quote=merged_quote,
-                )
-                continue
+            merged_rating = max(cur.rating, nxt.rating)
+            merged_reason = (
+                cur.reason
+                + (" | " if cur.reason and nxt.reason else "")
+                + nxt.reason
+            ).strip()
+            merged_quote = (
+                cur.quote
+                + (" | " if cur.quote and nxt.quote else "")
+                + nxt.quote
+            ).strip()
+            s, e = refine_clip_window(
+                new_orig_start,
+                new_orig_end,
+                items,
+                words=words,
+                silences=silences,
+                max_extension=max_duration_seconds,
+            )
+            if e - s > max_duration_seconds:
+                e = s + max_duration_seconds
+            print(
+                f"[Merge] ({cur.start:.2f}-{cur.end:.2f}) + ({nxt.start:.2f}-{nxt.end:.2f}) -> ({s:.2f}-{e:.2f})"
+            )
+            cur_orig_start = new_orig_start
+            cur_orig_end = e
+            cur = ClipCandidate(
+                start=s,
+                end=e,
+                rating=merged_rating,
+                reason=merged_reason,
+                quote=merged_quote,
+            )
+            continue
         merged.append(cur)
         cur_orig_start, cur_orig_end, cur = nxt_orig_start, nxt_orig_end, nxt
 
