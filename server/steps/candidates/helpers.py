@@ -311,6 +311,8 @@ def _snap_start_to_sentence_start(
     return time
 
 
+
+
 def _merge_adjacent_candidates(
     candidates: List[ClipCandidate],
     items: List[Tuple[float, float, str]],
@@ -325,7 +327,7 @@ def _merge_adjacent_candidates(
     if not candidates:
         return []
 
-    snapped: List[ClipCandidate] = []
+    snapped: List[Tuple[float, float, ClipCandidate]] = []
     for c in candidates:
         s, e = refine_clip_window(
             c.start,
@@ -336,35 +338,29 @@ def _merge_adjacent_candidates(
             max_extension=max_duration_seconds,
         )
         if s != c.start or e != c.end:
-            print(
-                f"[Snap] ({c.start:.2f}-{c.end:.2f}) -> ({s:.2f}-{e:.2f})"
-            )
-        if e <= s:
+            print(f"[Snap] ({c.start:.2f}-{c.end:.2f}) -> ({s:.2f}-{e:.2f})")
+        if e <= s or (e - s) > max_duration_seconds:
             continue
-        if (e - s) > max_duration_seconds:
-            continue
-        snapped.append(
-            ClipCandidate(start=s, end=e, rating=c.rating, reason=c.reason, quote=c.quote)
-        )
+        snapped.append((c.start, c.end, ClipCandidate(start=s, end=e, rating=c.rating, reason=c.reason, quote=c.quote)))
 
     if not snapped:
         return []
 
-    snapped.sort(key=lambda c: (c.start, c.end))
+    snapped.sort(key=lambda t: (t[2].start, t[2].end))
     if not merge_overlaps:
-        return snapped
+        return [c for _, _, c in snapped]
 
     merged: List[ClipCandidate] = []
-    cur = snapped[0]
+    cur_orig_start, cur_orig_end, cur = snapped[0]
 
-    for nxt in snapped[1:]:
+    for nxt_orig_start, nxt_orig_end, nxt in snapped[1:]:
         gap = nxt.start - cur.end
         overlap = gap <= 0
         tiny_gap = 0 <= gap <= merge_gap_seconds
         if overlap or tiny_gap:
-            new_start = min(cur.start, nxt.start)
-            new_end = max(cur.end, nxt.end)
-            if (new_end - new_start) <= max_duration_seconds:
+            new_orig_start = min(cur_orig_start, nxt_orig_start)
+            new_orig_end = max(cur_orig_end, nxt_orig_end)
+            if (new_orig_end - new_orig_start) <= max_duration_seconds:
                 merged_rating = max(cur.rating, nxt.rating)
                 merged_reason = (
                     cur.reason
@@ -377,8 +373,8 @@ def _merge_adjacent_candidates(
                     + nxt.quote
                 ).strip()
                 s, e = refine_clip_window(
-                    new_start,
-                    new_end,
+                    new_orig_start,
+                    new_orig_end,
                     items,
                     words=words,
                     silences=silences,
@@ -389,6 +385,8 @@ def _merge_adjacent_candidates(
                 print(
                     f"[Merge] ({cur.start:.2f}-{cur.end:.2f}) + ({nxt.start:.2f}-{nxt.end:.2f}) -> ({s:.2f}-{e:.2f})"
                 )
+                cur_orig_start = new_orig_start
+                cur_orig_end = new_orig_end
                 cur = ClipCandidate(
                     start=s,
                     end=e,
@@ -398,11 +396,10 @@ def _merge_adjacent_candidates(
                 )
                 continue
         merged.append(cur)
-        cur = nxt
+        cur_orig_start, cur_orig_end, cur = nxt_orig_start, nxt_orig_end, nxt
 
     merged.append(cur)
     return merged
-
 
 def _enforce_non_overlap(
     candidates: List[ClipCandidate],
