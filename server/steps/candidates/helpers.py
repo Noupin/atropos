@@ -352,6 +352,8 @@ def _merge_adjacent_candidates(
 
     merged: List[ClipCandidate] = []
     cur_orig_start, cur_orig_end, cur = snapped[0]
+    # Use the refined/clamped end for subsequent merge calculations
+    cur_orig_end = cur.end
 
     for nxt_orig_start, nxt_orig_end, nxt in snapped[1:]:
         gap = nxt.start - cur.end
@@ -396,6 +398,8 @@ def _merge_adjacent_candidates(
             continue
         merged.append(cur)
         cur_orig_start, cur_orig_end, cur = nxt_orig_start, nxt_orig_end, nxt
+        # Ensure future merges use the truncated span of the new current clip
+        cur_orig_end = cur.end
 
     merged.append(cur)
     return merged
