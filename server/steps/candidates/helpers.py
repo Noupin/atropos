@@ -311,6 +311,53 @@ def _snap_start_to_sentence_start(
     return time
 
 
+def _coalesce_snapped_intervals(
+    snapped: List[ClipCandidate], eps: float = 1e-3
+) -> List[ClipCandidate]:
+    """Greedily merge overlapping or touching intervals.
+
+    Parameters
+    ----------
+    snapped:
+        List of already-snapped candidates sorted arbitrarily.
+    eps:
+        Small epsilon allowing boundary touches to merge.
+
+    Returns
+    -------
+    List[ClipCandidate]
+        Coalesced candidates with metadata from the highest-rated member of
+        each merged group.
+    """
+    if not snapped:
+        print("[Coalesce] before=0 after=0 merged=0")
+        return []
+
+    snapped_sorted = sorted(snapped, key=lambda c: (c.start, c.end))
+    result: List[ClipCandidate] = [snapped_sorted[0]]
+
+    for cur in snapped_sorted[1:]:
+        last = result[-1]
+        if cur.start < last.end + eps:
+            start = min(last.start, cur.start)
+            end = max(last.end, cur.end)
+            best = cur if (getattr(cur, "rating", 0) or 0) > (getattr(last, "rating", 0) or 0) else last
+            merged = ClipCandidate(
+                start=start, end=end, rating=best.rating, reason=best.reason, quote=best.quote
+            )
+            for attr, val in best.__dict__.items():
+                if attr not in {"start", "end", "rating", "reason", "quote"}:
+                    setattr(merged, attr, val)
+            result[-1] = merged
+        else:
+            result.append(cur)
+
+    before = len(snapped)
+    after = len(result)
+    print(f"[Coalesce] before={before} after={after} merged={before - after}")
+    return result
+
+
 def _merge_adjacent_candidates(
     candidates: List[ClipCandidate],
     items: List[Tuple[float, float, str]],
@@ -511,6 +558,54 @@ def dedupe_candidates(
     return sorted(kept, key=lambda c: (c.start, c.end))
 
 
+def _merge_groups_using_originals(snapped: List[ClipCandidate]) -> List[ClipCandidate]:
+    """Merge groups of candidates using their original boundaries.
+
+    This is a placeholder implementation that simply returns the provided
+    ``snapped`` list unchanged. In the full pipeline this function may merge
+    candidates that originated from the same unsnapped window.
+    """
+    return snapped
+
+
+def _final_merge_and_resnap(
+    snapped: List[ClipCandidate],
+    items: List[Tuple[float, float, str]],
+    *,
+    words: Optional[List[dict]] = None,
+    silences: Optional[List[Tuple[float, float]]] = None,
+) -> List[ClipCandidate]:
+    """Final deterministic merge after snapping.
+
+    This step coalesces any overlapping or touching intervals, then performs
+    the existing merge and overlap enforcement logic to ensure the final clips
+    are non-overlapping and respect duration constraints.
+    """
+
+    coalesced0 = _coalesce_snapped_intervals(snapped)
+    print(f"[FinalMerge] coalesced_at_start: {len(coalesced0)}")
+
+    merged_from_originals = _merge_groups_using_originals(coalesced0)
+
+    coalesced1 = _coalesce_snapped_intervals(merged_from_originals)
+    print(f"[FinalMerge] coalesced_after_originals: {len(coalesced1)}")
+
+    stage1 = _merge_adjacent_candidates(
+        coalesced1,
+        items,
+        words=words,
+        silences=silences,
+        merge_overlaps=True,
+    )
+    stage2 = _enforce_non_overlap(
+        stage1,
+        items,
+        words=words,
+        silences=silences,
+    )
+    return stage2
+
+
 __all__ = [
     "_get_field",
     "_to_float",
@@ -526,7 +621,10 @@ __all__ = [
     "refine_clip_window",
     "_snap_start_to_segment_start",
     "_snap_end_to_segment_end",
+    "_coalesce_snapped_intervals",
     "_merge_adjacent_candidates",
     "_enforce_non_overlap",
     "dedupe_candidates",
+    "_merge_groups_using_originals",
+    "_final_merge_and_resnap",
 ]

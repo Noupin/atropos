@@ -12,8 +12,8 @@ from config import (
     LOCAL_LLM_MODEL,
 )
 
-from custom_types.tone import ToneStrategy
-from custom_types.ETone import Tone
+from server.custom_types.tone import ToneStrategy
+from server.custom_types.ETone import Tone
 
 from . import ClipCandidate, _filter_promotional_candidates
 from .helpers import (
@@ -47,6 +47,7 @@ STRATEGY_REGISTRY: dict[Tone, ToneStrategy] = {
     Tone.FUNNY: ToneStrategy(
         prompt_desc=FUNNY_PROMPT_DESC,
         rating_descriptions=FUNNY_RATING_DESCRIPTIONS,
+        min_rating=8.0,
     ),
     Tone.SPACE: ToneStrategy(
         prompt_desc=SPACE_PROMPT_DESC,
