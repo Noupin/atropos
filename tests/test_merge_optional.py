@@ -66,3 +66,28 @@ def test_merge_exceeding_max_duration_clamps():
     assert merged[0].start == 0.0
     assert merged[0].end == 5.0
     assert merged[0].rating == 6
+
+def test_unsnapped_combo_exceeds_but_resnapped_fits_clamps_to_max():
+    items = [
+        (0.0, 2.0, "A"),
+        (2.1, 7.0, "B"),
+    ]
+    silences = [
+        (0.0, 0.1),
+        (2.0, 2.1),
+        (5.45, 10.0),
+    ]
+    c1 = ClipCandidate(start=0.0, end=2.0, rating=5, reason="", quote="")
+    c2 = ClipCandidate(start=2.2, end=7.0, rating=6, reason="", quote="")
+
+    merged = _merge_adjacent_candidates(
+        [c1, c2],
+        items,
+        merge_overlaps=True,
+        max_duration_seconds=5.0,
+        silences=silences,
+    )
+    assert len(merged) == 1
+    clip = merged[0]
+    assert clip.start == 0.0
+    assert clip.end == 5.0
