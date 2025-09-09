@@ -49,3 +49,20 @@ def test_merge_uses_unsnapped_duration_check():
     assert len(merged) == 1
     assert merged[0].start == 0.0
     assert merged[0].end == 5.0
+
+
+def test_merge_exceeding_max_duration_clamps():
+    items = [
+        (0.0, 4.0, "A"),
+        (4.0, 8.0, "B"),
+    ]
+    c1 = ClipCandidate(start=0.0, end=4.0, rating=5, reason="", quote="")
+    c2 = ClipCandidate(start=4.1, end=8.0, rating=6, reason="", quote="")
+
+    merged = _merge_adjacent_candidates(
+        [c1, c2], items, merge_overlaps=True, max_duration_seconds=5.0
+    )
+    assert len(merged) == 1
+    assert merged[0].start == 0.0
+    assert merged[0].end == 5.0
+    assert merged[0].rating == 6
