@@ -75,11 +75,8 @@ MAX_DURATION_SECONDS = 90.0
 SWEET_SPOT_MIN_SECONDS = 8.0
 SWEET_SPOT_MAX_SECONDS = 35.0
 
-DEFAULT_MIN_RATING = 7.0
+DEFAULT_MIN_RATING = 9.2
 DEFAULT_MIN_WORDS = 0
-
-FUNNY_MIN_RATING = 9.5
-FUNNY_MIN_WORDS = 5
 
 # ---------------------------------------
 # Pipeline and batching controls
@@ -99,7 +96,7 @@ MIN_EXTENSION_MARGIN = 0.3
 # Step control
 # Allows skipping the first N pipeline steps by setting START_AT_STEP
 # via environment variable. Defaults to 1 (run all steps).
-START_AT_STEP = int(os.environ.get("START_AT_STEP", "6"))
+START_AT_STEP = int(os.environ.get("START_AT_STEP", "1"))
 
 # ---------------------------------------
 # Post-pipeline cleanup

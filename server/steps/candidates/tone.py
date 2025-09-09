@@ -10,8 +10,6 @@ from config import (
     WINDOW_SIZE_SECONDS,
     MIN_DURATION_SECONDS,
     LOCAL_LLM_MODEL,
-    FUNNY_MIN_RATING,
-    FUNNY_MIN_WORDS,
 )
 
 from custom_types.tone import ToneStrategy
@@ -49,8 +47,6 @@ STRATEGY_REGISTRY: dict[Tone, ToneStrategy] = {
     Tone.FUNNY: ToneStrategy(
         prompt_desc=FUNNY_PROMPT_DESC,
         rating_descriptions=FUNNY_RATING_DESCRIPTIONS,
-        min_rating=FUNNY_MIN_RATING,
-        min_words=FUNNY_MIN_WORDS,
     ),
     Tone.SPACE: ToneStrategy(
         prompt_desc=SPACE_PROMPT_DESC,
