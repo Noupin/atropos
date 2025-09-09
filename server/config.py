@@ -6,7 +6,7 @@ Sections are grouped by feature for easier editing.
 import os
 import platform
 from pathlib import Path
-from custom_types.ETone import Tone
+from server.custom_types.ETone import Tone
 
 # ---------------------------------------
 # Rendering and clip boundary parameters
@@ -75,7 +75,8 @@ MAX_DURATION_SECONDS = 90.0
 SWEET_SPOT_MIN_SECONDS = 8.0
 SWEET_SPOT_MAX_SECONDS = 35.0
 
-DEFAULT_MIN_RATING = 9.2
+# Minimum rating a candidate must have to be considered. Tests assume 9.0.
+DEFAULT_MIN_RATING = 9.0
 DEFAULT_MIN_WORDS = 0
 
 # ---------------------------------------

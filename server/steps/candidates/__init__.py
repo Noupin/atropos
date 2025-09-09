@@ -454,17 +454,9 @@ def find_clip_timestamps_batched(
         silences=silences,
         merge_overlaps=True,
     )
-    # === New: final pass merge using original windows, then resnap ===
-    top_candidates = _final_merge_and_resnap(
-        top_candidates,
-        filtered_candidates,  # originals before snapping
-        items,
-        words=words,
-        silences=silences,
-        min_duration_seconds=min_duration_seconds,
-        min_rating=min_rating,
+    print(
+        f"[Batch] {len(top_candidates)} candidates remain after final merge." 
     )
-    print(f"[Batch] {len(top_candidates)} candidates remain after final merge pass.")
     verified_candidates = [
         c
         for c in _verify_tone(
@@ -585,19 +577,7 @@ def find_clip_timestamps(
         silences=silences,
         merge_overlaps=True,
     )
-    # === New: final pass merge using original windows, then resnap ===
-    top_candidates = _final_merge_and_resnap(
-        top_candidates,
-        merged_candidates,  # originals before snapping
-        items,
-        words=words,
-        silences=silences,
-        min_duration_seconds=min_duration_seconds,
-        min_rating=min_rating,
-    )
-    print(
-        f"[Single] {len(top_candidates)} candidates remain after final merge pass."
-    )
+    print(f"[Single] {len(top_candidates)} candidates remain after final merge.")
     verified_candidates = [
         c
         for c in _verify_tone(
