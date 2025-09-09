@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, List, Tuple
 
 from config import (
-    WINDOW_CONTEXT_SECONDS,
+    WINDOW_CONTEXT_PCT,
     WINDOW_OVERLAP_SECONDS,
     WINDOW_SIZE_SECONDS,
     MIN_DURATION_SECONDS,
@@ -116,12 +116,13 @@ def find_candidates_by_tone(
     items = parse_transcript(transcript_path)
     windows = _window_items(items)
     all_candidates: List[ClipCandidate] = []
+    context = WINDOW_SIZE_SECONDS * WINDOW_CONTEXT_PCT
 
     for win_start, win_end, win_items in windows:
         ctx_items = [
             it
             for it in items
-            if it[1] > win_start - WINDOW_CONTEXT_SECONDS and it[0] < win_end + WINDOW_CONTEXT_SECONDS
+            if it[1] > win_start - context and it[0] < win_end + context
         ]
         text = "\n".join(f"[{s:.2f}-{e:.2f}] {t}" for s, e, t in ctx_items)
         prompt = build_window_prompt(

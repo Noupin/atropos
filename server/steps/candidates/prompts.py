@@ -11,7 +11,7 @@ from config import (
     RATING_MAX,
     WINDOW_SIZE_SECONDS,
     WINDOW_OVERLAP_SECONDS,
-    WINDOW_CONTEXT_SECONDS,
+    WINDOW_CONTEXT_PCT,
 )
 
 FUNNY_PROMPT_DESC = (
@@ -214,9 +214,11 @@ def build_window_prompt(
     system_instructions = _build_system_instructions(
         prompt_desc, rating_descriptions
     )
+    context_secs = WINDOW_SIZE_SECONDS * WINDOW_CONTEXT_PCT
     return (
         f"{system_instructions}\n\n"
-        f"TRANSCRIPT WINDOW (≈{WINDOW_SIZE_SECONDS:.0f}s, overlap {WINDOW_OVERLAP_SECONDS:.0f}s, context {WINDOW_CONTEXT_SECONDS:.0f}s):\n{text}\n\n"
+        f"TRANSCRIPT WINDOW (≈{WINDOW_SIZE_SECONDS:.0f}s, "
+        f"overlap {WINDOW_OVERLAP_SECONDS:.0f}s, context {context_secs:.0f}s):\n{text}\n\n"
         "Return JSON now."
     )
 
