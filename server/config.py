@@ -33,12 +33,6 @@ SNAP_TO_SENTENCE = True
 USE_LLM_FOR_SEGMENTS = True
 # Toggle LLM-based detection of dialog ranges
 DETECT_DIALOG_WITH_LLM = False
-MAX_LLM_CHARS = 24_000
-LLM_API_TIMEOUT = 600  # seconds
-# LLM segmentation and worker configuration
-SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS = 100
-LLM_MAX_WORKERS = 1
-LLM_PER_CHUNK_TIMEOUT = 60  # seconds
 
 # Choose local LLM provider and model
 LOCAL_LLM_PROVIDER = os.environ.get(
@@ -97,7 +91,7 @@ FORCE_REBUILD_SEGMENTS = False
 FORCE_REBUILD_DIALOG = False
 WINDOW_SIZE_SECONDS = 90.0
 WINDOW_OVERLAP_SECONDS = 30.0
-WINDOW_CONTEXT_SECONDS = 10.0
+WINDOW_CONTEXT_PCT = 0.11  # fraction of window length used as context on each side
 RATING_MIN = 0.0
 RATING_MAX = 10.0
 MIN_EXTENSION_MARGIN = 0.3
@@ -132,6 +126,16 @@ WEBSITE_URL = "https://atropos-video.com"
 YOUTUBE_DESC_LIMIT = 5000
 TIKTOK_DESC_LIMIT = 2000
 
+# ---------------------------------------
+# Deprecated chunk-based LLM settings
+# ---------------------------------------
+# Legacy segmentation configuration slated for removal.
+MAX_LLM_CHARS = 24_000
+LLM_API_TIMEOUT = 600  # seconds
+SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS = 100
+LLM_MAX_WORKERS = 1
+LLM_PER_CHUNK_TIMEOUT = 60  # seconds
+
 __all__ = [
     "CAPTION_FONT_SCALE",
     "CAPTION_MAX_LINES",
@@ -145,11 +149,6 @@ __all__ = [
     "DETECT_DIALOG_WITH_LLM",
     "LOCAL_LLM_PROVIDER",
     "LOCAL_LLM_MODEL",
-    "MAX_LLM_CHARS",
-    "LLM_API_TIMEOUT",
-    "SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS",
-    "LLM_MAX_WORKERS",
-    "LLM_PER_CHUNK_TIMEOUT",
     "EXPORT_RAW_CLIPS",
     "RAW_LIMIT",
     "SILENCE_DETECTION_NOISE",
@@ -170,7 +169,7 @@ __all__ = [
     "FORCE_REBUILD_DIALOG",
     "WINDOW_SIZE_SECONDS",
     "WINDOW_OVERLAP_SECONDS",
-    "WINDOW_CONTEXT_SECONDS",
+    "WINDOW_CONTEXT_PCT",
     "RATING_MIN",
     "RATING_MAX",
     "MIN_EXTENSION_MARGIN",
@@ -185,4 +184,9 @@ __all__ = [
     "WEBSITE_URL",
     "YOUTUBE_DESC_LIMIT",
     "TIKTOK_DESC_LIMIT",
+    "MAX_LLM_CHARS",
+    "LLM_API_TIMEOUT",
+    "SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS",
+    "LLM_MAX_WORKERS",
+    "LLM_PER_CHUNK_TIMEOUT",
 ]
