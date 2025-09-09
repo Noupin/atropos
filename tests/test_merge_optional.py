@@ -17,3 +17,4 @@ def test_merge_overlaps_flag_controls_behavior():
     )
     assert len(with_merge) == 1
     assert with_merge[0].start == 0.0 and with_merge[0].end == 2.0
+    assert with_merge[0].rating == 6

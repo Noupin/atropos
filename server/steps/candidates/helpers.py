@@ -462,9 +462,12 @@ def _enforce_non_overlap(
         return not (a.end + min_gap <= b.start or b.end + min_gap <= a.start)
 
     for cand in adjusted:
-        if any(overlaps(cand, s) for s in selected):
-            continue
-        selected.append(cand)
+        for sel in selected:
+            if overlaps(cand, sel):
+                sel.rating = max(sel.rating, cand.rating)
+                break
+        else:
+            selected.append(cand)
 
     selected.sort(key=lambda x: x.start)
     return selected
