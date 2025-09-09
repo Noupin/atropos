@@ -1,5 +1,8 @@
 from server.interfaces.clip_candidate import ClipCandidate
-from server.steps.candidates.helpers import _merge_adjacent_candidates
+from server.steps.candidates.helpers import (
+    _enforce_non_overlap,
+    _merge_adjacent_candidates,
+)
 
 
 def test_merge_overlaps_flag_controls_behavior():
@@ -91,3 +94,31 @@ def test_unsnapped_combo_exceeds_but_resnapped_fits_clamps_to_max():
     clip = merged[0]
     assert clip.start == 0.0
     assert clip.end == 5.0
+
+
+def test_top_candidates_collapse_after_final_merge():
+    items = [
+        (0.0, 1.0, "A"),
+        (1.2, 2.2, "B"),
+    ]
+    c1 = ClipCandidate(start=0.0, end=1.0, rating=5, reason="", quote="")
+    c2 = ClipCandidate(start=1.2, end=2.2, rating=6, reason="", quote="")
+
+    top = _enforce_non_overlap(
+        [c1, c2],
+        items,
+        min_duration_seconds=0.1,
+        min_rating=0.0,
+    )
+    assert len(top) == 2
+
+    merged = _merge_adjacent_candidates(
+        top,
+        items,
+        merge_overlaps=True,
+        merge_gap_seconds=0.5,
+    )
+    assert len(merged) == 1
+    clip = merged[0]
+    assert clip.start == 0.0
+    assert clip.end == 2.2

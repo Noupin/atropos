@@ -313,6 +313,16 @@ def find_clip_timestamps_batched(
         min_rating=min_rating,
     )
     print(f"[Batch] {len(top_candidates)} candidates remain after overlap enforcement.")
+    top_candidates = _merge_adjacent_candidates(
+        top_candidates,
+        items,
+        merge_gap_seconds=1.0,
+        max_duration_seconds=MAX_DURATION_SECONDS,
+        words=words,
+        silences=silences,
+        merge_overlaps=True,
+    )
+    print(f"[Batch] {len(top_candidates)} candidates remain after final merge pass.")
     verified_candidates = [
         c
         for c in _verify_tone(
@@ -423,6 +433,18 @@ def find_clip_timestamps(
         silences=silences,
         min_duration_seconds=min_duration_seconds,
         min_rating=min_rating,
+    )
+    top_candidates = _merge_adjacent_candidates(
+        top_candidates,
+        items,
+        merge_gap_seconds=1.0,
+        max_duration_seconds=MAX_DURATION_SECONDS,
+        words=words,
+        silences=silences,
+        merge_overlaps=True,
+    )
+    print(
+        f"[Single] {len(top_candidates)} candidates remain after final merge pass."
     )
     verified_candidates = [
         c
