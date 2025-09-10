@@ -50,6 +50,12 @@ def test_funny_rating_descriptions_included() -> None:
     )
 
 
+def test_reason_and_quote_match_tone() -> None:
+    instructions = _build_system_instructions("desc")
+    assert "reason` must explain how the moment fits the tone" in instructions
+    assert "quote` must capture a line that showcases that tone" in instructions
+
+
 def test_funny_prompt_mentions_raunch() -> None:
     prompt = _build_system_instructions(FUNNY_PROMPT_DESC)
     lower = prompt.lower()
