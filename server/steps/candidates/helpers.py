@@ -311,6 +311,47 @@ def _snap_start_to_sentence_start(
     return time
 
 
+def _coalesce_snapped_intervals(
+    snapped: List[ClipCandidate], eps: float = 1e-3
+) -> List[ClipCandidate]:
+    """Merge overlapping ``snapped`` intervals.
+
+    Intervals are sorted by ``(start, end)`` and merged when the next ``start`` is
+    within ``eps`` of the current ``end``.  The resulting interval spans the
+    combined range, and metadata (``rating``, ``reason``, ``quote``) is copied
+    from the higher-rated interval (treating ``None`` ratings as 0).
+    """
+    if not snapped:
+        return []
+
+    sorted_snapped = sorted(snapped, key=lambda c: (c.start, c.end))
+    merged: List[ClipCandidate] = [sorted_snapped[0]]
+
+    for cur in sorted_snapped[1:]:
+        last = merged[-1]
+        if cur.start <= last.end + eps:
+            new_start = min(last.start, cur.start)
+            new_end = max(last.end, cur.end)
+            last_rating = last.rating if last.rating is not None else 0.0
+            cur_rating = cur.rating if cur.rating is not None else 0.0
+            chosen = cur if cur_rating > last_rating else last
+            merged[-1] = ClipCandidate(
+                start=new_start,
+                end=new_end,
+                rating=chosen.rating,
+                reason=chosen.reason,
+                quote=chosen.quote,
+            )
+        else:
+            merged.append(cur)
+
+    print(
+        f"[Coalesce] before={len(sorted_snapped)} "
+        f"after={len(merged)} merged={len(sorted_snapped) - len(merged)}"
+    )
+    return merged
+
+
 def _merge_adjacent_candidates(
     candidates: List[ClipCandidate],
     items: List[Tuple[float, float, str]],
@@ -526,6 +567,7 @@ __all__ = [
     "refine_clip_window",
     "_snap_start_to_segment_start",
     "_snap_end_to_segment_end",
+    "_coalesce_snapped_intervals",
     "_merge_adjacent_candidates",
     "_enforce_non_overlap",
     "dedupe_candidates",
