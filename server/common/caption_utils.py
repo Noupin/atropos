@@ -7,6 +7,7 @@ from typing import Iterable, List
 
 
 HASHTAG_RE = re.compile(r"#\w+")
+HASHTAG_CLEAN_RE = re.compile(r"[^0-9A-Za-z]+")
 
 
 def collapse_whitespace(text: str) -> str:
@@ -60,6 +61,54 @@ def normalize_caption(
     return truncate_word_boundary(caption, limit)
 
 
+def clean_hashtag(tag: str) -> str:
+    """Remove whitespace and punctuation from a hashtag."""
+
+    return HASHTAG_CLEAN_RE.sub("", tag)
+
+
+def prepare_hashtags(tags: Iterable[str], show: str | None = None) -> List[str]:
+    """Sanitise and sort hashtags, optionally including a show name."""
+
+    cleaned: List[str] = []
+    for tag in tags:
+        if isinstance(tag, str):
+            cleaned_tag = clean_hashtag(tag)
+            if cleaned_tag:
+                cleaned.append(cleaned_tag)
+    if show:
+        show_tag = clean_hashtag(show)
+        if show_tag:
+            cleaned.append(show_tag)
+    deduped = list(dict.fromkeys(cleaned))
+    deduped.sort(key=len)
+    return [f"#{t}" for t in deduped]
+
+
+def build_hashtag_prompt(
+    title: str, quote: str | None = None, show: str | None = None
+) -> str:
+    """Create an instruction prompt for hashtag generation."""
+
+    prompt = (
+        "Generate as many relevant hashtags for a short form video based on the "
+        "video's title"
+    )
+    if quote:
+        prompt += " and a quote from the clip"
+    prompt += (
+        ". Favor short hashtags, avoid punctuation, and the title does not always "
+        "need to be a hashtag. Include the show name if provided. Respond with a "
+        "JSON array of strings without the # symbol.\n"
+        f"Title: {title}\n"
+    )
+    if quote:
+        prompt += f"Quote: {quote}\n"
+    if show:
+        prompt += f"Show: {show}\n"
+    return prompt
+
+
 __all__ = [
     "normalize_caption",
     "collapse_whitespace",
@@ -67,5 +116,8 @@ __all__ = [
     "keep_top_hashtags",
     "append_default_tags",
     "truncate_word_boundary",
+    "clean_hashtag",
+    "prepare_hashtags",
+    "build_hashtag_prompt",
 ]
 

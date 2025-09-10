@@ -86,6 +86,7 @@ from helpers.ai import local_llm_call_json
 from helpers.description import maybe_append_website_link
 from steps.candidates import ClipCandidate
 from helpers.cleanup import cleanup_project_dir
+from common.caption_utils import build_hashtag_prompt, prepare_hashtags
 
 
 
@@ -614,18 +615,11 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
         description_path = shorts_dir / f"{clip_path.stem}.txt"
 
         def step_description() -> Path:
-            prompt = (
-                "Generate as many relevant hashtags for a short form video based on the "
-                "video's title"
+            prompt = build_hashtag_prompt(
+                title=video_info["title"],
+                quote=candidate.quote,
+                show=video_info.get("uploader"),
             )
-            if candidate.quote:
-                prompt += " and a quote from the clip"
-            prompt += (
-                ". Respond with a JSON array of strings without the # symbol.\n"
-                f"Title: {video_info['title']}\n"
-            )
-            if candidate.quote:
-                prompt += f"Quote: {candidate.quote}"
             try:
                 tags = local_llm_call_json(
                     model=config.LOCAL_LLM_MODEL,
@@ -644,18 +638,14 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
                     "Hashtag generation failed",
                     f"No hashtags generated for clip {idx} of video {yt_url}",
                 )
-            hashtags = [
-                "#" + tag.replace(" ", "")
-                for tag in tags
-                if isinstance(tag, str)
-            ]
-            if not hashtags:
-                fallback = [
-                    "#" + re.sub(r"\W+", "", w.lower())
+            fallback_words: list[str] = []
+            if not tags:
+                fallback_words = [
+                    w
                     for w in video_info["title"].split()
-                    if re.sub(r"\W+", "", w)
+                    if re.sub(r"[^0-9A-Za-z]", "", w)
                 ][:3]
-                hashtags.extend(fallback)
+            hashtags = prepare_hashtags(tags + fallback_words, video_info.get("uploader"))
             hashtags.extend(["#shorts", "#madebyatropos"])
             full_video_link = youtube_timestamp_url(yt_url, candidate.start)
             description = (
