@@ -10,6 +10,7 @@ class ClipCandidate:
     rating: float
     reason: str
     quote: str
+    count: int = 1
 
     def duration(self) -> float:
         return max(0.0, self.end - self.start)

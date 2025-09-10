@@ -392,6 +392,7 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
     candidates_path = project_dir / "candidates.json"
     candidates_all_path = project_dir / "candidates_all.json"
     candidates_top_path = project_dir / "candidates_top.json"
+    render_queue_path = project_dir / "render_queue.json"
 
     clips_dir = project_dir / "clips"
     raw_clips_dir = project_dir / "clips_raw"
@@ -522,6 +523,7 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
             )
 
         refined_candidates = dedupe_candidates(refined_candidates)
+        export_candidates_json(refined_candidates, render_queue_path)
     else:
         if candidates_path.exists():
             refined_candidates = load_candidates_json(candidates_path)
@@ -542,6 +544,7 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
         print(
             f"{Fore.YELLOW}Skipping STEP 6: using {len(refined_candidates)} existing candidates{Style.RESET_ALL}"
         )
+        export_candidates_json(refined_candidates, render_queue_path)
 
     for idx, candidate in enumerate(refined_candidates, start=1):
         def step_cut() -> Path | None:
