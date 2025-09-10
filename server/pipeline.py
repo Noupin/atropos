@@ -685,13 +685,17 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
 if __name__ == "__main__":
     # tone = Tone.FUNNY 
     # account = "funnykinda"
-    # yt_url = "https://www.youtube.com/playlist?list=PLy3mMHt2i7RKE9ba8rfL7_qnFcpbUaA8_" # In Review Playlist (newest first)
-    # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"  # KFAF Playlist(newest first) last used [8:9]
+    # # In Review Playlist (newest first)
+    # yt_url = "https://www.youtube.com/playlist?list=PLy3mMHt2i7RKE9ba8rfL7_qnFcpbUaA8_"
+    # # KFAF Playlist(newest first)
+    # # last used [8:9]
+    # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"
 
     
     tone = Tone.HISTORY
     account = "history"
-    yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9" # Crash Course World History
+    # Crash Course World History
+    yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9"
 
     urls = get_video_urls(yt_url)
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first

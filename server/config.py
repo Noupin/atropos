@@ -26,13 +26,13 @@ OUTPUT_FPS: float = 30.0
 
 # Clip boundary snapping options
 SNAP_TO_SILENCE = True
-SNAP_TO_DIALOG = False
+SNAP_TO_DIALOG = True
 SNAP_TO_SENTENCE = True
 
 # Toggle LLM usage for transcript segmentation
 USE_LLM_FOR_SEGMENTS = True
 # Toggle LLM-based detection of dialog ranges
-DETECT_DIALOG_WITH_LLM = False
+DETECT_DIALOG_WITH_LLM = True
 
 # Choose local LLM provider and model
 LOCAL_LLM_PROVIDER = os.environ.get(
