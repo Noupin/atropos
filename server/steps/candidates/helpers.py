@@ -432,6 +432,90 @@ def _merge_adjacent_candidates(
     return merged
 
 
+def _merge_groups_using_originals(
+    snapped: List[ClipCandidate],
+    originals: List[ClipCandidate],
+    eps: float = 1e-3,
+) -> List[ClipCandidate]:
+    """Merge snapped candidates whose originals overlap or touch.
+
+    ``snapped`` and ``originals`` are aligned lists where each snapped clip
+    was derived from the corresponding original clip.  When any originals
+    overlap (or are within ``eps``), their snapped counterparts are merged
+    into a single clip spanning the union of their times.  Metadata is taken
+    from the highest-rated member of each group.
+    """
+    if not snapped or not originals:
+        return snapped
+
+    pairs = sorted(zip(originals, snapped), key=lambda p: (p[0].start, p[0].end))
+    groups: List[List[ClipCandidate]] = []
+    cur_group = [pairs[0][1]]
+    cur_end = pairs[0][0].end
+
+    for orig, snap in pairs[1:]:
+        if orig.start <= cur_end + eps:
+            cur_end = max(cur_end, orig.end)
+            cur_group.append(snap)
+        else:
+            groups.append(cur_group)
+            cur_group = [snap]
+            cur_end = orig.end
+    groups.append(cur_group)
+
+    merged: List[ClipCandidate] = []
+    for group in groups:
+        start = min(c.start for c in group)
+        end = max(c.end for c in group)
+        chosen = max(group, key=lambda c: c.rating if c.rating is not None else 0.0)
+        merged.append(
+            ClipCandidate(
+                start=start,
+                end=end,
+                rating=chosen.rating,
+                reason=chosen.reason,
+                quote=chosen.quote,
+            )
+        )
+    return merged
+
+
+def _final_merge_and_resnap(
+    snapped: List[ClipCandidate],
+    items: List[Tuple[float, float, str]],
+    *,
+    originals: Optional[List[ClipCandidate]] = None,
+    merge_gap_seconds: float = 1.0,
+    max_duration_seconds: float = MAX_DURATION_SECONDS,
+    words: Optional[List[dict]] = None,
+    silences: Optional[List[Tuple[float, float]]] = None,
+) -> List[ClipCandidate]:
+    """Final merge pass that coalesces, groups by originals, and resnaps clips."""
+    coalesced0 = _coalesce_snapped_intervals(snapped)
+    print(f"[FinalMerge] coalesced_at_start: {len(snapped)}->{len(coalesced0)}")
+
+    merged_from_originals = (
+        _merge_groups_using_originals(coalesced0, originals)
+        if originals
+        else coalesced0
+    )
+    coalesced1 = _coalesce_snapped_intervals(merged_from_originals)
+    print(
+        f"[FinalMerge] coalesced_after_originals: "
+        f"{len(merged_from_originals)}->{len(coalesced1)}"
+    )
+
+    return _merge_adjacent_candidates(
+        coalesced1,
+        items,
+        merge_gap_seconds=merge_gap_seconds,
+        max_duration_seconds=max_duration_seconds,
+        words=words,
+        silences=silences,
+        merge_overlaps=True,
+    )
+
+
 def _enforce_non_overlap(
     candidates: List[ClipCandidate],
     items: List[Tuple[float, float, str]],
@@ -568,6 +652,8 @@ __all__ = [
     "_snap_start_to_segment_start",
     "_snap_end_to_segment_end",
     "_coalesce_snapped_intervals",
+    "_merge_groups_using_originals",
+    "_final_merge_and_resnap",
     "_merge_adjacent_candidates",
     "_enforce_non_overlap",
     "dedupe_candidates",
