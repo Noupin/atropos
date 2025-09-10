@@ -13,7 +13,11 @@
     "madebyatropos",
     "ndarray",
     "opencl",
-    "wtok"
+    "wtok",
+    "FERNET",
+    "fernet",
+    "pytest",
+    "docstrings"
   ],
   "ignorePaths": [
     "node_modules",

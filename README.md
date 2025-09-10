@@ -2,7 +2,7 @@
 
 This repository includes a minimal framework for bulk uploading short videos
 with captions to multiple social platforms. The orchestrator script scans a
-folder for video files and paired caption text files, normalises captions, and
+folder for video files and paired caption text files, normalizes captions, and
 then uploads the pairs to each enabled platform.
 All core modules now live under the `server/` directory. For example:
 
@@ -67,6 +67,8 @@ To view logs after upping with -d
   fraction of each window's duration.
 - Legacy chunk-based LLM settings (`MAX_LLM_CHARS`, `LLM_API_TIMEOUT`, and related
   options) now live at the bottom of `server/config.py` and are deprecated.
+- A conservative coalescing phase merges overlapping intervals when boundaries
+  differ by less than an `eps` tolerance (default `1e-3`).
 
 ## Git Reversion
 
