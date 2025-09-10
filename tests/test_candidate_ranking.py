@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "server"))
 
-from server.steps.candidates.helpers import _enforce_non_overlap
+from server.steps.candidates.helpers import _enforce_non_overlap, refine_clip_window
 from server.interfaces.clip_candidate import ClipCandidate
 
 
@@ -73,3 +73,17 @@ def test_min_rating_excludes_low_scores() -> None:
     result = _enforce_non_overlap([low, high], items, min_rating=5.0)
     assert len(result) == 1
     assert result[0].rating == 6.0
+
+
+def test_repeated_quotes_extend_end() -> None:
+    """Repeated quotes should extend the refined window to the last occurrence."""
+    items = [
+        (0.0, 1.0, "Hello"),
+        (1.0, 2.0, "Hello"),
+        (2.0, 3.0, "Hello"),
+        (3.0, 4.0, "Done"),
+    ]
+    cand = ClipCandidate(start=0.0, end=1.0, rating=5.0, reason="", quote="Hello")
+    s, e = refine_clip_window(cand.start, cand.end, items, quote=cand.quote)
+    assert s == 0.0
+    assert e == 3.0

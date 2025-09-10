@@ -19,6 +19,12 @@ def test_instructions_require_json_array() -> None:
     assert "return []" in instructions
 
 
+def test_reason_coverage_rule_present() -> None:
+    instructions = _build_system_instructions("desc")
+    assert "Reason coverage" in instructions
+    assert "lines cited in `reason`" in instructions
+
+
 def test_custom_rating_descriptions_included() -> None:
     custom = {"10": "top tier"}
     instructions = _build_system_instructions(
