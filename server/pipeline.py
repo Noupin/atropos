@@ -309,7 +309,7 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
     else:
         if silences_path.exists():
             data = json.loads(silences_path.read_text(encoding="utf-8"))
-            silences = [tuple(pair) for pair in data]
+            silences = [tuple(d.values()) for d in data]
             print(
                 f"{Fore.YELLOW}Skipping STEP 4: loaded {len(silences)} silences from {silences_path}{Style.RESET_ALL}"
             )
