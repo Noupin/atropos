@@ -699,5 +699,5 @@ if __name__ == "__main__":
     urls.reverse() # If the playlist is newest first, reverse to process oldest first
     account = "funnykinda"  # Set to an account name to output under out/<account>
     tone = Tone.SPACE  # Choose tone independently of account
-    for url in urls[8:]:
+    for url in urls[8:9]:
         process_video(url, account=account, tone=tone)
