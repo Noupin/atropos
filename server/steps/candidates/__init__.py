@@ -20,7 +20,7 @@ from .helpers import (
     _get_field,
     _to_float,
     parse_transcript,
-    _final_merge_and_resnap,
+    _merge_adjacent_candidates,
     _enforce_non_overlap,
 )
 from .prompts import _build_system_instructions, FUNNY_PROMPT_DESC
@@ -295,7 +295,7 @@ def find_clip_timestamps_batched(
     print(
         f"[Batch] Collected {len(all_candidates)} raw candidates across all chunks. Merging and enforcing non-overlap..."
     )
-    filtered_candidates = _final_merge_and_resnap(
+    filtered_candidates = _merge_adjacent_candidates(
         filtered_candidates,
         items,
         merge_gap_seconds=1.0,
@@ -407,7 +407,7 @@ def find_clip_timestamps(
 
     candidates = _filter_promotional_candidates(candidates, items)
 
-    merged_candidates = _final_merge_and_resnap(
+    merged_candidates = _merge_adjacent_candidates(
         candidates,
         items,
         merge_gap_seconds=1.0,

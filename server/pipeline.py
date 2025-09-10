@@ -23,6 +23,7 @@ from steps.candidates.helpers import (
     snap_start_to_dialog_start,
     snap_end_to_dialog_end,
     dedupe_candidates,
+    _coalesce_snapped_intervals,
 )
 from steps.segment import (
     segment_transcript_items,
@@ -542,6 +543,8 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
         print(
             f"{Fore.YELLOW}Skipping STEP 6: using {len(refined_candidates)} existing candidates{Style.RESET_ALL}"
         )
+
+    refined_candidates = _coalesce_snapped_intervals(refined_candidates)
 
     for idx, candidate in enumerate(refined_candidates, start=1):
         def step_cut() -> Path | None:
