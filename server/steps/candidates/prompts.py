@@ -26,6 +26,7 @@ FUNNY_PROMPT_DESC = (
     "Favor tight beats (often ≤25s) over long stories unless the payoff is exceptional. "
     "Cues that often mark a punchline: audience laughter/\"(laughs)\", sudden contradiction (\"actually…\"), hyperbole or absurd comparisons, unexpected specifics, or a sharp reversal (\"turns out…\"). "
     "Your `quote` should capture the punchline line verbatim. "
+    "Your `reason` must note what makes the moment funny and mention the comedic device or twist. "
     "`tags` must include at least one comedic device: [\"punchline\", \"roast\", \"callback\", \"absurdity\", \"wordplay\", \"misdirection\", \"deadpan\", \"escalation\"]; when possible add a tag for comedic style (e.g., \"slapstick\", \"dark\"). "
     "Reject: long rambles, setup-only segments, inside jokes that need unseen visuals, polite chuckles with no payoff, sponsor/promotional reads, or mean-spirited or hateful remarks without wit."
 )
@@ -67,6 +68,7 @@ SPACE_PROMPT_DESC = (
     "Structure each beat with a clear claim or question, a concise explanation/analogy, and a satisfying mini-conclusion. "
     "Cues of strong moments: vivid scale analogies, clear numbers (distances, timescales), comparisons to everyday objects, breakthroughs/\"we finally\" statements, high-stakes mission updates, or counterintuitive corrections (common misconceptions). "
     "Your `quote` should capture the core awe/insight line verbatim. "
+    "Your `reason` must highlight why the moment inspires awe or curiosity and note the key insight. "
     "`tags` should include a topic or device (e.g., [\"black holes\", \"analogy\", \"mission update\", \"scale\", \"explanation\"]). "
     "Reject: rambling catalogues of facts, context that never lands a takeaway, overly technical math without a punchy insight, sponsor/CTA content, or speculation framed as certainty."
 )
@@ -78,6 +80,7 @@ HISTORY_PROMPT_DESC = (
     "Structure: setup (context), pivot (decision, accident, reveal), and payoff (result, lesson, irony). "
     "Cues of strong moments: unlikely alliances, last-minute reversals, quotes from principals, declassified details, mistaken assumptions exposed, or numbers that reframe the scale of events. "
     "Your `quote` should capture the twist or most quotable line. "
+    "Your `reason` must explain the historical stakes or irony that make the moment compelling. "
     "`tags` should include event/topic or device (e.g., [\"ww2\", \"turning point\", \"irony\", \"primary source\", \"consequence\"]). "
     "Reject: date-dumps without narrative, lists of rulers/battles with no through-line, myth repeated without caveat, sponsor/CTA content, or moralizing without evidence."
 )
@@ -89,6 +92,7 @@ TECH_PROMPT_DESC = (
     "Structure: hook claim/question, concise explanation/demo, and punchy takeaway (rule of thumb, gotcha, or decision criterion). "
     "Cues of strong moments: counterintuitive benchmarks, before/after demos, minimal repro steps, pros/cons in one breath, cost/time trade-offs, or clarified misconceptions. "
     "Your `quote` should capture the core takeaway or the most memorable claim. "
+    "Your `reason` must spell out the practical insight or trade-off that defines the moment. "
     "`tags` should include topic or device (e.g., [\"ai\", \"benchmark\", \"how-it-works\", \"tradeoff\", \"tip\"]). "
     "Reject: vague hype, product pitches, endless caveats without guidance, sponsor/CTA content, or arguments that hinge on missing visuals or private context."
 )
@@ -100,6 +104,7 @@ HEALTH_PROMPT_DESC = (
     "Structure: hook (question, misconception, or everyday pain), short explanation with guardrails, and a specific next step or heuristic. "
     "Cues of strong moments: quantified effects, practical substitutions, dose/frequency clarity, common pitfalls, or \"red flag\" checks. "
     "Your `quote` should capture the key advice or myth-busting line. "
+    "Your `reason` must clarify the health takeaway or myth-bust and why it is responsible guidance. "
     "`tags` should include topic or device (e.g., [\"sleep\", \"myth-bust\", \"habit\", \"nutrition\", \"safety\"]). "
     "Reject: medical claims without support, unsafe instructions, overconfident prescriptions, sponsor/CTA content, or shaming language."
 )
@@ -179,6 +184,7 @@ def _build_system_instructions(
         f"- Valid values: start < end; start ≥ 0; rating is a number {RATING_MIN:.1f}–{RATING_MAX:.1f} with one decimal place (e.g., 5.2, 6.7, 9.1). Do not restrict to .0 endings — use fractional decimals for nuance. No NaN/Infinity.\n"
         "- Quote fidelity: `quote` must appear within [start, end] and capture the core line.\n"
         "- Reason coverage: `start` and `end` must include all lines cited in `reason`; don't cite outside lines.\n"
+        "- Tone match: `reason` must explain how the moment fits the tone; `quote` must capture a line that showcases that tone.\n"
         "- Tags: include 1–5 short, lowercase tags describing the moment (topic or device).\n"
         "- Structure: every clip should present a setup, brief escalation, and a clear payoff.\n"
         "- Non-overlap & spacing: clips must not overlap and must be spaced by ≥ 2.0s; if two candidates would overlap or be closer than 2.0s, keep only the higher-rated one.\n"
