@@ -20,8 +20,8 @@ from .helpers import (
     _get_field,
     _to_float,
     parse_transcript,
-    _merge_adjacent_candidates,
     _enforce_non_overlap,
+    _final_merge_and_resnap,
 )
 from .prompts import _build_system_instructions, FUNNY_PROMPT_DESC
 
@@ -293,16 +293,7 @@ def find_clip_timestamps_batched(
     filtered_candidates = _filter_promotional_candidates(filtered_candidates, items)
 
     print(
-        f"[Batch] Collected {len(all_candidates)} raw candidates across all chunks. Merging and enforcing non-overlap..."
-    )
-    filtered_candidates = _merge_adjacent_candidates(
-        filtered_candidates,
-        items,
-        merge_gap_seconds=1.0,
-        max_duration_seconds=MAX_DURATION_SECONDS,
-        words=words,
-        silences=silences,
-        merge_overlaps=merge_overlapping,
+        f"[Batch] Collected {len(all_candidates)} raw candidates across all chunks. Enforcing non-overlap..."
     )
     top_candidates = _enforce_non_overlap(
         filtered_candidates,
@@ -313,18 +304,15 @@ def find_clip_timestamps_batched(
         min_rating=min_rating,
     )
     print(f"[Batch] {len(top_candidates)} candidates remain after overlap enforcement.")
-    verified_candidates = [
-        c
-        for c in _verify_tone(
-            top_candidates,
-            items,
-            prompt_desc,
-            min_words=min_words,
-            model=model,
-            request_timeout=request_timeout,
-        )
-        if c is not None
-    ]
+    tone_checked = _verify_tone(
+        top_candidates,
+        items,
+        prompt_desc,
+        min_words=min_words,
+        model=model,
+        request_timeout=request_timeout,
+    )
+    verified_candidates = [c for c in tone_checked if c is not None]
     print(
         f"[Batch] {len(verified_candidates)} candidates remain after tone verification."
     )
@@ -332,9 +320,17 @@ def find_clip_timestamps_batched(
     print(
         f"[Batch] {len(verified_candidates)} candidates remain after final promo filter."
     )
+    final_candidates = _final_merge_and_resnap(
+        verified_candidates,
+        items,
+        merge_gap_seconds=1.0,
+        max_duration_seconds=MAX_DURATION_SECONDS,
+        words=words,
+        silences=silences,
+    )
     if return_all_stages:
-        return verified_candidates, top_candidates, all_candidates
-    return verified_candidates
+        return final_candidates, top_candidates, all_candidates
+    return final_candidates
 
 
 def find_clip_timestamps(
@@ -407,39 +403,35 @@ def find_clip_timestamps(
 
     candidates = _filter_promotional_candidates(candidates, items)
 
-    merged_candidates = _merge_adjacent_candidates(
-        candidates,
-        items,
-        merge_gap_seconds=1.0,
-        max_duration_seconds=MAX_DURATION_SECONDS,
-        words=words,
-        silences=silences,
-        merge_overlaps=merge_overlapping,
-    )
     top_candidates = _enforce_non_overlap(
-        merged_candidates,
+        candidates,
         items,
         words=words,
         silences=silences,
         min_duration_seconds=min_duration_seconds,
         min_rating=min_rating,
     )
-    verified_candidates = [
-        c
-        for c in _verify_tone(
-            top_candidates,
-            items,
-            prompt_desc,
-            min_words=min_words,
-            model=model,
-            request_timeout=LLM_API_TIMEOUT,
-        )
-        if c is not None
-    ]
+    tone_checked = _verify_tone(
+        top_candidates,
+        items,
+        prompt_desc,
+        min_words=min_words,
+        model=model,
+        request_timeout=LLM_API_TIMEOUT,
+    )
+    verified_candidates = [c for c in tone_checked if c is not None]
     verified_candidates = _filter_promotional_candidates(verified_candidates, items)
     print(
         f"[Single] {len(verified_candidates)} candidates remain after final promo filter."
     )
+    final_candidates = _final_merge_and_resnap(
+        verified_candidates,
+        items,
+        merge_gap_seconds=1.0,
+        max_duration_seconds=MAX_DURATION_SECONDS,
+        words=words,
+        silences=silences,
+    )
     if return_all_stages:
-        return verified_candidates, top_candidates, all_candidates
-    return verified_candidates
+        return final_candidates, top_candidates, all_candidates
+    return final_candidates
