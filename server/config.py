@@ -65,7 +65,7 @@ WHISPER_MODEL = os.environ.get(
 # Clip selection
 # ---------------------------------------
 # Choose which type of clips to generate
-CLIP_TYPE = Tone.SPACE  # or "space", "history", "tech", "health"
+CLIP_TYPE = Tone.FUNNY  # or "space", "history", "tech", "health"
 
 # ---------------------------------------
 # Candidate selection heuristics
