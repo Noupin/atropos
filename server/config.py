@@ -54,7 +54,7 @@ SILENCE_DETECTION_MIN_DURATION = 0.075
 # Transcript acquisition settings
 # ---------------------------------------
 # Preferred transcript source: "youtube" or "whisper"
-TRANSCRIPT_SOURCE = "whisper"
+TRANSCRIPT_SOURCE = "youtube"
 # Model used for faster-whisper transcription
 WHISPER_MODEL = os.environ.get(
     "WHISPER_MODEL",

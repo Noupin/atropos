@@ -628,6 +628,7 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
                     options={"temperature": 0.0},
                 )
             except Exception as e:
+                print(tags)
                 print(f"[Hashtags] error generating hashtags: {e}")
                 send_failure_email(
                     "Hashtag generation failed",
@@ -682,22 +683,17 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
 
 
 if __name__ == "__main__":
-    # yt_url = "https://www.youtube.com/watch?v=GDbDRWzFfds" #KFAF 1
-    # yt_url = "https://www.youtube.com/watch?v=zZYxqZFThls"  # KFAF 2
-    # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVvLGotSXrDeZetca0jayby1" #DCEU(newest first)
-    # yt_url = "https://www.youtube.com/watch?v=os2AyD_4RjM" #Dark phoenix
-    # yt_url = "https://www.youtube.com/watch?v=JM1KbE-C9XE" #KFAF Nicks 40th birthday
-    yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"  # KFAF Playlist(newest first)
-    # yt_url = "https://www.youtube.com/playlist?list=PLlZTdvF5WOdwtw4pEsrxuP-5wfzgsUJY-" # AVP in review playlist(newest first order)
-    # yt_url = "https://www.youtube.com/playlist?list=PL8F86WtVt7aboLYsBkbau1fxQrhAmBoxK" # MCU In review
-    # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVtQQqX1nezpnsbeok2U6K8h" # star wars (newest first)
-    # yt_url = "https://www.youtube.com/playlist?list=PLtwJaMpWoTgRs3MKjNJwQcshOsVVNyDfM" # sp7
-    # yt_url = "https://www.youtube.com/watch?v=dww8Hekngmg"
-    # yt_url = input("Enter YouTube video URL: ")
+    # tone = Tone.FUNNY 
+    # account = "funnykinda"
+    # yt_url = "https://www.youtube.com/playlist?list=PLy3mMHt2i7RKE9ba8rfL7_qnFcpbUaA8_" # In Review Playlist (newest first)
+    # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"  # KFAF Playlist(newest first) last used [8:9]
+
+    
+    tone = Tone.HISTORY
+    account = "history"
+    yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9" # Crash Course World History
 
     urls = get_video_urls(yt_url)
-    urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    account = "funnykinda"  # Set to an account name to output under out/<account>
-    tone = Tone.FUNNY  # Choose tone independently of account
-    for url in urls[8:9]:
+    # urls.reverse() # If the playlist is newest first, reverse to process oldest first
+    for url in urls[:]:
         process_video(url, account=account, tone=tone)

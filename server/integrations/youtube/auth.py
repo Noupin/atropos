@@ -28,9 +28,10 @@ from googleapiclient.discovery import build
 # --- Constants (edit here, no argparse) --------------------------------------
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 CLIENT_SECRETS_FILE = os.getenv("YT_CLIENT_SECRETS", "yt_client_secret.json")
+YT_ACCOUNT = "history"  # subfolder under server/tokens/
 TOKENS_FILE = Path(
     os.getenv("YT_TOKENS_FILE")
-    or Path(__file__).resolve().parents[2] / "tokens" / "youtube.json"
+    or Path(__file__).resolve().parents[2] / "tokens" / YT_ACCOUNT / "youtube.json"
 )
 
 
