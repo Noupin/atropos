@@ -213,6 +213,29 @@ def duration_score(
     return 1.0
 
 
+def _extend_to_quote_end(
+    end: float, quote: str, items: List[Tuple[float, float, str]], *, gap: float = 0.6
+) -> float:
+    """Extend ``end`` forward through contiguous repeats of ``quote``.
+
+    Starting from the transcript item containing ``end``, any immediately
+    following items whose text exactly matches ``quote`` are consumed so long as
+    the gap between segments does not exceed ``gap`` seconds.  The returned
+    value is the end timestamp of the last matching segment.
+    """
+    if not quote:
+        return end
+    for idx, (s, e, txt) in enumerate(items):
+        if s <= end <= e:
+            last_end = e
+            for nxt_s, nxt_e, nxt_txt in items[idx + 1 :]:
+                if nxt_txt != quote or nxt_s - last_end > gap:
+                    break
+                last_end = nxt_e
+            return max(end, last_end)
+    return end
+
+
 def refine_clip_window(
     start: float,
     end: float,
@@ -223,15 +246,20 @@ def refine_clip_window(
     pre_leadin: float = 0.25,
     post_tail: float = 0.45,
     max_extension: float = MAX_DURATION_SECONDS,
+    quote: Optional[str] = None,
 ) -> Tuple[float, float]:
     """Refine a clip by snapping to natural boundaries.
 
     The ``end`` is extended to consume adjacent transcript segments when they
     appear to be a continuation of the same sentence.  ``max_extension`` limits
-    how far beyond the original ``end`` the refinement may extend.
+    how far beyond the original ``end`` the refinement may extend.  If
+    ``quote`` is provided, any immediately repeated occurrences of the quote are
+    also consumed.
     """
     s = _snap_start_to_segment_start(start, items)
     e = _snap_end_to_segment_end(end, items, max_extension=max_extension)
+    if quote:
+        e = _extend_to_quote_end(e, quote, items)
     if words:
         s, e = snap_to_word_boundaries(s, e, words)
     if silences:
@@ -334,6 +362,7 @@ def _merge_adjacent_candidates(
             words=words,
             silences=silences,
             max_extension=max_duration_seconds,
+            quote=c.quote,
         )
         if s != c.start or e != c.end:
             print(
@@ -434,6 +463,7 @@ def _enforce_non_overlap(
             words=words,
             silences=silences,
             max_extension=max_duration_seconds,
+            quote=c.quote,
         )
         if e <= s:
             continue
@@ -547,6 +577,7 @@ __all__ = [
     "refine_clip_window",
     "_snap_start_to_segment_start",
     "_snap_end_to_segment_end",
+    "_extend_to_quote_end",
     "_merge_adjacent_candidates",
     "_enforce_non_overlap",
     "dedupe_candidates",

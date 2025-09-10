@@ -178,6 +178,7 @@ def _build_system_instructions(
         "- Intro music: if there is intro music or a theme song at the start, begin the clip after the intro; never include music-only intros.\n"
         f"- Valid values: start < end; start ≥ 0; rating is a number {RATING_MIN:.1f}–{RATING_MAX:.1f} with one decimal place (e.g., 5.2, 6.7, 9.1). Do not restrict to .0 endings — use fractional decimals for nuance. No NaN/Infinity.\n"
         "- Quote fidelity: `quote` must appear within [start, end] and capture the core line.\n"
+        "- Reason coverage: `start` and `end` must include all lines cited in `reason`; don't cite outside lines.\n"
         "- Tags: include 1–5 short, lowercase tags describing the moment (topic or device).\n"
         "- Structure: every clip should present a setup, brief escalation, and a clear payoff.\n"
         "- Non-overlap & spacing: clips must not overlap and must be spaced by ≥ 2.0s; if two candidates would overlap or be closer than 2.0s, keep only the higher-rated one.\n"
