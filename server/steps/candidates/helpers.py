@@ -344,7 +344,14 @@ def _merge_adjacent_candidates(
         if (e - s) > max_duration_seconds:
             continue
         snapped.append(
-            ClipCandidate(start=s, end=e, rating=c.rating, reason=c.reason, quote=c.quote)
+            ClipCandidate(
+                start=s,
+                end=e,
+                rating=c.rating,
+                reason=c.reason,
+                quote=c.quote,
+                count=c.count,
+            )
         )
 
     if not snapped:
@@ -368,10 +375,14 @@ def _merge_adjacent_candidates(
                 print(
                     f"[Merge] ({cur.start:.2f}-{cur.end:.2f}) + ({nxt.start:.2f}-{nxt.end:.2f}) -> ({new_start:.2f}-{new_end:.2f})"
                 )
+                new_count = cur.count + nxt.count
+                avg_rating = round(
+                    (cur.rating * cur.count + nxt.rating * nxt.count) / new_count, 1
+                )
                 cur = ClipCandidate(
                     start=new_start,
                     end=new_end,
-                    rating=max(cur.rating, nxt.rating),
+                    rating=avg_rating,
                     reason=(
                         cur.reason
                         + (" | " if cur.reason and nxt.reason else "")
@@ -382,6 +393,7 @@ def _merge_adjacent_candidates(
                         + (" | " if cur.quote and nxt.quote else "")
                         + nxt.quote
                     ).strip(),
+                    count=new_count,
                 )
                 continue
         merged.append(cur)
@@ -430,7 +442,14 @@ def _enforce_non_overlap(
             continue
         if d < min_duration_seconds:
             continue
-        new_c = ClipCandidate(start=s, end=e, rating=c.rating, reason=c.reason, quote=c.quote)
+        new_c = ClipCandidate(
+            start=s,
+            end=e,
+            rating=c.rating,
+            reason=c.reason,
+            quote=c.quote,
+            count=c.count,
+        )
         if hasattr(c, "tone_match"):
             new_c.tone_match = c.tone_match
         adjusted.append(new_c)
@@ -464,7 +483,9 @@ def _enforce_non_overlap(
     for cand in adjusted:
         for sel in selected:
             if overlaps(cand, sel):
-                sel.rating = max(sel.rating, cand.rating)
+                combined = sel.rating * sel.count + cand.rating * cand.count
+                sel.count += cand.count
+                sel.rating = round(combined / sel.count, 1)
                 break
         else:
             selected.append(cand)

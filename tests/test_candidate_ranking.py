@@ -21,7 +21,8 @@ def test_tone_aligned_prioritized() -> None:
     result = _enforce_non_overlap([bad, good], items)
     assert len(result) == 1
     chosen = result[0]
-    assert chosen.rating == max(good.rating, bad.rating)
+    assert chosen.rating == 7.0
+    assert chosen.count == 2
     assert chosen.start == 0.0 and chosen.end == 12.0
 
 
