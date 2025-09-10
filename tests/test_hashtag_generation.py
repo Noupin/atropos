@@ -14,8 +14,18 @@ def test_prepare_hashtags_dedupes_and_adds_show():
     assert result == ["#repeat", "#Another"]
 
 
+def test_prepare_hashtags_handles_generic_tags():
+    tags = ["Specific"]
+    generics = ["foryou", "fyp", "viral", "trending"]
+    result = prepare_hashtags(tags + generics, None)
+    for expected in ["#foryou", "#fyp", "#viral", "#trending", "#Specific"]:
+        assert expected in result
+
+
 def test_build_hashtag_prompt_includes_guidelines():
     prompt = build_hashtag_prompt("Title", quote="Quote", show="Show")
     assert "Favor short hashtags" in prompt
     assert "avoid punctuation" in prompt
     assert "Show: Show" in prompt
+    assert "generic hashtags" in prompt
+    assert "specific to the video's" in prompt

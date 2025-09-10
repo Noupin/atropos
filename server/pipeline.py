@@ -89,6 +89,7 @@ from helpers.cleanup import cleanup_project_dir
 from common.caption_utils import build_hashtag_prompt, prepare_hashtags
 
 
+GENERIC_HASHTAGS = ["foryou", "fyp", "viral", "trending"]
 
 
 def process_video(yt_url: str, account: str | None = None, tone: Tone | None = None) -> None:
@@ -645,7 +646,10 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
                     for w in video_info["title"].split()
                     if re.sub(r"[^0-9A-Za-z]", "", w)
                 ][:3]
-            hashtags = prepare_hashtags(tags + fallback_words, video_info.get("uploader"))
+            hashtags = prepare_hashtags(
+                tags + fallback_words + GENERIC_HASHTAGS,
+                video_info.get("uploader"),
+            )
             hashtags.extend(["#shorts", "#madebyatropos"])
             full_video_link = youtube_timestamp_url(yt_url, candidate.start)
             description = (

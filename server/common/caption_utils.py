@@ -91,15 +91,16 @@ def build_hashtag_prompt(
     """Create an instruction prompt for hashtag generation."""
 
     prompt = (
-        "Generate as many relevant hashtags for a short form video based on the "
-        "video's title"
+        "Generate many relevant hashtags for a short form video based on the video's "
+        "title"
     )
     if quote:
         prompt += " and a quote from the clip"
     prompt += (
-        ". Favor short hashtags, avoid punctuation, and the title does not always "
-        "need to be a hashtag. Include the show name if provided. Respond with a "
-        "JSON array of strings without the # symbol.\n"
+        ". Include a mix of broad, generic hashtags and ones specific to the video's "
+        "content. Favor short hashtags, avoid punctuation, and the title does not "
+        "always need to be a hashtag. Include the show name if provided. Respond with "
+        "a JSON array of strings without the # symbol.\n"
         f"Title: {title}\n"
     )
     if quote:
