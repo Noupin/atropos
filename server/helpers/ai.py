@@ -18,8 +18,8 @@ DEFAULT_JSON_EXTRACT = re.compile(r"\[(?:.|\n)*\]")
 
 
 # Some models occasionally emit stray control characters that break ``json.loads``.
-# Strip everything except standard whitespace before attempting to parse.
-_CTRL_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
+# Strip all ASCII control characters before attempting to parse.
+_CTRL_RE = re.compile(r"[\x00-\x1F]")
 
 
 def _strip_control_chars(text: str) -> str:
