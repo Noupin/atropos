@@ -45,3 +45,15 @@ def test_ollama_generate_handles_dict_response(monkeypatch) -> None:
     out = ai.ollama_generate(model="m", prompt="p")
     assert out == json.dumps({"foo": [1, 2]})
 
+
+def test_ollama_call_json_strips_control_chars(monkeypatch) -> None:
+    raw = '["alpha", "br\navo", "char\ttlie"]'
+
+    def fake_generate(*args, **kwargs):
+        return raw
+
+    monkeypatch.setattr(ai, "ollama_generate", fake_generate)
+
+    result = ai.ollama_call_json(model="m", prompt="p")
+    assert result == ["alpha", "bravo", "chartlie"]
+
