@@ -12,8 +12,8 @@ from config import (
     LOCAL_LLM_MODEL,
 )
 
-from server.custom_types.tone import ToneStrategy
-from server.custom_types.ETone import Tone
+from custom_types.tone import ToneStrategy
+from custom_types.ETone import Tone
 
 from . import ClipCandidate, _filter_promotional_candidates
 from .helpers import (

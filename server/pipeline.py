@@ -13,7 +13,7 @@ from steps.download import (
     is_twitch_url,
 )
 from steps.candidates.tone import find_candidates_by_tone
-from server.custom_types.ETone import Tone
+from custom_types.ETone import Tone
 from steps.candidates.helpers import (
     export_candidates_json,
     load_candidates_json,
