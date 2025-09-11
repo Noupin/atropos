@@ -700,5 +700,5 @@ if __name__ == "__main__":
 
     urls = get_video_urls(yt_url)
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[:]:
+    for url in urls[:1]:
         process_video(url, account=account, tone=tone)

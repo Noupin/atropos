@@ -189,7 +189,6 @@ def find_candidates_by_tone(
 
     filtered = [c for c in all_candidates if c.rating >= min_rating]
     filtered = _filter_promotional_candidates(filtered, items)
-    top = list(filtered)
     merged = _merge_adjacent_candidates(filtered, items, silences=silences)
     final = _enforce_non_overlap(
         merged,
@@ -221,11 +220,11 @@ def find_candidates_by_tone(
             )
 
     _log(
-        f"Run summary | tone={tone.name} | all_candidates={len(all_candidates)} | rated_ge_min={len(filtered)} | merged={len(merged)} | top={len(top)} | total_llm_seconds={_TOTAL_LLM_SECONDS:.2f}"
+        f"Run summary | tone={tone.name} | all_candidates={len(all_candidates)} | rated_ge_min={len(filtered)} | merged={len(merged)} | top={len(filtered)} | total_llm_seconds={_TOTAL_LLM_SECONDS:.2f}"
     )
 
     if return_all_stages:
-        return final, top, all_candidates
+        return final, filtered, all_candidates
     return final
 
 

@@ -10,6 +10,7 @@ from interfaces.clip_candidate import ClipCandidate
 from config import (
     MAX_DURATION_SECONDS,
     MIN_DURATION_SECONDS,
+    OVERLAP_MERGE_PERCENTAGE_REQUIREMENT,
     SWEET_SPOT_MAX_SECONDS,
     SWEET_SPOT_MIN_SECONDS,
 )
@@ -343,29 +344,34 @@ def _merge_adjacent_candidates(
     candidates: List[ClipCandidate],
     items: List[Tuple[float, float, str]],
     *,
-    merge_gap_seconds: float = 1.0,
     max_duration_seconds: float = MAX_DURATION_SECONDS,
     words: Optional[List[dict]] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
     merge_overlaps: bool = False,
+    overlap_fraction_threshold: float = OVERLAP_MERGE_PERCENTAGE_REQUIREMENT,  # require ≥50% overlap of the shorter clip
 ) -> List[ClipCandidate]:
-    """Snap candidate boundaries and optionally merge adjacent/overlapping candidates.
+    """Snap candidate boundaries and optionally merge overlapping candidates.
 
-    Policy: never drop a candidate merely because a potential merge would exceed
-    max_duration_seconds — instead, skip the merge and keep both clips.
+    Policy:
+    - Only merge if clips **overlap** by at least `overlap_fraction_threshold` of the **shorter** clip.
+    - Never merge purely gapped clips (the old `merge_gap_seconds` is deprecated and ignored).
+    - Only merge if the merged span stays within `max_duration_seconds` **after** snapping/refinement.
+    - Never drop a candidate because a potential merge would exceed `max_duration_seconds`; skip the merge and keep both.
     """
     if not candidates:
         return []
 
     snapped: List[ClipCandidate] = []
     for c in candidates:
+        orig_len = max(0.0, c.end - c.start)
+        headroom = max(0.0, max_duration_seconds - orig_len)
         s, e = refine_clip_window(
             c.start,
             c.end,
             items,
             words=words,
             silences=silences,
-            max_extension=max_duration_seconds,
+            max_extension=headroom,
             quote=c.quote,
         )
 
@@ -399,13 +405,24 @@ def _merge_adjacent_candidates(
     cur = snapped[0]
 
     for nxt in snapped[1:]:
-        gap = nxt.start - cur.end
-        overlap = gap <= 0
-        tiny_gap = 0 <= gap <= merge_gap_seconds
-        if overlap or tiny_gap:
+        # Compute temporal intersection
+        inter_start = max(cur.start, nxt.start)
+        inter_end = min(cur.end, nxt.end)
+        inter = max(0.0, inter_end - inter_start)
+
+        # Lengths of each
+        len_cur = max(0.0, cur.end - cur.start)
+        len_nxt = max(0.0, nxt.end - nxt.start)
+        shorter = min(len_cur, len_nxt) if min(len_cur, len_nxt) > 0 else 0.0
+
+        # Require a non-insignificant overlap: fraction of the shorter clip covered by the intersection
+        overlap_fraction = (inter / shorter) if shorter > 0 else 0.0
+
+        if overlap_fraction >= overlap_fraction_threshold:
             new_start = min(cur.start, nxt.start)
             new_end = max(cur.end, nxt.end)
-            if (new_end - new_start) <= max_duration_seconds:
+            merged_len = new_end - new_start
+            if merged_len <= max_duration_seconds:
                 new_count = cur.count + nxt.count
                 avg_rating = round(
                     (cur.rating * cur.count + nxt.rating * nxt.count) / new_count, 1
@@ -427,7 +444,6 @@ def _merge_adjacent_candidates(
                     count=new_count,
                 )
                 continue
-        # Do not merge when it would exceed max_duration_seconds; keep both separately
         merged.append(cur)
         cur = nxt
 
@@ -459,18 +475,24 @@ def _enforce_non_overlap(
     for c in candidates:
         if c.rating < min_rating:
             continue
+        orig_len = max(0.0, c.end - c.start)
+        headroom = max(0.0, max_duration_seconds - orig_len)
         s, e = refine_clip_window(
             c.start,
             c.end,
             items,
             words=words,
             silences=silences,
-            max_extension=max_duration_seconds,
+            max_extension=headroom,
             quote=c.quote,
         )
         if e <= s:
             continue
         d = e - s
+        # Allow minor FP tolerance when very close to the limit
+        if d > max_duration_seconds and d <= max_duration_seconds + 1e-6:
+            d = max_duration_seconds
+            e = s + d
         if d > max_duration_seconds:
             continue
         if d < min_duration_seconds:
