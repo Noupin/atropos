@@ -107,6 +107,31 @@ def _read_instagram_creds(path: Path) -> tuple[str, str]:
     return data["username"], data["password"]
 
 
+def _infer_account_from_path(path: Path) -> str | None:
+    """Infer the account name from a path under ``OUT_ROOT``.
+
+    Parameters
+    ----------
+    path:
+        A path inside the ``out`` directory. The account is assumed to be the
+        first component under that directory, e.g. ``out/<account>/project``.
+
+    Returns
+    -------
+    Optional[str]
+        The inferred account name or ``None`` if the path does not include an
+        account component.
+    """
+
+    out_root = Path(os.environ.get("OUT_ROOT", "/app/out")).resolve()
+    try:
+        relative = path.resolve().relative_to(out_root)
+    except Exception:
+        return None
+    parts = relative.parts
+    return parts[0] if len(parts) >= 3 else None
+
+
 def _get_auth_refreshers(
     username: str, password: str, video: Path, account: str | None
 ) -> Dict[str, Callable[[], None]]:
@@ -247,7 +272,8 @@ def run(
         See :func:`upload_all` for descriptions.
     account:
         Optional account name used to namespace token files under
-        ``tokens/<account>``.
+        ``tokens/<account>``. When omitted, the account is inferred from the
+        ``folder`` or ``video`` path if they reside under ``OUT_ROOT``.
     platforms:
         Optional iterable restricting which platforms to upload to.
 
@@ -257,6 +283,12 @@ def run(
     """
 
     tokens_dir = Path(tokens_dir) if tokens_dir else TOKENS_DIR
+
+    if account is None:
+        base_path = folder or video or desc
+        if base_path is not None:
+            account = _infer_account_from_path(Path(base_path))
+
     if account:
         tokens_dir = tokens_dir / account
     tokens_dir.mkdir(parents=True, exist_ok=True)
