@@ -364,10 +364,7 @@ def _merge_adjacent_candidates(
             max_extension=max_duration_seconds,
             quote=c.quote,
         )
-        if s != c.start or e != c.end:
-            print(
-                f"[Snap] ({c.start:.2f}-{c.end:.2f}) -> ({s:.2f}-{e:.2f})"
-            )
+
         if e <= s:
             continue
         if (e - s) > max_duration_seconds:

@@ -26,13 +26,13 @@ OUTPUT_FPS: float = 30.0
 
 # Clip boundary snapping options
 SNAP_TO_SILENCE = True
-SNAP_TO_DIALOG = True
+SNAP_TO_DIALOG = False
 SNAP_TO_SENTENCE = True
 
 # Toggle LLM usage for transcript segmentation
 USE_LLM_FOR_SEGMENTS = True
 # Toggle LLM-based detection of dialog ranges
-DETECT_DIALOG_WITH_LLM = True
+DETECT_DIALOG_WITH_LLM = False
 
 # Choose local LLM provider and model
 LOCAL_LLM_PROVIDER = os.environ.get(
@@ -88,7 +88,7 @@ FORCE_REBUILD_SEGMENTS = False
 FORCE_REBUILD_DIALOG = False
 WINDOW_SIZE_SECONDS = 90.0
 WINDOW_OVERLAP_SECONDS = 30.0
-WINDOW_CONTEXT_PCT = 0.11  # fraction of window length used as context on each side
+WINDOW_CONTEXT_PERCENTAGE = 0.11  # fraction of window length used as context on each side
 RATING_MIN = 0.0
 RATING_MAX = 10.0
 MIN_EXTENSION_MARGIN = 0.3
@@ -166,7 +166,7 @@ __all__ = [
     "FORCE_REBUILD_DIALOG",
     "WINDOW_SIZE_SECONDS",
     "WINDOW_OVERLAP_SECONDS",
-    "WINDOW_CONTEXT_PCT",
+    "WINDOW_CONTEXT_PERCENTAGE",
     "RATING_MIN",
     "RATING_MAX",
     "MIN_EXTENSION_MARGIN",

@@ -11,7 +11,7 @@ from config import (
     RATING_MAX,
     WINDOW_SIZE_SECONDS,
     WINDOW_OVERLAP_SECONDS,
-    WINDOW_CONTEXT_PCT,
+    WINDOW_CONTEXT_PERCENTAGE,
 )
 
 FUNNY_PROMPT_DESC = """
@@ -154,11 +154,13 @@ def _build_system_instructions(
         "[{\"start\": number, \"end\": number, \"rating\": number, \"reason\": string, \"quote\": string, \"tags\": string[]}]\n\n"
         "CLIP RULES:\n"
         f"- Clip length: {MIN_DURATION_SECONDS:.0f}-{MAX_DURATION_SECONDS:.0f}s; prefer {SWEET_SPOT_MIN_SECONDS:.0f}-{SWEET_SPOT_MAX_SECONDS:.0f}s; never exceed window (≈{WINDOW_SIZE_SECONDS:.0f}s).\n"
+        f"- Never output a clip longer than {MAX_DURATION_SECONDS:.0f}s. If a great moment is longer, SPLIT it into multiple adjacent items, each within the limits.\n"
         "- Up to 6 items total.\n"
         "- reason <= 240 chars; quote <= 200 chars.\n"
         "- tags: 1-5 items; each <= 24 chars.\n"
         "- Atomic: one beat; begin on a natural lead-in; end right after the payoff.\n"
         "- Hook: a clear hook in the first ~2s; trim silence/filler.\n"
+        f"- Do not round-trip your own durations: explicitly set `end - start` <= {MAX_DURATION_SECONDS:.0f}s. If uncertain, shorten, do not extend.\n"
         "- No overlaps; maintain >= 2.0s spacing; keep only the higher-rated if they would collide.\n"
         "- Quote must be inside [start,end]; reason cites only lines within that span.\n"
         "- Valid values: start < end; start >= 0; rating is a decimal number within allowed range. No NaN/Infinity.\n"
@@ -183,7 +185,7 @@ def build_window_prompt(
     system_instructions = _build_system_instructions(
         prompt_desc, rating_descriptions
     )
-    context_secs = WINDOW_SIZE_SECONDS * WINDOW_CONTEXT_PCT
+    context_secs = WINDOW_SIZE_SECONDS * WINDOW_CONTEXT_PERCENTAGE
     # Replace the {TEXT} token with the actual transcript window text
     filled = system_instructions.replace("{TEXT}", text)
     return (
