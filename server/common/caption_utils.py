@@ -9,6 +9,29 @@ from typing import Iterable, List
 HASHTAG_RE = re.compile(r"#\w+")
 HASHTAG_CLEAN_RE = re.compile(r"[^0-9A-Za-z]+")
 
+# Remove emoji and other pictographic symbols that can break platform parsers or JSON contracts
+EMOJI_RE = re.compile(
+    r"[\U0001F600-\U0001F64F]"  # emoticons
+    r"|[\U0001F300-\U0001F5FF]"  # symbols & pictographs
+    r"|[\U0001F680-\U0001F6FF]"  # transport & map
+    r"|[\U0001F700-\U0001F77F]"  # alchemical symbols
+    r"|[\U0001F780-\U0001F7FF]"  # geometric shapes extended
+    r"|[\U0001F800-\U0001F8FF]"  # supplemental arrows-C
+    r"|[\U0001F900-\U0001F9FF]"  # supplemental symbols & pictographs
+    r"|[\U0001FA00-\U0001FA6F]"  # chess symbols, symbols & pictographs ext-A
+    r"|[\U0001FA70-\U0001FAFF]"  # symbols & pictographs ext-B
+    r"|[\u2600-\u26FF]"          # misc symbols
+    r"|[\u2700-\u27BF]"          # dingbats
+)
+
+PRINTABLE_ASCII_RE = re.compile(r"[^\x20-\x7E]\s*")
+
+def remove_emoji(text: str) -> str:
+    """Strip emoji and non‑printable characters to ensure UTF‑8 safe, description‑friendly text."""
+    # First drop emoji/pictographs, then any remaining non‑printable ascii
+    no_emoji = EMOJI_RE.sub("", text)
+    return PRINTABLE_ASCII_RE.sub("", no_emoji)
+
 
 def collapse_whitespace(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
@@ -53,6 +76,7 @@ def normalize_caption(
     """Normalise caption text according to platform rules."""
 
     base = collapse_whitespace(text)
+    base = remove_emoji(base)
     tags = extract_hashtags(base)
     tags = keep_top_hashtags(tags, top_n)
     tags = append_default_tags(tags, defaults)
@@ -86,23 +110,36 @@ def prepare_hashtags(tags: Iterable[str], show: str | None = None) -> List[str]:
 
 
 def build_hashtag_prompt(
-    title: str, quote: str | None = None, show: str | None = None
+    title: str,
+    quote: str | None = None,
+    show: str | None = None,
+    max_items: int = 15,
+    max_tag_len: int = 24,
+    max_total_chars: int = 200,
 ) -> str:
-    """Create an instruction prompt for hashtag generation."""
+    """Create a strict instruction prompt for hashtag generation.
 
-    prompt = (
-        "Generate many relevant hashtags for a short form video based on the video's "
-        "title"
+    Enforces:
+    - Output MUST be a valid JSON array of strings, with no prose or keys.
+    - No emojis or non‑ASCII; only lowercase a–z and digits 0–9.
+    - No `#`, spaces, punctuation, or diacritics inside items.
+    - Size limits: at most `max_items` items; each string length ≤ `max_tag_len`;
+      total characters across all items (including commas and quotes) ≤ `max_total_chars`.
+    """
+
+    base = (
+        "Generate hashtags for a short‑form video using ONLY the fields below.\n"
+        "Return EXACTLY one value: a valid JSON array of strings.\n"
+        "Rules (must all be followed):\n"
+        "1) Strict JSON: no preface, no trailing commas, no comments, no backticks.\n"
+        "2) Items: only lowercase a-z and 0-9; no spaces, punctuation, diacritics, or emojis.\n"
+        "3) Do NOT include the leading # in items.\n"
+        f"4) Limits: at most {max_items} items; each ≤ {max_tag_len} characters; total output ≤ {max_total_chars} characters.\n"
+        "5) Mix broad and specific terms relevant to the content; include the show name as one item if provided (sanitized).\n"
+        "6) If a required item would violate the rules, omit it rather than breaking format.\n"
     )
-    if quote:
-        prompt += " and a quote from the clip"
-    prompt += (
-        ". Include a mix of broad, generic hashtags and ones specific to the video's "
-        "content. Favor short hashtags, avoid punctuation, and the title does not "
-        "always need to be a hashtag. Include the show name if provided. Respond with "
-        "a JSON array of strings without the # symbol.\n"
-        f"Title: {title}\n"
-    )
+
+    prompt = base + f"Title: {title}\n"
     if quote:
         prompt += f"Quote: {quote}\n"
     if show:
@@ -120,5 +157,5 @@ __all__ = [
     "clean_hashtag",
     "prepare_hashtags",
     "build_hashtag_prompt",
+    "remove_emoji",
 ]
-
