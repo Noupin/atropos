@@ -91,22 +91,29 @@ Reject:
 """
 
 HISTORY_PROMPT_DESC = """
-Find compelling historical beats that feel like crisp mini‑stories.
+Find consequential, easy-to-follow history beats that feel like crisp mini‑stories — interesting **or** significant.
 
 What to prefer:
-- Vivid anecdotes, sharp cause‑and‑effect, surprising connections to the present.
-- Decision points, last‑minute reversals, quotes from principals, declassified details, mistaken assumptions exposed, or reframing numbers.
+- Decision points, last‑minute reversals, firsts/lasts, declassified reveals, or mistaken assumptions exposed.
+- Clear stakes and consequences that matter beyond trivia (policy shifts, wars, tech breakthroughs, social change, precedent‑setting rulings).
+- Verifiable details: named actors, concrete dates/places, primary‑source mentions (e.g., memo, diary, dispatch), or quantified impact.
 
 What to return:
-- Self‑contained narrative: who/when/where in a phrase → pivot (decision/accident/reveal) → consequence/lesson/irony.
+- A self‑contained mini‑narrative: who/when/where in a phrase → pivot (decision/accident/reveal) → consequence/lesson/irony.
+- Include only the context needed for the payoff; end on the twist, lesson, or quotable line. Keep it atomic (one beat).
 
 Reason/quote/tags rules:
-- `quote` captures the twist or most quotable line.
-- `reason` begins with 'history because …' and explains the stakes or irony that make the moment compelling.
-- `tags` include event/topic or device such as "ww2", "turning point", "irony", "primary source", "consequence".
+- `quote` captures the twist/decision line or the most quotable sentence that anchors the beat.
+- `reason` begins with 'history because …' and names the stakes and the device (e.g., turning point, irony, first/last, declassification, misconception corrected). If a claim is debated or uncertain in the transcript, acknowledge that ("history because … tentative/contested").
+- `tags` include 1–3 topical/device tags like "turning point", "ww2", "reform", "declassified", "trial", "treaty", "invention", "misconception".
+
+Guardrails:
+- Prefer clips that stand without visuals; avoid segments that require unseen maps/documents to make sense.
+- Do not present myths as facts. If the speaker frames a legend/counterfactual, it must be labeled as such in the `reason`.
+- Avoid modern partisan hot‑takes or moralizing without evidence; focus on events, decisions, and sourced claims.
 
 Reject:
-- Date‑dumps with no through‑line, lists of rulers/battles without story, myths repeated without caveat, sponsor/CTA content, or moralizing without evidence.
+- Date‑dumps with no through‑line; lists of rulers/battles without a point; pure speculation framed as certainty; sponsor/CTA; or moralizing with no evidence.
 """
 
 TECH_PROMPT_DESC = """
@@ -162,14 +169,14 @@ SPACE_RATING_DESCRIPTIONS = {
 }
 
 HISTORY_RATING_DESCRIPTIONS = {
-    "10": "mini-epic; perfect twist/payoff with crisp context",
-    "9":  "excellent story; memorable and insightful",
-    "8":  "very good; clear narrative and point",
+    "10": "mini‑epic; clear stakes and unforgettable payoff; verified details; obvious significance",
+    "9":  "excellent story; strong stakes, crisp twist, and consequence",
+    "8":  "very good; clear narrative with meaningful takeaway",
     "7":  "good; solid anecdote with acceptable context",
-    "6":  "borderline; needs clearer stakes or payoff",
-    "5":  "weak; dates/facts but no story",
+    "6":  "borderline; stakes or payoff underexplained",
+    "5":  "weak; facts without a point or consequence",
     "4":  "poor; disjointed or confusing",
-    "3":  "poor; off-track or trivial",
+    "3":  "poor; trivial or off‑track",
     "2":  "not usable; unsubstantiated or misleading",
     "1":  "not usable; moralizing without evidence",
     "0":  "reject; misinformation or hateful content",
