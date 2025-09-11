@@ -513,9 +513,7 @@ def _enforce_non_overlap(
     for cand in adjusted:
         for sel in selected:
             if overlaps(cand, sel):
-                combined = sel.rating * sel.count + cand.rating * cand.count
-                sel.count += cand.count
-                sel.rating = round(combined / sel.count, 1)
+                sel.rating = max(sel.rating, cand.rating)
                 break
         else:
             selected.append(cand)
