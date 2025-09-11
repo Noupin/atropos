@@ -349,7 +349,11 @@ def _merge_adjacent_candidates(
     silences: Optional[List[Tuple[float, float]]] = None,
     merge_overlaps: bool = False,
 ) -> List[ClipCandidate]:
-    """Snap candidate boundaries and optionally merge adjacent/overlapping candidates."""
+    """Snap candidate boundaries and optionally merge adjacent/overlapping candidates.
+
+    Policy: never drop a candidate merely because a potential merge would exceed
+    max_duration_seconds — instead, skip the merge and keep both clips.
+    """
     if not candidates:
         return []
 
@@ -368,7 +372,11 @@ def _merge_adjacent_candidates(
         if e <= s:
             continue
         if (e - s) > max_duration_seconds:
-            continue
+            # Do not drop this candidate; keep it unmerged by reverting to original bounds
+            s, e = c.start, c.end
+            if (e - s) > max_duration_seconds:
+                # If the original itself violates max, then and only then drop
+                continue
         snapped.append(
             ClipCandidate(
                 start=s,
@@ -398,9 +406,6 @@ def _merge_adjacent_candidates(
             new_start = min(cur.start, nxt.start)
             new_end = max(cur.end, nxt.end)
             if (new_end - new_start) <= max_duration_seconds:
-                print(
-                    f"[Merge] ({cur.start:.2f}-{cur.end:.2f}) + ({nxt.start:.2f}-{nxt.end:.2f}) -> ({new_start:.2f}-{new_end:.2f})"
-                )
                 new_count = cur.count + nxt.count
                 avg_rating = round(
                     (cur.rating * cur.count + nxt.rating * nxt.count) / new_count, 1
@@ -422,6 +427,7 @@ def _merge_adjacent_candidates(
                     count=new_count,
                 )
                 continue
+        # Do not merge when it would exceed max_duration_seconds; keep both separately
         merged.append(cur)
         cur = nxt
 

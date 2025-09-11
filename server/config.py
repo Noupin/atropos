@@ -71,7 +71,7 @@ CLIP_TYPE = Tone.FUNNY  # or "space", "history", "tech", "health"
 # Candidate selection heuristics
 # ---------------------------------------
 MIN_DURATION_SECONDS = 6.0
-MAX_DURATION_SECONDS = 90.0
+MAX_DURATION_SECONDS = 120.0
 SWEET_SPOT_MIN_SECONDS = 8.0
 SWEET_SPOT_MAX_SECONDS = 35.0
 
