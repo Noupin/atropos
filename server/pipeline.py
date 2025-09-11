@@ -694,10 +694,11 @@ if __name__ == "__main__":
     tone = Tone.HISTORY
     account = "history"
     # Crash Course World History
-    yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9"
-    # yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
+    # yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9"
+    # World History Battles
+    yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
 
     urls = get_video_urls(yt_url)
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[:]:
+    for url in urls[:1]:
         process_video(url, account=account, tone=tone)

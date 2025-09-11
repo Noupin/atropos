@@ -3,9 +3,10 @@ from __future__ import annotations
 import time
 from pathlib import Path
 from typing import Any, List, Tuple
+from datetime import datetime
 
 from config import (
-    WINDOW_CONTEXT_PCT,
+    WINDOW_CONTEXT_PERCENTAGE,
     WINDOW_OVERLAP_SECONDS,
     WINDOW_SIZE_SECONDS,
     MIN_DURATION_SECONDS,
@@ -42,12 +43,16 @@ from .prompts import (
     build_window_prompt,
 )
 
+_TOTAL_LLM_SECONDS = 0.0
+
+def _log(msg: str) -> None:
+    print(msg)
+
 
 STRATEGY_REGISTRY: dict[Tone, ToneStrategy] = {
     Tone.FUNNY: ToneStrategy(
         prompt_desc=FUNNY_PROMPT_DESC,
         rating_descriptions=FUNNY_RATING_DESCRIPTIONS,
-        min_rating=9.0,
     ),
     Tone.SPACE: ToneStrategy(
         prompt_desc=SPACE_PROMPT_DESC,
@@ -112,9 +117,15 @@ def find_candidates_by_tone(
 
     items = parse_transcript(transcript_path)
     windows = _window_items(items)
-    all_candidates: List[ClipCandidate] = []
-    context = WINDOW_SIZE_SECONDS * WINDOW_CONTEXT_PCT
 
+    _log(
+        f"Run started {datetime.utcnow().isoformat()}Z | tone={tone.name} | windows={len(windows)} | min_rating={min_rating}"
+    )
+
+    all_candidates: List[ClipCandidate] = []
+    context = WINDOW_SIZE_SECONDS * WINDOW_CONTEXT_PERCENTAGE
+
+    global _TOTAL_LLM_SECONDS
     for win_start, win_end, win_items in windows:
         ctx_items = [
             it
@@ -127,19 +138,15 @@ def find_candidates_by_tone(
             text,
             strategy.rating_descriptions,
         )
-        print(f"[Tone] window {win_start:.2f}-{win_end:.2f}")
         start_t = time.perf_counter()
         try:
             arr = local_llm_call_json(
                 model=LOCAL_LLM_MODEL, prompt=prompt, options={"temperature": 0.2}
             )
         except Exception as e:
-            print(f"[Tone] window {win_start:.2f}-{win_end:.2f} failed: {e}")
             continue
         elapsed = time.perf_counter() - start_t
-        print(
-            f"[Tone] LLM {win_start:.2f}-{win_end:.2f} took {elapsed:.2f}s and returned {len(arr)} candidates"
-        )
+        _TOTAL_LLM_SECONDS += elapsed
         for it in arr:
             start_val = _to_float(_get_field(it, "start"))
             end_val = _to_float(_get_field(it, "end"))
@@ -151,53 +158,74 @@ def find_candidates_by_tone(
             start_val = float(start_val)
             end_val = float(end_val)
             rating = round(float(rating), 1)
+            model_start = start_val
+            model_end = end_val
             if segments is not None and strategy.snap_to_sentence:
                 new_start = _snap_start_to_sentence_start(start_val, segments)
                 new_end = _snap_end_to_sentence_end(end_val, segments)
-                if new_start != start_val or new_end != end_val:
-                    print(
-                        f"[Snap] sentence ({start_val:.2f}-{end_val:.2f}) -> ({new_start:.2f}-{new_end:.2f})"
-                    )
                 start_val, end_val = new_start, new_end
             if dialog_ranges is not None and strategy.snap_to_dialog:
                 new_start = snap_start_to_dialog_start(start_val, dialog_ranges)
                 new_end = snap_end_to_dialog_end(end_val, dialog_ranges)
-                if new_start != start_val or new_end != end_val:
-                    print(
-                        f"[Snap] dialog ({start_val:.2f}-{end_val:.2f}) -> ({new_start:.2f}-{new_end:.2f})"
-                    )
                 start_val, end_val = new_start, new_end
             if silences is not None and strategy.snap_to_silence:
                 new_start = snap_start_to_silence(start_val, silences)
                 new_end = snap_end_to_silence(end_val, silences)
-                if new_start != start_val or new_end != end_val:
-                    print(
-                        f"[Snap] silence ({start_val:.2f}-{end_val:.2f}) -> ({new_start:.2f}-{new_end:.2f})"
-                    )
                 start_val, end_val = new_start, new_end
+            # Store a lightweight record to recover original model times if this clip is ultimately selected
+            # We match later on the snapped (post-snap) times with small tolerance.
+            if 'pre_snap_records' not in locals():
+                pre_snap_records = []
+            pre_snap_records.append({
+                'snapped_start': start_val,
+                'snapped_end': end_val,
+                'model_start': model_start,
+                'model_end': model_end,
+                'rating': rating,
+            })
             all_candidates.append(
                 ClipCandidate(start=start_val, end=end_val, rating=rating, reason=reason, quote=quote)
             )
 
     filtered = [c for c in all_candidates if c.rating >= min_rating]
     filtered = _filter_promotional_candidates(filtered, items)
-    print(f"[Tone] {len(filtered)} candidates >= {min_rating}")
-
     merged = _merge_adjacent_candidates(filtered, items, silences=silences)
-    print(f"[Tone] {len(merged)} candidates after merge")
-
-    top = _enforce_non_overlap(
+    final = _enforce_non_overlap(
         merged,
         items,
         silences=silences,
         min_duration_seconds=MIN_DURATION_SECONDS,
         min_rating=min_rating,
     )
-    print(f"[Tone] {len(top)} candidates after non-overlap")
+
+    # Print only the final selections: original (model) timestamps if matchable, snapped timestamps, and rating
+    def _find_orig(st: float, en: float, tol: float = 0.05):
+        try:
+            for rec in pre_snap_records:
+                if abs(rec['snapped_start'] - st) <= tol and abs(rec['snapped_end'] - en) <= tol:
+                    return rec['model_start'], rec['model_end']
+        except NameError:
+            pass
+        return None, None
+
+    for c in final:
+        o_s, o_e = _find_orig(c.start, c.end)
+        if o_s is not None and o_e is not None:
+            _log(
+                f"Picked clip | original_model={o_s:.2f}-{o_e:.2f} | snapped={c.start:.2f}-{c.end:.2f} | rating={c.rating:.1f}"
+            )
+        else:
+            _log(
+                f"Picked clip | snapped={c.start:.2f}-{c.end:.2f} | rating={c.rating:.1f}"
+            )
+
+    _log(
+        f"Run summary | tone={tone.name} | all_candidates={len(all_candidates)} | rated_ge_min={len(filtered)} | merged={len(merged)} | top={len(filtered)} | total_llm_seconds={_TOTAL_LLM_SECONDS:.2f}"
+    )
+
     if return_all_stages:
-        return top, merged, all_candidates
-    return top
+        return final, filtered, all_candidates
+    return final
 
 
 __all__ = ["STRATEGY_REGISTRY", "find_candidates_by_tone"]
-

@@ -70,7 +70,7 @@ now inferred from this folder structure and the matching tokens are loaded from
 
 ## Configuration Notes
 
-- Window context overlap is set via `WINDOW_CONTEXT_PCT` in `server/config.py` as a
+- Window context overlap is set via `WINDOW_CONTEXT_PERCENTAGE` in `server/config.py` as a
   fraction of each window's duration.
 - Legacy chunk-based LLM settings (`MAX_LLM_CHARS`, `LLM_API_TIMEOUT`, and related
   options) now live at the bottom of `server/config.py` and are deprecated.
