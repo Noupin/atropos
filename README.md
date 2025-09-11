@@ -61,6 +61,13 @@ per platform.
 To view logs after upping with -d
 `docker compose logs -f uploader`
 
+### Multiple Accounts
+
+Place projects for different upload accounts under `out/<account>/<project>`.
+When the upload scripts are run without an explicit account name, the account is
+now inferred from this folder structure and the matching tokens are loaded from
+`server/tokens/<account>`.
+
 ## Configuration Notes
 
 - Window context overlap is set via `WINDOW_CONTEXT_PCT` in `server/config.py` as a
