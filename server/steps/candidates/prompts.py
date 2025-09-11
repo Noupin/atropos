@@ -14,9 +14,31 @@ from config import (
     WINDOW_CONTEXT_PCT,
 )
 
-FUNNY_PROMPT_DESC = (
-    "Find self-contained funny beats that will make most viewers laugh. Edgy, inappropriate, or raunchy humor is allowed and should be scored if it delivers a comedic payoff. Only discard when the content is hateful, non-consensual, or purely offensive without wit. Embrace strange, out-of-the-blue, or jump-cut moments if they land a punchline (e.g., sudden cut to an absurd confession). Prefer short setups with a clear punchline or twist (deadpan contradiction, playful roast, absurd confession, misdirection, escalation, wordplay). Highlight the comedic style (dry satire, slapstick, dark humor, etc.) when obvious and make the scenario's twist or contrast explicit. Structure each beat with setup, escalation, and punchline; pacing matters. The punchline must occur inside the clip window; do not return pure setup. Start slightly before the setup line and end just after the laugh/beat lands (≤1.5s). Include 1–3s of pre-punchline context when needed for the joke to land. Cues that often mark a punchline: audience laughter/(\"laughs\"), sudden contradiction (\"actually…\"), hyperbole or absurd comparisons, unexpected specifics, or a sharp reversal (\"turns out…\"). Your `quote` must capture the punchline line verbatim (or the exact comedic turn). Your `reason` must begin with 'funny because …' and name the device (e.g., misdirection, roast, escalation) and why it lands. `tags` must include at least one comedic device: [\"punchline\", \"roast\", \"callback\", \"absurdity\", \"wordplay\", \"misdirection\", \"deadpan\", \"escalation\"]; when possible add a tag for comedic style (e.g., \"slapstick\", \"dark\"). Reject: long rambles, setup-only segments, inside jokes that need unseen visuals, polite chuckles with no payoff, sponsor/promotional reads, or mean-spirited or hateful remarks without wit."
-)
+FUNNY_PROMPT_DESC = """
+Find self-contained funny beats that will make most viewers laugh.
+
+What to prefer:
+- Short setups with a clear punchline or twist (deadpan contradiction, playful roast, absurd confession, misdirection, escalation, wordplay).
+- Strange, out-of-the-blue, or jump‑cut moments that land a punchline (e.g., a sudden cut to an absurd confession).
+- Clips where the comedic device is obvious (dry satire, slapstick, dark humor, etc.).
+
+What to return:
+- A single atomic joke beat per item: setup → brief escalation → punchline.
+- Start slightly before the setup line and end just after the laugh/beat lands (≤ 1.5s of tail).
+- Include 1–3s of pre‑punchline context only if needed for the joke to land.
+
+Safety/allowances:
+- Edgy or raunchy humor is allowed and should be scored when it delivers a witty payoff.
+- Discard only when the content is hateful, non‑consensual, or purely offensive without wit.
+
+Reason/quote/tags rules:
+- `quote` must capture the punchline or exact comedic turn verbatim.
+- `reason` must begin with 'funny because …', name the device (e.g., misdirection, roast, escalation), and explain why it lands.
+- `tags` must include at least one comedic device (e.g., "punchline", "roast", "callback", "absurdity", "wordplay", "misdirection", "deadpan", "escalation") and optionally a style tag (e.g., "slapstick", "dark").
+
+Reject:
+- Long rambles, setup‑only segments, inside jokes that require unseen visuals, polite chuckles with no payoff, sponsor/promotional reads, or mean‑spirited/hateful remarks without wit.
+"""
 
 
 GENERAL_RATING_DESCRIPTIONS: Dict[str, str] = {
@@ -48,53 +70,82 @@ FUNNY_RATING_DESCRIPTIONS: Dict[str, str] = {
     "0":  "reject; hateful or non-consensual content without comedic value",
 }
 
-SPACE_PROMPT_DESC = (
-    "Find mind-expanding astronomy or spaceflight beats that trigger awe and curiosity. "
-    "Prefer surprising facts, crisp explanations of cosmic phenomena, or mission milestones that feel consequential (e.g., firsts, failures with insight, dramatic course corrections). "
-    "Keep clips self-contained: give just enough context to understand the phenomenon and why it matters, then land a memorable takeaway or image. "
-    "Structure each beat with a clear claim or question, a concise explanation/analogy, and a satisfying mini-conclusion. "
-    "Cues of strong moments: vivid scale analogies, clear numbers (distances, timescales), comparisons to everyday objects, breakthroughs/\"we finally\" statements, high-stakes mission updates, or counterintuitive corrections (common misconceptions). "
-    "Your `quote` should capture the core awe/insight line verbatim. "
-    "Your `reason` must begin with 'space awe because …' and highlight why the moment inspires awe or curiosity and note the key insight. "
-    "`tags` should include a topic or device (e.g., [\"black holes\", \"analogy\", \"mission update\", \"scale\", \"explanation\"]). "
-    "Reject: rambling catalogues of facts, context that never lands a takeaway, overly technical math without a punchy insight, sponsor/CTA content, or speculation framed as certainty."
-)
+SPACE_PROMPT_DESC = """
+Find mind‑expanding astronomy or spaceflight beats that trigger awe and curiosity.
 
-HISTORY_PROMPT_DESC = (
-    "Find compelling historical beats that feel like crisp mini-stories. "
-    "Prefer vivid anecdotes, sharp cause-and-effect, or surprising connections to the present. "
-    "Keep clips self-contained: establish who/when/where in a phrase or two, highlight the twist or decision point, and conclude with the consequence or lesson. "
-    "Structure: setup (context), pivot (decision, accident, reveal), and payoff (result, lesson, irony). "
-    "Cues of strong moments: unlikely alliances, last-minute reversals, quotes from principals, declassified details, mistaken assumptions exposed, or numbers that reframe the scale of events. "
-    "Your `quote` should capture the twist or most quotable line. "
-    "Your `reason` must begin with 'history because …' and explain the historical stakes or irony that make the moment compelling. "
-    "`tags` should include event/topic or device (e.g., [\"ww2\", \"turning point\", \"irony\", \"primary source\", \"consequence\"]). "
-    "Reject: date-dumps without narrative, lists of rulers/battles with no through-line, myth repeated without caveat, sponsor/CTA content, or moralizing without evidence."
-)
+What to prefer:
+- Surprising facts, crisp explanations of cosmic phenomena, or consequential mission milestones (firsts, failures with insight, dramatic course corrections).
+- Clear scale analogies, vivid numbers (distances, timescales), or counterintuitive corrections to common misconceptions.
 
-TECH_PROMPT_DESC = (
-    "Find practical or eye-opening technology beats that deliver clear value quickly. "
-    "Prefer actionable tips, clean explanations of how something works, crisp comparisons, or grounded takes on industry shifts (trade-offs included). "
-    "Keep clips self-contained: define the thing in plain language, show the why (benefit or risk), and land a take-away the viewer could use or remember. "
-    "Structure: hook claim/question, concise explanation/demo, and punchy takeaway (rule of thumb, gotcha, or decision criterion). "
-    "Cues of strong moments: counterintuitive benchmarks, before/after demos, minimal repro steps, pros/cons in one breath, cost/time trade-offs, or clarified misconceptions. "
-    "Your `quote` should capture the core takeaway or the most memorable claim. "
-    "Your `reason` must begin with 'tech because …' and spell out the practical insight or trade-off that defines the moment. "
-    "`tags` should include topic or device (e.g., [\"ai\", \"benchmark\", \"how-it-works\", \"tradeoff\", \"tip\"]). "
-    "Reject: vague hype, product pitches, endless caveats without guidance, sponsor/CTA content, or arguments that hinge on missing visuals or private context."
-)
+What to return:
+- Self‑contained moments with just enough context to understand the phenomenon and why it matters, ending on a memorable takeaway or image.
+- Structure: clear claim or question → concise explanation/analogy → satisfying mini‑conclusion.
 
-HEALTH_PROMPT_DESC = (
-    "Find engaging, responsible health or wellness beats that offer clear, evidence-aware takeaways. "
-    "Prefer actionable tips, myth-busting with nuance, or simple frameworks (\"if X then consider Y\") that respect safety and individual variability. "
-    "Keep clips self-contained: define terms plainly, cite the type of evidence when stated (e.g., RCT vs. anecdote), and finish with a conservative, useful takeaway. "
-    "Structure: hook (question, misconception, or everyday pain), short explanation with guardrails, and a specific next step or heuristic. "
-    "Cues of strong moments: quantified effects, practical substitutions, dose/frequency clarity, common pitfalls, or \"red flag\" checks. "
-    "Your `quote` should capture the key advice or myth-busting line. "
-    "Your `reason` must begin with 'health because …' and clarify the health takeaway or myth-bust and why it is responsible guidance. "
-    "`tags` should include topic or device (e.g., [\"sleep\", \"myth-bust\", \"habit\", \"nutrition\", \"safety\"]). "
-    "Reject: medical claims without support, unsafe instructions, overconfident prescriptions, sponsor/CTA content, or shaming language."
-)
+Reason/quote/tags rules:
+- `quote` captures the core awe/insight line verbatim.
+- `reason` begins with 'space awe because …' and explains why the moment inspires awe/curiosity and names the key insight.
+- `tags` include a topic/device like "black holes", "analogy", "mission update", "scale", "explanation".
+
+Reject:
+- Rambling fact lists, context with no takeaway, overly technical math without a punchy insight, sponsor/CTA content, or speculation framed as certainty.
+"""
+
+HISTORY_PROMPT_DESC = """
+Find compelling historical beats that feel like crisp mini‑stories.
+
+What to prefer:
+- Vivid anecdotes, sharp cause‑and‑effect, surprising connections to the present.
+- Decision points, last‑minute reversals, quotes from principals, declassified details, mistaken assumptions exposed, or reframing numbers.
+
+What to return:
+- Self‑contained narrative: who/when/where in a phrase → pivot (decision/accident/reveal) → consequence/lesson/irony.
+
+Reason/quote/tags rules:
+- `quote` captures the twist or most quotable line.
+- `reason` begins with 'history because …' and explains the stakes or irony that make the moment compelling.
+- `tags` include event/topic or device such as "ww2", "turning point", "irony", "primary source", "consequence".
+
+Reject:
+- Date‑dumps with no through‑line, lists of rulers/battles without story, myths repeated without caveat, sponsor/CTA content, or moralizing without evidence.
+"""
+
+TECH_PROMPT_DESC = """
+Find practical or eye‑opening technology beats that deliver clear value quickly.
+
+What to prefer:
+- Actionable tips, clean explanations of how something works, crisp comparisons, grounded takes on industry shifts (with trade‑offs).
+
+What to return:
+- Self‑contained clips that define the thing in plain language, show the why (benefit/risk), and land a take‑away the viewer can use or remember.
+- Structure: hook claim/question → concise explanation/demo → punchy takeaway (rule of thumb, gotcha, or decision criterion).
+
+Reason/quote/tags rules:
+- `quote` captures the core takeaway or most memorable claim.
+- `reason` begins with 'tech because …' and spells out the practical insight or trade‑off.
+- `tags` include topic/device like "ai", "benchmark", "how‑it‑works", "tradeoff", "tip".
+
+Reject:
+- Vague hype, product pitches, endless caveats without guidance, sponsor/CTA content, or arguments that hinge on missing visuals/private context.
+"""
+
+HEALTH_PROMPT_DESC = """
+Find engaging, responsible health or wellness beats that offer clear, evidence‑aware takeaways.
+
+What to prefer:
+- Actionable tips, careful myth‑busting, or simple frameworks ("if X then consider Y") that respect safety and individual variability.
+
+What to return:
+- Self‑contained clips that define terms plainly, cite the type of evidence when stated (e.g., RCT vs. anecdote), and finish with a conservative, useful takeaway.
+- Structure: hook (question/misconception/everyday pain) → short explanation with guardrails → specific next step or heuristic.
+
+Reason/quote/tags rules:
+- `quote` captures the key advice or myth‑busting line.
+- `reason` begins with 'health because …' and clarifies the takeaway or myth‑bust and why it is responsible guidance.
+- `tags` include a topic/device like "sleep", "myth‑bust", "habit", "nutrition", "safety".
+
+Reject:
+- Medical claims without support, unsafe instructions, overconfident prescriptions, sponsor/CTA content, or shaming language.
+"""
 
 SPACE_RATING_DESCRIPTIONS = {
     "10": "jaw-dropping; unforgettable sense of scale or breakthrough; crystal clarity",
@@ -166,14 +217,16 @@ def _build_system_instructions(
         f"{SWEET_SPOT_MIN_SECONDS:.0f}–{SWEET_SPOT_MAX_SECONDS:.0f} seconds. "
         f"Items longer than {MAX_DURATION_SECONDS:.0f} seconds are invalid "
         "and must be discarded.\n"
+        "Atomicity: return atomic beats, not segments that span multiple topics. If a strong moment would exceed the limit, SPLIT it into multiple adjacent items, each meeting the duration rules.\n"
+        f"Window sanity: never output a clip longer than the current transcript window (≈{WINDOW_SIZE_SECONDS:.0f}s). If your best option is long, break it into multiple candidates.\n"
         "If no suitable moments exist, return [].\n\n"
         "HARD RULES (must all be satisfied):\n"
-        f"- Clip length: {MIN_DURATION_SECONDS:.0f}–{MAX_DURATION_SECONDS:.0f}s only; "
-        f"target {SWEET_SPOT_MIN_SECONDS:.0f}–{SWEET_SPOT_MAX_SECONDS:.0f}s. "
-        f"Never output a clip longer than {MAX_DURATION_SECONDS:.0f}s.\n"
+        f"- Clip length: {MIN_DURATION_SECONDS:.0f}–{MAX_DURATION_SECONDS:.0f}s only; strongly prefer {SWEET_SPOT_MIN_SECONDS:.0f}–{SWEET_SPOT_MAX_SECONDS:.0f}s. "
+        f"Never output a clip longer than {MAX_DURATION_SECONDS:.0f}s or longer than the current window (≈{WINDOW_SIZE_SECONDS:.0f}s). When in doubt, split long material into smaller, self‑contained beats.\n"
         "- Self-contained: clear beginning and end; no missing context.\n"
         "- Boundaries: never start mid-word; begin at a natural lead-in and end just after the key beat lands (leave ~0.2–0.6s of tail room); prefer entering at the hook when possible. Always end at the end of a full sentence, not mid-thought.\n"
         "- Hook priority: the first 1–2 seconds must contain a clear hook (surprising line, bold claim, sharp question, or punchy setup). Trim silence/filler; avoid slow ramps. Prefer entering on the hook rather than several seconds of preamble; generic 'hook' alone is not a valid reason.\n"
+        "- Split vs. combine: do NOT merge multiple punchlines or topics into one candidate. Prefer multiple short, self‑contained clips over one long clip.\n"
         "- Intro music: if there is intro music or a theme song at the start, begin the clip after the intro; never include music-only intros.\n"
         f"- Valid values: start < end; start ≥ 0; rating is a number {RATING_MIN:.1f}–{RATING_MAX:.1f} with one decimal place or more (e.g., 5.2, 6.7, 9.1). Do not restrict to .0 endings — use fractional decimals for nuance. No NaN/Infinity.\n"
         "- Quote fidelity: `quote` must appear within [start, end] and capture the core line.\n"
@@ -186,7 +239,7 @@ def _build_system_instructions(
         "- Quote alignment: `quote` must capture a line that showcases that tone. "
         "For FUNNY, use the punchline or precise comedic turn; for other tones, "
         "use the core claim/insight that the `reason` cites.\n"
-        "- No generic reasons: never use vague labels like 'Hook', 'good intro', 'nice debate', or 'interesting'; reasons must reference why the moment fits the chosen tone.\n"
+        "- No generic reasons: never use vague labels like 'hook', 'good intro', 'nice debate', or 'interesting'. Reasons must explicitly reference why the moment fits the chosen tone (e.g., 'funny because … misdirection', 'history because … turning point').\n"
         "- Tags: include 1–5 short, lowercase tags describing the moment (topic or device).\n"
         "- Structure: every clip should present a setup, brief escalation, and a clear payoff.\n"
         "- Non-overlap & spacing: clips must not overlap and must be spaced by ≥ 2.0s; if two candidates would overlap or be closer than 2.0s, keep only the higher-rated one.\n"
@@ -205,7 +258,8 @@ def _build_system_instructions(
         + ("\n\nTONE-SPECIFIC NOTES:\n" + "\n".join([f"{rating}: {desc}" for rating, desc in rating_descriptions.items()]) if rating_descriptions else "")
         + "\n\n"
         "Scores above 8 are reserved for truly standout clips; when uncertain, "
-        "default to a lower score.\n\n"
+        "default to a lower score.\n"
+        "Retention bias: when two candidates are similar, prefer the one with a tighter runtime and a stronger first 2–3 seconds.\n\n"
         "INSTRUCTIONS SOURCE (for context, not a style target):\n"
         f"{prompt_desc}\n"
         "Return the JSON now.\n"
