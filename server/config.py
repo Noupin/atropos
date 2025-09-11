@@ -6,7 +6,7 @@ Sections are grouped by feature for easier editing.
 import os
 import platform
 from pathlib import Path
-from custom_types.ETone import Tone
+from server.custom_types.ETone import Tone
 
 # ---------------------------------------
 # Rendering and clip boundary parameters
