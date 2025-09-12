@@ -32,10 +32,10 @@ OUTPUT_FPS: float = 30.0
 # Clip boundary snapping options
 SNAP_TO_SILENCE = True
 SNAP_TO_DIALOG = False
-SNAP_TO_SENTENCE = True
+SNAP_TO_SENTENCE = False
 
 # Toggle LLM usage for transcript segmentation
-USE_LLM_FOR_SEGMENTS = True
+USE_LLM_FOR_SEGMENTS = False
 # Toggle LLM-based detection of dialog ranges
 DETECT_DIALOG_WITH_LLM = False
 
@@ -79,7 +79,7 @@ CLIP_TYPE = Tone.FUNNY  # or "space", "history", "tech", "health"
 
 @dataclass
 class CandidateSelectionConfig:
-    enforce_non_overlap: bool = False
+    enforce_non_overlap: bool = True
     min_duration_seconds: float = 6.0
     max_duration_seconds: float = 90.0
     sweet_spot_min_seconds: float = 8.0

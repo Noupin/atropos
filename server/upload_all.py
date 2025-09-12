@@ -288,6 +288,7 @@ def run(
         base_path = folder or video or desc
         if base_path is not None:
             account = _infer_account_from_path(Path(base_path))
+    print(f"Using tokens for account: {account or '(default)'}")
 
     if account:
         tokens_dir = tokens_dir / account
@@ -331,6 +332,8 @@ def run(
         if folder.exists():
             _tidy_empty_dirs(folder, folder.parent)
     else:
+        print("== Single upload mode ==")
+        print(f"Video: {video or DEFAULT_VIDEO}")
         video = Path(video) if video else DEFAULT_VIDEO
         desc = Path(desc) if desc else DEFAULT_DESC
         upload_all(

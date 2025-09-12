@@ -109,6 +109,7 @@ def main(account: str | None = None, platforms: Sequence[str] | None = None) -> 
         return
     video, desc = clip
     project = video.parent.parent
+    print(f"Uploading {video} (account: {account or '(default)'})")
     try:
         run(video=video, desc=desc, account=account, platforms=platforms)
     finally:
@@ -137,8 +138,16 @@ def batch(
 
     if accounts is None:
         accounts = list_accounts(OUT_ROOT)
+    if not accounts:
+        print(f"No accounts found under {OUT_ROOT}")
+    else:
+        print(f"Uploading to {len(accounts)} account(s):")
+
 
     for account in accounts:
+        name = account if account is not None else "(default)"
+        out_dir = OUT_ROOT / account if account else OUT_ROOT
+        print(f"\nStarting - {name}: {out_dir}")
         main(account=account, platforms=platforms)
 
 
