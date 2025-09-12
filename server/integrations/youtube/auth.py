@@ -27,34 +27,58 @@ from googleapiclient.discovery import build
 
 # --- Constants (edit here, no argparse) --------------------------------------
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-CLIENT_SECRETS_FILE = os.getenv("YT_CLIENT_SECRETS", "yt_client_secret.json")
-YT_ACCOUNT = (
-    os.environ.get("YT_ACCOUNT")
-    or os.environ.get("ACCOUNT_NAME")
-    or os.environ.get("ACCOUNT_KIND")
-)
-TOKENS_DIR = Path(__file__).resolve().parents[2] / "tokens"
-TOKENS_FILE = Path(
-    os.getenv("YT_TOKENS_FILE")
-    or (
-        TOKENS_DIR / YT_ACCOUNT / "youtube.json" if YT_ACCOUNT else TOKENS_DIR / "youtube.json"
+
+
+def get_client_secrets_file() -> str:
+    """Return the path to the client secrets JSON file."""
+
+    return os.getenv("YT_CLIENT_SECRETS", "yt_client_secret.json")
+
+
+def get_account() -> str | None:
+    """Return the active account name from environment variables."""
+
+    return (
+        os.environ.get("YT_ACCOUNT")
+        or os.environ.get("ACCOUNT_NAME")
+        or os.environ.get("ACCOUNT_KIND")
     )
-)
+
+
+def get_tokens_dir() -> Path:
+    """Return the directory containing token files."""
+
+    return Path(__file__).resolve().parents[2] / "tokens"
+
+
+def get_tokens_file() -> Path:
+    """Return the path to the YouTube tokens file."""
+
+    override = os.getenv("YT_TOKENS_FILE")
+    if override:
+        return Path(override)
+    account = get_account()
+    tokens_dir = get_tokens_dir()
+    if account:
+        return tokens_dir / account / "youtube.json"
+    return tokens_dir / "youtube.json"
 
 
 # --- Token helpers ------------------------------------------------------------
 
 def _load_token_json() -> Optional[Dict[str, Any]]:
-    if TOKENS_FILE.exists():
+    tokens_file = get_tokens_file()
+    if tokens_file.exists():
         try:
-            return json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
+            return json.loads(tokens_file.read_text(encoding="utf-8"))
         except Exception:
             return None
     return None
 
 
 def _save_token_json(creds: Credentials) -> None:
-    TOKENS_FILE.write_text(creds.to_json(), encoding="utf-8")
+    tokens_file = get_tokens_file()
+    tokens_file.write_text(creds.to_json(), encoding="utf-8")
 
 
 # --- Credential helpers -------------------------------------------------------
@@ -92,10 +116,10 @@ def ensure_creds() -> Credentials:
     Opens a browser on first-time auth; then refreshes silently next runs.
     """
     # Guard: client secrets must exist
-    cs = Path(CLIENT_SECRETS_FILE)
+    cs = Path(get_client_secrets_file())
     if not cs.exists():
         raise FileNotFoundError(
-            f"CLIENT_SECRETS_FILE not found: {cs}. Set YT_CLIENT_SECRETS or place the file there."
+            f"Client secrets file not found: {cs}. Set YT_CLIENT_SECRETS or place the file there."
         )
 
     creds = load_creds()
@@ -109,7 +133,7 @@ def ensure_creds() -> Credentials:
         if creds.valid:
             return creds
 
-    flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
+    flow = InstalledAppFlow.from_client_secrets_file(get_client_secrets_file(), SCOPES)
     creds = flow.run_local_server(port=0)
     _save_token_json(creds)
     return creds
@@ -124,6 +148,6 @@ def build_service():
 # --- When run directly: perform auth and save --------------------------------
 if __name__ == "__main__":
     print("YouTube auth bootstrap")
-    print(f"Client secrets: {CLIENT_SECRETS_FILE}")
+    print(f"Client secrets: {get_client_secrets_file()}")
     creds = ensure_creds()
-    print(f"✅ Saved credentials to: {TOKENS_FILE}")
+    print(f"✅ Saved credentials to: {get_tokens_file()}")

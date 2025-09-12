@@ -1,16 +1,31 @@
 # tiktok_desktop_pkce_demo.py
 import os
 from pathlib import Path
+
 # Constants you edit once:
-CLIENT_KEY = os.environ.get("TIKTOK_CLIENT_KEY")
-CLIENT_SECRET = os.environ.get("TIKTOK_CLIENT_SECRET")  # some flows accept without; include if your app requires it
-SCOPES = ["user.info.basic", "video.publish"]          # comma-separated in URL (TikTok desktop spec)
+SCOPES = ["user.info.basic", "video.publish"]  # comma-separated in URL (TikTok desktop spec)
 REDIRECT_PATH = "/tiktok/auth/callback/"  # note trailing slash (keep it stable)
 
-TOKENS_FILE = Path(
-    os.getenv("TIKTOK_TOKENS_FILE")
-    or Path(__file__).resolve().parents[2] / "tokens" / "tiktok.json"
-)
+
+def get_client_key() -> str | None:
+    """Return the TikTok client key from the environment."""
+
+    return os.environ.get("TIKTOK_CLIENT_KEY")
+
+
+def get_client_secret() -> str | None:
+    """Return the TikTok client secret from the environment."""
+
+    return os.environ.get("TIKTOK_CLIENT_SECRET")
+
+
+def get_tokens_file() -> Path:
+    """Return the path to the TikTok tokens file."""
+
+    return Path(
+        os.getenv("TIKTOK_TOKENS_FILE")
+        or Path(__file__).resolve().parents[2] / "tokens" / "tiktok.json"
+    )
 
 import http.server, socket, webbrowser, urllib.parse, hashlib, secrets, json, requests, threading
 
@@ -45,11 +60,11 @@ def build_authorize_url(client_key, scopes_csv, redirect_uri, state, code_challe
 def exchange_code_for_tokens(code, redirect_uri, code_verifier):
     url = "https://open.tiktokapis.com/v2/oauth/token/"
     data = {
-        "client_key": CLIENT_KEY,
-        "client_secret": CLIENT_SECRET,   # include if your app needs it
+        "client_key": get_client_key(),
+        "client_secret": get_client_secret(),  # include if your app needs it
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": redirect_uri,     # TikTok expects this in body
+        "redirect_uri": redirect_uri,  # TikTok expects this in body
         "code_verifier": code_verifier,
     }
     r = requests.post(url, data=data, timeout=30)
@@ -62,8 +77,9 @@ def refresh_tokens() -> bool:
 
     Returns ``True`` if the token was refreshed and saved, ``False`` otherwise.
     """
+    tokens_file = get_tokens_file()
     try:
-        data = json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
+        data = json.loads(tokens_file.read_text(encoding="utf-8"))
     except Exception:
         return False
 
@@ -73,8 +89,8 @@ def refresh_tokens() -> bool:
 
     url = "https://open.tiktokapis.com/v2/oauth/token/"
     body = {
-        "client_key": CLIENT_KEY,
-        "client_secret": CLIENT_SECRET,
+        "client_key": get_client_key(),
+        "client_secret": get_client_secret(),
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
     }
@@ -94,7 +110,7 @@ def refresh_tokens() -> bool:
     if payload.get("error") or "access_token" not in payload:
         return False
 
-    TOKENS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    tokens_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return True
 
 def run():
@@ -108,7 +124,9 @@ def run():
     code_challenge = hex_sha256(code_verifier)
     scopes_csv = ",".join(SCOPES)
 
-    auth_url = build_authorize_url(CLIENT_KEY, scopes_csv, redirect_uri, state, code_challenge)
+    auth_url = build_authorize_url(
+        get_client_key(), scopes_csv, redirect_uri, state, code_challenge
+    )
     print("Open this URL if your browser didn't launch:\n", auth_url)
 
     # tiny callback server
@@ -153,10 +171,11 @@ def run():
     if code_holder["state"] != state:
         raise RuntimeError("State mismatch — possible CSRF or bad redirect.")
 
+    tokens_file = get_tokens_file()
     tokens = exchange_code_for_tokens(code_holder["code"], redirect_uri, code_verifier)
-    with open(TOKENS_FILE, "w") as f:
+    with open(tokens_file, "w") as f:
         json.dump(tokens, f, indent=2)
-    print("Saved tokens to", TOKENS_FILE)
+    print("Saved tokens to", tokens_file)
     print(json.dumps(tokens, indent=2))
 
 if __name__ == "__main__":
