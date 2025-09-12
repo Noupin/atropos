@@ -8,12 +8,20 @@ from math import inf
 
 from interfaces.clip_candidate import ClipCandidate
 from config import (
+    DEBUG_ENFORCE,
     MAX_DURATION_SECONDS,
     MIN_DURATION_SECONDS,
     OVERLAP_MERGE_PERCENTAGE_REQUIREMENT,
     SWEET_SPOT_MAX_SECONDS,
     SWEET_SPOT_MIN_SECONDS,
+    SNAP_TO_SILENCE,
+    SNAP_TO_DIALOG,
+    SNAP_TO_SENTENCE,
 )
+
+def _elog(msg: str) -> None:
+    if DEBUG_ENFORCE:
+        print(msg)
 
 
 # -----------------------------
@@ -244,27 +252,70 @@ def refine_clip_window(
     *,
     words: Optional[List[dict]] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
+    dialog_ranges: Optional[List[Tuple[float, float]]] = None,
     pre_leadin: float = 0.25,
     post_tail: float = 0.45,
     max_extension: float = MAX_DURATION_SECONDS,
     quote: Optional[str] = None,
 ) -> Tuple[float, float]:
-    """Refine a clip by snapping to natural boundaries.
+    """Refine a clip by snapping to natural boundaries (cascading, max-safe).
 
-    The ``end`` is extended to consume adjacent transcript segments when they
-    appear to be a continuation of the same sentence.  ``max_extension`` limits
-    how far beyond the original ``end`` the refinement may extend.  If
-    ``quote`` is provided, any immediately repeated occurrences of the quote are
-    also consumed.
+    Cascade order (guarded by config flags): Dialog -> Sentence -> Silence.
+    A snap is applied only if it would NOT make the clip longer than the
+    configured maximum duration. If a higher-priority snap would exceed the
+    maximum, we try the next one in the cascade. If none are safe, we keep the
+    current bounds. ``max_extension`` still caps how far the end may extend
+    beyond the original end.
+
+    ``quote`` extension is attempted first but only applied if it keeps the
+    duration within the maximum.
     """
-    s = _snap_start_to_segment_start(start, items)
-    e = _snap_end_to_segment_end(end, items, max_extension=max_extension)
+    # Start with original bounds
+    s = start
+    e = end
+
+    # 1) Optional quote extension (end-only), capped by max duration and max_extension
     if quote:
-        e = _extend_to_quote_end(e, quote, items)
+        e_quote = _extend_to_quote_end(e, quote, items)
+        # Respect max_extension from original end
+        if e_quote - end > max_extension:
+            e_quote = end + max_extension
+        if (e_quote - s) <= MAX_DURATION_SECONDS:
+            e = e_quote
+
+    # Helper to test a proposed snap is within max duration
+    def _apply_if_safe(new_s: float, new_e: float) -> Tuple[float, float]:
+        if new_e < new_s:
+            return s, e
+        if (new_e - new_s) <= MAX_DURATION_SECONDS:
+            return new_s, new_e
+        return s, e
+
+    # 2) Cascading snaps guarded by config flags
+    # Dialog snap (highest priority)
+    if SNAP_TO_DIALOG and dialog_ranges:
+        ds = snap_start_to_dialog_start(s, dialog_ranges)
+        de = snap_end_to_dialog_end(e, dialog_ranges)
+        s, e = _apply_if_safe(ds, de)
+
+    # Sentence snap (next)
+    if SNAP_TO_SENTENCE:
+        # Use segment-level sentence start/end with max_extension protection on end
+        ss = _snap_start_to_segment_start(s, items)
+        se = _snap_end_to_segment_end(e, items, max_extension=max_extension)
+        s, e = _apply_if_safe(ss, se)
+
+    # Word boundaries (fine grained): keep within max duration
     if words:
-        s, e = snap_to_word_boundaries(s, e, words)
-    if silences:
-        s, e = snap_to_silence(s, e, silences, pre_leadin=pre_leadin, post_tail=post_tail)
+        ws, we = snap_to_word_boundaries(s, e, words)
+        s, e = _apply_if_safe(ws, we)
+
+    # Silence snap (last)
+    if SNAP_TO_SILENCE and silences:
+        zs, ze = snap_to_silence(s, e, silences, pre_leadin=pre_leadin, post_tail=post_tail)
+        s, e = _apply_if_safe(zs, ze)
+
+    # Enforce a tiny minimum to avoid zero/negative clips
     if e - s < 0.30:
         e = s + 0.30
     return s, e
@@ -371,6 +422,7 @@ def _merge_adjacent_candidates(
             items,
             words=words,
             silences=silences,
+            dialog_ranges=None,
             max_extension=headroom,
             quote=c.quote,
         )
@@ -392,6 +444,9 @@ def _merge_adjacent_candidates(
                 quote=c.quote,
                 count=c.count,
             )
+        )
+        _elog(
+            f"merge: snapped | start={s:.3f} end={e:.3f} dur={(e-s):.3f} rating={c.rating:.1f}"
         )
 
     if not snapped:
@@ -474,6 +529,7 @@ def _enforce_non_overlap(
     adjusted: List[ClipCandidate] = []
     for c in candidates:
         if c.rating < min_rating:
+            _elog(f"enforce: drop   | reason=low_rating {c.rating:.1f} < {min_rating:.1f}")
             continue
         orig_len = max(0.0, c.end - c.start)
         headroom = max(0.0, max_duration_seconds - orig_len)
@@ -483,10 +539,15 @@ def _enforce_non_overlap(
             items,
             words=words,
             silences=silences,
+            dialog_ranges=None,
             max_extension=headroom,
             quote=c.quote,
         )
+        _elog(
+            f"enforce: refine  | orig={c.start:.3f}-{c.end:.3f} dur={c.end-c.start:.3f} -> snapped={s:.3f}-{e:.3f} d={e-s:.3f} rating={c.rating:.1f}"
+        )
         if e <= s:
+            _elog("enforce: drop   | reason=end<=start")
             continue
         d = e - s
         # Allow minor FP tolerance when very close to the limit
@@ -494,8 +555,10 @@ def _enforce_non_overlap(
             d = max_duration_seconds
             e = s + d
         if d > max_duration_seconds:
+            _elog(f"enforce: drop   | reason=too_long d={d:.3f} > max={max_duration_seconds:.3f}")
             continue
         if d < min_duration_seconds:
+            _elog(f"enforce: drop   | reason=too_short d={d:.3f} < min={min_duration_seconds:.3f}")
             continue
         new_c = ClipCandidate(
             start=s,
@@ -508,8 +571,10 @@ def _enforce_non_overlap(
         if hasattr(c, "tone_match"):
             new_c.tone_match = c.tone_match
         adjusted.append(new_c)
+        _elog("enforce: keep    | stage=adjusted")
 
     if not adjusted:
+        _elog("enforce: no adjusted candidates; returning []")
         return []
     ratings = [c.rating for c in adjusted]
     mean = sum(ratings) / len(ratings)
@@ -529,6 +594,7 @@ def _enforce_non_overlap(
         score = z * prior + length_bonus
         return (tone_penalty, -score, d, x.start, x.end)
 
+    _elog(f"enforce: adjusted_count={len(adjusted)}")
     adjusted.sort(key=score_key)
     selected: List[ClipCandidate] = []
 
@@ -536,12 +602,20 @@ def _enforce_non_overlap(
         return not (a.end + min_gap <= b.start or b.end + min_gap <= a.start)
 
     for cand in adjusted:
+        suppressed = False
         for sel in selected:
             if overlaps(cand, sel):
+                _elog(
+                    f"enforce: suppress | cand={cand.start:.3f}-{cand.end:.3f} overlaps sel={sel.start:.3f}-{sel.end:.3f} (min_gap={min_gap:.2f})"
+                )
                 sel.rating = max(sel.rating, cand.rating)
+                suppressed = True
                 break
-        else:
+        if not suppressed:
             selected.append(cand)
+            _elog(
+                f"enforce: select  | start={cand.start:.3f} end={cand.end:.3f} d={(cand.end-cand.start):.3f} rating={cand.rating:.1f}"
+            )
 
     selected.sort(key=lambda x: x.start)
     return selected

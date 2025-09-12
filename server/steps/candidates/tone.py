@@ -190,6 +190,8 @@ def find_candidates_by_tone(
     filtered = [c for c in all_candidates if c.rating >= min_rating]
     filtered = _filter_promotional_candidates(filtered, items)
     merged = _merge_adjacent_candidates(filtered, items, silences=silences)
+    print(merged)
+    # final = list(merged)
     final = _enforce_non_overlap(
         merged,
         items,

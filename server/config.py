@@ -8,6 +8,9 @@ import platform
 from pathlib import Path
 from custom_types.ETone import Tone
 
+# Logs
+DEBUG_ENFORCE = True  # set True to see per-candidate enforce logs
+
 # ---------------------------------------
 # Rendering and clip boundary parameters
 # ---------------------------------------
@@ -187,4 +190,5 @@ __all__ = [
     "SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS",
     "LLM_MAX_WORKERS",
     "LLM_PER_CHUNK_TIMEOUT",
+    "DEBUG_ENFORCE"
 ]
