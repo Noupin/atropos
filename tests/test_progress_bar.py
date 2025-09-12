@@ -33,11 +33,11 @@ def test_find_candidates_uses_tqdm(monkeypatch, tmp_path: Path) -> None:
     )
     monkeypatch.setattr(
         "server.steps.candidates._merge_adjacent_candidates",
-        lambda c, _i, silences=None: c,
+        lambda c, *_, **__: c,
     )
     monkeypatch.setattr(
         "server.steps.candidates._enforce_non_overlap",
-        lambda c, _i, silences=None, min_duration_seconds=0.0, min_rating=0.0: c,
+        lambda c, _i, strategy, **__: c,
     )
 
     result = tone_module.find_candidates_by_tone(transcript, tone=tone_module.Tone.FUNNY)

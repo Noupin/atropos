@@ -24,12 +24,7 @@ from .helpers import (
     _merge_adjacent_candidates,
     _to_float,
     parse_transcript,
-    snap_end_to_dialog_end,
-    snap_start_to_dialog_start,
-    _snap_end_to_sentence_end,
-    _snap_start_to_sentence_start,
 )
-from ..silence import snap_start_to_silence, snap_end_to_silence
 from .prompts import (
     FUNNY_PROMPT_DESC,
     SPACE_PROMPT_DESC,
@@ -124,7 +119,6 @@ def find_candidates_by_tone(
     )
 
     all_candidates: List[ClipCandidate] = []
-    pre_snap_records: List[dict] = []
     context = WINDOW_SIZE_SECONDS * WINDOW_CONTEXT_PERCENTAGE
 
     global _TOTAL_LLM_SECONDS
@@ -162,66 +156,30 @@ def find_candidates_by_tone(
             start_val = float(start_val)
             end_val = float(end_val)
             rating = round(float(rating), 1)
-            model_start = start_val
-            model_end = end_val
-            if segments is not None and strategy.snap_to_sentence:
-                new_start = _snap_start_to_sentence_start(start_val, segments)
-                new_end = _snap_end_to_sentence_end(end_val, segments)
-                start_val, end_val = new_start, new_end
-            if dialog_ranges is not None and strategy.snap_to_dialog:
-                new_start = snap_start_to_dialog_start(start_val, dialog_ranges)
-                new_end = snap_end_to_dialog_end(end_val, dialog_ranges)
-                start_val, end_val = new_start, new_end
-            if silences is not None and strategy.snap_to_silence:
-                new_start = snap_start_to_silence(start_val, silences)
-                new_end = snap_end_to_silence(end_val, silences)
-                start_val, end_val = new_start, new_end
-            # Store a lightweight record to recover original model times if this clip is ultimately selected
-            # We match later on the snapped (post-snap) times with small tolerance.
-            pre_snap_records.append(
-                {
-                    "snapped_start": start_val,
-                    "snapped_end": end_val,
-                    "model_start": model_start,
-                    "model_end": model_end,
-                    "rating": rating,
-                }
-            )
             all_candidates.append(
                 ClipCandidate(start=start_val, end=end_val, rating=rating, reason=reason, quote=quote)
             )
 
     filtered = [c for c in all_candidates if c.rating >= min_rating]
     filtered = _filter_promotional_candidates(filtered, items)
-    merged = _merge_adjacent_candidates(filtered, items, silences=silences)
+    merged = _merge_adjacent_candidates(filtered, merge_overlaps=True)
     final = _enforce_non_overlap(
         merged,
         items,
+        strategy=strategy,
         silences=silences,
+        dialog_ranges=dialog_ranges,
         min_duration_seconds=MIN_DURATION_SECONDS,
         min_rating=min_rating,
     )
 
-    # Print only the final selections: original (model) timestamps if matchable, snapped timestamps, and rating
-    def _find_orig(st: float, en: float, tol: float = 0.05):
-        for rec in pre_snap_records:
-            if abs(rec["snapped_start"] - st) <= tol and abs(rec["snapped_end"] - en) <= tol:
-                return rec["model_start"], rec["model_end"]
-        return None, None
-
     for c in final:
-        o_s, o_e = _find_orig(c.start, c.end)
-        if o_s is not None and o_e is not None:
-            _log(
-                f"Picked clip | original_model={o_s:.2f}-{o_e:.2f} | snapped={c.start:.2f}-{c.end:.2f} | rating={c.rating:.1f}"
-            )
-        else:
-            _log(
-                f"Picked clip | snapped={c.start:.2f}-{c.end:.2f} | rating={c.rating:.1f}"
-            )
+        _log(
+            f"Picked clip | snapped={c.start:.2f}-{c.end:.2f} | rating={c.rating:.1f}"
+        )
 
     _log(
-        f"Run summary | tone={tone.name} | all_candidates={len(all_candidates)} | rated_ge_min={len(filtered)} | merged={len(merged)} | top={len(filtered)} | total_llm_seconds={_TOTAL_LLM_SECONDS:.2f}"
+        f"Run summary | tone={tone.name} | all_candidates={len(all_candidates)} | rated_ge_min={len(filtered)} | merged={len(merged)} | final={len(final)} | total_llm_seconds={_TOTAL_LLM_SECONDS:.2f}"
     )
 
     if return_all_stages:
