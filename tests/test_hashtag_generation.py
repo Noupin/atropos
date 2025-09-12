@@ -24,8 +24,7 @@ def test_prepare_hashtags_handles_generic_tags():
 
 def test_build_hashtag_prompt_includes_guidelines():
     prompt = build_hashtag_prompt("Title", quote="Quote", show="Show")
-    assert "Favor short hashtags" in prompt
-    assert "avoid punctuation" in prompt
+    assert "plain text" in prompt
+    assert "No profanity" in prompt
+    assert "Strict JSON" in prompt
     assert "Show: Show" in prompt
-    assert "generic hashtags" in prompt
-    assert "specific to the video's" in prompt

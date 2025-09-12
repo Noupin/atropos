@@ -123,6 +123,7 @@ def build_hashtag_prompt(
     - Output MUST be a valid JSON array of strings, with no prose or keys.
     - No emojis or non‑ASCII; only lowercase a–z and digits 0–9.
     - No `#`, spaces, punctuation, or diacritics inside items.
+    - No profanity or offensive language.
     - Size limits: at most `max_items` items; each string length ≤ `max_tag_len`;
       total characters across all items (including commas and quotes) ≤ `max_total_chars`.
     """
@@ -130,13 +131,15 @@ def build_hashtag_prompt(
     base = (
         "Generate hashtags for a short‑form video using ONLY the fields below.\n"
         "Return EXACTLY one value: a valid JSON array of strings.\n"
+        "Respond with plain text containing only the JSON array.\n"
         "Rules (must all be followed):\n"
-        "1) Strict JSON: no preface, no trailing commas, no comments, no backticks.\n"
+        "1) Strict JSON: no preface, no trailing commas, no comments, no backticks, no Markdown.\n"
         "2) Items: only lowercase a-z and 0-9; no spaces, punctuation, diacritics, or emojis.\n"
         "3) Do NOT include the leading # in items.\n"
         f"4) Limits: at most {max_items} items; each ≤ {max_tag_len} characters; total output ≤ {max_total_chars} characters.\n"
         "5) Mix broad and specific terms relevant to the content; include the show name as one item if provided (sanitized).\n"
         "6) If a required item would violate the rules, omit it rather than breaking format.\n"
+        "7) No profanity or offensive language.\n"
     )
 
     prompt = base + f"Title: {title}\n"
