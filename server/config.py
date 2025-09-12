@@ -126,7 +126,7 @@ START_AT_STEP = int(os.environ.get("START_AT_STEP", "1"))
 # Post-pipeline cleanup
 # ---------------------------------------
 # Remove all non-short artifacts after pipeline run
-CLEANUP_NON_SHORTS = False
+CLEANUP_NON_SHORTS = os.environ.get("CLEANUP_NON_SHORTS", "false").lower() in ("1", "true", "yes", "y")
 
 # ---------------------------------------
 # Multi-platform upload settings
