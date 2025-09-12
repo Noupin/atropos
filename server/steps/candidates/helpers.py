@@ -145,19 +145,42 @@ def snap_to_silence(
     *,
     pre_leadin: float = 0.25,
     post_tail: float = 0.45,
+    clamp_end: bool = True,
 ) -> Tuple[float, float]:
-    """Snap [start,end] outward to nearest surrounding silence + small air before/after."""
+    """Expand ``start`` and ``end`` to include surrounding silence.
+
+    ``pre_leadin`` seconds of the preceding silent segment are included before
+    the clip, and ``post_tail`` seconds of the following silent segment are
+    appended after it.  When ``clamp_end`` is ``True`` the tail is clamped to the
+    end of that trailing silence to avoid bleeding into subsequent dialog.
+    """
+
     if not silences:
         return start, end
-    prev_sil_end = None
-    next_sil_start = None
+
+    prev_sil_start = prev_sil_end = None
+    next_sil_start = next_sil_end = None
     for s0, e0 in silences:
         if e0 <= start:
-            prev_sil_end = e0
+            prev_sil_start, prev_sil_end = s0, e0
         if s0 >= end and next_sil_start is None:
-            next_sil_start = s0
-    s = start if prev_sil_end is None else max(0.0, prev_sil_end + pre_leadin)
-    e = end if next_sil_start is None else max(s + 0.10, next_sil_start - post_tail)
+            next_sil_start, next_sil_end = s0, e0
+
+    if prev_sil_end is not None:
+        s = max(0.0, prev_sil_end - pre_leadin)
+        if prev_sil_start is not None:
+            s = max(prev_sil_start, s)
+    else:
+        s = start
+
+    if next_sil_start is not None:
+        e_candidate = next_sil_start + post_tail
+        if clamp_end and next_sil_end is not None:
+            e_candidate = min(next_sil_end, e_candidate)
+        e = max(s + 0.10, e_candidate)
+    else:
+        e = end
+
     return s, e
 
 
