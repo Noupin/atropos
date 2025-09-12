@@ -17,15 +17,18 @@ import shutil
 
 from upload_all import run
 
-# Root directory that contains sub-folders for each account. The default account
-# uses this directory directly, e.g. ``out/<project>``. Other accounts place their
-# projects under ``out/<account>/<project>``.
-# Inside the container, the volume is mounted at /app/out, while locally it may be ./out
-# User can override via environment variable OUT_ROOT
-OUT_ROOT = Path(os.environ.get("OUT_ROOT", "/app/out"))
+
+def get_out_root() -> Path:
+    """Return the root directory for scheduled uploads.
+
+    The path is resolved from the ``OUT_ROOT`` environment variable at call time
+    so that changes during runtime are always honored.
+    """
+
+    return Path(os.environ.get("OUT_ROOT", "/app/out"))
 
 
-def find_oldest_clip(base: Path = OUT_ROOT) -> tuple[Path, Path] | None:
+def find_oldest_clip(base: Path | None = None) -> tuple[Path, Path] | None:
     """Return the oldest video and matching description from ``base``.
 
     The search iterates over folders in ``base``, choosing the oldest one and
@@ -33,6 +36,7 @@ def find_oldest_clip(base: Path = OUT_ROOT) -> tuple[Path, Path] | None:
     corresponding ``.txt`` description file.
     """
 
+    base = base or get_out_root()
     if not base.exists() or not base.is_dir():
         return None
 
@@ -60,7 +64,7 @@ def _tidy_empty_dirs(shorts: Path, project: Path) -> None:
         shutil.rmtree(project)
 
 
-def list_accounts(base: Path = OUT_ROOT) -> list[str | None]:
+def list_accounts(base: Path | None = None) -> list[str | None]:
     """Return all accounts with available projects under ``base``.
 
     The default account (projects directly inside ``base``) is represented by
@@ -68,6 +72,7 @@ def list_accounts(base: Path = OUT_ROOT) -> list[str | None]:
     least one project folder with a ``shorts`` subdirectory.
     """
 
+    base = base or get_out_root()
     if not base.exists() or not base.is_dir():
         return []
 
@@ -101,7 +106,8 @@ def main(account: str | None = None, platforms: Sequence[str] | None = None) -> 
 
     account = account or os.environ.get("ACCOUNT_NAME") or os.environ.get("ACCOUNT_KIND")
 
-    out_dir = OUT_ROOT / account if account else OUT_ROOT
+    out_root = get_out_root()
+    out_dir = out_root / account if account else out_root
 
     clip = find_oldest_clip(out_dir)
     if not clip:
@@ -129,24 +135,24 @@ def batch(
     ----------
     accounts:
         Iterable of account names. ``None`` processes the default account. When
-        the iterable is omitted, all accounts discovered under :data:`OUT_ROOT`
-        are processed sequentially.
+        the iterable is omitted, all accounts discovered under the directory
+        returned by :func:`get_out_root` are processed sequentially.
     platforms:
         Optional iterable of platform names to upload to. When omitted, uploads
         are attempted on all supported platforms.
     """
 
+    base = get_out_root()
     if accounts is None:
-        accounts = list_accounts(OUT_ROOT)
+        accounts = list_accounts(base)
     if not accounts:
-        print(f"No accounts found under {OUT_ROOT}")
+        print(f"No accounts found under {base}")
     else:
         print(f"Uploading to {len(accounts)} account(s):")
 
-
     for account in accounts:
         name = account if account is not None else "(default)"
-        out_dir = OUT_ROOT / account if account else OUT_ROOT
+        out_dir = base / account if account else base
         print(f"\nStarting - {name}: {out_dir}")
         main(account=account, platforms=platforms)
 
