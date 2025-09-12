@@ -1,7 +1,7 @@
 from __future__ import annotations
-"""YouTube auth helper (single account).
+"""YouTube auth helper (per-account).
 
-- Stores credentials for ONE account in ``server/tokens/youtube.json``
+- Stores credentials for one account in ``server/tokens/<account>/youtube.json``
 - Desktop OAuth (InstalledAppFlow.run_local_server)
 - Refreshes & persists tokens automatically.
 
@@ -28,10 +28,17 @@ from googleapiclient.discovery import build
 # --- Constants (edit here, no argparse) --------------------------------------
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 CLIENT_SECRETS_FILE = os.getenv("YT_CLIENT_SECRETS", "yt_client_secret.json")
-YT_ACCOUNT = "history"  # subfolder under server/tokens/
+YT_ACCOUNT = (
+    os.environ.get("YT_ACCOUNT")
+    or os.environ.get("ACCOUNT_NAME")
+    or os.environ.get("ACCOUNT_KIND")
+)
+TOKENS_DIR = Path(__file__).resolve().parents[2] / "tokens"
 TOKENS_FILE = Path(
     os.getenv("YT_TOKENS_FILE")
-    or Path(__file__).resolve().parents[2] / "tokens" / YT_ACCOUNT / "youtube.json"
+    or (
+        TOKENS_DIR / YT_ACCOUNT / "youtube.json" if YT_ACCOUNT else TOKENS_DIR / "youtube.json"
+    )
 )
 
 
@@ -116,7 +123,7 @@ def build_service():
 
 # --- When run directly: perform auth and save --------------------------------
 if __name__ == "__main__":
-    print("YouTube auth bootstrap (single account)")
+    print("YouTube auth bootstrap")
     print(f"Client secrets: {CLIENT_SECRETS_FILE}")
     creds = ensure_creds()
     print(f"✅ Saved credentials to: {TOKENS_FILE}")
