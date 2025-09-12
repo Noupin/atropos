@@ -54,7 +54,7 @@ def get_tokens_dir() -> Path:
 def get_tokens_file() -> Path:
     """Return the path to the YouTube tokens file."""
 
-    override = os.getenv("YT_TOKENS_FILE")
+    override = os.getenv("YT_TOKENS_FILE")#, 'server\\tokens\\cosmos\\youtube.json')
     if override:
         return Path(override)
     account = get_account()
