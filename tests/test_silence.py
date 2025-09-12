@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+import sys
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-import sys
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "server"))
 
@@ -13,6 +15,7 @@ from server.steps.silence import (
     snap_start_to_silence,
     snap_end_to_silence,
 )
+from server.steps.candidates.helpers import snap_to_silence
 
 
 def _make_audio(path: Path) -> None:
@@ -69,3 +72,11 @@ def test_snap_helpers_accept_str() -> None:
     silences = [(0.0, 1.0), (5.0, 6.0)]
     assert snap_start_to_silence("2.5", silences) == 0.0
     assert snap_end_to_silence("4.0", silences) == 6.0
+
+
+def test_snap_to_silence_includes_padding() -> None:
+    """``snap_to_silence`` adds leading and trailing silence for a clip."""
+    silences = [(0.0, 1.0), (5.0, 6.0)]
+    s, e = snap_to_silence(1.0, 5.0, silences)
+    assert s == pytest.approx(0.75)
+    assert e == pytest.approx(5.45)
