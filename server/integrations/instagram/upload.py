@@ -1,25 +1,57 @@
 from __future__ import annotations
+
 from pathlib import Path
 from typing import Optional
 import json
 import os
 import time
 
-# --- Constants (no argparse, edit here) ---
-USERNAME = os.getenv("IG_USERNAME")
-PASSWORD = os.getenv("IG_PASSWORD")
-VIDEO_PATH = Path(
-    "/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2.mp4"
-)
-DESC_PATH = Path(
-    "/Users/noahperkins/Documents/Feryv/Clipit/out/Andy_and_Nick_Do_the_Bird_Box_Challenge_-_KF_AF_20190109/shorts/clip_0.00-49.30_r9.2.txt"
-)
-SESSION_PATH = Path(__file__).with_name("instagrapi_session.json")
-STATE_PATH = Path(__file__).with_name("instagrapi_state.json")  # optional debug
-
 # Upload tuning
 MAX_RETRIES = 3
 RETRY_BACKOFF_SEC = 5
+
+
+def get_username() -> str | None:
+    """Return the Instagram username from the environment."""
+
+    return os.environ.get("IG_USERNAME")
+
+
+def get_password() -> str | None:
+    """Return the Instagram password from the environment."""
+
+    return os.environ.get("IG_PASSWORD")
+
+
+def get_session_path() -> Path:
+    """Return the path to the instagrapi session file."""
+
+    return Path(
+        os.environ.get("IG_SESSION_FILE")
+        or Path(__file__).with_name("instagrapi_session.json")
+    )
+
+
+def get_state_path() -> Path:
+    """Return the path to the optional state file."""
+
+    return Path(
+        os.environ.get("IG_STATE_FILE")
+        or Path(__file__).with_name("instagrapi_state.json")
+    )
+
+
+def get_video_path() -> Path:
+    """Return the default video path for manual runs."""
+
+    return Path(os.environ.get("IG_VIDEO_PATH", "video.mp4"))
+
+
+def get_desc_path() -> Path:
+    """Return the default description path for manual runs."""
+
+    return Path(os.environ.get("IG_DESC_PATH", "video.txt"))
+
 
 # --- instagrapi import ---
 from instagrapi import Client
@@ -44,7 +76,10 @@ def _challenge_code_handler(username: str, choice: str) -> str:
     return input("Enter code: ").strip()
 
 
-def build_client(session_path: Path = SESSION_PATH) -> Client:
+def build_client(session_path: Path | None = None) -> Client:
+    """Return an instagrapi client using ``session_path`` if provided."""
+
+    session_path = session_path or get_session_path()
     cl = Client()
     # load saved device/session if present to reduce challenges
     if session_path.exists():
@@ -59,8 +94,14 @@ def build_client(session_path: Path = SESSION_PATH) -> Client:
     return cl
 
 
-def login_or_resume(cl: Client, username: str, password: str, session_path: Path = SESSION_PATH) -> None:
+def login_or_resume(
+    cl: Client,
+    username: str,
+    password: str,
+    session_path: Path | None = None,
+) -> None:
     # Try login with existing settings first
+    session_path = session_path or get_session_path()
     try:
         cl.login(username, password)
     except ChallengeRequired:
@@ -89,8 +130,8 @@ def clip_upload_with_retries(
     cl: Client,
     video_path: Path,
     caption: str,
-    username: str = USERNAME,
-    password: str = PASSWORD,
+    username: str,
+    password: str,
 ) -> dict:
     last_exc: Optional[Exception] = None
     for attempt in range(1, MAX_RETRIES + 1):
@@ -125,7 +166,10 @@ def clip_upload_with_retries(
     raise RuntimeError("Unknown upload failure")
 
 
-def save_state(path: Path, data: dict) -> None:
+def save_state(data: dict, path: Path | None = None) -> None:
+    """Persist ``data`` to the state file for debugging."""
+
+    path = path or get_state_path()
     try:
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     except Exception:
@@ -133,15 +177,22 @@ def save_state(path: Path, data: dict) -> None:
 
 
 def main() -> None:
-    assert VIDEO_PATH.exists(), f"Video not found: {VIDEO_PATH}"
-    caption = _read_caption(DESC_PATH)
+    """CLI entry point for manual uploads."""
+
+    video_path = get_video_path()
+    desc_path = get_desc_path()
+    assert video_path.exists(), f"Video not found: {video_path}"
+    caption = _read_caption(desc_path)
+
+    username = get_username() or ""
+    password = get_password() or ""
 
     cl = build_client()
-    login_or_resume(cl, USERNAME, PASSWORD)
+    login_or_resume(cl, username, password)
 
-    result = clip_upload_with_retries(cl, VIDEO_PATH, caption, USERNAME, PASSWORD)
+    result = clip_upload_with_retries(cl, video_path, caption, username, password)
     print("Uploaded:", result)
-    save_state(STATE_PATH, {"uploaded": result, "video": str(VIDEO_PATH), "caption": caption})
+    save_state({"uploaded": result, "video": str(video_path), "caption": caption})
 
 
 if __name__ == "__main__":

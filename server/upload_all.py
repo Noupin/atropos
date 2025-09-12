@@ -80,6 +80,13 @@ def _upload_instagram(video: Path, desc: Path, username: str, password: str) -> 
     result = ig_upload.clip_upload_with_retries(
         client, video, caption, username, password
     )
+    ig_upload.save_state(
+        {
+            "uploaded": result,
+            "video": str(video),
+            "caption": caption,
+        }
+    )
     print("Instagram upload:", result)
 
 
@@ -295,6 +302,8 @@ def run(
     tokens_dir.mkdir(parents=True, exist_ok=True)
     os.environ["YT_TOKENS_FILE"] = str(tokens_dir / "youtube.json")
     os.environ["TIKTOK_TOKENS_FILE"] = str(tokens_dir / "tiktok.json")
+    os.environ["IG_SESSION_FILE"] = str(tokens_dir / "instagram_session.json")
+    os.environ["IG_STATE_FILE"] = str(tokens_dir / "instagram_state.json")
     tokens_file = Path(os.environ["TIKTOK_TOKENS_FILE"])
     ig_creds_file = tokens_dir / "instagram.json"
     ig_username, ig_password = _read_instagram_creds(ig_creds_file)

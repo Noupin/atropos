@@ -58,7 +58,7 @@ def test_main_cleans_and_deletes(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "run", fake_run)
-    monkeypatch.setattr(schedule_upload, "OUT_ROOT", Path("out"))
+    monkeypatch.setenv("OUT_ROOT", "out")
 
     schedule_upload.main()
 
@@ -100,7 +100,7 @@ def test_project_not_deleted_until_last_short(tmp_path: Path, monkeypatch) -> No
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "run", fake_run)
-    monkeypatch.setattr(schedule_upload, "OUT_ROOT", Path("out"))
+    monkeypatch.setenv("OUT_ROOT", "out")
 
     # First upload removes only the first short and leaves the project intact
     schedule_upload.main()
@@ -138,7 +138,7 @@ def test_main_respects_account(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "run", fake_run)
-    monkeypatch.setattr(schedule_upload, "OUT_ROOT", Path("out"))
+    monkeypatch.setenv("OUT_ROOT", "out")
 
     schedule_upload.main(account="alt")
 
@@ -169,7 +169,7 @@ def test_main_accepts_platforms(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "run", fake_run)
-    monkeypatch.setattr(schedule_upload, "OUT_ROOT", Path("out"))
+    monkeypatch.setenv("OUT_ROOT", "out")
 
     schedule_upload.main(platforms=["youtube", "tiktok"])
 
@@ -188,7 +188,7 @@ def test_batch_processes_all_accounts(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "main", fake_main)
-    monkeypatch.setattr(schedule_upload, "OUT_ROOT", Path("out"))
+    monkeypatch.setenv("OUT_ROOT", "out")
 
     schedule_upload.batch()
 
@@ -206,7 +206,7 @@ def test_batch_respects_accounts_argument(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(schedule_upload, "main", fake_main)
-    monkeypatch.setattr(schedule_upload, "OUT_ROOT", Path("out"))
+    monkeypatch.setenv("OUT_ROOT", "out")
 
     schedule_upload.batch(accounts=["alt"])
 
