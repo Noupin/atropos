@@ -123,6 +123,7 @@ def find_candidates_by_tone(
     )
 
     all_candidates: List[ClipCandidate] = []
+    pre_snap_records: List[dict] = []
     context = WINDOW_SIZE_SECONDS * WINDOW_CONTEXT_PERCENTAGE
 
     global _TOTAL_LLM_SECONDS
@@ -174,15 +175,15 @@ def find_candidates_by_tone(
                 start_val, end_val = new_start, new_end
             # Store a lightweight record to recover original model times if this clip is ultimately selected
             # We match later on the snapped (post-snap) times with small tolerance.
-            if 'pre_snap_records' not in locals():
-                pre_snap_records = []
-            pre_snap_records.append({
-                'snapped_start': start_val,
-                'snapped_end': end_val,
-                'model_start': model_start,
-                'model_end': model_end,
-                'rating': rating,
-            })
+            pre_snap_records.append(
+                {
+                    "snapped_start": start_val,
+                    "snapped_end": end_val,
+                    "model_start": model_start,
+                    "model_end": model_end,
+                    "rating": rating,
+                }
+            )
             all_candidates.append(
                 ClipCandidate(start=start_val, end=end_val, rating=rating, reason=reason, quote=quote)
             )
@@ -190,8 +191,6 @@ def find_candidates_by_tone(
     filtered = [c for c in all_candidates if c.rating >= min_rating]
     filtered = _filter_promotional_candidates(filtered, items)
     merged = _merge_adjacent_candidates(filtered, items, silences=silences)
-    print(merged)
-    # final = list(merged)
     final = _enforce_non_overlap(
         merged,
         items,
@@ -202,12 +201,9 @@ def find_candidates_by_tone(
 
     # Print only the final selections: original (model) timestamps if matchable, snapped timestamps, and rating
     def _find_orig(st: float, en: float, tol: float = 0.05):
-        try:
-            for rec in pre_snap_records:
-                if abs(rec['snapped_start'] - st) <= tol and abs(rec['snapped_end'] - en) <= tol:
-                    return rec['model_start'], rec['model_end']
-        except NameError:
-            pass
+        for rec in pre_snap_records:
+            if abs(rec["snapped_start"] - st) <= tol and abs(rec["snapped_end"] - en) <= tol:
+                return rec["model_start"], rec["model_end"]
         return None, None
 
     for c in final:
