@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 from typing import Any, List, Tuple
 from datetime import datetime
+from tqdm import tqdm
 
 from config import (
     WINDOW_CONTEXT_PERCENTAGE,
@@ -127,7 +128,9 @@ def find_candidates_by_tone(
     context = WINDOW_SIZE_SECONDS * WINDOW_CONTEXT_PERCENTAGE
 
     global _TOTAL_LLM_SECONDS
-    for win_start, win_end, win_items in windows:
+    for win_start, win_end, win_items in tqdm(
+        windows, total=len(windows), desc="[Tone] windows", unit="window"
+    ):
         ctx_items = [
             it
             for it in items
