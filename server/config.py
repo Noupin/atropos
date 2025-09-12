@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from custom_types.ETone import Tone
 
 # Logs
-DEBUG_ENFORCE = True  # set True to see per-candidate enforce logs
+DEBUG_ENFORCE = False  # set True to see per-candidate enforce logs
 
 # ---------------------------------------
 # Rendering and clip boundary parameters
@@ -79,7 +79,7 @@ CLIP_TYPE = Tone.FUNNY  # or "space", "history", "tech", "health"
 
 @dataclass
 class CandidateSelectionConfig:
-    enforce_non_overlap: bool = True
+    enforce_non_overlap: bool = False
     min_duration_seconds: float = 6.0
     max_duration_seconds: float = 90.0
     sweet_spot_min_seconds: float = 8.0
