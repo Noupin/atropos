@@ -52,3 +52,19 @@ def test_whisper_model_env_override(monkeypatch):
     importlib.reload(config)
     assert config.WHISPER_MODEL == "tiny-test"
 
+
+def test_write_transcript_normalizes_quotes(tmp_path):
+    from server.helpers.transcript import write_transcript_txt
+
+    result = {
+        "segments": [
+            {"start": 0.0, "end": 1.0, "text": "It\u2019s fine"},
+        ],
+        "timing": {},
+    }
+    out = tmp_path / "t.txt"
+    write_transcript_txt(result, str(out))
+    content = out.read_text(encoding="utf-8")
+    assert "It's fine" in content
+    assert "\u2019" not in content
+
