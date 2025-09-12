@@ -74,6 +74,8 @@ now inferred from this folder structure and the matching tokens are loaded from
   fraction of each window's duration.
 - Legacy chunk-based LLM settings (`MAX_LLM_CHARS`, `LLM_API_TIMEOUT`, and related
   options) now live at the bottom of `server/config.py` and are deprecated.
+- Candidate overlap enforcement can be toggled with `ENFORCE_NON_OVERLAP` in
+  `server/config.py`.
 
 ## Git Reversion
 

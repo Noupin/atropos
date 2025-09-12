@@ -6,6 +6,8 @@ Sections are grouped by feature for easier editing.
 import os
 import platform
 from pathlib import Path
+from dataclasses import dataclass
+
 from custom_types.ETone import Tone
 
 # Logs
@@ -73,14 +75,32 @@ CLIP_TYPE = Tone.FUNNY  # or "space", "history", "tech", "health"
 # ---------------------------------------
 # Candidate selection heuristics
 # ---------------------------------------
-MIN_DURATION_SECONDS = 6.0
-MAX_DURATION_SECONDS = 90.0
-SWEET_SPOT_MIN_SECONDS = 8.0
-SWEET_SPOT_MAX_SECONDS = 35.0
-OVERLAP_MERGE_PERCENTAGE_REQUIREMENT = 0.5
 
-DEFAULT_MIN_RATING = 9.2
-DEFAULT_MIN_WORDS = 0
+
+@dataclass
+class CandidateSelectionConfig:
+    enforce_non_overlap: bool = True
+    min_duration_seconds: float = 6.0
+    max_duration_seconds: float = 90.0
+    sweet_spot_min_seconds: float = 8.0
+    sweet_spot_max_seconds: float = 35.0
+    overlap_merge_percentage_requirement: float = 0.5
+    default_min_rating: float = 9.2
+    default_min_words: int = 0
+
+
+CANDIDATE_SELECTION = CandidateSelectionConfig()
+
+ENFORCE_NON_OVERLAP = CANDIDATE_SELECTION.enforce_non_overlap
+MIN_DURATION_SECONDS = CANDIDATE_SELECTION.min_duration_seconds
+MAX_DURATION_SECONDS = CANDIDATE_SELECTION.max_duration_seconds
+SWEET_SPOT_MIN_SECONDS = CANDIDATE_SELECTION.sweet_spot_min_seconds
+SWEET_SPOT_MAX_SECONDS = CANDIDATE_SELECTION.sweet_spot_max_seconds
+OVERLAP_MERGE_PERCENTAGE_REQUIREMENT = (
+    CANDIDATE_SELECTION.overlap_merge_percentage_requirement
+)
+DEFAULT_MIN_RATING = CANDIDATE_SELECTION.default_min_rating
+DEFAULT_MIN_WORDS = CANDIDATE_SELECTION.default_min_words
 
 # ---------------------------------------
 # Pipeline and batching controls
@@ -157,14 +177,15 @@ __all__ = [
     "TRANSCRIPT_SOURCE",
     "WHISPER_MODEL",
     "CLIP_TYPE",
+    "ENFORCE_NON_OVERLAP",
     "MIN_DURATION_SECONDS",
     "MAX_DURATION_SECONDS",
     "SWEET_SPOT_MIN_SECONDS",
     "SWEET_SPOT_MAX_SECONDS",
+    "OVERLAP_MERGE_PERCENTAGE_REQUIREMENT",
     "DEFAULT_MIN_RATING",
     "DEFAULT_MIN_WORDS",
-    "FUNNY_MIN_RATING",
-    "FUNNY_MIN_WORDS",
+    "CANDIDATE_SELECTION",
     "FORCE_REBUILD",
     "FORCE_REBUILD_SEGMENTS",
     "FORCE_REBUILD_DIALOG",

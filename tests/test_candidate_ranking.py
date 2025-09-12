@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT / "server"))
 
 from server.steps.candidates.helpers import _enforce_non_overlap, refine_clip_window
 from server.interfaces.clip_candidate import ClipCandidate
+import config
 
 
 def test_tone_aligned_prioritized() -> None:
@@ -73,6 +74,17 @@ def test_min_rating_excludes_low_scores() -> None:
     result = _enforce_non_overlap([low, high], items, min_rating=5.0)
     assert len(result) == 1
     assert result[0].rating == 6.0
+
+
+def test_enforce_non_overlap_respects_config(monkeypatch) -> None:
+    items = [(0.0, 10.0, "A"), (10.0, 20.0, "B")]
+    first = ClipCandidate(start=0.0, end=9.0, rating=9.0, reason="", quote="")
+    second = ClipCandidate(start=8.0, end=18.0, rating=8.5, reason="", quote="")
+    monkeypatch.setattr(config, "ENFORCE_NON_OVERLAP", False)
+    result = _enforce_non_overlap(
+        [first, second], items, min_duration_seconds=0.0, min_rating=0.0
+    )
+    assert result == [first, second]
 
 
 def test_repeated_quotes_extend_end() -> None:

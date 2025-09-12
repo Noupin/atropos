@@ -7,6 +7,7 @@ from pathlib import Path
 from math import inf
 
 from interfaces.clip_candidate import ClipCandidate
+import config as cfg
 from config import (
     DEBUG_ENFORCE,
     MAX_DURATION_SECONDS,
@@ -525,6 +526,12 @@ def _enforce_non_overlap(
     """
     if not candidates:
         return []
+    if not cfg.ENFORCE_NON_OVERLAP:
+        return [
+            c
+            for c in candidates
+            if (c.end - c.start) >= min_duration_seconds and c.rating >= min_rating
+        ]
 
     adjusted: List[ClipCandidate] = []
     for c in candidates:
@@ -608,7 +615,10 @@ def _enforce_non_overlap(
                 _elog(
                     f"enforce: suppress | cand={cand.start:.3f}-{cand.end:.3f} overlaps sel={sel.start:.3f}-{sel.end:.3f} (min_gap={min_gap:.2f})"
                 )
-                sel.rating = max(sel.rating, cand.rating)
+                sel.rating = (
+                    (sel.rating * sel.count) + cand.rating
+                ) / (sel.count + 1)
+                sel.count += 1
                 suppressed = True
                 break
         if not suppressed:
