@@ -21,6 +21,20 @@ DEFAULT_JSON_EXTRACT = re.compile(r"\[(?:.|\n)*\]")
 # Strip all ASCII control characters before attempting to parse.
 _CTRL_RE = re.compile(r"[\x00-\x1F]")
 
+# Map common smart quotes to regular double quotes so ``json.loads`` succeeds.
+_SMART_QUOTES = str.maketrans({
+    "\u2018": '"',  # left single
+    "\u2019": '"',  # right single
+    "\u201C": '"',  # left double
+    "\u201D": '"',  # right double
+})
+
+
+def _normalize_quotes(text: str) -> str:
+    """Replace smart quotes with standard quotes."""
+
+    return text.translate(_SMART_QUOTES)
+
 
 def _strip_control_chars(text: str) -> str:
     return _CTRL_RE.sub("", text)
@@ -70,7 +84,7 @@ def ollama_call_json(
             options=options,
             timeout=timeout,
         )
-        raw = _strip_control_chars(raw)
+        raw = _normalize_quotes(_strip_control_chars(raw))
     except RequestException as e:
         raise RuntimeError(f"Ollama request failed: {e}")
     try:
@@ -89,7 +103,7 @@ def ollama_call_json(
     m = extract_re.search(raw)
     if not m:
         raise ValueError(f"Model did not return JSON array. Raw head: {raw[:300]}")
-    return json.loads(_strip_control_chars(m.group(0)))
+    return json.loads(_normalize_quotes(_strip_control_chars(m.group(0))))
 
 
 def lmstudio_generate(
@@ -144,7 +158,7 @@ def lmstudio_call_json(
             options=options,
             timeout=timeout,
         )
-        raw = _strip_control_chars(raw)
+        raw = _normalize_quotes(_strip_control_chars(raw))
     except RequestException as e:
         raise RuntimeError(f"LM Studio request failed: {e}")
     try:
@@ -163,7 +177,7 @@ def lmstudio_call_json(
     m = extract_re.search(raw)
     if not m:
         raise ValueError(f"Model did not return JSON array. Raw head: {raw[:300]}")
-    return json.loads(_strip_control_chars(m.group(0)))
+    return json.loads(_normalize_quotes(_strip_control_chars(m.group(0))))
 
 
 def local_llm_generate(
