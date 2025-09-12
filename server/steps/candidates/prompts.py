@@ -7,8 +7,6 @@ from config import (
     MIN_DURATION_SECONDS,
     SWEET_SPOT_MAX_SECONDS,
     SWEET_SPOT_MIN_SECONDS,
-    RATING_MIN,
-    RATING_MAX,
     WINDOW_SIZE_SECONDS,
     WINDOW_OVERLAP_SECONDS,
     WINDOW_CONTEXT_PERCENTAGE,
@@ -157,7 +155,6 @@ def _build_system_instructions(
         f"Stay in the {SWEET_SPOT_MIN_SECONDS:.0f}-{SWEET_SPOT_MAX_SECONDS:.0f}s sweet spot; "
         f"treat {SWEET_SPOT_MAX_SECONDS:.0f}s as a speed limit—"
         "only exceed it when a longer clip is exceptionally funny and cannot be trimmed. "
-        f"Never exceed window (≈{WINDOW_SIZE_SECONDS:.0f}s).\n"
         f"- Never output a clip longer than {MAX_DURATION_SECONDS:.0f}s. If a great moment is longer, SPLIT it into multiple adjacent items, each within the limits.\n"
         "- Up to 6 items total.\n"
         "- reason <= 240 chars; quote <= 200 chars.\n"
