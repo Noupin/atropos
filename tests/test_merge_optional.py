@@ -8,12 +8,12 @@ def test_merge_overlaps_flag_controls_behavior():
     c2 = ClipCandidate(start=1.0, end=2.0, rating=6, reason="", quote="")
 
     without_merge = _merge_adjacent_candidates(
-        [c1, c2], items, merge_overlaps=False
+        [c1, c2], merge_overlaps=False
     )
     assert len(without_merge) == 2
 
     with_merge = _merge_adjacent_candidates(
-        [c1, c2], items, merge_overlaps=True
+        [c1, c2], merge_overlaps=True
     )
     assert len(with_merge) == 1
     merged = with_merge[0]

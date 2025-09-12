@@ -12,16 +12,12 @@ from steps.download import (
     get_video_urls,
     is_twitch_url,
 )
-from steps.candidates.tone import find_candidates_by_tone
+from steps.candidates.tone import find_candidates_by_tone, STRATEGY_REGISTRY
 from custom_types.ETone import Tone
 from steps.candidates.helpers import (
     export_candidates_json,
     load_candidates_json,
     parse_transcript,
-    _snap_start_to_sentence_start,
-    _snap_end_to_sentence_end,
-    snap_start_to_dialog_start,
-    snap_end_to_dialog_end,
     dedupe_candidates,
 )
 from steps.segment import (
@@ -46,21 +42,15 @@ from steps.dialog import (
 )
 from config import (
     CLIP_TYPE,
-    SNAP_TO_SILENCE,
-    SNAP_TO_DIALOG,
-    SNAP_TO_SENTENCE,
     EXPORT_RAW_CLIPS,
     RAW_LIMIT,
     SILENCE_DETECTION_NOISE,
     SILENCE_DETECTION_MIN_DURATION,
     TRANSCRIPT_SOURCE,
     WHISPER_MODEL,
-    MIN_DURATION_SECONDS,
-    MAX_DURATION_SECONDS,
     FORCE_REBUILD,
     FORCE_REBUILD_SEGMENTS,
     FORCE_REBUILD_DIALOG,
-    MIN_EXTENSION_MARGIN,
     USE_LLM_FOR_SEGMENTS,
     CLEANUP_NON_SHORTS,
     START_AT_STEP,
@@ -407,11 +397,13 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
     subtitles_dir.mkdir(parents=True, exist_ok=True)
     shorts_dir.mkdir(parents=True, exist_ok=True)
 
+    selected_tone = tone or CLIP_TYPE
+    if selected_tone is None:
+        raise ValueError(f"Unsupported clip type: {CLIP_TYPE}")
+    strategy = STRATEGY_REGISTRY[selected_tone]
+
     if should_run(6):
         def step_candidates() -> tuple[list[ClipCandidate], list[ClipCandidate], list[ClipCandidate]]:
-            selected_tone = tone or CLIP_TYPE
-            if selected_tone is None:
-                raise ValueError(f"Unsupported clip type: {CLIP_TYPE}")
             return find_candidates_by_tone(
                 str(transcript_output_path),
                 tone=selected_tone,
@@ -458,8 +450,8 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
             raw_candidates = [
                 ClipCandidate(
                     start=
-                    snap_start_to_silence(c.start, silences) if SNAP_TO_SILENCE else c.start,
-                    end=snap_end_to_silence(c.end, silences) if SNAP_TO_SILENCE else c.end,
+                    snap_start_to_silence(c.start, silences) if strategy.snap_to_silence else c.start,
+                    end=snap_end_to_silence(c.end, silences) if strategy.snap_to_silence else c.end,
                     rating=c.rating,
                     reason=c.reason,
                     quote=c.quote,
@@ -480,51 +472,7 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
                     step_cut_raw,
                 )
 
-        # Fully snapped clips
-        refined_candidates = []
-        for cand in candidates:
-            start = cand.start
-            end = cand.end
-            if SNAP_TO_DIALOG:
-                start = snap_start_to_dialog_start(start, dialog_ranges)
-            if SNAP_TO_SENTENCE:
-                start = _snap_start_to_sentence_start(start, segments)
-            if SNAP_TO_SILENCE:
-                start = snap_start_to_silence(start, silences)
-
-            if SNAP_TO_SENTENCE:
-                end = _snap_end_to_sentence_end(end, segments)
-            if SNAP_TO_DIALOG:
-                end = snap_end_to_dialog_end(end, dialog_ranges)
-            if SNAP_TO_SILENCE:
-                end = snap_end_to_silence(end, silences)
-
-            dur = end - start
-            if dur < MIN_DURATION_SECONDS:
-                target = start + MIN_DURATION_SECONDS + MIN_EXTENSION_MARGIN
-                if SNAP_TO_SENTENCE:
-                    for _, seg_end, _ in segments:
-                        if seg_end >= target:
-                            end = seg_end
-                            break
-                    else:
-                        end = start + MIN_DURATION_SECONDS
-                else:
-                    end = start + MIN_DURATION_SECONDS
-            elif dur > MAX_DURATION_SECONDS:
-                end = start + MAX_DURATION_SECONDS
-
-            refined_candidates.append(
-                ClipCandidate(
-                    start=start,
-                    end=end,
-                    rating=cand.rating,
-                    reason=cand.reason,
-                    quote=cand.quote,
-                )
-            )
-
-        refined_candidates = dedupe_candidates(refined_candidates)
+        refined_candidates = dedupe_candidates(candidates)
         export_candidates_json(refined_candidates, render_queue_path)
     else:
         if candidates_path.exists():

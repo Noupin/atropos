@@ -9,7 +9,11 @@ sys.path.insert(0, str(ROOT / "server"))
 
 from server.steps.candidates.helpers import _enforce_non_overlap, refine_clip_window
 from server.interfaces.clip_candidate import ClipCandidate
+from server.custom_types.tone import ToneStrategy
 import config
+
+
+DEFAULT_STRATEGY = ToneStrategy(prompt_desc="")
 
 
 def test_tone_aligned_prioritized() -> None:
@@ -19,7 +23,7 @@ def test_tone_aligned_prioritized() -> None:
     good.tone_match = True
     bad.tone_match = False
 
-    result = _enforce_non_overlap([bad, good], items)
+    result = _enforce_non_overlap([bad, good], items, strategy=DEFAULT_STRATEGY)
     assert len(result) == 1
     chosen = result[0]
     assert chosen.rating == 7.0
@@ -39,7 +43,7 @@ def test_shorter_clip_preferred() -> None:
     ]
     short = ClipCandidate(start=0.0, end=11.0, rating=7.0, reason="", quote="")
     long = ClipCandidate(start=0.0, end=23.0, rating=7.0, reason="", quote="")
-    result = _enforce_non_overlap([long, short], items)
+    result = _enforce_non_overlap([long, short], items, strategy=DEFAULT_STRATEGY)
     assert len(result) == 1
     chosen = result[0]
     assert chosen.start == 0.0 and chosen.end == 12.0
@@ -48,7 +52,9 @@ def test_shorter_clip_preferred() -> None:
 def test_short_clips_discarded() -> None:
     items = [(0.0, 5.0, "A"), (5.0, 10.0, "B")]
     short = ClipCandidate(start=0.0, end=4.0, rating=8.0, reason="", quote="")
-    result = _enforce_non_overlap([short], items, min_duration_seconds=10.0)
+    result = _enforce_non_overlap(
+        [short], items, strategy=DEFAULT_STRATEGY, min_duration_seconds=10.0
+    )
     assert result == []
 
 
@@ -61,7 +67,9 @@ def test_clips_under_ten_seconds_excluded() -> None:
     ]
     short = ClipCandidate(start=0.0, end=5.0, rating=7.0, reason="", quote="")
     long = ClipCandidate(start=0.0, end=14.0, rating=7.0, reason="", quote="")
-    result = _enforce_non_overlap([short, long], items, min_duration_seconds=10.0)
+    result = _enforce_non_overlap(
+        [short, long], items, strategy=DEFAULT_STRATEGY, min_duration_seconds=10.0
+    )
     assert len(result) == 1
     chosen = result[0]
     assert chosen.start == 0.0 and chosen.end == 20.0
@@ -71,7 +79,9 @@ def test_min_rating_excludes_low_scores() -> None:
     items = [(0.0, 5.0, "A"), (5.0, 10.0, "B")]
     low = ClipCandidate(start=0.0, end=5.0, rating=4.0, reason="", quote="")
     high = ClipCandidate(start=5.0, end=10.0, rating=6.0, reason="", quote="")
-    result = _enforce_non_overlap([low, high], items, min_rating=5.0)
+    result = _enforce_non_overlap(
+        [low, high], items, strategy=DEFAULT_STRATEGY, min_rating=5.0
+    )
     assert len(result) == 1
     assert result[0].rating == 6.0
 
@@ -82,7 +92,11 @@ def test_enforce_non_overlap_respects_config(monkeypatch) -> None:
     second = ClipCandidate(start=8.0, end=18.0, rating=8.5, reason="", quote="")
     monkeypatch.setattr(config, "ENFORCE_NON_OVERLAP", False)
     result = _enforce_non_overlap(
-        [first, second], items, min_duration_seconds=0.0, min_rating=0.0
+        [first, second],
+        items,
+        strategy=DEFAULT_STRATEGY,
+        min_duration_seconds=0.0,
+        min_rating=0.0,
     )
     assert result == [first, second]
 
@@ -96,6 +110,8 @@ def test_repeated_quotes_extend_end() -> None:
         (3.0, 4.0, "Done"),
     ]
     cand = ClipCandidate(start=0.0, end=1.0, rating=5.0, reason="", quote="Hello")
-    s, e = refine_clip_window(cand.start, cand.end, items, quote=cand.quote)
+    s, e = refine_clip_window(
+        cand.start, cand.end, items, strategy=DEFAULT_STRATEGY, quote=cand.quote
+    )
     assert s == 0.0
     assert e == 3.0

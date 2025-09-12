@@ -15,10 +15,8 @@ from config import (
     OVERLAP_MERGE_PERCENTAGE_REQUIREMENT,
     SWEET_SPOT_MAX_SECONDS,
     SWEET_SPOT_MIN_SECONDS,
-    SNAP_TO_SILENCE,
-    SNAP_TO_DIALOG,
-    SNAP_TO_SENTENCE,
 )
+from ...custom_types.tone import ToneStrategy
 
 def _elog(msg: str) -> None:
     if DEBUG_ENFORCE:
@@ -251,6 +249,7 @@ def refine_clip_window(
     end: float,
     items: List[Tuple[float, float, str]],
     *,
+    strategy: ToneStrategy,
     words: Optional[List[dict]] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
     dialog_ranges: Optional[List[Tuple[float, float]]] = None,
@@ -292,15 +291,15 @@ def refine_clip_window(
             return new_s, new_e
         return s, e
 
-    # 2) Cascading snaps guarded by config flags
+    # 2) Cascading snaps guarded by strategy flags
     # Dialog snap (highest priority)
-    if SNAP_TO_DIALOG and dialog_ranges:
+    if strategy.snap_to_dialog and dialog_ranges:
         ds = snap_start_to_dialog_start(s, dialog_ranges)
         de = snap_end_to_dialog_end(e, dialog_ranges)
         s, e = _apply_if_safe(ds, de)
 
     # Sentence snap (next)
-    if SNAP_TO_SENTENCE:
+    if strategy.snap_to_sentence:
         # Use segment-level sentence start/end with max_extension protection on end
         ss = _snap_start_to_segment_start(s, items)
         se = _snap_end_to_segment_end(e, items, max_extension=max_extension)
@@ -312,7 +311,7 @@ def refine_clip_window(
         s, e = _apply_if_safe(ws, we)
 
     # Silence snap (last)
-    if SNAP_TO_SILENCE and silences:
+    if strategy.snap_to_silence and silences:
         zs, ze = snap_to_silence(s, e, silences, pre_leadin=pre_leadin, post_tail=post_tail)
         s, e = _apply_if_safe(zs, ze)
 
@@ -394,73 +393,30 @@ def _snap_start_to_sentence_start(
 
 def _merge_adjacent_candidates(
     candidates: List[ClipCandidate],
-    items: List[Tuple[float, float, str]],
     *,
     max_duration_seconds: float = MAX_DURATION_SECONDS,
-    words: Optional[List[dict]] = None,
-    silences: Optional[List[Tuple[float, float]]] = None,
     merge_overlaps: bool = False,
     overlap_fraction_threshold: float = OVERLAP_MERGE_PERCENTAGE_REQUIREMENT,  # require ≥50% overlap of the shorter clip
 ) -> List[ClipCandidate]:
-    """Snap candidate boundaries and optionally merge overlapping candidates.
+    """Optionally merge overlapping candidates without snapping.
 
     Policy:
     - Only merge if clips **overlap** by at least `overlap_fraction_threshold` of the **shorter** clip.
     - Never merge purely gapped clips (the old `merge_gap_seconds` is deprecated and ignored).
-    - Only merge if the merged span stays within `max_duration_seconds` **after** snapping/refinement.
+    - Only merge if the merged span stays within `max_duration_seconds`.
     - Never drop a candidate because a potential merge would exceed `max_duration_seconds`; skip the merge and keep both.
     """
     if not candidates:
         return []
 
-    snapped: List[ClipCandidate] = []
-    for c in candidates:
-        orig_len = max(0.0, c.end - c.start)
-        headroom = max(0.0, max_duration_seconds - orig_len)
-        s, e = refine_clip_window(
-            c.start,
-            c.end,
-            items,
-            words=words,
-            silences=silences,
-            dialog_ranges=None,
-            max_extension=headroom,
-            quote=c.quote,
-        )
-
-        if e <= s:
-            continue
-        if (e - s) > max_duration_seconds:
-            # Do not drop this candidate; keep it unmerged by reverting to original bounds
-            s, e = c.start, c.end
-            if (e - s) > max_duration_seconds:
-                # If the original itself violates max, then and only then drop
-                continue
-        snapped.append(
-            ClipCandidate(
-                start=s,
-                end=e,
-                rating=c.rating,
-                reason=c.reason,
-                quote=c.quote,
-                count=c.count,
-            )
-        )
-        _elog(
-            f"merge: snapped | start={s:.3f} end={e:.3f} dur={(e-s):.3f} rating={c.rating:.1f}"
-        )
-
-    if not snapped:
-        return []
-
-    snapped.sort(key=lambda c: (c.start, c.end))
+    candidates = sorted(candidates, key=lambda c: (c.start, c.end))
     if not merge_overlaps:
-        return snapped
+        return candidates
 
     merged: List[ClipCandidate] = []
-    cur = snapped[0]
+    cur = candidates[0]
 
-    for nxt in snapped[1:]:
+    for nxt in candidates[1:]:
         # Compute temporal intersection
         inter_start = max(cur.start, nxt.start)
         inter_end = min(cur.end, nxt.end)
@@ -511,12 +467,14 @@ def _enforce_non_overlap(
     candidates: List[ClipCandidate],
     items: List[Tuple[float, float, str]],
     *,
+    strategy: ToneStrategy,
     max_duration_seconds: float = MAX_DURATION_SECONDS,
     min_duration_seconds: float = MIN_DURATION_SECONDS,
     min_gap: float = 0.10,
     min_rating: float = 0.0,
     words: Optional[List[dict]] = None,
     silences: Optional[List[Tuple[float, float]]] = None,
+    dialog_ranges: Optional[List[Tuple[float, float]]] = None,
 ) -> List[ClipCandidate]:
     """Adjust candidate boundaries, enforce non-overlap, and filter by rating.
 
@@ -544,9 +502,10 @@ def _enforce_non_overlap(
             c.start,
             c.end,
             items,
+            strategy=strategy,
             words=words,
             silences=silences,
-            dialog_ranges=None,
+            dialog_ranges=dialog_ranges,
             max_extension=headroom,
             quote=c.quote,
         )
