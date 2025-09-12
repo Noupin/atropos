@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 import config
-from helpers.ai import local_llm_call_json
+from helpers.ai import local_llm_call_json, local_llm_generate
 from common.chunk_utils import chunk_by_chars, chunk_is_sentence_like
 from common.thread_pool import process_with_thread_pool
 from common.llm_utils import (
@@ -65,17 +65,16 @@ def refine_segments_with_llm(
 
     print(f"[segments] Starting refinement with {len(chunks)} chunks.")
 
-    # Quick connectivity check so we fail fast if the local LLM server is down.
+    # Connectivity check: ensure the local LLM responds, regardless of format.
     try:
-        local_llm_call_json(
+        local_llm_generate(
             model=model,
-            prompt="return []",
+            prompt="ping",
             options=default_llm_options(16),
             timeout=min(timeout, 5),
         )
     except Exception as e:
-        print(f"[segments] LLM unavailable: {e}; skipping refinement.")
-        return segments
+        print(f"[segments] LLM ping failed: {e}; continuing without fail-fast.")
 
     def _build_prompt(chunk: List[Tuple[float, float, str]]) -> str:
         # Compact, JSON-only prompt to reduce tokens and latency
