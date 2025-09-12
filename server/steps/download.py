@@ -7,6 +7,7 @@ from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import NoTranscriptFound, TranscriptsDisabled
 
 from helpers.notifications import send_failure_email
+from helpers.transcript import normalize_quotes
 
 
 def is_youtube_url(url: str) -> bool:
@@ -190,7 +191,7 @@ def download_transcript(url, output_path: str = "transcript.txt", languages=None
                     duration = snippet.get("duration", 0) or 0
                     text = snippet.get("text", "")
                 end = (start or 0) + (duration or 0)
-                text = (text or "").replace("\n", " ").strip()
+                text = normalize_quotes((text or "").replace("\n", " ").strip())
                 f.write(f"[{start:.2f} -> {end:.2f}] {text}\n")
         print(f"TRANSCRIPT: Downloaded transcript to {output_path}")
         return True
