@@ -31,6 +31,7 @@ def test_refine_segments_with_llm_merges(monkeypatch) -> None:
         ]
 
     monkeypatch.setattr(seg_pkg, "local_llm_call_json", fake_llm)
+    monkeypatch.setattr(seg_pkg, "local_llm_generate", lambda *a, **k: "pong")
 
     refined = refine_segments_with_llm(segments)
     assert refined == [
@@ -50,6 +51,7 @@ def test_refine_segments_with_llm_fallback(monkeypatch) -> None:
         raise RuntimeError("boom")
 
     monkeypatch.setattr(seg_pkg, "local_llm_call_json", fake_llm)
+    monkeypatch.setattr(seg_pkg, "local_llm_generate", lambda *a, **k: "pong")
 
     refined = refine_segments_with_llm(segments)
     assert refined == segments
@@ -66,4 +68,25 @@ def test_maybe_refine_segments_with_llm_respects_config(monkeypatch) -> None:
     monkeypatch.setattr(seg_pkg.config, "USE_LLM_FOR_SEGMENTS", False)
 
     refined = maybe_refine_segments_with_llm(segments)
+    assert refined == segments
+
+
+def test_refine_segments_ping_accepts_non_json(monkeypatch) -> None:
+    items = [(0.0, 1.0, "Hi.")]
+    segments = segment_transcript_items(items)
+
+    calls = {"ping": 0}
+
+    def fake_ping(model, prompt, options=None, timeout=None):
+        calls["ping"] += 1
+        return "not json"
+
+    def fake_llm(model, prompt, options=None, timeout=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(seg_pkg, "local_llm_generate", fake_ping)
+    monkeypatch.setattr(seg_pkg, "local_llm_call_json", fake_llm)
+
+    refined = refine_segments_with_llm(segments)
+    assert calls["ping"] == 1
     assert refined == segments

@@ -166,6 +166,31 @@ def lmstudio_call_json(
     return json.loads(_strip_control_chars(m.group(0)))
 
 
+def local_llm_generate(
+    model: str,
+    prompt: str,
+    *,
+    options: Optional[dict] = None,
+    timeout: int = LLM_API_TIMEOUT,
+) -> str:
+    """Call the configured local LLM provider and return raw text."""
+    if LOCAL_LLM_PROVIDER.lower() == "lmstudio":
+        return lmstudio_generate(
+            model=model,
+            prompt=prompt,
+            json_format=False,
+            options=options,
+            timeout=timeout,
+        )
+    return ollama_generate(
+        model=model,
+        prompt=prompt,
+        json_format=False,
+        options=options,
+        timeout=timeout,
+    )
+
+
 def local_llm_call_json(
     model: str,
     prompt: str,
@@ -211,6 +236,7 @@ __all__ = [
     "ollama_call_json",
     "lmstudio_generate",
     "lmstudio_call_json",
+    "local_llm_generate",
     "local_llm_call_json",
     "retry",
 ]
