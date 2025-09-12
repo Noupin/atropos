@@ -75,6 +75,7 @@ def refine_segments_with_llm(
         )
     except Exception as e:
         print(f"[segments] LLM ping failed: {e}; continuing without fail-fast.")
+        return segments
 
     def _build_prompt(chunk: List[Tuple[float, float, str]]) -> str:
         # Compact, JSON-only prompt to reduce tokens and latency
