@@ -17,6 +17,7 @@ from config import (
     SWEET_SPOT_MIN_SECONDS,
 )
 from custom_types.tone import ToneStrategy
+from ..silence import snap_start_to_silence, snap_end_to_silence
 
 def _elog(msg: str) -> None:
     if DEBUG_ENFORCE:
@@ -158,24 +159,19 @@ def snap_to_silence(
     if not silences:
         return start, end
 
-    prev_sil_start = prev_sil_end = None
-    next_sil_start = next_sil_end = None
-    for s0, e0 in silences:
-        if e0 <= start:
-            prev_sil_start, prev_sil_end = s0, e0
-        if s0 >= end and next_sil_start is None:
-            next_sil_start, next_sil_end = s0, e0
-
-    if prev_sil_end is not None:
-        s = max(0.0, prev_sil_end - pre_leadin)
-        if prev_sil_start is not None:
+    s = start
+    prev_sil_start = snap_start_to_silence(start, silences)
+    if prev_sil_start < start:
+        prev_sil_end = snap_end_to_silence(prev_sil_start, silences)
+        if prev_sil_end <= start:
+            s = max(0.0, prev_sil_end - pre_leadin)
             s = max(prev_sil_start, s)
-    else:
-        s = start
 
-    if next_sil_start is not None:
+    next_sil_end = snap_end_to_silence(end, silences)
+    next_sil_start = snap_start_to_silence(next_sil_end, silences)
+    if next_sil_start >= end:
         e_candidate = next_sil_start + post_tail
-        if clamp_end and next_sil_end is not None:
+        if clamp_end:
             e_candidate = min(next_sil_end, e_candidate)
         e = max(s + 0.10, e_candidate)
     else:
