@@ -51,6 +51,7 @@ requests-oauthlib==2.0.0
 rsa==4.9.1
 sympy==1.14.0
 tokenizers==0.21.4
+tqdm==4.66.4
 typing-inspection==0.4.1
 typing_extensions==4.15.0
 uritemplate==4.2.0
