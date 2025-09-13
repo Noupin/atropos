@@ -90,6 +90,14 @@ TONE-SPECIFIC:
 - Exclude baseless speculation presented as fact, hateful rhetoric, or unfounded accusations.
 """
 
+POLITICS_PROMPT_DESC = """
+TONE-SPECIFIC:
+- Extract concise, self-contained beats that explain a policy, decision, vote, or outcome with clear stakes and who/what/why.
+- `reason` must start "politics because ..." and name the civic relevance (policy impact, accountability, precedent, process clarified, bipartisan moment).
+- `quote` captures the clearest, non-sensational line that states the claim, decision, or consequence.
+- Exclude campaign slogans, personal attacks, horse‑race chatter, or unverified claims; flag uncertainty if the speaker speculates.
+"""
+
 SPACE_RATING_DESCRIPTIONS = {
     "10": "jaw-dropping; unforgettable sense of scale or breakthrough; crystal clarity",
     "9":  "profound awe; crisp explanation and memorable takeaway",
@@ -160,6 +168,20 @@ CONSPIRACY_RATING_DESCRIPTIONS = {
     "0":  "reject; hateful, dangerous, or blatantly false content",
 }
 
+POLITICS_RATING_DESCRIPTIONS = {
+    "10": "civics gold; crystal‑clear stakes, impartial framing, memorable takeaway",
+    "9":  "excellent; sharp explanation with concrete impact and minimal spin",
+    "8":  "very good; clear context and relevance",
+    "7":  "good; useful but could be tighter or less verbose",
+    "6":  "borderline; missing key context or overly procedural",
+    "5":  "weak; vague, partisan framing, or low impact",
+    "4":  "poor; meandering or mostly horse‑race",
+    "3":  "poor; off‑topic or confusing",
+    "2":  "not usable; speculative or misleading framing",
+    "1":  "not usable; inflammatory rhetoric without substance",
+    "0":  "reject; hateful content or blatant misinformation",
+}
+
 def _build_system_instructions(
     prompt_desc: str, rating_descriptions: Optional[Dict[str, str]] = None
 ) -> str:
@@ -228,6 +250,7 @@ __all__ = [
     "TECH_PROMPT_DESC",
     "HEALTH_PROMPT_DESC",
     "CONSPIRACY_PROMPT_DESC",
+    "POLITICS_PROMPT_DESC",
     "GENERAL_RATING_DESCRIPTIONS",
     "FUNNY_RATING_DESCRIPTIONS",
     "SPACE_RATING_DESCRIPTIONS",
@@ -235,6 +258,7 @@ __all__ = [
     "TECH_RATING_DESCRIPTIONS",
     "HEALTH_RATING_DESCRIPTIONS",
     "CONSPIRACY_RATING_DESCRIPTIONS",
+    "POLITICS_RATING_DESCRIPTIONS",
     "_build_system_instructions",
     "build_window_prompt",
 ]
