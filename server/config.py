@@ -59,7 +59,7 @@ SILENCE_DETECTION_MIN_DURATION = 0.075
 # Transcript acquisition settings
 # ---------------------------------------
 # Preferred transcript source: "youtube" or "whisper"
-TRANSCRIPT_SOURCE = "whisper"
+TRANSCRIPT_SOURCE = "youtube"
 # Model used for faster-whisper transcription
 WHISPER_MODEL = os.environ.get(
     "WHISPER_MODEL",
@@ -80,12 +80,12 @@ CLIP_TYPE = Tone.FUNNY  # or "space", "history", "tech", "health"
 @dataclass
 class CandidateSelectionConfig:
     enforce_non_overlap: bool = True
-    min_duration_seconds: float = 5.0
-    max_duration_seconds: float = 85.0
-    sweet_spot_min_seconds: float = 13.0
-    sweet_spot_max_seconds: float = 45.0
-    overlap_merge_percentage_requirement: float = 0.5
-    default_min_rating: float = 9.2
+    min_duration_seconds: float = 13.0
+    max_duration_seconds: float = 115.0
+    sweet_spot_min_seconds: float = 25.0
+    sweet_spot_max_seconds: float = 60.0
+    overlap_merge_percentage_requirement: float = 0.35
+    default_min_rating: float = 9.0
     default_min_words: int = 0
 
 

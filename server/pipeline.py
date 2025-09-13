@@ -648,23 +648,26 @@ if __name__ == "__main__":
     # # last used [3:5]
     # yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
     
-    # tone = Tone.SCIENCE
-    # account = "cosmos"
-    # # Melodysheep: Sounds of space
-    # yt_url = "https://www.youtube.com/watch?v=OeYnV9zp7Dk"
+    tone = Tone.SCIENCE
+    account = "cosmos"
+    # Melodysheep: Life Beyond
+    # yt_url = "https://www.youtube.com/watch?v=dww8Hekngmg"
+    # Melodysheep: Water Worlds
+    yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
+    
     
     # tone = Tone.HEALTH
     # account = "health"
     # # Huberman: Controlling Your Dopamine
     # yt_url = "https://www.youtube.com/watch?v=XeN6eGO6FVQ"
     
-    tone = Tone.CONSPIRACY
-    account = "secrets"
-    # Bright Insight: Lost Civilizations
-    # last used [:2]
-    yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
+    # tone = Tone.CONSPIRACY
+    # account = "secrets"
+    # # Bright Insight: Lost Civilizations
+    # # last used [2:5]
+    # yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
 
     urls = get_video_urls(yt_url)
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[:2]:
+    for url in urls[:]:
         process_video(url, account=account, tone=tone)
