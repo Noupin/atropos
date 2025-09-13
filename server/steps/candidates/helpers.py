@@ -416,6 +416,9 @@ def _merge_adjacent_candidates(
     max_duration_seconds: float = MAX_DURATION_SECONDS,
     merge_overlaps: bool = False,
     overlap_fraction_threshold: float = OVERLAP_MERGE_PERCENTAGE_REQUIREMENT,  # require ≥50% overlap of the shorter clip
+    min_duration_seconds: float = MIN_DURATION_SECONDS,
+    sweet_spot_min_seconds: float = SWEET_SPOT_MIN_SECONDS,
+    sweet_spot_max_seconds: float = SWEET_SPOT_MAX_SECONDS,
 ) -> List[ClipCandidate]:
     """Optionally merge overlapping candidates without snapping.
 
@@ -428,55 +431,72 @@ def _merge_adjacent_candidates(
     if not candidates:
         return []
 
+    def _combine(a: ClipCandidate, b: ClipCandidate) -> ClipCandidate:
+        new_start = min(a.start, b.start)
+        new_end = max(a.end, b.end)
+        new_count = a.count + b.count
+        avg_rating = round((a.rating * a.count + b.rating * b.count) / new_count, 1)
+        return ClipCandidate(
+            start=new_start,
+            end=new_end,
+            rating=avg_rating,
+            reason=(
+                a.reason + (" | " if a.reason and b.reason else "") + b.reason
+            ).strip(),
+            quote=(
+                a.quote + (" | " if a.quote and b.quote else "") + b.quote
+            ).strip(),
+            count=new_count,
+        )
+
     candidates = sorted(candidates, key=lambda c: (c.start, c.end))
     if not merge_overlaps:
         return candidates
 
-    merged: List[ClipCandidate] = []
+    # First merge any overlapping candidates
+    merged_overlaps: List[ClipCandidate] = []
     cur = candidates[0]
-
     for nxt in candidates[1:]:
-        # Compute temporal intersection
         inter_start = max(cur.start, nxt.start)
         inter_end = min(cur.end, nxt.end)
         inter = max(0.0, inter_end - inter_start)
 
-        # Lengths of each
         len_cur = max(0.0, cur.end - cur.start)
         len_nxt = max(0.0, nxt.end - nxt.start)
         shorter = min(len_cur, len_nxt) if min(len_cur, len_nxt) > 0 else 0.0
-
-        # Require a non-insignificant overlap: fraction of the shorter clip covered by the intersection
         overlap_fraction = (inter / shorter) if shorter > 0 else 0.0
 
         if overlap_fraction >= overlap_fraction_threshold:
-            new_start = min(cur.start, nxt.start)
-            new_end = max(cur.end, nxt.end)
-            merged_len = new_end - new_start
-            if merged_len <= max_duration_seconds:
-                new_count = cur.count + nxt.count
-                avg_rating = round(
-                    (cur.rating * cur.count + nxt.rating * nxt.count) / new_count, 1
-                )
-                cur = ClipCandidate(
-                    start=new_start,
-                    end=new_end,
-                    rating=avg_rating,
-                    reason=(
-                        cur.reason
-                        + (" | " if cur.reason and nxt.reason else "")
-                        + nxt.reason
-                    ).strip(),
-                    quote=(
-                        cur.quote
-                        + (" | " if cur.quote and nxt.quote else "")
-                        + nxt.quote
-                    ).strip(),
-                    count=new_count,
-                )
+            new = _combine(cur, nxt)
+            if new.end - new.start <= max_duration_seconds:
+                cur = new
                 continue
+        merged_overlaps.append(cur)
+        cur = nxt
+    merged_overlaps.append(cur)
+
+    # Then merge too-short clips up to the sweet spot
+    merged: List[ClipCandidate] = []
+    cur = merged_overlaps[0]
+    merged_after_sweet = cur.end - cur.start >= sweet_spot_min_seconds
+    for nxt in merged_overlaps[1:]:
+        cur_len = cur.end - cur.start
+        nxt_len = nxt.end - nxt.start
+        if nxt.start <= cur.end:
+            combined_len = max(cur.end, nxt.end) - min(cur.start, nxt.start)
+            limit = min(sweet_spot_max_seconds, max_duration_seconds)
+            if combined_len <= limit:
+                if cur_len < sweet_spot_min_seconds:
+                    cur = _combine(cur, nxt)
+                    merged_after_sweet = cur.end - cur.start >= sweet_spot_min_seconds
+                    continue
+                if nxt_len < min_duration_seconds and not merged_after_sweet:
+                    cur = _combine(cur, nxt)
+                    merged_after_sweet = True
+                    continue
         merged.append(cur)
         cur = nxt
+        merged_after_sweet = cur.end - cur.start >= sweet_spot_min_seconds
 
     merged.append(cur)
     return merged
