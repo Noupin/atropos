@@ -82,6 +82,14 @@ TONE-SPECIFIC:
 - Exclude unsafe claims or overconfident prescriptions.
 """
 
+CONSPIRACY_PROMPT_DESC = """
+TONE-SPECIFIC:
+- Identify provocative or controversial claims that suggest hidden motives or secret plots.
+- `reason` must start "conspiracy because ..." and name the claim or device (hidden agenda, cover-up, manipulation, secret knowledge).
+- `quote` captures the core conspiratorial assertion or key phrase.
+- Exclude baseless speculation presented as fact, hateful rhetoric, or unfounded accusations.
+"""
+
 SPACE_RATING_DESCRIPTIONS = {
     "10": "jaw-dropping; unforgettable sense of scale or breakthrough; crystal clarity",
     "9":  "profound awe; crisp explanation and memorable takeaway",
@@ -136,6 +144,20 @@ HEALTH_RATING_DESCRIPTIONS = {
     "2":  "not usable; unsafe or unsupported",
     "1":  "not usable; shaming/absolute claims",
     "0":  "reject; dangerous misinformation",
+}
+
+CONSPIRACY_RATING_DESCRIPTIONS = {
+    "10": "compelling and well-articulated claim; clear connection and strong impact",
+    "9":  "very provocative; clear framing and memorable",
+    "8":  "engaging; plausible within context but requires scrutiny",
+    "7":  "interesting; some gaps or weaker evidence",
+    "6":  "borderline; speculative or lacking clarity",
+    "5":  "weak; unclear or unsupported claim",
+    "4":  "poor; confusing or overly vague",
+    "3":  "poor; off-topic or misleading",
+    "2":  "not usable; baseless speculation or irrelevant",
+    "1":  "not usable; unfounded accusations or harmful rhetoric",
+    "0":  "reject; hateful, dangerous, or blatantly false content",
 }
 
 def _build_system_instructions(
@@ -205,12 +227,14 @@ __all__ = [
     "HISTORY_PROMPT_DESC",
     "TECH_PROMPT_DESC",
     "HEALTH_PROMPT_DESC",
+    "CONSPIRACY_PROMPT_DESC",
     "GENERAL_RATING_DESCRIPTIONS",
     "FUNNY_RATING_DESCRIPTIONS",
     "SPACE_RATING_DESCRIPTIONS",
     "HISTORY_RATING_DESCRIPTIONS",
     "TECH_RATING_DESCRIPTIONS",
     "HEALTH_RATING_DESCRIPTIONS",
+    "CONSPIRACY_RATING_DESCRIPTIONS",
     "_build_system_instructions",
     "build_window_prompt",
 ]
