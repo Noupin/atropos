@@ -52,10 +52,11 @@ FUNNY_RATING_DESCRIPTIONS: Dict[str, str] = {
 
 SCIENCE_PROMPT_DESC = """
 TONE-SPECIFIC:
-- Select moments that spark scientific awe or curiosity: clear explanations, surprising discoveries, elegant analogies, or milestone findings across any scientific field (space/astronomy, biology, chemistry, physics, or other disciplines).
-- `reason` must start "science because ..." and specify the key insight, principle, or breakthrough (e.g., scale, counterintuitive result, experiment, explanation, discovery).
-- `quote` must capture the core scientific insight or the most striking line.
-- Exclude rambling fact lists, vague generalizations, or speculation presented as certainty.
+- Pick moments that spark scientific awe with setup to stand alone: clear explanation + result,
+  elegant analogy, or milestone finding.
+- `reason` must start "science because ..." and name the principle/breakthrough and why it matters
+  (mechanism / evidence / implication).
+- `quote` must include the full claim, analogy, or result with needed context, not a fragment.
 """
 
 HISTORY_PROMPT_DESC = """
@@ -94,7 +95,8 @@ POLITICS_PROMPT_DESC = """
 TONE-SPECIFIC:
 - Extract concise, self-contained beats that explain a policy, decision, vote, or outcome with clear stakes and who/what/why.
 - `reason` must start "politics because ..." and name the civic relevance (policy impact, accountability, precedent, process clarified, bipartisan moment).
-- `quote` captures the clearest, non-sensational line that states the claim, decision, or consequence.
+- `quote` captures the clearest, non-sensational line that states the claim, decision,
+  or consequence.
 - Exclude campaign slogans, personal attacks, horse‑race chatter, or unverified claims; flag uncertainty if the speaker speculates.
 """
 
@@ -193,23 +195,45 @@ def _build_system_instructions(
         "- RFC 8259 JSON: double-quoted keys/strings, commas between items, no trailing commas, no comments/markdown/backticks.\n"
         "- ASCII printable only (U+0020–U+007E). No emojis or smart quotes.\n\n"
         "SCHEMA (exact):\n"
-        "[{\"start\": number, \"end\": number, \"rating\": number, \"reason\": string, \"quote\": string, \"tags\": string[]}]\n\n"
+        "[{\"start\": number, \"end\": number, \"rating\": number, \"reason\": string, \"quote\": string, \"tags\": string[]}]\n"
+        f"duration d = end - start; d MUST be within [{MIN_DURATION_SECONDS:.0f}, "
+        f"{MAX_DURATION_SECONDS:.0f}] seconds for every item.\n\n"
         "CLIP RULES:\n"
-        f"- Clip length: {MIN_DURATION_SECONDS:.0f}-{MAX_DURATION_SECONDS:.0f}s. Respect both bounds strictly. "
+        f"- Clip length: {MIN_DURATION_SECONDS:.0f}-{MAX_DURATION_SECONDS:.0f}s. "
+        "Respect both bounds strictly. "
         f"Stay in the {SWEET_SPOT_MIN_SECONDS:.0f}-{SWEET_SPOT_MAX_SECONDS:.0f}s sweet spot; "
-        f"treat {SWEET_SPOT_MAX_SECONDS:.0f}s as a speed limit—only exceed it when a longer clip is exceptional and cannot be trimmed. "
-        f"- Never output a clip shorter than {MIN_DURATION_SECONDS:.0f}s. If a moment is too short, include minimal natural lead‑in/out (not filler) so it clears {MIN_DURATION_SECONDS:.0f}s; otherwise omit it.\n"
-        f"- Never output a clip longer than {MAX_DURATION_SECONDS:.0f}s. If a great moment exceeds {MAX_DURATION_SECONDS:.0f}s, SPLIT it into adjacent items, each within the limits.\n"
+        f"treat {SWEET_SPOT_MAX_SECONDS:.0f}s as a speed limit—"
+        "only exceed it when a longer clip is exceptional and cannot be trimmed.\n"
+        f"- HARD CONSTRAINT: for each item, let d = end - start.\n"
+        f"If d < {MIN_DURATION_SECONDS:.0f} or d > {MAX_DURATION_SECONDS:.0f}, omit it.\n"
+        "If none remain, return [].\n"
+        f"- TARGET LENGTH: strongly prefer {SWEET_SPOT_MIN_SECONDS:.0f}-"
+        f"{SWEET_SPOT_MAX_SECONDS:.0f}s. "
+        f"If the raw moment is shorter, pad with natural sentence/silence within this window to "
+        f"reach >= {SWEET_SPOT_MIN_SECONDS:.0f} without exceeding "
+        f"{MAX_DURATION_SECONDS:.0f}. "
+        f"If you cannot reach >= {MIN_DURATION_SECONDS:.0f}, omit it.\n"
+        f"- If a great moment exceeds {MAX_DURATION_SECONDS:.0f}s, SPLIT it into adjacent items, "
+        "each within the limits.\n"
         "- Up to 6 items total.\n"
         "- reason <= 240 chars; quote <= 200 chars.\n"
         "- tags: 1-5 items; each <= 24 chars.\n"
         "- Atomic: one beat; begin on a natural lead-in; end right after the payoff.\n"
         "- Hook: a clear hook in the first ~2s; trim silence/filler.\n"
-        f"- Do not round-trip your own durations: explicitly set `end - start` between {MIN_DURATION_SECONDS:.0f}s and {MAX_DURATION_SECONDS:.0f}s. If uncertain, adjust to the nearest natural boundary within that range (prefer shorter over longer if both valid).\n"
-        "- Stay within the current window shown; do not start before or end after the window. If a moment would cross a window boundary, SPLIT it at natural sentence/silence points so each clip fits entirely inside this window (and does not overlap with other clips).\n"
-        "- No overlaps\n"
+        "- Context completeness: do not return orphaned phrases. Include enough surrounding "
+        "sentence(s) so a layperson can follow the setup -> payoff (especially for science).\n"
+        f"- Do not round-trip your own durations: explicitly set `end - start` between "
+        f"{MIN_DURATION_SECONDS:.0f}s and {MAX_DURATION_SECONDS:.0f}s. "
+        "If uncertain, adjust to the nearest natural boundary within that range "
+        "(prefer shorter over longer if both valid).\n"
+        "- Stay within the current window shown; do not start before or end after the window. "
+        "If a moment would cross a window boundary, SPLIT it at natural sentence/silence points "
+        "so each clip fits entirely inside this window (and does not overlap with other clips).\n"
+        f"- No overlaps; keep >= 0.10s gap. If two would collide, keep the higher-rated or the "
+        f"one closer to {SWEET_SPOT_MIN_SECONDS:.0f}-{SWEET_SPOT_MAX_SECONDS:.0f}s.\n"
         "- Quote must be inside [start,end]; reason cites only lines within that span.\n"
-        "- Valid values: start < end; start >= 0; rating is a decimal number within allowed range. No NaN/Infinity.\n"
+        "- Valid values: start < end; start >= 0; rating is a decimal within allowed range. "
+        "No NaN/Infinity.\n"
         "- If any rule cannot be met perfectly, return [].\n\n"
         # "RATING SCALE:\n"
         # "- Use these rating descriptions to decide scores.\n"
@@ -239,7 +263,8 @@ def build_window_prompt(
     filled = system_instructions.replace("{TEXT}", text)
     return (
         f"{filled}\n"
-        f"(window \u2248 {WINDOW_SIZE_SECONDS:.0f}s, overlap {WINDOW_OVERLAP_SECONDS:.0f}s, context {context_secs:.0f}s)"
+        f"(window \u2248 {WINDOW_SIZE_SECONDS:.0f}s, overlap {WINDOW_OVERLAP_SECONDS:.0f}s, "
+        f"context {context_secs:.0f}s)"
     )
 
 
