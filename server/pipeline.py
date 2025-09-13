@@ -29,6 +29,7 @@ from steps.segment import (
 from steps.cut import save_clip_from_candidate
 from steps.subtitle import build_srt_for_range
 from steps.render import render_vertical_with_captions
+from steps.render_layouts import get_layout
 from steps.silence import (
     detect_silences,
     write_silences_json,
@@ -54,6 +55,7 @@ from config import (
     USE_LLM_FOR_SEGMENTS,
     CLEANUP_NON_SHORTS,
     START_AT_STEP,
+    RENDER_LAYOUT,
 )
 
 import sys
@@ -549,6 +551,7 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
                 clip_path,
                 srt_path,
                 vertical_output,
+                layout=get_layout(RENDER_LAYOUT),
             )
 
         if should_run(8):
