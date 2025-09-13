@@ -482,6 +482,111 @@ def _merge_adjacent_candidates(
     return merged
 
 
+def chain_into_sweet_spot(
+    candidates: List[ClipCandidate],
+    *,
+    min_duration_seconds: float = MIN_DURATION_SECONDS,
+    max_duration_seconds: float = MAX_DURATION_SECONDS,
+    sweet_spot_min_seconds: float = SWEET_SPOT_MIN_SECONDS,
+    sweet_spot_max_seconds: float = SWEET_SPOT_MAX_SECONDS,
+) -> List[ClipCandidate]:
+    """Greedily merge adjacent candidates forward into the sweet spot range.
+
+    Candidates are first sorted by ``start`` time. Short clips are chained
+    forward while the current chain is below ``sweet_spot_min_seconds`` and the
+    merged duration with the next clip stays within ``sweet_spot_max_seconds``
+    and ``max_duration_seconds``. Once a chain reaches the sweet spot minimum,
+    at most one additional backward merge is allowed if the next clip fits
+    without exceeding ``sweet_spot_max_seconds``.
+
+    The resulting clips are filtered to the ``min_duration_seconds`` –
+    ``max_duration_seconds`` window. Ratings are merged using a
+    count-weighted average and reasons/quotes are concatenated with ``|``.
+    """
+
+    if not candidates:
+        return []
+
+    def merge_pair(a: ClipCandidate, b: ClipCandidate) -> ClipCandidate:
+        count_a = getattr(a, "count", 1)
+        count_b = getattr(b, "count", 1)
+        new_count = count_a + count_b
+        avg_rating = round(
+            (a.rating * count_a + b.rating * count_b) / new_count, 1
+        )
+        reason = (
+            a.reason
+            + (" | " if a.reason and b.reason else "")
+            + b.reason
+        ).strip()
+        quote = (
+            a.quote
+            + (" | " if a.quote and b.quote else "")
+            + b.quote
+        ).strip()
+        return ClipCandidate(
+            start=a.start,
+            end=b.end,
+            rating=avg_rating,
+            reason=reason,
+            quote=quote,
+            count=new_count,
+        )
+
+    cands = sorted(candidates, key=lambda c: (c.start, c.end))
+    chained: List[ClipCandidate] = []
+    cur = cands[0]
+    used_back_merge = False
+
+    for nxt in cands[1:]:
+        cur_duration = cur.end - cur.start
+        nxt_duration = nxt.end - nxt.start
+        gap = max(0.0, nxt.start - cur.end)
+        merged_duration = cur_duration + gap + nxt_duration
+
+        if cur_duration < sweet_spot_min_seconds:
+            if (
+                merged_duration <= sweet_spot_max_seconds
+                and merged_duration <= max_duration_seconds
+            ):
+                cur = merge_pair(cur, nxt)
+                continue
+            chained.append(cur)
+            print(
+                f"Chained clip | {cur.start:.2f}-{cur.end:.2f} | rating={cur.rating:.1f} | count={cur.count}"
+            )
+            cur = nxt
+            used_back_merge = False
+            continue
+
+        if (
+            not used_back_merge
+            and merged_duration <= sweet_spot_max_seconds
+            and merged_duration <= max_duration_seconds
+        ):
+            cur = merge_pair(cur, nxt)
+            used_back_merge = True
+            continue
+
+        chained.append(cur)
+        print(
+            f"Chained clip | {cur.start:.2f}-{cur.end:.2f} | rating={cur.rating:.1f} | count={cur.count}"
+        )
+        cur = nxt
+        used_back_merge = False
+
+    chained.append(cur)
+    print(
+        f"Chained clip | {cur.start:.2f}-{cur.end:.2f} | rating={cur.rating:.1f} | count={cur.count}"
+    )
+
+    return [
+        c
+        for c in chained
+        if min_duration_seconds <= (c.end - c.start) <= max_duration_seconds
+    ]
+
+
 def _enforce_non_overlap(
     candidates: List[ClipCandidate],
     items: List[Tuple[float, float, str]],
@@ -664,6 +769,7 @@ __all__ = [
     "_snap_end_to_segment_end",
     "_extend_to_quote_end",
     "_merge_adjacent_candidates",
+    "chain_into_sweet_spot",
     "_enforce_non_overlap",
     "dedupe_candidates",
 ]

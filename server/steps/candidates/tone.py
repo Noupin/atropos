@@ -22,6 +22,7 @@ from .helpers import (
     _enforce_non_overlap,
     _get_field,
     _merge_adjacent_candidates,
+    chain_into_sweet_spot,
     _to_float,
     parse_transcript,
 )
@@ -175,8 +176,9 @@ def find_candidates_by_tone(
     filtered = [c for c in all_candidates if c.rating >= min_rating]
     filtered = _filter_promotional_candidates(filtered, items)
     merged = _merge_adjacent_candidates(filtered, merge_overlaps=True)
+    chained = chain_into_sweet_spot(merged)
     final = _enforce_non_overlap(
-        merged,
+        chained,
         items,
         strategy=strategy,
         silences=silences,
