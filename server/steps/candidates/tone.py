@@ -26,7 +26,11 @@ from .helpers import (
     parse_transcript,
 )
 from .prompts import (
+    CONSPIRACY_PROMPT_DESC,
+    CONSPIRACY_RATING_DESCRIPTIONS,
     FUNNY_PROMPT_DESC,
+    POLITICS_PROMPT_DESC,
+    POLITICS_RATING_DESCRIPTIONS,
     SPACE_PROMPT_DESC,
     HISTORY_PROMPT_DESC,
     TECH_PROMPT_DESC,
@@ -65,6 +69,14 @@ STRATEGY_REGISTRY: dict[Tone, ToneStrategy] = {
     Tone.HEALTH: ToneStrategy(
         prompt_desc=HEALTH_PROMPT_DESC,
         rating_descriptions=HEALTH_RATING_DESCRIPTIONS,
+    ),
+    Tone.CONSPIRACY: ToneStrategy(
+        prompt_desc=CONSPIRACY_PROMPT_DESC,
+        rating_descriptions=CONSPIRACY_RATING_DESCRIPTIONS,
+    ),
+    Tone.POLITICS: ToneStrategy(
+        prompt_desc=POLITICS_PROMPT_DESC,
+        rating_descriptions=POLITICS_RATING_DESCRIPTIONS,
     ),
 }
 
