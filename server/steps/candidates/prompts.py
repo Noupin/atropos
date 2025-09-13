@@ -21,35 +21,6 @@ TONE-SPECIFIC:
 """
 
 
-GENERAL_RATING_DESCRIPTIONS: Dict[str, str] = {
-    "10": "rare, exceptional clip; perfect fit; instantly gripping and highly shareable",
-    "9":  "rare, exceptional clip; excellent fit; strong hook and clear payoff",
-    "8":  "very good; engaging and on-target (common; most clips fall here or below)",
-    "7":  "good; include if few stronger options exist",
-    "6":  "borderline; some issues with clarity or impact",
-    "5":  "weak; limited relevance or momentum",
-    "4":  "poor; off-target or confusing",
-    "3":  "poor; off-target or confusing",
-    "2":  "not usable; unclear or irrelevant",
-    "1":  "not usable; unclear or irrelevant",
-    "0":  "reject; misleading or inappropriate",
-}
-
-
-FUNNY_RATING_DESCRIPTIONS: Dict[str, str] = {
-    "10": "can't stop laughing; universal hysterics",
-    "9":  "guaranteed laugh; laugh-out-loud every time",
-    "8":  "big laugh for most; very funny",
-    "7":  "solid laugh; clearly funny",
-    "6":  "lightly amusing; smile more than laugh",
-    "5":  "weak humor; raunchy or crude without payoff",
-    "4":  "poor joke; muddy setup or payoff",
-    "3":  "barely humorous; off-tone or confusing",
-    "2":  "not funny; flat or irrelevant",
-    "1":  "not funny at all; offensive or crude with no humor",
-    "0":  "reject; hateful or non-consensual content without comedic value",
-}
-
 SCIENCE_PROMPT_DESC = """
 TONE-SPECIFIC:
 - Select moments that spark scientific awe or curiosity: clear explanations, surprising discoveries, elegant analogies, or milestone findings across any scientific field (space/astronomy, biology, chemistry, physics, or other disciplines).
@@ -98,92 +69,8 @@ TONE-SPECIFIC:
 - Exclude campaign slogans, personal attacks, horse‑race chatter, or unverified claims; flag uncertainty if the speaker speculates.
 """
 
-SCIENCE_RATING_DESCRIPTIONS = {
-    "10": "jaw-dropping breakthrough or explanation; unforgettable sense of clarity or wonder",
-    "9":  "profound and memorable; crisp explanation or striking discovery with clear insight",
-    "8":  "very strong; sparks curiosity and delivers a clear, engaging scientific takeaway",
-    "7":  "good; informative and relevant with a decent hook",
-    "6":  "borderline; needs tighter framing, clearer takeaway, or better grounding",
-    "5":  "weak; facts or data points with little context or no clear point",
-    "4":  "poor; meandering jargon, unclear framing, or partial claims",
-    "3":  "confusing or unfocused; audience left without a clear idea",
-    "2":  "not usable; speculative or off-topic without evidence",
-    "1":  "not usable; misleading, trivial, or shoddy science",
-    "0":  "reject; unsafe misinformation, pseudoscience, or sensational claims without evidence",
-}
-
-HISTORY_RATING_DESCRIPTIONS = {
-    "10": "mini‑epic; clear stakes and unforgettable payoff; verified details; obvious significance",
-    "9":  "excellent story; strong stakes, crisp twist, and consequence",
-    "8":  "very good; clear narrative with meaningful takeaway",
-    "7":  "good; solid anecdote with acceptable context",
-    "6":  "borderline; stakes or payoff underexplained",
-    "5":  "weak; facts without a point or consequence",
-    "4":  "poor; disjointed or confusing",
-    "3":  "poor; trivial or off‑track",
-    "2":  "not usable; unsubstantiated or misleading",
-    "1":  "not usable; moralizing without evidence",
-    "0":  "reject; misinformation or hateful content",
-}
-
-TECH_RATING_DESCRIPTIONS = {
-    "10": "instant bookmark; actionable and insight-dense",
-    "9":  "excellent takeaway; clear trade-offs or demo",
-    "8":  "very useful; practical and well-explained",
-    "7":  "good; helpful but could be tighter",
-    "6":  "borderline; some value but muddy",
-    "5":  "weak; generic or hypey",
-    "4":  "poor; unclear or hand-wavy",
-    "3":  "poor; off-topic or inaccurate",
-    "2":  "not usable; wrong or unsafe guidance",
-    "1":  "not usable; salesy with no substance",
-    "0":  "reject; deceptive claims or undisclosed promotion",
-}
-
-HEALTH_RATING_DESCRIPTIONS = {
-    "10": "gold-standard clarity; safe, nuanced, and actionable",
-    "9":  "excellent; strong guardrails and memorable tip",
-    "8":  "very good; evidence-aware and useful",
-    "7":  "good; helpful but could be clearer",
-    "6":  "borderline; missing guardrails or precise terms",
-    "5":  "weak; generic or oversimplified",
-    "4":  "poor; confusing or potentially misleading",
-    "3":  "poor; off-topic or anecdotal-only",
-    "2":  "not usable; unsafe or unsupported",
-    "1":  "not usable; shaming/absolute claims",
-    "0":  "reject; dangerous misinformation",
-}
-
-CONSPIRACY_RATING_DESCRIPTIONS = {
-    "10": "compelling and well-articulated claim; clear connection and strong impact",
-    "9":  "very provocative; clear framing and memorable",
-    "8":  "engaging; plausible within context but requires scrutiny",
-    "7":  "interesting; some gaps or weaker evidence",
-    "6":  "borderline; speculative or lacking clarity",
-    "5":  "weak; unclear or unsupported claim",
-    "4":  "poor; confusing or overly vague",
-    "3":  "poor; off-topic or misleading",
-    "2":  "not usable; baseless speculation or irrelevant",
-    "1":  "not usable; unfounded accusations or harmful rhetoric",
-    "0":  "reject; hateful, dangerous, or blatantly false content",
-}
-
-POLITICS_RATING_DESCRIPTIONS = {
-    "10": "civics gold; crystal‑clear stakes, impartial framing, memorable takeaway",
-    "9":  "excellent; sharp explanation with concrete impact and minimal spin",
-    "8":  "very good; clear context and relevance",
-    "7":  "good; useful but could be tighter or less verbose",
-    "6":  "borderline; missing key context or overly procedural",
-    "5":  "weak; vague, partisan framing, or low impact",
-    "4":  "poor; meandering or mostly horse‑race",
-    "3":  "poor; off‑topic or confusing",
-    "2":  "not usable; speculative or misleading framing",
-    "1":  "not usable; inflammatory rhetoric without substance",
-    "0":  "reject; hateful content or blatant misinformation",
-}
-
 def _build_system_instructions(
-    prompt_desc: str, rating_descriptions: Optional[Dict[str, str]] = None
+    prompt_desc: str
 ) -> str:
     return (
         "<start_of_turn>user\n"
@@ -193,7 +80,8 @@ def _build_system_instructions(
         "- RFC 8259 JSON: double-quoted keys/strings, commas between items, no trailing commas, no comments/markdown/backticks.\n"
         "- ASCII printable only (U+0020–U+007E). No emojis or smart quotes.\n\n"
         "SCHEMA (exact):\n"
-        "[{\"start\": number, \"end\": number, \"rating\": number, \"reason\": string, \"quote\": string, \"tags\": string[]}]\n\n"
+        "[{\"start\": number, \"end\": number, \"rating\": number, \"reason\": string, \"quote\": string, \"tags\": string[]}]\n"
+        "  (rating MUST always be in the range 1.0–10.0 with one decimal place; never use 0 or values <1).\n\n"
         "CLIP RULES:\n"
         f"- Clip length: {MIN_DURATION_SECONDS:.0f}-{MAX_DURATION_SECONDS:.0f}s. Respect both bounds strictly. "
         f"Stay in the {SWEET_SPOT_MIN_SECONDS:.0f}-{SWEET_SPOT_MAX_SECONDS:.0f}s sweet spot; "
@@ -209,11 +97,8 @@ def _build_system_instructions(
         "- Stay within the current window shown; do not start before or end after the window. If a moment would cross a window boundary, SPLIT it at natural sentence/silence points so each clip fits entirely inside this window (and does not overlap with other clips).\n"
         "- No overlaps\n"
         "- Quote must be inside [start,end]; reason cites only lines within that span.\n"
-        "- Valid values: start < end; start >= 0; rating is a decimal number within allowed range. No NaN/Infinity.\n"
+        "- Valid values: start < end; start >= 0; rating is a decimal number between 1.0 and 10.0 inclusive, with one decimal place. No 0 ratings, NaN, or Infinity.\n"
         "- If any rule cannot be met perfectly, return [].\n\n"
-        # "RATING SCALE:\n"
-        # "- Use these rating descriptions to decide scores.\n"
-        # f"{rating_descriptions or GENERAL_RATING_DESCRIPTIONS}\n\n"
         "TONE-SPECIFIC:\n"
         f"{prompt_desc}\n\n"
         "TRANSCRIPT (approx window shown):\n"
@@ -232,7 +117,7 @@ def build_window_prompt(
 ) -> str:
     """Construct a complete prompt for a transcript window."""
     system_instructions = _build_system_instructions(
-        prompt_desc, rating_descriptions
+        prompt_desc
     )
     context_secs = WINDOW_SIZE_SECONDS * WINDOW_CONTEXT_PERCENTAGE
     # Replace the {TEXT} token with the actual transcript window text
@@ -251,14 +136,6 @@ __all__ = [
     "HEALTH_PROMPT_DESC",
     "CONSPIRACY_PROMPT_DESC",
     "POLITICS_PROMPT_DESC",
-    "GENERAL_RATING_DESCRIPTIONS",
-    "FUNNY_RATING_DESCRIPTIONS",
-    "SCIENCE_RATING_DESCRIPTIONS",
-    "HISTORY_RATING_DESCRIPTIONS",
-    "TECH_RATING_DESCRIPTIONS",
-    "HEALTH_RATING_DESCRIPTIONS",
-    "CONSPIRACY_RATING_DESCRIPTIONS",
-    "POLITICS_RATING_DESCRIPTIONS",
     "_build_system_instructions",
     "build_window_prompt",
 ]

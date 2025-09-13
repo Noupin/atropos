@@ -25,31 +25,6 @@ def test_reason_coverage_rule_present() -> None:
     assert "lines cited in `reason`" in instructions
 
 
-def test_custom_rating_descriptions_included() -> None:
-    custom = {"10": "top tier"}
-    instructions = _build_system_instructions(
-        "desc", rating_descriptions=custom
-    )
-    assert "10: rare, exceptional clip" in instructions
-    assert "10: top tier" in instructions
-
-
-def test_funny_rating_descriptions_included() -> None:
-    strategy = STRATEGY_REGISTRY[Tone.FUNNY]
-    instructions = _build_system_instructions(
-        strategy.prompt_desc, strategy.rating_descriptions
-    )
-    assert (
-        f"10: {strategy.rating_descriptions['10']}" in instructions
-    )
-    assert (
-        f"5: {strategy.rating_descriptions['5']}" in instructions
-    )
-    assert (
-        f"0: {strategy.rating_descriptions['0']}" in instructions
-    )
-
-
 def test_reason_and_quote_match_tone() -> None:
     instructions = _build_system_instructions("desc")
     assert "reason` must explain how the moment fits the tone" in instructions
