@@ -661,9 +661,10 @@ if __name__ == "__main__":
     tone = Tone.CONSPIRACY
     account = "secrets"
     # Bright Insight: Lost Civilizations
+    # last used [:2]
     yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
 
     urls = get_video_urls(yt_url)
-    urls.reverse() # If the playlist is newest first, reverse to process oldest first
+    # urls.reverse() # If the playlist is newest first, reverse to process oldest first
     for url in urls[:2]:
         process_video(url, account=account, tone=tone)
