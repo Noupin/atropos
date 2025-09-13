@@ -22,24 +22,18 @@ from .helpers import (
     _enforce_non_overlap,
     _get_field,
     _merge_adjacent_candidates,
+    chain_into_sweet_spot,
     _to_float,
     parse_transcript,
 )
 from .prompts import (
     CONSPIRACY_PROMPT_DESC,
-    CONSPIRACY_RATING_DESCRIPTIONS,
     FUNNY_PROMPT_DESC,
     POLITICS_PROMPT_DESC,
-    POLITICS_RATING_DESCRIPTIONS,
     SCIENCE_PROMPT_DESC,
     HISTORY_PROMPT_DESC,
     TECH_PROMPT_DESC,
     HEALTH_PROMPT_DESC,
-    FUNNY_RATING_DESCRIPTIONS,
-    SCIENCE_RATING_DESCRIPTIONS,
-    HISTORY_RATING_DESCRIPTIONS,
-    TECH_RATING_DESCRIPTIONS,
-    HEALTH_RATING_DESCRIPTIONS,
     build_window_prompt,
 )
 
@@ -52,31 +46,24 @@ def _log(msg: str) -> None:
 STRATEGY_REGISTRY: dict[Tone, ToneStrategy] = {
     Tone.FUNNY: ToneStrategy(
         prompt_desc=FUNNY_PROMPT_DESC,
-        rating_descriptions=FUNNY_RATING_DESCRIPTIONS,
     ),
     Tone.SCIENCE: ToneStrategy(
         prompt_desc=SCIENCE_PROMPT_DESC,
-        rating_descriptions=SCIENCE_RATING_DESCRIPTIONS,
     ),
     Tone.HISTORY: ToneStrategy(
         prompt_desc=HISTORY_PROMPT_DESC,
-        rating_descriptions=HISTORY_RATING_DESCRIPTIONS,
     ),
     Tone.TECH: ToneStrategy(
         prompt_desc=TECH_PROMPT_DESC,
-        rating_descriptions=TECH_RATING_DESCRIPTIONS,
     ),
     Tone.HEALTH: ToneStrategy(
         prompt_desc=HEALTH_PROMPT_DESC,
-        rating_descriptions=HEALTH_RATING_DESCRIPTIONS,
     ),
     Tone.CONSPIRACY: ToneStrategy(
         prompt_desc=CONSPIRACY_PROMPT_DESC,
-        rating_descriptions=CONSPIRACY_RATING_DESCRIPTIONS,
     ),
     Tone.POLITICS: ToneStrategy(
         prompt_desc=POLITICS_PROMPT_DESC,
-        rating_descriptions=POLITICS_RATING_DESCRIPTIONS,
     ),
 }
 
@@ -146,7 +133,6 @@ def find_candidates_by_tone(
         prompt = build_window_prompt(
             strategy.prompt_desc,
             text,
-            strategy.rating_descriptions,
         )
         start_t = time.perf_counter()
         try:
@@ -175,8 +161,9 @@ def find_candidates_by_tone(
     filtered = [c for c in all_candidates if c.rating >= min_rating]
     filtered = _filter_promotional_candidates(filtered, items)
     merged = _merge_adjacent_candidates(filtered, merge_overlaps=True)
+    chained = chain_into_sweet_spot(merged)
     final = _enforce_non_overlap(
-        merged,
+        chained,
         items,
         strategy=strategy,
         silences=silences,
