@@ -660,8 +660,8 @@ if __name__ == "__main__":
     
     tone = Tone.CONSPIRACY
     account = "secrets"
-    # Huberman: Controlling Your Dopamine
-    yt_url = "https://www.youtube.com/watch?v=XeN6eGO6FVQ"
+    # Bright Insight: Lost Civilizations
+    yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
 
     urls = get_video_urls(yt_url)
     urls.reverse() # If the playlist is newest first, reverse to process oldest first
