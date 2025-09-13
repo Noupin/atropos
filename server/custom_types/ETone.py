@@ -7,3 +7,5 @@ class Tone(Enum):
     HISTORY = "history"
     TECH = "tech"
     HEALTH = "health"
+    CONSPIRACY = "conspiracy"
+    POLITICS = "politics"

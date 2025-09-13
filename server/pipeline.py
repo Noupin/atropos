@@ -635,25 +635,35 @@ if __name__ == "__main__":
     # # In Review Playlist (newest first)
     # # yt_url = "https://www.youtube.com/playlist?list=PLy3mMHt2i7RKE9ba8rfL7_qnFcpbUaA8_"
     # # KFAF Playlist(newest first)
-    # # last used [9:10]
+    # # last used [10:12]
     # # nick yelling barrett like kevin did is index 8
     # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"
 
     
-    tone = Tone.HISTORY
-    account = "history"
-    # Crash Course World History
-    # yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9"
-    # World History Battles
-    # last used [3:5]
-    yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
+    # tone = Tone.HISTORY
+    # account = "history"
+    # # Crash Course World History
+    # # yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9"
+    # # World History Battles
+    # # last used [3:5]
+    # yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
     
     # tone = Tone.SPACE
     # account = "cosmos"
     # # Melodysheep: Sounds of space
     # yt_url = "https://www.youtube.com/watch?v=OeYnV9zp7Dk"
+    
+    # tone = Tone.HEALTH
+    # account = "health"
+    # # Huberman: Controlling Your Dopamine
+    # yt_url = "https://www.youtube.com/watch?v=XeN6eGO6FVQ"
+    
+    tone = Tone.CONSPIRACY
+    account = "secrets"
+    # Huberman: Controlling Your Dopamine
+    yt_url = "https://www.youtube.com/watch?v=XeN6eGO6FVQ"
 
     urls = get_video_urls(yt_url)
     urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[8:9]:
+    for url in urls[:]:
         process_video(url, account=account, tone=tone)
