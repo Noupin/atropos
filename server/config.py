@@ -30,7 +30,7 @@ CAPTION_OUTLINE_BGR = (236, 236, 236)  # hex ececec
 OUTPUT_FPS: float = 30.0
 
 # Clip boundary snapping options
-SNAP_TO_SILENCE = True
+SNAP_TO_SILENCE = False
 SNAP_TO_DIALOG = True
 SNAP_TO_SENTENCE = True
 

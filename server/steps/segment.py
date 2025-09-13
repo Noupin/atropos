@@ -71,7 +71,7 @@ def refine_segments_with_llm(
             model=model,
             prompt="ping",
             options=default_llm_options(16),
-            timeout=min(timeout, 5),
+            timeout=min(timeout, config.LLM_PER_CHUNK_TIMEOUT),
         )
     except Exception as e:
         print(f"[segments] LLM ping failed: {e}; continuing without fail-fast.")
