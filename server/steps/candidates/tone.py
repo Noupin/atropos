@@ -31,12 +31,12 @@ from .prompts import (
     FUNNY_PROMPT_DESC,
     POLITICS_PROMPT_DESC,
     POLITICS_RATING_DESCRIPTIONS,
-    SPACE_PROMPT_DESC,
+    SCIENCE_PROMPT_DESC,
     HISTORY_PROMPT_DESC,
     TECH_PROMPT_DESC,
     HEALTH_PROMPT_DESC,
     FUNNY_RATING_DESCRIPTIONS,
-    SPACE_RATING_DESCRIPTIONS,
+    SCIENCE_RATING_DESCRIPTIONS,
     HISTORY_RATING_DESCRIPTIONS,
     TECH_RATING_DESCRIPTIONS,
     HEALTH_RATING_DESCRIPTIONS,
@@ -54,9 +54,9 @@ STRATEGY_REGISTRY: dict[Tone, ToneStrategy] = {
         prompt_desc=FUNNY_PROMPT_DESC,
         rating_descriptions=FUNNY_RATING_DESCRIPTIONS,
     ),
-    Tone.SPACE: ToneStrategy(
-        prompt_desc=SPACE_PROMPT_DESC,
-        rating_descriptions=SPACE_RATING_DESCRIPTIONS,
+    Tone.SCIENCE: ToneStrategy(
+        prompt_desc=SCIENCE_PROMPT_DESC,
+        rating_descriptions=SCIENCE_RATING_DESCRIPTIONS,
     ),
     Tone.HISTORY: ToneStrategy(
         prompt_desc=HISTORY_PROMPT_DESC,

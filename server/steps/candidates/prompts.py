@@ -50,12 +50,12 @@ FUNNY_RATING_DESCRIPTIONS: Dict[str, str] = {
     "0":  "reject; hateful or non-consensual content without comedic value",
 }
 
-SPACE_PROMPT_DESC = """
+SCIENCE_PROMPT_DESC = """
 TONE-SPECIFIC:
-- Pick awe/curiosity beats: crisp explanations, scale analogies, or mission milestones that matter.
-- `reason` must start "space awe because ..." and name the insight (scale, counterintuitive fact, mission update, explanation).
-- `quote` captures the core awe/insight line.
-- Exclude rambling fact lists or speculation framed as certainty.
+- Select moments that spark scientific awe or curiosity: clear explanations, surprising discoveries, elegant analogies, or milestone findings across any scientific field (space/astronomy, biology, chemistry, physics, or other disciplines).
+- `reason` must start "science because ..." and specify the key insight, principle, or breakthrough (e.g., scale, counterintuitive result, experiment, explanation, discovery).
+- `quote` must capture the core scientific insight or the most striking line.
+- Exclude rambling fact lists, vague generalizations, or speculation presented as certainty.
 """
 
 HISTORY_PROMPT_DESC = """
@@ -98,18 +98,18 @@ TONE-SPECIFIC:
 - Exclude campaign slogans, personal attacks, horse‑race chatter, or unverified claims; flag uncertainty if the speaker speculates.
 """
 
-SPACE_RATING_DESCRIPTIONS = {
-    "10": "jaw-dropping; unforgettable sense of scale or breakthrough; crystal clarity",
-    "9":  "profound awe; crisp explanation and memorable takeaway",
-    "8":  "strong curiosity spark; clear and engaging",
-    "7":  "good; informative with a decent hook",
-    "6":  "borderline; needs tighter framing or clearer why",
-    "5":  "weak; facts without a point or takeaway",
-    "4":  "poor; meandering jargon or half-claim",
-    "3":  "poor; confusing or unfocused",
-    "2":  "not usable; unclear, speculative without grounding",
-    "1":  "not usable; misleading or off-topic",
-    "0":  "reject; sensational claim without evidence or unsafe misinformation",
+SCIENCE_RATING_DESCRIPTIONS = {
+    "10": "jaw-dropping breakthrough or explanation; unforgettable sense of clarity or wonder",
+    "9":  "profound and memorable; crisp explanation or striking discovery with clear insight",
+    "8":  "very strong; sparks curiosity and delivers a clear, engaging scientific takeaway",
+    "7":  "good; informative and relevant with a decent hook",
+    "6":  "borderline; needs tighter framing, clearer takeaway, or better grounding",
+    "5":  "weak; facts or data points with little context or no clear point",
+    "4":  "poor; meandering jargon, unclear framing, or partial claims",
+    "3":  "confusing or unfocused; audience left without a clear idea",
+    "2":  "not usable; speculative or off-topic without evidence",
+    "1":  "not usable; misleading, trivial, or shoddy science",
+    "0":  "reject; unsafe misinformation, pseudoscience, or sensational claims without evidence",
 }
 
 HISTORY_RATING_DESCRIPTIONS = {
@@ -245,7 +245,7 @@ def build_window_prompt(
 
 __all__ = [
     "FUNNY_PROMPT_DESC",
-    "SPACE_PROMPT_DESC",
+    "SCIENCE_PROMPT_DESC",
     "HISTORY_PROMPT_DESC",
     "TECH_PROMPT_DESC",
     "HEALTH_PROMPT_DESC",
@@ -253,7 +253,7 @@ __all__ = [
     "POLITICS_PROMPT_DESC",
     "GENERAL_RATING_DESCRIPTIONS",
     "FUNNY_RATING_DESCRIPTIONS",
-    "SPACE_RATING_DESCRIPTIONS",
+    "SCIENCE_RATING_DESCRIPTIONS",
     "HISTORY_RATING_DESCRIPTIONS",
     "TECH_RATING_DESCRIPTIONS",
     "HEALTH_RATING_DESCRIPTIONS",

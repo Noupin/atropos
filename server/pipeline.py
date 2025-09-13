@@ -648,7 +648,7 @@ if __name__ == "__main__":
     # # last used [3:5]
     # yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
     
-    # tone = Tone.SPACE
+    # tone = Tone.SCIENCE
     # account = "cosmos"
     # # Melodysheep: Sounds of space
     # yt_url = "https://www.youtube.com/watch?v=OeYnV9zp7Dk"

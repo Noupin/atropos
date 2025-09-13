@@ -3,7 +3,7 @@ from enum import Enum
 
 class Tone(Enum):
     FUNNY = "funny"
-    SPACE = "space"
+    SCIENCE = "science"
     HISTORY = "history"
     TECH = "tech"
     HEALTH = "health"
