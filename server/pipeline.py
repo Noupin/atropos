@@ -633,14 +633,14 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
 
 
 if __name__ == "__main__":
-    # tone = Tone.FUNNY 
-    # account = "funnykinda"
-    # # In Review Playlist (newest first)
-    # # yt_url = "https://www.youtube.com/playlist?list=PLy3mMHt2i7RKE9ba8rfL7_qnFcpbUaA8_"
-    # # KFAF Playlist(newest first)
-    # # last used [10:12]
-    # # nick yelling barrett like kevin did is index 8
-    # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"
+    tone = Tone.FUNNY 
+    account = "funnykinda"
+    # In Review Playlist (newest first)
+    # yt_url = "https://www.youtube.com/playlist?list=PLy3mMHt2i7RKE9ba8rfL7_qnFcpbUaA8_"
+    # KFAF Playlist(newest first)
+    # last used [0:10]
+    # nick yelling barrett like kevin did is index 8
+    yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"
 
     
     # tone = Tone.HISTORY
@@ -651,12 +651,12 @@ if __name__ == "__main__":
     # # last used [3:5]
     # yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
     
-    tone = Tone.SCIENCE
-    account = "cosmos"
-    # Melodysheep: Life Beyond
-    # yt_url = "https://www.youtube.com/watch?v=dww8Hekngmg"
-    # Melodysheep: Water Worlds
-    yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
+    # tone = Tone.SCIENCE
+    # account = "cosmos"
+    # # Melodysheep: Life Beyond
+    # # yt_url = "https://www.youtube.com/watch?v=dww8Hekngmg"
+    # # Melodysheep: Water Worlds
+    # yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
     
     
     # tone = Tone.HEALTH
@@ -670,7 +670,8 @@ if __name__ == "__main__":
     # # last used [2:5]
     # yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
 
+
     urls = get_video_urls(yt_url)
-    # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[:]:
+    urls.reverse() # If the playlist is newest first, reverse to process oldest first
+    for url in urls[10:20]:
         process_video(url, account=account, tone=tone)
