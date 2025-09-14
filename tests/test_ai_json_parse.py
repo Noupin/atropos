@@ -31,6 +31,18 @@ def test_lmstudio_call_json_extracts_list_from_dict(monkeypatch) -> None:
     assert result == [{"start": 0.0, "end": 1.0}]
 
 
+def test_lmstudio_call_json_salvages_tokens(monkeypatch) -> None:
+    raw = '["Adam",""Eve"],""Ricot"],""dome"],""volcanic"]'
+
+    def fake_generate(*args, **kwargs):
+        return raw
+
+    monkeypatch.setattr(ai, "lmstudio_generate", fake_generate)
+
+    out = ai.lmstudio_call_json(model="m", prompt="p")
+    assert [d["text"] for d in out] == ["Adam", "Eve", "Ricot", "dome", "volcanic"]
+
+
 def test_ollama_generate_handles_dict_response(monkeypatch) -> None:
     class DummyResp:
         def raise_for_status(self) -> None:

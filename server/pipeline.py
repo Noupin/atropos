@@ -74,11 +74,11 @@ from helpers.formatting import (
 )
 from helpers.logging import run_step
 from helpers.notifications import send_failure_email
-from helpers.ai import local_llm_call_json
 from helpers.description import maybe_append_website_link
 from steps.candidates import ClipCandidate
 from helpers.cleanup import cleanup_project_dir
-from common.caption_utils import build_hashtag_prompt, prepare_hashtags
+from common.caption_utils import prepare_hashtags
+from helpers.hashtags import generate_hashtag_strings
 
 
 GENERIC_HASHTAGS = ["foryou", "fyp", "viral", "trending"]
@@ -567,26 +567,12 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
         description_path = shorts_dir / f"{clip_path.stem}.txt"
 
         def step_description() -> Path:
-            prompt = build_hashtag_prompt(
+            tags = generate_hashtag_strings(
                 title=video_info["title"],
                 quote=candidate.quote,
                 show=video_info.get("uploader"),
             )
-            tags: list[str] = []
-            try:
-                tags = local_llm_call_json(
-                    model=config.LOCAL_LLM_MODEL,
-                    prompt=prompt,
-                    options={"temperature": 0.0},
-                )
-                print(f"[Hashtags] generated: {tags}")
-            except Exception as e:
-                print(f"[Hashtags] error generating hashtags: {e}")
-                send_failure_email(
-                    "Hashtag generation failed",
-                    f"Error generating hashtags for clip {idx} of video {yt_url}: {e}",
-                )
-                tags = []
+            print(f"[Hashtags] generated: {tags}")
             if not tags:
                 send_failure_email(
                     "Hashtag generation failed",

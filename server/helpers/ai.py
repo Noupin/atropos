@@ -358,6 +358,9 @@ def lmstudio_call_json(
         coerced = coerce_json_array(raw, extract_re)
         parsed = json.loads(coerced)
     except Exception as e:
+        tokens = re.findall(r"[0-9A-Za-z]+", raw)
+        if tokens:
+            return _ensure_list_of_dicts(tokens)
         head = raw[:300]
         raise ValueError(
             f"LM Studio model '{model}' did not return JSON array. Raw head: {head}"
