@@ -15,11 +15,13 @@ class CenteredWithCornersLayout(CenteredZoomLayout):
         target_width_ratio: float = 0.47,
         margin_ratio: float = 0.02,
         vertical_bias: float = 0.15,
+        bottom_corners_spacer_ratio: float = 0.0,
     ) -> None:
         self.crop_ratio = crop_ratio
         self.target_width_ratio = target_width_ratio
         self.margin_ratio = margin_ratio
         self.vertical_bias = vertical_bias
+        self.bottom_corners_spacer_ratio = bottom_corners_spacer_ratio
 
     def augment_canvas(
         self,
@@ -33,8 +35,15 @@ class CenteredWithCornersLayout(CenteredZoomLayout):
         if crop_w == 0 or crop_h == 0:
             return canvas
 
-        bottom_left = frame[h - crop_h : h, 0:crop_w]
-        bottom_right = frame[h - crop_h : h, w - crop_w : w]
+        # Calculate spacer in pixels from the bottom
+        spacer = int(h * self.bottom_corners_spacer_ratio)
+        crop_start = max(0, h - crop_h - spacer)
+        crop_end = crop_start + crop_h
+        if crop_end > h:
+            crop_end = h
+            crop_start = max(0, crop_end - crop_h)
+        bottom_left = frame[crop_start:crop_end, 0:crop_w]
+        bottom_right = frame[crop_start:crop_end, w - crop_w : w]
 
         target_w = int(canvas.shape[1] * self.target_width_ratio)
         if target_w == 0:
