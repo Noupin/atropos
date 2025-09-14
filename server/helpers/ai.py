@@ -381,7 +381,6 @@ def lmstudio_call_json(
         items = [parsed]
 
     items = _ensure_list_of_dicts(items)
-    print(f"[lmstudio] Parsed {len(items)} items from {len(raw)} chars.")
     return items
 
 
