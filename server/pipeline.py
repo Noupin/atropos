@@ -638,9 +638,10 @@ if __name__ == "__main__":
     # # In Review Playlist (newest first)
     # # yt_url = "https://www.youtube.com/playlist?list=PLy3mMHt2i7RKE9ba8rfL7_qnFcpbUaA8_"
     # # KFAF Playlist(newest first)
-    # # last used [0:10]
-    # # nick yelling barrett like kevin did is index 8
+    # # start next one at [20:]
     # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"
+    # # Last Of Us
+    # # yt_url = "https://www.youtube.com/playlist?list=PLBIL5prmXqedEXXikBxPsvKRREB-DaoWb"
 
     
     # tone = Tone.HISTORY
@@ -651,27 +652,29 @@ if __name__ == "__main__":
     # # last used [3:5]
     # yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
     
-    tone = Tone.SCIENCE
-    account = "cosmos"
-    # Melodysheep: Life Beyond
-    # yt_url = "https://www.youtube.com/watch?v=dww8Hekngmg"
-    # Melodysheep: Water Worlds
-    yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
+    # tone = Tone.SCIENCE
+    # account = "cosmos"
+    # # Melodysheep: Life Beyond
+    # # yt_url = "https://www.youtube.com/watch?v=dww8Hekngmg"
+    # # Melodysheep: Water Worlds
+    # yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
     
     
     # tone = Tone.HEALTH
     # account = "health"
     # # Matt Lane: Can I Get Fit On Fast Food?
     # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
+    # # Matt Lane: Ask MLFit Show
+    # # yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
     
-    # tone = Tone.CONSPIRACY
-    # account = "secrets"
-    # # Bright Insight: Lost Civilizations
-    # # last used [2:5]
-    # yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
+    tone = Tone.CONSPIRACY
+    account = "secrets"
+    # Bright Insight: Lost Civilizations
+    # start next one at [10:]
+    yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
 
 
     urls = get_video_urls(yt_url)
-    urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[:]:
+    # urls.reverse() # If the playlist is newest first, reverse to process oldest first
+    for url in urls[2:10]:
         process_video(url, account=account, tone=tone)

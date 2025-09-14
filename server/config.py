@@ -30,7 +30,7 @@ CAPTION_OUTLINE_BGR = (236, 236, 236)  # hex ececec
 OUTPUT_FPS: float = 30.0
 
 # Name of the render layout to use. Options: "centered", "centered_with_corners", "no_zoom", "left_aligned"
-RENDER_LAYOUT = os.environ.get("RENDER_LAYOUT", "centered_with_corners")
+RENDER_LAYOUT = os.environ.get("RENDER_LAYOUT", "centered")
 
 # Clip boundary snapping options
 SNAP_TO_SILENCE = False
@@ -62,7 +62,7 @@ SILENCE_DETECTION_MIN_DURATION = 0.075
 # Transcript acquisition settings
 # ---------------------------------------
 # Preferred transcript source: "youtube" or "whisper"
-TRANSCRIPT_SOURCE = "youtube"
+TRANSCRIPT_SOURCE = "whisper"
 # Model used for faster-whisper transcription
 WHISPER_MODEL = os.environ.get(
     "WHISPER_MODEL",
@@ -123,7 +123,7 @@ MIN_EXTENSION_MARGIN = 0.3
 # Step control
 # Allows skipping the first N pipeline steps by setting START_AT_STEP
 # via environment variable. Defaults to 1 (run all steps).
-START_AT_STEP = int(os.environ.get("START_AT_STEP", "6"))
+START_AT_STEP = int(os.environ.get("START_AT_STEP", "1"))
 
 # ---------------------------------------
 # Post-pipeline cleanup
@@ -158,7 +158,7 @@ MAX_LLM_CHARS = 24_000
 LLM_API_TIMEOUT = 600  # seconds
 SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS = 100
 LLM_MAX_WORKERS = 1
-LLM_PER_CHUNK_TIMEOUT = 120  # seconds
+LLM_PER_CHUNK_TIMEOUT = 180  # seconds
 
 __all__ = [
     "CAPTION_FONT_SCALE",
