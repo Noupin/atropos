@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, List
+from typing import Any, Iterable, List
 
 
 HASHTAG_RE = re.compile(r"#\w+")
@@ -91,6 +91,27 @@ def clean_hashtag(tag: str) -> str:
     return HASHTAG_CLEAN_RE.sub("", tag)
 
 
+def coerce_hashtag_list(items: Iterable[Any]) -> List[str]:
+    """Extract string values from a heterogeneous list of hashtag candidates."""
+
+    texts: List[str] = []
+    for item in items:
+        if isinstance(item, str):
+            texts.append(item)
+        elif isinstance(item, dict):
+            val = item.get("text")
+            if isinstance(val, str):
+                texts.append(val)
+            else:
+                for v in item.values():
+                    if isinstance(v, str):
+                        texts.append(v)
+                        break
+        elif item is not None:
+            texts.append(str(item))
+    return texts
+
+
 def prepare_hashtags(tags: Iterable[str], show: str | None = None) -> List[str]:
     """Sanitise and sort hashtags, optionally including a show name."""
 
@@ -158,6 +179,7 @@ __all__ = [
     "append_default_tags",
     "truncate_word_boundary",
     "clean_hashtag",
+    "coerce_hashtag_list",
     "prepare_hashtags",
     "build_hashtag_prompt",
     "remove_emoji",
