@@ -572,7 +572,6 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
                 quote=candidate.quote,
                 show=video_info.get("uploader"),
             )
-            print(f"[Hashtags] generated: {tags}")
             if not tags:
                 send_failure_email(
                     "Hashtag generation failed",
@@ -621,6 +620,14 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
 
 
 if __name__ == "__main__":
+    # tone = Tone.SCIENCE
+    # account = "cosmos"
+    # # Melodysheep: Life Beyond
+    # # yt_url = "https://www.youtube.com/watch?v=dww8Hekngmg"
+    # # Melodysheep: Water Worlds
+    # yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
+
+
     # tone = Tone.FUNNY 
     # account = "funnykinda"
     # # In Review Playlist (newest first)
@@ -631,30 +638,24 @@ if __name__ == "__main__":
     # # Last Of Us
     # # yt_url = "https://www.youtube.com/playlist?list=PLBIL5prmXqedEXXikBxPsvKRREB-DaoWb"
 
-    
-    # tone = Tone.HISTORY
-    # account = "history"
-    # # Crash Course World History
-    # # yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9"
-    # # World History Battles
-    # # last used [3:5]
-    # yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
-    
-    # tone = Tone.SCIENCE
-    # account = "cosmos"
-    # # Melodysheep: Life Beyond
-    # # yt_url = "https://www.youtube.com/watch?v=dww8Hekngmg"
-    # # Melodysheep: Water Worlds
-    # yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
-    
-    
+
     # tone = Tone.HEALTH
     # account = "health"
     # # Matt Lane: Can I Get Fit On Fast Food?
     # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
     # # Matt Lane: Ask MLFit Show
     # # yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
-    
+
+
+    # tone = Tone.HISTORY
+    # account = "history"
+    # # Crash Course World History
+    # # yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9"
+    # # World History Battles
+    # # start next one at [4:]
+    # yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
+
+
     tone = Tone.CONSPIRACY
     account = "secrets"
     # Bright Insight: Lost Civilizations
@@ -664,5 +665,5 @@ if __name__ == "__main__":
 
     urls = get_video_urls(yt_url)
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[5:10]:
+    for url in urls[4:10]:
         process_video(url, account=account, tone=tone)
