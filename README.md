@@ -61,6 +61,15 @@ per platform.
 To view logs after upping with -d
 `docker compose logs -f uploader`
 
+## Video Inventory
+
+Check how many prepared videos are available for each account and the number of
+days they will last given the current cron schedule:
+
+```bash
+python server/video_inventory.py
+```
+
 ### Multiple Accounts
 
 Place projects for different upload accounts under `out/<account>/<project>`.
