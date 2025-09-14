@@ -572,12 +572,14 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
                 quote=candidate.quote,
                 show=video_info.get("uploader"),
             )
+            tags: list[str] = []
             try:
                 tags = local_llm_call_json(
                     model=config.LOCAL_LLM_MODEL,
                     prompt=prompt,
                     options={"temperature": 0.0},
                 )
+                print(f"[Hashtags] generated: {tags}")
             except Exception as e:
                 print(f"[Hashtags] error generating hashtags: {e}")
                 send_failure_email(
@@ -676,5 +678,5 @@ if __name__ == "__main__":
 
     urls = get_video_urls(yt_url)
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[3:10]:
+    for url in urls[5:10]:
         process_video(url, account=account, tone=tone)
