@@ -7,17 +7,19 @@ from .centered_zoom import CenteredZoomLayout
 
 
 class CenteredWithCornersLayout(CenteredZoomLayout):
-    """Centered layout that also shows enlarged bottom corners above the clip."""
+    """Centered layout that also shows enlarged bottom corners placed within the band above the foreground, with a configurable vertical bias."""
 
     def __init__(
         self,
         crop_ratio: float = 0.4,
-        target_width_ratio: float = 0.5,
+        target_width_ratio: float = 0.47,
         margin_ratio: float = 0.02,
+        vertical_bias: float = 0.15,
     ) -> None:
         self.crop_ratio = crop_ratio
         self.target_width_ratio = target_width_ratio
         self.margin_ratio = margin_ratio
+        self.vertical_bias = vertical_bias
 
     def augment_canvas(
         self,
@@ -47,11 +49,30 @@ class CenteredWithCornersLayout(CenteredZoomLayout):
 
         if fg_box:
             fg_top = fg_box[1]
-            y_center = fg_top / 2
-            y = int(y_center - target_h / 2)
-            y = max(margin, min(y, fg_top - target_h - margin))
+            # Define the available vertical band: from top margin to just above the foreground box.
+            band_top = margin
+            band_bottom = max(band_top, fg_top - margin)
+            band_height = max(0, band_bottom - band_top)
+
+            if band_height >= target_h:
+                # Place tiles within the band using a bias: 0.0 = stick to top, 0.5 = center, 1.0 = stick to bottom.
+                bias = float(getattr(self, "vertical_bias", 0.33))
+                bias = 0.0 if bias < 0.0 else (1.0 if bias > 1.0 else bias)
+                y = band_top + int((band_height - target_h) * bias)
+            else:
+                # Not enough space to fully fit; clamp to top of the band.
+                y = band_top
         else:
-            y = margin
+            half_height = canvas.shape[0] // 2
+            band_top = margin
+            band_bottom = max(band_top, half_height - margin)
+            band_height = max(0, band_bottom - band_top)
+            if band_height >= target_h:
+                bias = float(getattr(self, "vertical_bias", 0.33))
+                bias = 0.0 if bias < 0.0 else (1.0 if bias > 1.0 else bias)
+                y = band_top + int((band_height - target_h) * bias)
+            else:
+                y = band_top
 
         left_x = margin
         right_x = canvas.shape[1] - target_w - margin
