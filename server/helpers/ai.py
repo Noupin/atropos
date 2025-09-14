@@ -2,7 +2,7 @@ import json
 import os
 import re
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Pattern
 
 import requests
 from requests.exceptions import HTTPError, RequestException
@@ -20,6 +20,7 @@ DEFAULT_JSON_EXTRACT = re.compile(r"\[(?:.|\n)*\]")
 # Some models occasionally emit stray control characters that break ``json.loads``.
 # Strip all ASCII control characters before attempting to parse.
 _CTRL_RE = re.compile(r"[\x00-\x1F]")
+_NAN_INF_RE = re.compile(r"\b(?:NaN|Infinity|-Infinity)\b")
 
 # Map common smart quotes to regular double quotes so ``json.loads`` succeeds.
 _SMART_QUOTES = str.maketrans({
@@ -38,6 +39,196 @@ def _normalize_quotes(text: str) -> str:
 
 def _strip_control_chars(text: str) -> str:
     return _CTRL_RE.sub("", text)
+
+
+def _strip_code_fences(text: str) -> str:
+    """Remove Markdown-style code fences from ``text`` if present."""
+
+    if "```" not in text:
+        return text
+    return re.sub(r"```(?:json)?", "", text)
+
+
+def _trim_edges(text: str) -> str:
+    """Strip leading/trailing whitespace and control characters."""
+
+    text = text.strip()
+    while text and ord(text[0]) < 32:
+        text = text[1:]
+    while text and ord(text[-1]) < 32:
+        text = text[:-1]
+    return text
+
+
+def _find_balanced_array(text: str) -> Optional[str]:
+    """Return the longest balanced top-level JSON array substring."""
+
+    in_single = False
+    in_double = False
+    escape = False
+    depth = 0
+    start = None
+    best = ""
+    for i, ch in enumerate(text):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if in_single:
+            if ch == "'":
+                in_single = False
+            continue
+        if in_double:
+            if ch == '"':
+                in_double = False
+            continue
+        if ch == "'":
+            in_single = True
+            continue
+        if ch == '"':
+            in_double = True
+            continue
+        if ch == "[":
+            if depth == 0:
+                start = i
+            depth += 1
+            continue
+        if ch == "]" and depth > 0:
+            depth -= 1
+            if depth == 0 and start is not None:
+                cand = text[start : i + 1]
+                if len(cand) > len(best):
+                    best = cand
+                start = None
+    return best or None
+
+
+def _fix_single_quotes(text: str) -> str:
+    text = re.sub(r"'([^']+)'\s*:", r'"\1":', text)
+    text = re.sub(r":\s*'([^']*)'", r':"\1"', text)
+    return re.sub(r"'([^']*)'", r'"\1"', text)
+
+
+def _remove_trailing_commas(text: str) -> str:
+    return re.sub(r",\s*(\]|})", r"\1", text)
+
+
+def _replace_nan_inf(text: str) -> str:
+    text = re.sub(r"-?Infinity", "null", text)
+    return re.sub(r"NaN", "null", text)
+
+
+def _escape_ctrl_chars(text: str) -> str:
+    def repl(match: re.Match[str]) -> str:
+        ch = match.group(0)
+        return f"\\u{ord(ch):04x}"
+
+    return _CTRL_RE.sub(repl, text)
+
+
+def _sanitize(text: str) -> str:
+    text = _fix_single_quotes(text)
+    text = _remove_trailing_commas(text)
+    text = _replace_nan_inf(text)
+    return _escape_ctrl_chars(text)
+
+
+def coerce_json_array(raw: str, extract_re: Pattern[str]) -> str:
+    """Attempt to extract and sanitize a JSON array from ``raw``."""
+
+    text = _trim_edges(raw)
+    text = _strip_code_fences(text)
+    text = text.strip()
+
+    if text.startswith("[") and text.endswith("]"):
+        try:
+            json.loads(text)
+            if not _NAN_INF_RE.search(text):
+                return text
+        except Exception:
+            pass
+
+    matches = extract_re.findall(text)
+    if matches:
+        best = max(matches, key=len)
+        try:
+            json.loads(best)
+            if not _NAN_INF_RE.search(best):
+                return best
+        except Exception:
+            pass
+
+    cand = _find_balanced_array(text)
+    if cand:
+        try:
+            json.loads(cand)
+            if not _NAN_INF_RE.search(cand):
+                return cand
+        except Exception:
+            pass
+
+    sanitized = _sanitize(text)
+    if sanitized.startswith("[") and sanitized.endswith("]"):
+        try:
+            json.loads(sanitized)
+            return sanitized
+        except Exception:
+            pass
+
+    matches = extract_re.findall(sanitized)
+    if matches:
+        best = max(matches, key=len)
+        try:
+            json.loads(best)
+            return best
+        except Exception:
+            pass
+
+    cand = _find_balanced_array(sanitized)
+    if cand:
+        try:
+            json.loads(cand)
+            return cand
+        except Exception:
+            pass
+
+    try:
+        import json5  # type: ignore
+
+        obj = json5.loads(sanitized)
+        if isinstance(obj, list):
+            return json.dumps(obj)
+        if isinstance(obj, dict):
+            if isinstance(obj.get("items"), list):
+                return json.dumps(obj["items"])
+            for value in obj.values():
+                if isinstance(value, list):
+                    return json.dumps(value)
+    except Exception:
+        pass
+
+    raise ValueError(f"Model did not return JSON array. Raw head: {text[:300]}")
+
+
+def _ensure_list_of_dicts(items: List[Any]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for item in items:
+        if isinstance(item, dict):
+            out.append(item)
+        elif isinstance(item, (list, tuple)):
+            d: Dict[str, Any] = {}
+            if len(item) > 0:
+                d["start"] = item[0]
+            if len(item) > 1:
+                d["end"] = item[1]
+            if len(item) > 2:
+                d["text"] = item[2]
+            out.append(d)
+        else:
+            out.append({"text": item})
+    return out
 
 
 def ollama_generate(
@@ -150,6 +341,7 @@ def lmstudio_call_json(
     extract_re: re.Pattern[str] = DEFAULT_JSON_EXTRACT,
 ) -> List[Dict]:
     """Call LM Studio and return parsed JSON array with robust fallback."""
+
     try:
         raw = lmstudio_generate(
             model=model,
@@ -158,26 +350,38 @@ def lmstudio_call_json(
             options=options,
             timeout=timeout,
         )
-        raw = _normalize_quotes(_strip_control_chars(raw))
+        raw = _normalize_quotes(raw)
     except RequestException as e:
         raise RuntimeError(f"LM Studio request failed: {e}")
+
     try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, list):
-            return parsed
-        if isinstance(parsed, dict):
-            if isinstance(parsed.get("items"), list):
-                return parsed["items"]
+        coerced = coerce_json_array(raw, extract_re)
+        parsed = json.loads(coerced)
+    except Exception as e:
+        head = raw[:300]
+        raise ValueError(
+            f"LM Studio model '{model}' did not return JSON array. Raw head: {head}"
+        ) from e
+
+    items: List[Any]
+    if isinstance(parsed, list):
+        items = parsed
+    elif isinstance(parsed, dict):
+        if isinstance(parsed.get("items"), list):
+            items = parsed["items"]
+        else:
+            items = []
             for value in parsed.values():
                 if isinstance(value, list):
-                    return value
-            return [parsed]
-    except Exception:
-        pass
-    m = extract_re.search(raw)
-    if not m:
-        raise ValueError(f"Model did not return JSON array. Raw head: {raw[:300]}")
-    return json.loads(_normalize_quotes(_strip_control_chars(m.group(0))))
+                    items = value
+                    break
+            if not items:
+                items = [parsed]
+    else:
+        items = [parsed]
+
+    items = _ensure_list_of_dicts(items)
+    return items
 
 
 def local_llm_generate(
@@ -246,6 +450,7 @@ def retry(fn: Callable[[], Any], *, attempts: int = 3, backoff: float = 1.5):
 
 
 __all__ = [
+    "coerce_json_array",
     "ollama_generate",
     "ollama_call_json",
     "lmstudio_generate",
