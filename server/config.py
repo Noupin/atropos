@@ -30,7 +30,7 @@ CAPTION_OUTLINE_BGR = (236, 236, 236)  # hex ececec
 OUTPUT_FPS: float = 30.0
 
 # Name of the render layout to use. Options: "centered", "centered_with_corners", "no_zoom", "left_aligned"
-RENDER_LAYOUT = os.environ.get("RENDER_LAYOUT", "left_aligned")
+RENDER_LAYOUT = os.environ.get("RENDER_LAYOUT", "centered_with_corners")
 
 # Clip boundary snapping options
 SNAP_TO_SILENCE = False
@@ -123,7 +123,7 @@ MIN_EXTENSION_MARGIN = 0.3
 # Step control
 # Allows skipping the first N pipeline steps by setting START_AT_STEP
 # via environment variable. Defaults to 1 (run all steps).
-START_AT_STEP = int(os.environ.get("START_AT_STEP", "1"))
+START_AT_STEP = int(os.environ.get("START_AT_STEP", "6"))
 
 # ---------------------------------------
 # Post-pipeline cleanup
