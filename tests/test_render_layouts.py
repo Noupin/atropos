@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -7,6 +8,7 @@ sys.path.insert(0, str(ROOT / "server"))
 
 from server.steps.render_layouts import (
     CenteredZoomLayout,
+    CenteredWithCornersLayout,
     NoZoomLayout,
     LeftAlignedZoomLayout,
 )
@@ -30,3 +32,24 @@ def test_centered_position() -> None:
     scale = layout.scale_factor(100, 100, 300, 400, 0.5)
     fg_width = int(100 * scale)
     assert layout.x_position(fg_width, 300) == 50
+
+
+def test_corners_overlay() -> None:
+    layout = CenteredWithCornersLayout()
+    frame = np.zeros((100, 200, 3), dtype=np.uint8)
+    bl_color = (255, 0, 0)
+    br_color = (0, 255, 0)
+    crop_w = int(200 * layout.crop_ratio)
+    crop_h = int(100 * layout.crop_ratio)
+    frame[-crop_h:, :crop_w] = bl_color
+    frame[-crop_h:, -crop_w:] = br_color
+    canvas = np.zeros((200, 100, 3), dtype=np.uint8)
+    out = layout.augment_canvas(canvas, frame)
+    margin = int(100 * layout.margin_ratio)
+    target_w = int(100 * layout.target_width_ratio)
+    scale = target_w / crop_w
+    target_h = int(crop_h * scale)
+    left_px = out[margin + target_h // 2, margin + target_w // 2]
+    right_px = out[margin + target_h // 2, 100 - target_w - margin + target_w // 2]
+    assert np.array_equal(left_px, bl_color)
+    assert np.array_equal(right_px, br_color)

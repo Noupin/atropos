@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import numpy as np
 
 
 class RenderLayout(ABC):
@@ -20,3 +21,11 @@ class RenderLayout(ABC):
     @abstractmethod
     def x_position(self, fg_width: int, frame_width: int) -> int:
         """Return the X coordinate where the foreground should be placed."""
+
+    def augment_canvas(self, canvas: np.ndarray, frame: np.ndarray) -> np.ndarray:
+        """Allow layouts to add extra elements onto the composed frame.
+
+        By default this is a no-op and returns the canvas unchanged.
+        Subclasses may override to draw additional crops or overlays.
+        """
+        return canvas

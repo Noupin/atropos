@@ -77,8 +77,8 @@ now inferred from this folder structure and the matching tokens are loaded from
 - Candidate overlap enforcement can be toggled with `ENFORCE_NON_OVERLAP` in
   `server/config.py`.
 - The render layout for generated shorts can be selected via `RENDER_LAYOUT` in
-  `server/config.py`. Available options are `centered`, `no_zoom`, and
-  `left_aligned`.
+  `server/config.py`. Available options are `centered`, `centered_with_corners`,
+  `no_zoom`, and `left_aligned`.
 
 ## Git Reversion
 
