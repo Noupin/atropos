@@ -45,6 +45,7 @@ from config import (
     CAPTION_USE_COLORS,
     OUTPUT_FPS,
 )
+from steps.render_layouts import RenderLayout, CenteredZoomLayout
 
 def _open_writer(path, fps, size):
     w, h = size
@@ -82,6 +83,7 @@ def render_vertical_with_captions(
     fg_vertical_bias: float = 0.04,
     bottom_safe_ratio: float = 0.14,
     gap_below_fg: int = 28,
+    layout: RenderLayout | None = None,
     font_scale: float = CAPTION_FONT_SCALE,  # baseline; may shrink to keep captions below FG
     thickness: int = 2,
     outline: int = 4,
@@ -111,6 +113,9 @@ def render_vertical_with_captions(
 
     fill_color = fill_bgr if use_caption_colors else (255, 255, 255)
     outline_color = outline_bgr if use_caption_colors else (0, 0, 0)
+
+    if layout is None:
+        layout = CenteredZoomLayout()
 
     # --- HW accel probes ---
     if use_opencl:
@@ -349,8 +354,7 @@ def render_vertical_with_captions(
             bg = cv2.addWeighted(bg, 0.55, np.zeros_like(bg), 0.45, 0)
 
             # Foreground scaled to a portion of the height
-            fg_target_h = max(100, int(frame_height * fg_height_ratio))
-            scale_fg = fg_target_h / h
+            scale_fg = layout.scale_factor(w, h, frame_width, frame_height, fg_height_ratio)
             sz_fg = (int(w * scale_fg), int(h * scale_fg))
             gpu_fg = cv2.cuda.resize(gpu_frame, sz_fg)
             fg = gpu_fg.download()
@@ -380,15 +384,14 @@ def render_vertical_with_captions(
             bg = cv2.addWeighted(bg, 0.55, np.zeros_like(bg), 0.45, 0)
 
             # Foreground scaled to target height
-            fg_target_h = max(100, int(frame_height * fg_height_ratio))
-            scale_fg = fg_target_h / h
+            scale_fg = layout.scale_factor(w, h, frame_width, frame_height, fg_height_ratio)
             sz_fg = (int(w * scale_fg), int(h * scale_fg))
             fg = cv2.resize(frame_u, sz_fg).get()
 
         # Foreground placement
         fg_h = fg.shape[0]
         fg_w = fg.shape[1]
-        x_fg = (frame_width - fg_w) // 2
+        x_fg = layout.x_position(fg_w, frame_width)
         center_y = int(frame_height * (0.5 - fg_vertical_bias))
         y_fg = max(0, center_y - fg_h // 2)
 

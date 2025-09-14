@@ -29,6 +29,9 @@ CAPTION_OUTLINE_BGR = (236, 236, 236)  # hex ececec
 # Constant frame-rate to avoid VFR issues on platforms like TikTok/Reels
 OUTPUT_FPS: float = 30.0
 
+# Name of the render layout to use. Options: "centered", "no_zoom", "left_aligned"
+RENDER_LAYOUT = os.environ.get("RENDER_LAYOUT", "left_aligned")
+
 # Clip boundary snapping options
 SNAP_TO_SILENCE = False
 SNAP_TO_DIALOG = True
