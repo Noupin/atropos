@@ -404,6 +404,9 @@ def render_vertical_with_captions(
             src_x2 = src_x1 + (x2 - x1); src_y2 = src_y1 + (y2 - y1)
             canvas[y1:y2, x1:x2] = fg[src_y1:src_y2, src_x1:src_x2]
 
+        # Allow layout to augment the composed frame (e.g., corner crops)
+        canvas = layout.augment_canvas(canvas, frame, (x_fg, y_fg, fg_w, fg_h))
+
         # --- Captions under FG, wrapped, centered, with outline ---
         if current_text:
             fs = font_scale

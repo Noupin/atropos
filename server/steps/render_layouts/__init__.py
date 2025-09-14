@@ -4,12 +4,14 @@ from typing import Dict
 
 from .base import RenderLayout
 from .centered_zoom import CenteredZoomLayout
+from .centered_with_corners import CenteredWithCornersLayout
 from .no_zoom import NoZoomLayout
 from .left_aligned_zoom import LeftAlignedZoomLayout
 
 __all__ = [
     "RenderLayout",
     "CenteredZoomLayout",
+    "CenteredWithCornersLayout",
     "NoZoomLayout",
     "LeftAlignedZoomLayout",
     "get_layout",
@@ -18,6 +20,7 @@ __all__ = [
 
 _LAYOUTS: Dict[str, RenderLayout] = {
     "centered": CenteredZoomLayout(),
+    "centered_with_corners": CenteredWithCornersLayout(),
     "no_zoom": NoZoomLayout(),
     "left_aligned": LeftAlignedZoomLayout(),
 }
