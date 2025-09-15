@@ -83,7 +83,7 @@ CLIP_TYPE = Tone.FUNNY  # or "space", "history", "tech", "health"
 @dataclass
 class CandidateSelectionConfig:
     enforce_non_overlap: bool = True
-    min_duration_seconds: float = 13.0
+    min_duration_seconds: float = 10.0
     max_duration_seconds: float = 115.0
     sweet_spot_min_seconds: float = 25.0
     sweet_spot_max_seconds: float = 60.0

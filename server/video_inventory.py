@@ -66,7 +66,7 @@ def main() -> None:
         print("No uploads scheduled.")
         return
 
-    base = get_out_root()
+    base = Path('./out')
     accounts = list_accounts(base)
     for account in accounts:
         name = account if account is not None else "(default)"
