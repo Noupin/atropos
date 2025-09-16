@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FC, RefObject } from 'react'
-import { Route, Routes } from 'react-router-dom'
+import { NavLink, Route, Routes } from 'react-router-dom'
 import Search from './components/Search'
 import ClipPage from './pages/Clip'
 import Home from './pages/Home'
+import Profile from './pages/Profile'
 import type { SearchBridge } from './types'
 
 type AppProps = {
@@ -59,16 +60,39 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     }
   }, [])
 
+  const navLinkClassName = useCallback(
+    ({ isActive }: { isActive: boolean }) =>
+      `rounded-lg px-3 py-1.5 text-sm transition ${
+        isActive
+          ? 'bg-[color:color-mix(in_srgb,var(--card)_80%,transparent)] text-[var(--fg)] shadow-sm'
+          : 'text-[var(--muted)] hover:bg-white/10 hover:text-[var(--fg)]'
+      }`,
+    []
+  )
+
   return (
     <div className="flex min-h-full flex-col bg-[var(--bg)] text-[var(--fg)]">
       <header className="border-b border-white/10 bg-[color:color-mix(in_srgb,var(--card)_40%,transparent)]">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4">
-          <div className="flex items-center justify-between gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">Atropos</h1>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-semibold tracking-tight text-[var(--fg)]">Atropos</h1>
+              <nav
+                aria-label="Primary navigation"
+                className="flex items-center gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-1"
+              >
+                <NavLink to="/" end className={navLinkClassName}>
+                  Library
+                </NavLink>
+                <NavLink to="/profile" className={navLinkClassName}>
+                  Profile
+                </NavLink>
+              </nav>
+            </div>
             <button
               type="button"
               onClick={toggleTheme}
-              className="rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="self-start rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] md:self-auto"
               aria-label="Toggle theme"
             >
               {isDark ? 'Switch to light' : 'Switch to dark'}
@@ -86,6 +110,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
         <Routes>
           <Route path="/" element={<Home registerSearch={registerSearch} />} />
           <Route path="/clip/:id" element={<ClipPage registerSearch={registerSearch} />} />
+          <Route path="/profile" element={<Profile registerSearch={registerSearch} />} />
           <Route path="*" element={<Home registerSearch={registerSearch} />} />
         </Routes>
       </main>
