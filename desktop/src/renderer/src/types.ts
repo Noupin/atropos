@@ -13,3 +13,17 @@ export type SearchBridge = {
   onQueryChange: (value: string) => void
   clear: () => void
 }
+
+export type PipelineStepStatus = 'pending' | 'running' | 'completed' | 'failed'
+
+export interface PipelineStepDefinition {
+  id: string
+  title: string
+  description: string
+  durationMs: number
+}
+
+export interface PipelineStep extends PipelineStepDefinition {
+  status: PipelineStepStatus
+  progress: number
+}
