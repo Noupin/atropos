@@ -17,14 +17,15 @@
     "KFAF",
     "ksize",
     "lmstudio",
-    "madebyatropos",
     "Melodysheep",
     "ndarray",
     "normalises",
     "ollama",
     "opencl",
     "pytest",
+    "PYTHONUNBUFFERED",
     "segs",
+    "withatropos",
     "wtok"
   ],
   "ignorePaths": [

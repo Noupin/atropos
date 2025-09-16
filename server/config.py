@@ -31,6 +31,7 @@ OUTPUT_FPS: float = 30.0
 
 # Name of the render layout to use. Options: "centered", "centered_with_corners", "no_zoom", "left_aligned"
 RENDER_LAYOUT = os.environ.get("RENDER_LAYOUT", "centered")
+VIDEO_ZOOM_RATIO = 0.4  # fraction of vertical space used by foreground video in centered layout
 
 # Clip boundary snapping options
 SNAP_TO_SILENCE = False
@@ -84,7 +85,7 @@ CLIP_TYPE = Tone.FUNNY  # or "space", "history", "tech", "health"
 class CandidateSelectionConfig:
     enforce_non_overlap: bool = True
     min_duration_seconds: float = 10.0
-    max_duration_seconds: float = 115.0
+    max_duration_seconds: float = 85.0
     sweet_spot_min_seconds: float = 25.0
     sweet_spot_max_seconds: float = 60.0
     overlap_merge_percentage_requirement: float = 0.35

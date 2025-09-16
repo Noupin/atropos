@@ -44,6 +44,7 @@ from config import (
     CAPTION_OUTLINE_BGR,
     CAPTION_USE_COLORS,
     OUTPUT_FPS,
+    VIDEO_ZOOM_RATIO,
 )
 from steps.render_layouts import RenderLayout, CenteredZoomLayout
 
@@ -79,7 +80,7 @@ def render_vertical_with_captions(
     *,
     frame_width: int = 1080,
     frame_height: int = 1920,
-    fg_height_ratio: float = 0.42,      # foreground (main) video height fraction
+    fg_height_ratio: float = VIDEO_ZOOM_RATIO,      # foreground (main) video height fraction
     fg_vertical_bias: float = 0.04,
     bottom_safe_ratio: float = 0.14,
     gap_below_fg: int = 28,

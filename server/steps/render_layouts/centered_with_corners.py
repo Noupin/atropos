@@ -11,11 +11,11 @@ class CenteredWithCornersLayout(CenteredZoomLayout):
 
     def __init__(
         self,
-        crop_ratio: float = 0.4,
-        target_width_ratio: float = 0.47,
+        crop_ratio: float = 0.25,
+        target_width_ratio: float = 0.475,
         margin_ratio: float = 0.02,
-        vertical_bias: float = 0.15,
-        bottom_corners_spacer_ratio: float = 0.0,
+        vertical_bias: float = 0.05,
+        bottom_corners_spacer_ratio: float = 0.35,
     ) -> None:
         self.crop_ratio = crop_ratio
         self.target_width_ratio = target_width_ratio

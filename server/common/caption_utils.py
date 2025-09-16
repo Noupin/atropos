@@ -164,8 +164,8 @@ def build_hashtag_prompt(
     )
 
     prompt = base + f"Title: {title}\n"
-    if quote:
-        prompt += f"Quote: {quote}\n"
+    # if quote:
+    #     prompt += f"Quote: {quote}\n"
     if show:
         prompt += f"Show: {show}\n"
     return prompt

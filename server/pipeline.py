@@ -445,7 +445,7 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
                 "No clip candidates found",
                 f"No clip candidates were found for video {yt_url}",
             )
-            sys.exit()
+            # sys.exit()
 
         if EXPORT_RAW_CLIPS:
             # Silence-only clips
@@ -588,7 +588,7 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
                 tags + fallback_words + GENERIC_HASHTAGS,
                 video_info.get("uploader"),
             )
-            hashtags.extend(["#shorts", "#madebyatropos"])
+            hashtags.extend(["#shorts", "#withatropos"])
             full_video_link = youtube_timestamp_url(yt_url, candidate.start)
             description = (
                 f"Full video: {full_video_link}\n\n"
@@ -620,12 +620,14 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
 
 
 if __name__ == "__main__":
-    # tone = Tone.SCIENCE
-    # account = "cosmos"
-    # # Melodysheep: Life Beyond
-    # yt_url = "https://www.youtube.com/watch?v=dww8Hekngmg"
-    # # Melodysheep: Water Worlds
-    # # yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
+    tone = Tone.SCIENCE
+    account = "cosmos"
+    # Melodysheep: Water Worlds
+    # yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
+    # StarTalk: Science of Interstellar
+    # yt_url = "https://www.youtube.com/watch?v=4f9V-8BHONo"
+    # SEA: Cosmic Scale
+    yt_url = "https://www.youtube.com/watch?v=4iC9Qi3y9q8"
 
 
     # tone = Tone.FUNNY 
@@ -633,19 +635,20 @@ if __name__ == "__main__":
     # # In Review Playlist (newest first)
     # # yt_url = "https://www.youtube.com/playlist?list=PLy3mMHt2i7RKE9ba8rfL7_qnFcpbUaA8_"
     # # KFAF Playlist(newest first)
-    # # start next one at [20:]
-    # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"
+    # # start next one at [11:]
+    # # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"
     # # Last Of Us
-    # # yt_url = "https://www.youtube.com/playlist?list=PLBIL5prmXqedEXXikBxPsvKRREB-DaoWb"
+    # # start next one at [2:]
+    # yt_url = "https://www.youtube.com/playlist?list=PLBIL5prmXqedEXXikBxPsvKRREB-DaoWb"
 
 
-    tone = Tone.HEALTH
-    account = "health"
-    # Matt Lane: Can I Get Fit On Fast Food?
-    # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
-    # Matt Lane: Ask MLFit Show
-    # start next one at [10:]
-    yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
+    # tone = Tone.HEALTH
+    # account = "health"
+    # # Matt Lane: Can I Get Fit On Fast Food?
+    # # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
+    # # Matt Lane: Ask MLFit Show
+    # # start next one at [12:]
+    # yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
 
 
     # tone = Tone.HISTORY
@@ -666,5 +669,5 @@ if __name__ == "__main__":
 
     urls = get_video_urls(yt_url)
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[:10]:
+    for url in urls[:]:
         process_video(url, account=account, tone=tone)
