@@ -1,3 +1,17 @@
 {
-  "chatgpt.openOnStartup": true
+  "chatgpt.openOnStartup": true,
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "workbench.colorCustomizations": {
+    "activityBar.background": "#183234",
+    "titleBar.activeBackground": "#214649",
+    "titleBar.activeForeground": "#F7FBFB"
+  }
 }
