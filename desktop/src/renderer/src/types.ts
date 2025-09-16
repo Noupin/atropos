@@ -18,16 +18,22 @@ export interface AccountUpload {
   durationSec: number
 }
 
-export interface AccountProfile {
+export interface AccountPlatform {
   id: string
-  displayName: string
-  platform: string
-  initials: string
+  name: string
   status: AccountStatus
   statusMessage?: string
   dailyUploadTarget: number
   readyVideos: number
   upcomingUploads: AccountUpload[]
+}
+
+export interface AccountProfile {
+  id: string
+  displayName: string
+  initials: string
+  description?: string
+  platforms: AccountPlatform[]
 }
 
 export type SearchBridge = {

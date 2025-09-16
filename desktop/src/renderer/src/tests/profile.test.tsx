@@ -4,55 +4,94 @@ import { describe, expect, it } from 'vitest'
 import Profile from '../pages/Profile'
 import { PROFILE_ACCOUNTS } from '../mock/accounts'
 
+const getAccountTotals = (accountId: string) => {
+  const account = PROFILE_ACCOUNTS.find((item) => item.id === accountId)
+  if (!account) {
+    throw new Error(`Unknown account: ${accountId}`)
+  }
+
+  return account.platforms.reduce(
+    (totals, platform) => ({
+      readyVideos: totals.readyVideos + platform.readyVideos,
+      dailyUploadTarget: totals.dailyUploadTarget + platform.dailyUploadTarget
+    }),
+    { readyVideos: 0, dailyUploadTarget: 0 }
+  )
+}
+
+const getCoverageExpectations = (readyVideos: number, dailyUploadTarget: number) => {
+  if (dailyUploadTarget <= 0) {
+    return {
+      label: '—',
+      description: 'Set a daily upload schedule across your platforms to estimate coverage.'
+    }
+  }
+
+  const days = readyVideos / dailyUploadTarget
+  return {
+    label: `${days.toFixed(1)} days`,
+    description: 'Combined coverage across all connected platforms.'
+  }
+}
+
 describe('Profile page', () => {
-  it('shows each account summary with coverage and videos', () => {
+  it('displays aggregate metrics for each account even when collapsed', () => {
     render(<Profile registerSearch={() => {}} />)
 
-    expect(screen.getByRole('heading', { level: 1, name: /profile/i })).toBeInTheDocument()
-
     PROFILE_ACCOUNTS.forEach((account) => {
-      const panels = screen.getAllByTestId(`account-panel-${account.id}`)
-      expect(panels.length).toBeGreaterThan(0)
-      const panel = panels[0]
-      const panelQueries = within(panel)
+      const panel = screen.getByTestId(`account-panel-${account.id}`)
+      const collapseButton = within(panel).getByRole('button', {
+        name: `Collapse ${account.displayName} details`
+      })
+      fireEvent.click(collapseButton)
 
-      expect(panelQueries.getByText(account.displayName)).toBeInTheDocument()
-      expect(panelQueries.getByText(/Ready videos/i)).toBeInTheDocument()
-      expect(panelQueries.getByText(account.readyVideos.toLocaleString())).toBeInTheDocument()
+      const summarySection = within(panel).getByTestId(`account-summary-${account.id}`)
+      expect(summarySection).toBeVisible()
 
-      const coverageLabel =
-        account.dailyUploadTarget > 0
-          ? `${(account.readyVideos / account.dailyUploadTarget).toFixed(1)} days`
-          : '—'
-      expect(panelQueries.getByText(coverageLabel)).toBeInTheDocument()
+      const totals = getAccountTotals(account.id)
+      expect(summarySection).toHaveTextContent(totals.readyVideos.toLocaleString())
+      expect(summarySection).toHaveTextContent(totals.dailyUploadTarget.toLocaleString())
 
-      const videos = panelQueries.getAllByTestId('profile-upload-video')
-      expect(videos).toHaveLength(account.upcomingUploads.length)
+      const coverage = getCoverageExpectations(totals.readyVideos, totals.dailyUploadTarget)
+      expect(summarySection).toHaveTextContent(coverage.label)
+      expect(summarySection).toHaveTextContent(coverage.description)
     })
   })
 
-  it('toggles details visibility when collapsing an account', () => {
+  it('switches platform tabs to show platform specific details', () => {
     render(<Profile registerSearch={() => {}} />)
 
-    const account = PROFILE_ACCOUNTS[0]
-    const panels = screen.getAllByTestId(`account-panel-${account.id}`)
+    const multiPlatformAccount = PROFILE_ACCOUNTS.find((account) => account.platforms.length > 1)
+    expect(multiPlatformAccount).toBeDefined()
+    if (!multiPlatformAccount) {
+      return
+    }
+
+    const panels = screen.getAllByTestId(`account-panel-${multiPlatformAccount.id}`)
     expect(panels.length).toBeGreaterThan(0)
     const panel = panels[0]
 
-    const collapseButton = within(panel).getByRole('button', {
-      name: `Collapse ${account.displayName} details`
+    const toggleButton = within(panel).getByRole('button', {
+      name: new RegExp(`${multiPlatformAccount.displayName} details`, 'i')
     })
-    expect(within(panel).getByText(/Next uploads/i)).toBeVisible()
+    if (toggleButton.getAttribute('aria-expanded') === 'false') {
+      fireEvent.click(toggleButton)
+    }
 
-    fireEvent.click(collapseButton)
+    const initialPlatform = multiPlatformAccount.platforms[0]
+    let videos = within(panel).getAllByTestId('profile-upload-video')
+    expect(videos).toHaveLength(initialPlatform.upcomingUploads.length)
 
-    const expandButton = within(panel).getByRole('button', {
-      name: `Expand ${account.displayName} details`
-    })
-    expect(within(panel).getByText(/Next uploads/i)).not.toBeVisible()
+    const targetPlatform = multiPlatformAccount.platforms[1]
+    const tab = within(panel).getByRole('tab', { name: new RegExp(targetPlatform.name, 'i') })
+    fireEvent.click(tab)
+    expect(tab).toHaveAttribute('aria-selected', 'true')
 
-    fireEvent.click(expandButton)
+    const platformSummary = within(panel).getByTestId(`platform-summary-${targetPlatform.id}`)
+    expect(platformSummary).toHaveTextContent(targetPlatform.readyVideos.toLocaleString())
+    expect(platformSummary).toHaveTextContent(targetPlatform.dailyUploadTarget.toLocaleString())
 
-    expect(within(panel).getByText(/Next uploads/i)).toBeVisible()
+    videos = within(panel).getAllByTestId('profile-upload-video')
+    expect(videos).toHaveLength(targetPlatform.upcomingUploads.length)
   })
 })
