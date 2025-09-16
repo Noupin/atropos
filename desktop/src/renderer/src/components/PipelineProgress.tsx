@@ -7,6 +7,11 @@ type PipelineProgressProps = {
   className?: string
 }
 
+type StepWithIndex = {
+  step: PipelineStep
+  index: number
+}
+
 const statusLabels: Record<PipelineStepStatus, string> = {
   pending: 'Queued',
   running: 'In progress',
@@ -32,6 +37,10 @@ const clamp01 = (value: number): number => Math.min(1, Math.max(0, value))
 
 const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
   const totalSteps = steps.length
+  const stepsWithIndex = useMemo<StepWithIndex[]>(
+    () => steps.map((step, index) => ({ step, index })),
+    [steps]
+  )
 
   const { completedCount, activeIndex, progressPercent, hasFailure } = useMemo(() => {
     if (totalSteps === 0) {
@@ -66,6 +75,30 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
 
   const activeStep = activeIndex >= 0 ? steps[activeIndex] : null
 
+  const focusIndex = useMemo(() => {
+    if (steps.length === 0) {
+      return -1
+    }
+
+    const runningOrFailed = steps.findIndex(
+      (step) => step.status === 'running' || step.status === 'failed'
+    )
+    if (runningOrFailed !== -1) {
+      return runningOrFailed
+    }
+
+    const nextPending = steps.findIndex((step) => step.status === 'pending')
+    if (nextPending !== -1) {
+      return nextPending
+    }
+
+    return steps.length - 1
+  }, [steps])
+
+  const focusEntry = focusIndex >= 0 ? stepsWithIndex[focusIndex] ?? null : null
+  const collapsedBefore = focusIndex > 0 ? stepsWithIndex.slice(0, focusIndex) : []
+  const collapsedAfter = focusIndex >= 0 ? stepsWithIndex.slice(focusIndex + 1) : []
+
   const summaryLabel = useMemo(() => {
     if (hasFailure) {
       return 'Pipeline encountered an error'
@@ -82,9 +115,44 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
     return 'Pipeline idle'
   }, [activeIndex, activeStep, completedCount, hasFailure, totalSteps])
 
+  const focusMessage = useMemo(() => {
+    if (!focusEntry) {
+      return 'Waiting for next step'
+    }
+
+    const { step } = focusEntry
+
+    if (step.status === 'running') {
+      return `${step.title} — ${Math.round(clamp01(step.progress) * 100)}%`
+    }
+
+    if (step.status === 'failed') {
+      return `${step.title} — Failed`
+    }
+
+    if (step.status === 'completed') {
+      return `${step.title} completed`
+    }
+
+    return `Up next: ${step.title}`
+  }, [focusEntry])
+
+  const renderCollapsedStep = ({ step, index }: StepWithIndex) => (
+    <li
+      key={step.id}
+      className="flex min-h-[92px] flex-col justify-between rounded-xl border border-white/5 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-3"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-[var(--fg)]">Step {index + 1}</p>
+        <span className={`h-2 w-2 rounded-full ${indicatorClasses[step.status]}`} aria-hidden="true" />
+      </div>
+      <p className="text-xs text-[var(--muted)]">{step.title}</p>
+    </li>
+  )
+
   return (
     <div
-      className={`flex flex-col gap-4 ${className ?? ''}`.trim()}
+      className={`flex flex-col gap-5 ${className ?? ''}`.trim()}
       aria-label="Pipeline progress overview"
     >
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -123,48 +191,70 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
             )
           })}
         </div>
-        <p className="text-xs text-[var(--muted)]">
-          {activeStep ? `${activeStep.title} — ${Math.round(clamp01(activeStep.progress) * 100)}%` : 'Waiting for next step'}
-        </p>
+        <p className="text-xs text-[var(--muted)]">{focusMessage}</p>
       </div>
 
-      <ul className="space-y-3">
-        {steps.map((step, index) => (
-          <li
-            key={step.id}
-            className="rounded-xl border border-white/5 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-3"
+      {collapsedBefore.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Completed</p>
+          <ul
+            className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3"
+            data-testid="completed-steps"
           >
-            <div className="flex items-start gap-3">
-              <span
-                className={`mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full ${indicatorClasses[step.status]}`}
-                aria-hidden="true"
-              />
-              <div className="flex-1">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-[var(--fg)]">
-                    Step {index + 1}: {step.title}
-                  </p>
-                  <span className="text-xs text-[var(--muted)]">{statusLabels[step.status]}</span>
-                </div>
-                <p className="mt-1 text-xs text-[var(--muted)]">{step.description}</p>
-                {step.status === 'running' ? (
-                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                    <div
-                      className="h-full rounded-full bg-sky-400 transition-all duration-500 ease-out"
-                      style={{ width: `${Math.round(clamp01(step.progress) * 100)}%` }}
-                    />
-                  </div>
-                ) : null}
-                {step.status === 'failed' ? (
-                  <p className="mt-2 text-xs font-medium text-rose-400">
-                    Check the server logs to resolve the failure before retrying.
-                  </p>
-                ) : null}
+            {collapsedBefore.map((entry) => renderCollapsedStep(entry))}
+          </ul>
+        </div>
+      ) : null}
+
+      {focusEntry ? (
+        <div
+          className="rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)] sm:p-5"
+          data-testid="active-step"
+        >
+          <div className="flex items-start gap-3">
+            <span
+              className={`mt-1 h-3 w-3 flex-shrink-0 rounded-full ${indicatorClasses[focusEntry.step.status]}`}
+              aria-hidden="true"
+            />
+            <div className="flex flex-1 flex-col gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-base font-semibold text-[var(--fg)]">
+                  Step {focusEntry.index + 1}: {focusEntry.step.title}
+                </p>
+                <span className="rounded-full border border-white/10 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+                  {statusLabels[focusEntry.step.status]}
+                </span>
               </div>
+              <p className="text-sm text-[var(--muted)]">{focusEntry.step.description}</p>
+              {focusEntry.step.status === 'running' ? (
+                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-sky-400 transition-all duration-500 ease-out"
+                    style={{ width: `${Math.round(clamp01(focusEntry.step.progress) * 100)}%` }}
+                  />
+                </div>
+              ) : null}
+              {focusEntry.step.status === 'failed' ? (
+                <p className="text-xs font-medium text-rose-400">
+                  Check the server logs to resolve the failure before retrying.
+                </p>
+              ) : null}
             </div>
-          </li>
-        ))}
-      </ul>
+          </div>
+        </div>
+      ) : null}
+
+      {collapsedAfter.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Upcoming</p>
+          <ul
+            className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3"
+            data-testid="upcoming-steps"
+          >
+            {collapsedAfter.map((entry) => renderCollapsedStep(entry))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   )
 }
