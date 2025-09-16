@@ -620,14 +620,14 @@ def process_video(yt_url: str, account: str | None = None, tone: Tone | None = N
 
 
 if __name__ == "__main__":
-    tone = Tone.SCIENCE
-    account = "cosmos"
-    # Melodysheep: Water Worlds
-    # yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
-    # StarTalk: Science of Interstellar
-    # yt_url = "https://www.youtube.com/watch?v=4f9V-8BHONo"
-    # SEA: Cosmic Scale
-    yt_url = "https://www.youtube.com/watch?v=4iC9Qi3y9q8"
+    # tone = Tone.SCIENCE
+    # account = "cosmos"
+    # # Melodysheep: Water Worlds
+    # # yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
+    # # StarTalk
+    # # yt_url = ""
+    # # SEA
+    # yt_url = "https://www.youtube.com/watch?v=Fe6vJU0IV2E"
 
 
     # tone = Tone.FUNNY 
@@ -642,13 +642,13 @@ if __name__ == "__main__":
     # yt_url = "https://www.youtube.com/playlist?list=PLBIL5prmXqedEXXikBxPsvKRREB-DaoWb"
 
 
-    # tone = Tone.HEALTH
-    # account = "health"
-    # # Matt Lane: Can I Get Fit On Fast Food?
-    # # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
-    # # Matt Lane: Ask MLFit Show
-    # # start next one at [12:]
-    # yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
+    tone = Tone.HEALTH
+    account = "health"
+    # Matt Lane: Can I Get Fit On Fast Food?
+    # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
+    # Matt Lane: Ask MLFit Show
+    # start next one at [25:]
+    yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
 
 
     # tone = Tone.HISTORY
@@ -669,5 +669,5 @@ if __name__ == "__main__":
 
     urls = get_video_urls(yt_url)
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[:]:
+    for url in urls[12:25]:
         process_video(url, account=account, tone=tone)
