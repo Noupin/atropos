@@ -1,6 +1,6 @@
-# desktop
+# Atropos
 
-An Electron application with React and TypeScript
+Atropos is an Electron application with React and TypeScript.
 
 ## Recommended IDE Setup
 

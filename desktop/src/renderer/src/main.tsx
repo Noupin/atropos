@@ -1,11 +1,12 @@
 import './index.css'
 
 import { StrictMode, useEffect, useRef } from 'react'
+import type { FC } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 
-const RootApp = () => {
+const RootApp: FC = () => {
   const searchRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {

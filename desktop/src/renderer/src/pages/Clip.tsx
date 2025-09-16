@@ -1,19 +1,15 @@
 import { useEffect, useMemo } from 'react'
+import type { FC } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import { CLIPS } from '../mock/clips'
-
-type SearchBridge = {
-  getQuery: () => string
-  onQueryChange: (value: string) => void
-  clear: () => void
-}
+import type { SearchBridge } from '../types'
 
 type ClipPageProps = {
   registerSearch: (bridge: SearchBridge | null) => void
 }
 
-const ClipPage = ({ registerSearch }: ClipPageProps) => {
+const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
