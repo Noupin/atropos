@@ -1,5 +1,6 @@
-import { KeyboardEvent, memo } from 'react'
-import { Clip } from '../types'
+import { memo } from 'react'
+import type { FC, KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type { Clip } from '../types'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 
 type ClipCardProps = {
@@ -7,8 +8,8 @@ type ClipCardProps = {
   onClick: () => void
 }
 
-const ClipCard = ({ clip, onClick }: ClipCardProps) => {
-  const handleKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
+const ClipCard: FC<ClipCardProps> = ({ clip, onClick }) => {
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
       onClick()

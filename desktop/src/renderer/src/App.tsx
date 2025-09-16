@@ -1,20 +1,16 @@
-import { RefObject, useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import type { FC, RefObject } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import Search from './components/Search'
 import ClipPage from './pages/Clip'
 import Home from './pages/Home'
-
-type SearchBridge = {
-  getQuery: () => string
-  onQueryChange: (value: string) => void
-  clear: () => void
-}
+import type { SearchBridge } from './types'
 
 type AppProps = {
   searchInputRef: RefObject<HTMLInputElement | null>
 }
 
-const App = ({ searchInputRef }: AppProps) => {
+const App: FC<AppProps> = ({ searchInputRef }) => {
   const [searchBridge, setSearchBridge] = useState<SearchBridge | null>(null)
   const [searchValue, setSearchValue] = useState('')
   const [isDark, setIsDark] = useState(() => {
@@ -33,6 +29,7 @@ const App = ({ searchInputRef }: AppProps) => {
       root.classList.add('dark')
     }
     setIsDark(root.classList.contains('dark'))
+    document.title = 'Atropos'
   }, [])
 
   const registerSearch = useCallback((bridge: SearchBridge | null) => {
@@ -67,7 +64,7 @@ const App = ({ searchInputRef }: AppProps) => {
       <header className="border-b border-white/10 bg-[color:color-mix(in_srgb,var(--card)_40%,transparent)]">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4">
           <div className="flex items-center justify-between gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">Clipit</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Atropos</h1>
             <button
               type="button"
               onClick={toggleTheme}

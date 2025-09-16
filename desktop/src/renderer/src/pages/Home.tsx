@@ -1,21 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ClipCard from '../components/ClipCard'
 import { CLIPS } from '../mock/clips'
+import type { SearchBridge } from '../types'
 
 const PAGE_SIZE = 12
-
-type SearchBridge = {
-  getQuery: () => string
-  onQueryChange: (value: string) => void
-  clear: () => void
-}
 
 type HomeProps = {
   registerSearch: (bridge: SearchBridge | null) => void
 }
 
-const Home = ({ registerSearch }: HomeProps) => {
+const Home: FC<HomeProps> = ({ registerSearch }) => {
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
