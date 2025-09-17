@@ -193,10 +193,6 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
             account.platforms.find((platform) => platform.id === selectedPlatformId) ??
             account.platforms[0] ??
             null
-          const selectedPlatformCoverage =
-            selectedPlatform != null
-              ? computeCoverage(selectedPlatform.readyVideos, selectedPlatform.dailyUploadTarget)
-              : null
           const detailsId = `profile-${account.id}`
           const hasPlatforms = account.platforms.length > 0
           const summaryStats = [
@@ -238,36 +234,27 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
                   </div>
                   <div
                     className={`flex flex-1 flex-col gap-3 ${
-                      isCollapsed ? 'md:flex-row md:flex-wrap md:items-center md:gap-6' : ''
+                      isCollapsed ? 'md:flex-row md:items-center md:justify-between md:gap-8' : ''
                     }`}
                   >
-                    <div
-                      className={`flex flex-wrap items-center gap-2 ${
-                        isCollapsed ? 'md:gap-3' : ''
-                      }`}
-                    >
+                    <div className="flex flex-col gap-2">
                       <h2 className="text-lg font-semibold text-[var(--fg)]">{account.displayName}</h2>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyles.badge}`}
-                        title={statusStyles.helper}
-                      >
-                        {statusStyles.label}
-                      </span>
                       {hasPlatforms ? (
                         <ul
-                          className={`flex flex-wrap items-center gap-2 pl-0 ${
-                            isCollapsed ? '' : 'hidden'
-                          }`}
+                          className="flex flex-wrap items-center gap-2 pl-0"
                           data-testid={`account-platform-tags-${account.id}`}
                           aria-label={`${account.displayName} connected platforms`}
-                          hidden={!isCollapsed}
                         >
                           {account.platforms.map((platform) => {
                             const platformStyles = STATUS_STYLES[platform.status]
                             return (
-                              <li key={platform.id} className="list-none" title={`${platform.name}: ${platformStyles.helper}`}>
+                              <li
+                                key={platform.id}
+                                className="list-none"
+                                title={`${platform.name}: ${platformStyles.label}`}
+                              >
                                 <span
-                                  className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${platformStyles.badge}`}
+                                  className={`flex items-center gap-2 rounded-full px-2 py-0.5 text-xs font-medium ${platformStyles.badge}`}
                                 >
                                   <span
                                     className={`h-2 w-2 rounded-full ${platformStyles.dot}`}
@@ -280,18 +267,12 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
                           })}
                         </ul>
                       ) : (
-                        <p
-                          className={`text-xs text-[var(--muted)] ${
-                            isCollapsed ? 'md:inline' : ''
-                          }`}
-                        >
-                          No platforms connected yet.
-                        </p>
+                        <p className="text-xs text-[var(--muted)]">No platforms connected yet.</p>
                       )}
                     </div>
                     {isCollapsed ? (
                       <div
-                        className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-[var(--muted)]"
+                        className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[var(--muted)]"
                         data-testid={`account-summary-${account.id}`}
                       >
                         {summaryStats.map((item) => (
@@ -387,20 +368,20 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
                               >
                                 <span className="font-medium">{platform.name}</span>
                                 <span
-                                  className={`flex items-center gap-2 rounded-full px-2 py-0.5 text-xs font-medium ${platformStatus.badge}`}
-                                  title={`${platform.name}: ${platformStatus.helper}`}
+                                  className={`flex items-center justify-center rounded-full p-1 ${platformStatus.badge}`}
+                                  title={`${platform.name}: ${platformStatus.label}`}
+                                  aria-label={`${platform.name} status ${platformStatus.label}`}
                                 >
                                   <span
-                                    className={`h-2 w-2 rounded-full ${platformStatus.dot}`}
+                                    className={`h-2.5 w-2.5 rounded-full ${platformStatus.dot}`}
                                     aria-hidden="true"
                                   />
-                                  {platformStatus.label}
                                 </span>
                               </button>
                             )
                           })}
                         </div>
-                        {selectedPlatform && selectedPlatformCoverage ? (
+                        {selectedPlatform ? (
                           <div
                             role="tabpanel"
                             id={`profile-platform-${selectedPlatform.id}`}
@@ -426,10 +407,10 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
                                   Ready videos
                                 </dt>
                                 <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
-                                  {selectedPlatform.readyVideos.toLocaleString()}
+                                  {totals.readyVideos.toLocaleString()}
                                 </dd>
                                 <p className="mt-1 text-xs text-[var(--muted)]">
-                                  Ready to publish for this platform.
+                                  Ready to publish across all connected platforms.
                                 </p>
                               </div>
                               <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] p-4">
@@ -437,10 +418,10 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
                                   Daily target
                                 </dt>
                                 <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
-                                  {selectedPlatform.dailyUploadTarget.toLocaleString()} per day
+                                  {totals.dailyUploadTarget.toLocaleString()} per day
                                 </dd>
                                 <p className="mt-1 text-xs text-[var(--muted)]">
-                                  Scheduled uploads for this platform.
+                                  Combined scheduled uploads for this account.
                                 </p>
                               </div>
                               <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] p-4">
@@ -448,10 +429,10 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
                                   Coverage
                                 </dt>
                                 <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
-                                  {selectedPlatformCoverage.daysLabel}
+                                  {coverage.daysLabel}
                                 </dd>
                                 <p className="mt-1 text-xs text-[var(--muted)]">
-                                  {selectedPlatformCoverage.description}
+                                  {coverage.description}
                                 </p>
                               </div>
                             </dl>
