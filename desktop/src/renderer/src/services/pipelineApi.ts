@@ -34,17 +34,26 @@ const parseJobId = (payload: UnknownRecord): string | null => {
 
 export const startPipelineJob = async (request: PipelineJobRequest): Promise<PipelineJobResponse> => {
   const url = buildJobUrl()
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      url: request.url,
-      account: request.account ?? null,
-      tone: request.tone ?? null
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        url: request.url,
+        account: request.account ?? null,
+        tone: request.tone ?? null
+      })
     })
-  })
+  } catch (error) {
+    const detail = error instanceof Error && error.message ? ` (${error.message})` : ''
+    throw new Error(
+      `Unable to reach the pipeline service at ${url}${detail}. ` +
+        'Please ensure the backend server is running and accessible.'
+    )
+  }
 
   if (!response.ok) {
     let detail: string | null = null

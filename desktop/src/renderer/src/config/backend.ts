@@ -1,19 +1,37 @@
 import type { BackendMode } from './types'
 
-const DEFAULT_BASE_URL = 'http://localhost:8000'
+const resolveDefaultHost = (): string => {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname
+    if (host && host !== 'localhost') {
+      return host
+    }
+  }
+  return '127.0.0.1'
+}
+
+const DEFAULT_BASE_URL = `http://${resolveDefaultHost()}:8000`
 
 const normaliseBaseUrl = (value: string | undefined): string => {
   if (!value) {
     return DEFAULT_BASE_URL
   }
 
+  let candidate = value.trim()
+  if (!/^https?:\/\//i.test(candidate)) {
+    candidate = `http://${candidate}`
+  }
+
   try {
-    const url = new URL(value)
+    const url = new URL(candidate)
+    if (url.hostname === 'localhost') {
+      url.hostname = '127.0.0.1'
+    }
     url.hash = ''
     url.search = ''
     return url.toString().replace(/\/$/, '')
   } catch (error) {
-    return value.replace(/\/$/, '') || DEFAULT_BASE_URL
+    return DEFAULT_BASE_URL
   }
 }
 

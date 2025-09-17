@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
 from custom_types.ETone import Tone
@@ -19,6 +20,14 @@ from pipeline import process_video
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Atropos Pipeline API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class RunRequest(BaseModel):
