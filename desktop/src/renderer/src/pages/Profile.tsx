@@ -91,7 +91,12 @@ type ProfileProps = {
 }
 
 const Profile: FC<ProfileProps> = ({ registerSearch }) => {
-  const [collapsedAccounts, setCollapsedAccounts] = useState<Set<string>>(() => new Set())
+  const [collapsedAccounts, setCollapsedAccounts] = useState<Set<string>>(
+    () => new Set(PROFILE_ACCOUNTS.map((account) => account.id))
+  )
+  const [collapsedUpcoming, setCollapsedUpcoming] = useState<Set<string>>(
+    () => new Set(PROFILE_ACCOUNTS.map((account) => account.id))
+  )
   const [activePlatforms, setActivePlatforms] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {}
     PROFILE_ACCOUNTS.forEach((account) => {
@@ -135,7 +140,33 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
   }, [])
 
   const toggleAccount = useCallback((accountId: string) => {
+    let shouldCollapseUpcoming = false
+
     setCollapsedAccounts((current) => {
+      const next = new Set(current)
+      if (next.has(accountId)) {
+        next.delete(accountId)
+      } else {
+        next.add(accountId)
+        shouldCollapseUpcoming = true
+      }
+      return next
+    })
+
+    if (shouldCollapseUpcoming) {
+      setCollapsedUpcoming((current) => {
+        if (current.has(accountId)) {
+          return current
+        }
+        const next = new Set(current)
+        next.add(accountId)
+        return next
+      })
+    }
+  }, [])
+
+  const toggleUpcoming = useCallback((accountId: string) => {
+    setCollapsedUpcoming((current) => {
       const next = new Set(current)
       if (next.has(accountId)) {
         next.delete(accountId)
@@ -194,6 +225,8 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
             account.platforms[0] ??
             null
           const detailsId = `profile-${account.id}`
+          const upcomingSectionId = `${detailsId}-upcoming`
+          const isUpcomingCollapsed = collapsedUpcoming.has(account.id)
           const hasPlatforms = account.platforms.length > 0
           const accountUpcomingUploads = account.platforms
             .flatMap((platform) => platform.upcomingUploads)
@@ -350,45 +383,74 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
                   : hasPlatforms ? (
                       <>
                         <div className="flex flex-col gap-3">
-                          <h3 className="text-sm font-semibold text-[var(--fg)]">Next uploads</h3>
-                          {accountUpcomingUploads.length > 0 ? (
-                            <div
-                              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-                              data-testid={`account-upcoming-${account.id}`}
+                          <button
+                            type="button"
+                            onClick={() => toggleUpcoming(account.id)}
+                            className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1 text-left text-sm font-semibold text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                            aria-expanded={!isUpcomingCollapsed}
+                            aria-controls={upcomingSectionId}
+                          >
+                            <span>Next uploads</span>
+                            <svg
+                              viewBox="0 0 20 20"
+                              className={`h-4 w-4 text-[var(--muted)] transition-transform ${
+                                isUpcomingCollapsed ? '-rotate-90' : 'rotate-0'
+                              }`}
+                              aria-hidden="true"
                             >
-                              {accountUpcomingUploads.map((upload) => (
-                                <article
-                                  key={upload.id}
-                                  className="flex flex-col gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_92%,transparent)] p-3"
-                                >
-                                  <div className="aspect-video overflow-hidden rounded-lg border border-white/10 bg-black/60">
-                                    <video
-                                      data-testid="profile-upload-video"
-                                      controls
-                                      preload="metadata"
-                                      className="h-full w-full object-cover"
-                                    >
-                                      <source src={upload.videoUrl} type="video/mp4" />
-                                      Your browser does not support the video tag.
-                                    </video>
+                              <path
+                                fill="currentColor"
+                                d="M5.22 7.22a.75.75 0 0 1 1.06 0L10 10.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 8.28a.75.75 0 0 1 0-1.06"
+                              />
+                            </svg>
+                          </button>
+                          <div
+                            id={upcomingSectionId}
+                            hidden={isUpcomingCollapsed}
+                            aria-hidden={isUpcomingCollapsed}
+                            className="flex flex-col gap-3"
+                          >
+                            {isUpcomingCollapsed
+                              ? null
+                              : accountUpcomingUploads.length > 0 ? (
+                                  <div
+                                    className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+                                    data-testid={`account-upcoming-${account.id}`}
+                                  >
+                                    {accountUpcomingUploads.map((upload) => (
+                                      <article
+                                        key={upload.id}
+                                        className="flex flex-col gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_92%,transparent)] p-3"
+                                      >
+                                        <div className="aspect-video overflow-hidden rounded-lg border border-white/10 bg-black/60">
+                                          <video
+                                            data-testid="profile-upload-video"
+                                            controls
+                                            preload="metadata"
+                                            className="h-full w-full object-cover"
+                                          >
+                                            <source src={upload.videoUrl} type="video/mp4" />
+                                            Your browser does not support the video tag.
+                                          </video>
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                          <h4 className="text-sm font-medium text-[var(--fg)]">{upload.title}</h4>
+                                          <p className="text-xs text-[var(--muted)]">
+                                            Scheduled {formatScheduleTime(upload.scheduledFor)}
+                                          </p>
+                                          <p className="text-xs text-[var(--muted)]">
+                                            Duration {formatDuration(upload.durationSec)}
+                                          </p>
+                                        </div>
+                                      </article>
+                                    ))}
                                   </div>
-                                  <div className="flex flex-col gap-1">
-                                    <h4 className="text-sm font-medium text-[var(--fg)]">{upload.title}</h4>
-                                    <p className="text-xs text-[var(--muted)]">
-                                      Scheduled {formatScheduleTime(upload.scheduledFor)}
-                                    </p>
-                                    <p className="text-xs text-[var(--muted)]">
-                                      Duration {formatDuration(upload.durationSec)}
-                                    </p>
-                                  </div>
-                                </article>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-sm text-[var(--muted)]">
-                              No upcoming uploads are scheduled for this account.
-                            </p>
-                          )}
+                                ) : (
+                                  <p className="text-sm text-[var(--muted)]">
+                                    No upcoming uploads are scheduled for this account.
+                                  </p>
+                                )}
+                          </div>
                         </div>
                         <div
                           role="tablist"

@@ -52,11 +52,10 @@ describe('Profile page', () => {
 
     PROFILE_ACCOUNTS.forEach((account) => {
       const panel = screen.getByTestId(`account-panel-${account.id}`)
-      const collapseButton = within(panel).getByRole('button', {
-        name: `Collapse ${account.displayName} details`
+      const toggleButton = within(panel).getByRole('button', {
+        name: `Expand ${account.displayName} details`
       })
-      fireEvent.click(collapseButton)
-
+      expect(toggleButton).toHaveAttribute('aria-expanded', 'false')
       const summarySection = within(panel).getByTestId(`account-summary-${account.id}`)
       expect(summarySection).toBeVisible()
 
@@ -115,9 +114,15 @@ describe('Profile page', () => {
     const aggregatedUploads = multiPlatformAccount.platforms.flatMap(
       (platform) => platform.upcomingUploads
     )
+    const nextUploadsToggle = within(panel).getByRole('button', { name: /Next uploads/i })
+    if (nextUploadsToggle.getAttribute('aria-expanded') === 'false') {
+      fireEvent.click(nextUploadsToggle)
+    }
+
     const upcomingSection = within(panel).getByTestId(
       `account-upcoming-${multiPlatformAccount.id}`
     )
+    expect(upcomingSection).toBeVisible()
     let videos = within(upcomingSection).getAllByTestId('profile-upload-video')
     expect(videos).toHaveLength(aggregatedUploads.length)
 
