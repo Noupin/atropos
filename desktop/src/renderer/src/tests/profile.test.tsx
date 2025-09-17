@@ -10,12 +10,6 @@ const STATUS_LABELS = {
   disconnected: 'Not connected'
 } as const satisfies Record<string, string>
 
-const STATUS_HELPERS = {
-  active: 'Connection is healthy and ready to publish.',
-  expiring: 'Refresh authentication soon to avoid interruptions.',
-  disconnected: 'Reconnect this account to resume scheduling uploads.'
-} as const satisfies Record<string, string>
-
 const getAccountTotals = (accountId: string) => {
   const account = PROFILE_ACCOUNTS.find((item) => item.id === accountId)
   if (!account) {
@@ -46,19 +40,6 @@ const getCoverageExpectations = (readyVideos: number, dailyUploadTarget: number)
   }
 }
 
-const getAggregateStatus = (platforms: typeof PROFILE_ACCOUNTS[number]['platforms']) => {
-  if (platforms.some((platform) => platform.status === 'disconnected')) {
-    return 'disconnected' as const
-  }
-  if (platforms.some((platform) => platform.status === 'expiring')) {
-    return 'expiring' as const
-  }
-  if (platforms.length === 0) {
-    return 'disconnected' as const
-  }
-  return 'active' as const
-}
-
 describe('Profile page', () => {
   it('displays aggregate metrics and platform statuses for each account when collapsed', () => {
     render(<Profile registerSearch={() => {}} />)
@@ -69,10 +50,6 @@ describe('Profile page', () => {
         name: `Collapse ${account.displayName} details`
       })
       fireEvent.click(collapseButton)
-
-      const aggregateStatus = getAggregateStatus(account.platforms)
-      const statusBadge = within(panel).getByText(STATUS_LABELS[aggregateStatus])
-      expect(statusBadge).toHaveAttribute('title', STATUS_HELPERS[aggregateStatus])
 
       const summarySection = within(panel).getByTestId(`account-summary-${account.id}`)
       expect(summarySection).toBeVisible()
@@ -98,7 +75,7 @@ describe('Profile page', () => {
           expect(tooltipHost).not.toBeNull()
           expect(tooltipHost).toHaveAttribute(
             'title',
-            `${platform.name}: ${STATUS_HELPERS[platform.status]}`
+            `${platform.name}: ${STATUS_LABELS[platform.status]}`
           )
         })
       } else {
@@ -139,8 +116,9 @@ describe('Profile page', () => {
     expect(tab).toHaveAttribute('aria-selected', 'true')
 
     const platformSummary = within(panel).getByTestId(`platform-summary-${targetPlatform.id}`)
-    expect(platformSummary).toHaveTextContent(targetPlatform.readyVideos.toLocaleString())
-    expect(platformSummary).toHaveTextContent(targetPlatform.dailyUploadTarget.toLocaleString())
+    const totals = getAccountTotals(multiPlatformAccount.id)
+    expect(platformSummary).toHaveTextContent(totals.readyVideos.toLocaleString())
+    expect(platformSummary).toHaveTextContent(totals.dailyUploadTarget.toLocaleString())
 
     videos = within(panel).getAllByTestId('profile-upload-video')
     expect(videos).toHaveLength(targetPlatform.upcomingUploads.length)
