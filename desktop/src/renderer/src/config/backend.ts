@@ -18,7 +18,7 @@ const normaliseBaseUrl = (value: string | undefined): string => {
 }
 
 const rawMode = (import.meta.env.VITE_BACKEND_MODE ?? '').toLowerCase()
-const mode: BackendMode = rawMode === 'api' ? 'api' : 'mock'
+const mode: BackendMode = rawMode === 'mock' ? 'mock' : 'api'
 
 export const BACKEND_MODE: BackendMode = mode
 
