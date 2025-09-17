@@ -195,6 +195,12 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
             null
           const detailsId = `profile-${account.id}`
           const hasPlatforms = account.platforms.length > 0
+          const accountUpcomingUploads = account.platforms
+            .flatMap((platform) => platform.upcomingUploads)
+            .sort(
+              (a, b) =>
+                new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime()
+            )
           const summaryStats = [
             {
               id: 'readyVideos',
@@ -343,6 +349,47 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
                   ? null
                   : hasPlatforms ? (
                       <>
+                        <div className="flex flex-col gap-3">
+                          <h3 className="text-sm font-semibold text-[var(--fg)]">Next uploads</h3>
+                          {accountUpcomingUploads.length > 0 ? (
+                            <div
+                              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+                              data-testid={`account-upcoming-${account.id}`}
+                            >
+                              {accountUpcomingUploads.map((upload) => (
+                                <article
+                                  key={upload.id}
+                                  className="flex flex-col gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_92%,transparent)] p-3"
+                                >
+                                  <div className="aspect-video overflow-hidden rounded-lg border border-white/10 bg-black/60">
+                                    <video
+                                      data-testid="profile-upload-video"
+                                      controls
+                                      preload="metadata"
+                                      className="h-full w-full object-cover"
+                                    >
+                                      <source src={upload.videoUrl} type="video/mp4" />
+                                      Your browser does not support the video tag.
+                                    </video>
+                                  </div>
+                                  <div className="flex flex-col gap-1">
+                                    <h4 className="text-sm font-medium text-[var(--fg)]">{upload.title}</h4>
+                                    <p className="text-xs text-[var(--muted)]">
+                                      Scheduled {formatScheduleTime(upload.scheduledFor)}
+                                    </p>
+                                    <p className="text-xs text-[var(--muted)]">
+                                      Duration {formatDuration(upload.durationSec)}
+                                    </p>
+                                  </div>
+                                </article>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-[var(--muted)]">
+                              No upcoming uploads are scheduled for this account.
+                            </p>
+                          )}
+                        </div>
                         <div
                           role="tablist"
                           aria-label={`${account.displayName} platform connections`}
@@ -388,93 +435,73 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
                             aria-labelledby={`profile-tab-${selectedPlatform.id}`}
                             className="flex flex-col gap-6"
                           >
-                            <div className="flex flex-col gap-1">
-                              {selectedPlatform.statusMessage ? (
-                                <p className="text-sm text-[var(--muted)]">
-                                  {selectedPlatform.statusMessage}
-                                </p>
-                              ) : null}
-                              <p className="text-xs text-[var(--muted)]">
-                                {STATUS_STYLES[selectedPlatform.status].helper}
-                              </p>
-                            </div>
-                            <dl
-                              className="grid gap-4 sm:grid-cols-3"
-                              data-testid={`platform-summary-${selectedPlatform.id}`}
-                            >
-                              <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] p-4">
-                                <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                                  Ready videos
-                                </dt>
-                                <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
-                                  {totals.readyVideos.toLocaleString()}
-                                </dd>
-                                <p className="mt-1 text-xs text-[var(--muted)]">
-                                  Ready to publish across all connected platforms.
+                            <div className="flex flex-col gap-4">
+                              <div className="flex flex-col gap-2">
+                                {selectedPlatform.status === 'disconnected' ? (
+                                  <button
+                                    type="button"
+                                    className="w-fit rounded-lg border border-white/10 bg-rose-500/10 px-3 py-1.5 text-sm font-medium text-rose-100 transition hover:bg-rose-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                                  >
+                                    Reconnect {selectedPlatform.name}
+                                  </button>
+                                ) : selectedPlatform.statusMessage ? (
+                                  <p className="text-sm text-[var(--muted)]">
+                                    {selectedPlatform.statusMessage}
+                                  </p>
+                                ) : null}
+                                <p className="text-xs text-[var(--muted)]">
+                                  {STATUS_STYLES[selectedPlatform.status].helper}
                                 </p>
                               </div>
-                              <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] p-4">
-                                <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                                  Daily target
-                                </dt>
-                                <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
-                                  {totals.dailyUploadTarget.toLocaleString()} per day
-                                </dd>
-                                <p className="mt-1 text-xs text-[var(--muted)]">
-                                  Combined scheduled uploads for this account.
-                                </p>
+                              <div className="flex flex-col gap-3">
+                                <h3 className="text-sm font-semibold text-[var(--fg)]">
+                                  Missed videos
+                                </h3>
+                                {selectedPlatform.missedUploads.length > 0 ? (
+                                  <div
+                                    className="grid gap-3 sm:grid-cols-2"
+                                    data-testid={`missed-uploads-${selectedPlatform.id}`}
+                                  >
+                                    {selectedPlatform.missedUploads.map((missed) => (
+                                      <article
+                                        key={missed.id}
+                                        className="flex flex-col gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] p-3"
+                                      >
+                                        <div className="flex flex-col gap-1">
+                                          <h4 className="text-sm font-medium text-[var(--fg)]">
+                                            {missed.title}
+                                          </h4>
+                                          <p className="text-xs text-[var(--muted)]">
+                                            Scheduled {formatScheduleTime(missed.scheduledFor)}
+                                          </p>
+                                          <p className="text-xs text-[var(--muted)]">
+                                            Duration {formatDuration(missed.durationSec)}
+                                          </p>
+                                          <p className="text-xs text-rose-200">
+                                            {missed.failureReason}
+                                          </p>
+                                        </div>
+                                        {missed.canRetry ? (
+                                          <button
+                                            type="button"
+                                            className="w-fit rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                                          >
+                                            Retry upload
+                                          </button>
+                                        ) : (
+                                          <span className="text-xs text-[var(--muted)]">
+                                            Retry unavailable for this video.
+                                          </span>
+                                        )}
+                                      </article>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-sm text-[var(--muted)]">
+                                    No missed videos for this platform.
+                                  </p>
+                                )}
                               </div>
-                              <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] p-4">
-                                <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                                  Coverage
-                                </dt>
-                                <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
-                                  {coverage.daysLabel}
-                                </dd>
-                                <p className="mt-1 text-xs text-[var(--muted)]">
-                                  {coverage.description}
-                                </p>
-                              </div>
-                            </dl>
-                            <div className="flex flex-col gap-3">
-                              <h3 className="text-sm font-semibold text-[var(--fg)]">Next uploads</h3>
-                              {selectedPlatform.upcomingUploads.length > 0 ? (
-                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                  {selectedPlatform.upcomingUploads.map((upload) => (
-                                    <article
-                                      key={upload.id}
-                                      className="flex flex-col gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_92%,transparent)] p-3"
-                                    >
-                                      <div className="aspect-video overflow-hidden rounded-lg border border-white/10 bg-black/60">
-                                        <video
-                                          data-testid="profile-upload-video"
-                                          controls
-                                          preload="metadata"
-                                          className="h-full w-full object-cover"
-                                        >
-                                          <source src={upload.videoUrl} type="video/mp4" />
-                                          Your browser does not support the video tag.
-                                        </video>
-                                      </div>
-                                      <div className="flex flex-col gap-1">
-                                        <h4 className="text-sm font-medium text-[var(--fg)]">
-                                          {upload.title}
-                                        </h4>
-                                        <p className="text-xs text-[var(--muted)]">
-                                          Scheduled {formatScheduleTime(upload.scheduledFor)}
-                                        </p>
-                                        <p className="text-xs text-[var(--muted)]">
-                                          Duration {formatDuration(upload.durationSec)}
-                                        </p>
-                                      </div>
-                                    </article>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-sm text-[var(--muted)]">
-                                  No upcoming uploads are scheduled for this platform.
-                                </p>
-                              )}
                             </div>
                           </div>
                         ) : (

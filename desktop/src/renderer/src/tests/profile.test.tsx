@@ -10,6 +10,12 @@ const STATUS_LABELS = {
   disconnected: 'Not connected'
 } as const satisfies Record<string, string>
 
+const STATUS_HELPERS = {
+  active: 'Connection is healthy and ready to publish.',
+  expiring: 'Refresh authentication soon to avoid interruptions.',
+  disconnected: 'Reconnect this account to resume scheduling uploads.'
+} as const satisfies Record<string, string>
+
 const getAccountTotals = (accountId: string) => {
   const account = PROFILE_ACCOUNTS.find((item) => item.id === accountId)
   if (!account) {
@@ -86,7 +92,7 @@ describe('Profile page', () => {
     })
   })
 
-  it('switches platform tabs to show platform specific details', () => {
+  it('switches platform tabs without changing next uploads and reveals platform specific recovery details', () => {
     render(<Profile registerSearch={() => {}} />)
 
     const multiPlatformAccount = PROFILE_ACCOUNTS.find((account) => account.platforms.length > 1)
@@ -106,21 +112,43 @@ describe('Profile page', () => {
       fireEvent.click(toggleButton)
     }
 
-    const initialPlatform = multiPlatformAccount.platforms[0]
-    let videos = within(panel).getAllByTestId('profile-upload-video')
-    expect(videos).toHaveLength(initialPlatform.upcomingUploads.length)
+    const aggregatedUploads = multiPlatformAccount.platforms.flatMap(
+      (platform) => platform.upcomingUploads
+    )
+    const upcomingSection = within(panel).getByTestId(
+      `account-upcoming-${multiPlatformAccount.id}`
+    )
+    let videos = within(upcomingSection).getAllByTestId('profile-upload-video')
+    expect(videos).toHaveLength(aggregatedUploads.length)
 
     const targetPlatform = multiPlatformAccount.platforms[1]
     const tab = within(panel).getByRole('tab', { name: new RegExp(targetPlatform.name, 'i') })
     fireEvent.click(tab)
     expect(tab).toHaveAttribute('aria-selected', 'true')
 
-    const platformSummary = within(panel).getByTestId(`platform-summary-${targetPlatform.id}`)
-    const totals = getAccountTotals(multiPlatformAccount.id)
-    expect(platformSummary).toHaveTextContent(totals.readyVideos.toLocaleString())
-    expect(platformSummary).toHaveTextContent(totals.dailyUploadTarget.toLocaleString())
+    if (targetPlatform.status === 'disconnected') {
+      expect(
+        within(panel).getByRole('button', {
+          name: new RegExp(`Reconnect ${targetPlatform.name}`, 'i')
+        })
+      ).toBeVisible()
+    } else if (targetPlatform.statusMessage) {
+      expect(
+        within(panel).getByText(targetPlatform.statusMessage, { selector: 'p' })
+      ).toBeVisible()
+    }
 
-    videos = within(panel).getAllByTestId('profile-upload-video')
-    expect(videos).toHaveLength(targetPlatform.upcomingUploads.length)
+    const helperText = within(panel).getByText(STATUS_HELPERS[targetPlatform.status], {
+      selector: 'p'
+    })
+    expect(helperText).toBeVisible()
+
+    const missedUploadsSection = within(panel).getByTestId(
+      `missed-uploads-${targetPlatform.id}`
+    )
+    expect(missedUploadsSection.children.length).toBe(targetPlatform.missedUploads.length)
+
+    videos = within(upcomingSection).getAllByTestId('profile-upload-video')
+    expect(videos).toHaveLength(aggregatedUploads.length)
   })
 })

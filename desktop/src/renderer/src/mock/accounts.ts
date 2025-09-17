@@ -40,6 +40,16 @@ export const PROFILE_ACCOUNTS: AccountProfile[] = [
             scheduledFor: '2025-05-06T18:15:00Z',
             durationSec: 48
           }
+        ],
+        missedUploads: [
+          {
+            id: 'yt-missed-1',
+            title: 'Weekly Creator Roundtable',
+            scheduledFor: '2025-04-28T15:00:00Z',
+            durationSec: 120,
+            failureReason: 'Upload failed during processing — try again.',
+            canRetry: true
+          }
         ]
       },
       {
@@ -63,6 +73,16 @@ export const PROFILE_ACCOUNTS: AccountProfile[] = [
             videoUrl: SAMPLE_VIDEO_FLOWERS,
             scheduledFor: '2025-05-05T18:00:00Z',
             durationSec: 45
+          }
+        ],
+        missedUploads: [
+          {
+            id: 'tt-missed-1',
+            title: 'Challenge Announcement Draft',
+            scheduledFor: '2025-04-30T19:30:00Z',
+            durationSec: 47,
+            failureReason: 'File was rejected by TikTok — edit metadata and retry.',
+            canRetry: true
           }
         ]
       }
@@ -89,6 +109,16 @@ export const PROFILE_ACCOUNTS: AccountProfile[] = [
             scheduledFor: '2025-05-07T15:45:00Z',
             durationSec: 52
           }
+        ],
+        missedUploads: [
+          {
+            id: 'ig-missed-1',
+            title: 'Behind the Scenes Reel',
+            scheduledFor: '2025-04-27T11:15:00Z',
+            durationSec: 58,
+            failureReason: 'Authentication expired before upload could complete.',
+            canRetry: false
+          }
         ]
       },
       {
@@ -113,7 +143,8 @@ export const PROFILE_ACCOUNTS: AccountProfile[] = [
             scheduledFor: '2025-05-06T10:15:00Z',
             durationSec: 54
           }
-        ]
+        ],
+        missedUploads: []
       }
     ]
   },
@@ -145,7 +176,8 @@ export const PROFILE_ACCOUNTS: AccountProfile[] = [
             scheduledFor: '2025-05-06T09:30:00Z',
             durationSec: 72
           }
-        ]
+        ],
+        missedUploads: []
       }
     ]
   }
