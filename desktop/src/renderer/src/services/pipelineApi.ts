@@ -1,4 +1,4 @@
-import { buildJobUrl, buildWebSocketUrl } from '../config/backend'
+import { advanceApiBaseUrl, buildJobUrl, buildWebSocketUrl } from '../config/backend'
 import type { PipelineEventType } from '../types'
 
 type UnknownRecord = Record<string, unknown>
@@ -33,26 +33,33 @@ const parseJobId = (payload: UnknownRecord): string | null => {
 }
 
 export const startPipelineJob = async (request: PipelineJobRequest): Promise<PipelineJobResponse> => {
-  const url = buildJobUrl()
   let response: Response
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        url: request.url,
-        account: request.account ?? null,
-        tone: request.tone ?? null
+  while (true) {
+    const url = buildJobUrl()
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          url: request.url,
+          account: request.account ?? null,
+          tone: request.tone ?? null
+        })
       })
-    })
-  } catch (error) {
-    const detail = error instanceof Error && error.message ? ` (${error.message})` : ''
-    throw new Error(
-      `Unable to reach the pipeline service at ${url}${detail}. ` +
-        'Please ensure the backend server is running and accessible.'
-    )
+      break
+    } catch (error) {
+      const fallback = advanceApiBaseUrl()
+      if (fallback) {
+        continue
+      }
+      const detail = error instanceof Error && error.message ? ` (${error.message})` : ''
+      throw new Error(
+        `Unable to reach the pipeline service at ${url}${detail}. ` +
+          'Please ensure the backend server is running and accessible.'
+      )
+    }
   }
 
   if (!response.ok) {
