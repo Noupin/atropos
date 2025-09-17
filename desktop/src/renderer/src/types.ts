@@ -18,6 +18,15 @@ export interface AccountUpload {
   durationSec: number
 }
 
+export interface AccountMissedUpload {
+  id: string
+  title: string
+  scheduledFor: string
+  durationSec: number
+  failureReason: string
+  canRetry: boolean
+}
+
 export interface AccountPlatform {
   id: string
   name: string
@@ -26,6 +35,7 @@ export interface AccountPlatform {
   dailyUploadTarget: number
   readyVideos: number
   upcomingUploads: AccountUpload[]
+  missedUploads: AccountMissedUpload[]
 }
 
 export interface AccountProfile {
