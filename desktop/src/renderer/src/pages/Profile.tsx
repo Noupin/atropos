@@ -247,37 +247,112 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
                 </button>
               </div>
 
-              <dl className="mt-6 grid gap-4 sm:grid-cols-3" data-testid={`account-summary-${account.id}`}>
-                <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_90%,transparent)] p-4">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                    Ready videos
-                  </dt>
-                  <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
-                    {totals.readyVideos.toLocaleString()}
-                  </dd>
-                  <p className="mt-1 text-xs text-[var(--muted)]">
-                    Ready to publish across all connected platforms.
-                  </p>
+              {isCollapsed ? (
+                <div
+                  className="mt-6 flex flex-col gap-4"
+                  data-testid={`account-summary-${account.id}`}
+                >
+                  <div className="flex flex-col gap-2 rounded-xl border border-white/5 bg-[color:color-mix(in_srgb,var(--card)_96%,transparent)] p-4">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+                      Overview
+                    </span>
+                    <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm text-[var(--muted)]">
+                      <span>
+                        <span className="text-lg font-semibold text-[var(--fg)]">
+                          {totals.readyVideos.toLocaleString()}
+                        </span>{' '}
+                        ready videos
+                      </span>
+                      <span>
+                        <span className="text-lg font-semibold text-[var(--fg)]">
+                          {totals.dailyUploadTarget.toLocaleString()}
+                        </span>{' '}
+                        daily target
+                      </span>
+                      <span>
+                        <span className="text-lg font-semibold text-[var(--fg)]">{coverage.daysLabel}</span>{' '}
+                        coverage
+                      </span>
+                    </div>
+                    <p className="text-xs text-[var(--muted)]">{coverage.description}</p>
+                  </div>
+                  {hasPlatforms ? (
+                    <div className="flex flex-col gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+                        Platform status
+                      </span>
+                      <ul className="flex flex-col gap-2">
+                        {account.platforms.map((platform) => {
+                          const platformStyles = STATUS_STYLES[platform.status]
+                          return (
+                            <li
+                              key={platform.id}
+                              className="flex items-start justify-between gap-3 rounded-lg border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] px-3 py-2"
+                            >
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`h-2.5 w-2.5 rounded-full ${platformStyles.dot}`}
+                                    aria-hidden="true"
+                                  />
+                                  <span className="text-sm font-semibold text-[var(--fg)]">
+                                    {platform.name}
+                                  </span>
+                                </div>
+                                <p className="ml-4 text-xs text-[var(--muted)]">
+                                  {platform.readyVideos.toLocaleString()} ready ·{' '}
+                                  {platform.dailyUploadTarget.toLocaleString()} per day
+                                </p>
+                              </div>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${platformStyles.badge}`}
+                              >
+                                {platformStyles.label}
+                              </span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="rounded-xl border border-dashed border-white/10 px-4 py-3 text-sm text-[var(--muted)]">
+                      Connect a platform to manage scheduling for this account.
+                    </p>
+                  )}
                 </div>
-                <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_90%,transparent)] p-4">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                    Daily target
-                  </dt>
-                  <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
-                    {totals.dailyUploadTarget.toLocaleString()} per day
-                  </dd>
-                  <p className="mt-1 text-xs text-[var(--muted)]">
-                    Combined scheduled uploads for this account.
-                  </p>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_90%,transparent)] p-4">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                    Coverage
-                  </dt>
-                  <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">{coverage.daysLabel}</dd>
-                  <p className="mt-1 text-xs text-[var(--muted)]">{coverage.description}</p>
-                </div>
-              </dl>
+              ) : (
+                <dl className="mt-6 grid gap-4 sm:grid-cols-3" data-testid={`account-summary-${account.id}`}>
+                  <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_90%,transparent)] p-4">
+                    <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+                      Ready videos
+                    </dt>
+                    <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
+                      {totals.readyVideos.toLocaleString()}
+                    </dd>
+                    <p className="mt-1 text-xs text-[var(--muted)]">
+                      Ready to publish across all connected platforms.
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_90%,transparent)] p-4">
+                    <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+                      Daily target
+                    </dt>
+                    <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
+                      {totals.dailyUploadTarget.toLocaleString()} per day
+                    </dd>
+                    <p className="mt-1 text-xs text-[var(--muted)]">
+                      Combined scheduled uploads for this account.
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_90%,transparent)] p-4">
+                    <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+                      Coverage
+                    </dt>
+                    <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">{coverage.daysLabel}</dd>
+                    <p className="mt-1 text-xs text-[var(--muted)]">{coverage.description}</p>
+                  </div>
+                </dl>
+              )}
 
               <div
                 id={detailsId}
@@ -285,152 +360,154 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
                 className="mt-6 flex flex-col gap-6"
                 aria-hidden={isCollapsed}
               >
-                {hasPlatforms ? (
-                  <>
-                    <div
-                      role="tablist"
-                      aria-label={`${account.displayName} platform connections`}
-                      className="flex flex-wrap gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_92%,transparent)] p-1"
-                    >
-                      {account.platforms.map((platform) => {
-                        const isActive = selectedPlatform?.id === platform.id
-                        const platformStatus = STATUS_STYLES[platform.status]
-                        return (
-                          <button
-                            key={platform.id}
-                            type="button"
-                            role="tab"
-                            id={`profile-tab-${platform.id}`}
-                            aria-selected={isActive}
-                            aria-controls={`profile-platform-${platform.id}`}
-                            onClick={() => selectPlatform(account.id, platform.id)}
-                            className={`flex min-w-[10rem] flex-1 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm transition ${
-                              isActive
-                                ? 'bg-[color:color-mix(in_srgb,var(--card)_98%,white_8%)] text-[var(--fg)] shadow-sm'
-                                : 'text-[var(--muted)] hover:bg-white/5 hover:text-[var(--fg)]'
-                            }`}
-                          >
-                            <span className="font-medium">{platform.name}</span>
-                            <span
-                              className={`flex items-center gap-2 rounded-full px-2 py-0.5 text-xs font-medium ${platformStatus.badge}`}
-                            >
-                              <span
-                                className={`h-2 w-2 rounded-full ${platformStatus.dot}`}
-                                aria-hidden="true"
-                              />
-                              {platformStatus.label}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                    {selectedPlatform && selectedPlatformCoverage ? (
-                      <div
-                        role="tabpanel"
-                        id={`profile-platform-${selectedPlatform.id}`}
-                        aria-labelledby={`profile-tab-${selectedPlatform.id}`}
-                        className="flex flex-col gap-6"
-                      >
-                        <div className="flex flex-col gap-1">
-                          {selectedPlatform.statusMessage ? (
-                            <p className="text-sm text-[var(--muted)]">
-                              {selectedPlatform.statusMessage}
-                            </p>
-                          ) : null}
-                          <p className="text-xs text-[var(--muted)]">
-                            {STATUS_STYLES[selectedPlatform.status].helper}
-                          </p>
-                        </div>
-                        <dl
-                          className="grid gap-4 sm:grid-cols-3"
-                          data-testid={`platform-summary-${selectedPlatform.id}`}
+                {isCollapsed
+                  ? null
+                  : hasPlatforms ? (
+                      <>
+                        <div
+                          role="tablist"
+                          aria-label={`${account.displayName} platform connections`}
+                          className="flex flex-wrap gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_92%,transparent)] p-1"
                         >
-                          <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] p-4">
-                            <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                              Ready videos
-                            </dt>
-                            <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
-                              {selectedPlatform.readyVideos.toLocaleString()}
-                            </dd>
-                            <p className="mt-1 text-xs text-[var(--muted)]">
-                              Ready to publish for this platform.
-                            </p>
-                          </div>
-                          <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] p-4">
-                            <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                              Daily target
-                            </dt>
-                            <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
-                              {selectedPlatform.dailyUploadTarget.toLocaleString()} per day
-                            </dd>
-                            <p className="mt-1 text-xs text-[var(--muted)]">
-                              Scheduled uploads for this platform.
-                            </p>
-                          </div>
-                          <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] p-4">
-                            <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-                              Coverage
-                            </dt>
-                            <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
-                              {selectedPlatformCoverage.daysLabel}
-                            </dd>
-                            <p className="mt-1 text-xs text-[var(--muted)]">
-                              {selectedPlatformCoverage.description}
-                            </p>
-                          </div>
-                        </dl>
-                        <div className="flex flex-col gap-3">
-                          <h3 className="text-sm font-semibold text-[var(--fg)]">Next uploads</h3>
-                          {selectedPlatform.upcomingUploads.length > 0 ? (
-                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                              {selectedPlatform.upcomingUploads.map((upload) => (
-                                <article
-                                  key={upload.id}
-                                  className="flex flex-col gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_92%,transparent)] p-3"
+                          {account.platforms.map((platform) => {
+                            const isActive = selectedPlatform?.id === platform.id
+                            const platformStatus = STATUS_STYLES[platform.status]
+                            return (
+                              <button
+                                key={platform.id}
+                                type="button"
+                                role="tab"
+                                id={`profile-tab-${platform.id}`}
+                                aria-selected={isActive}
+                                aria-controls={`profile-platform-${platform.id}`}
+                                onClick={() => selectPlatform(account.id, platform.id)}
+                                className={`flex min-w-[10rem] flex-1 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm transition ${
+                                  isActive
+                                    ? 'bg-[color:color-mix(in_srgb,var(--card)_98%,white_8%)] text-[var(--fg)] shadow-sm'
+                                    : 'text-[var(--muted)] hover:bg-white/5 hover:text-[var(--fg)]'
+                                }`}
+                              >
+                                <span className="font-medium">{platform.name}</span>
+                                <span
+                                  className={`flex items-center gap-2 rounded-full px-2 py-0.5 text-xs font-medium ${platformStatus.badge}`}
                                 >
-                                  <div className="aspect-video overflow-hidden rounded-lg border border-white/10 bg-black/60">
-                                    <video
-                                      data-testid="profile-upload-video"
-                                      controls
-                                      preload="metadata"
-                                      className="h-full w-full object-cover"
-                                    >
-                                      <source src={upload.videoUrl} type="video/mp4" />
-                                      Your browser does not support the video tag.
-                                    </video>
-                                  </div>
-                                  <div className="flex flex-col gap-1">
-                                    <h4 className="text-sm font-medium text-[var(--fg)]">
-                                      {upload.title}
-                                    </h4>
-                                    <p className="text-xs text-[var(--muted)]">
-                                      Scheduled {formatScheduleTime(upload.scheduledFor)}
-                                    </p>
-                                    <p className="text-xs text-[var(--muted)]">
-                                      Duration {formatDuration(upload.durationSec)}
-                                    </p>
-                                  </div>
-                                </article>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-sm text-[var(--muted)]">
-                              No upcoming uploads are scheduled for this platform.
-                            </p>
-                          )}
+                                  <span
+                                    className={`h-2 w-2 rounded-full ${platformStatus.dot}`}
+                                    aria-hidden="true"
+                                  />
+                                  {platformStatus.label}
+                                </span>
+                              </button>
+                            )
+                          })}
                         </div>
-                      </div>
+                        {selectedPlatform && selectedPlatformCoverage ? (
+                          <div
+                            role="tabpanel"
+                            id={`profile-platform-${selectedPlatform.id}`}
+                            aria-labelledby={`profile-tab-${selectedPlatform.id}`}
+                            className="flex flex-col gap-6"
+                          >
+                            <div className="flex flex-col gap-1">
+                              {selectedPlatform.statusMessage ? (
+                                <p className="text-sm text-[var(--muted)]">
+                                  {selectedPlatform.statusMessage}
+                                </p>
+                              ) : null}
+                              <p className="text-xs text-[var(--muted)]">
+                                {STATUS_STYLES[selectedPlatform.status].helper}
+                              </p>
+                            </div>
+                            <dl
+                              className="grid gap-4 sm:grid-cols-3"
+                              data-testid={`platform-summary-${selectedPlatform.id}`}
+                            >
+                              <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] p-4">
+                                <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+                                  Ready videos
+                                </dt>
+                                <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
+                                  {selectedPlatform.readyVideos.toLocaleString()}
+                                </dd>
+                                <p className="mt-1 text-xs text-[var(--muted)]">
+                                  Ready to publish for this platform.
+                                </p>
+                              </div>
+                              <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] p-4">
+                                <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+                                  Daily target
+                                </dt>
+                                <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
+                                  {selectedPlatform.dailyUploadTarget.toLocaleString()} per day
+                                </dd>
+                                <p className="mt-1 text-xs text-[var(--muted)]">
+                                  Scheduled uploads for this platform.
+                                </p>
+                              </div>
+                              <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] p-4">
+                                <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+                                  Coverage
+                                </dt>
+                                <dd className="mt-2 text-2xl font-semibold text-[var(--fg)]">
+                                  {selectedPlatformCoverage.daysLabel}
+                                </dd>
+                                <p className="mt-1 text-xs text-[var(--muted)]">
+                                  {selectedPlatformCoverage.description}
+                                </p>
+                              </div>
+                            </dl>
+                            <div className="flex flex-col gap-3">
+                              <h3 className="text-sm font-semibold text-[var(--fg)]">Next uploads</h3>
+                              {selectedPlatform.upcomingUploads.length > 0 ? (
+                                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                  {selectedPlatform.upcomingUploads.map((upload) => (
+                                    <article
+                                      key={upload.id}
+                                      className="flex flex-col gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_92%,transparent)] p-3"
+                                    >
+                                      <div className="aspect-video overflow-hidden rounded-lg border border-white/10 bg-black/60">
+                                        <video
+                                          data-testid="profile-upload-video"
+                                          controls
+                                          preload="metadata"
+                                          className="h-full w-full object-cover"
+                                        >
+                                          <source src={upload.videoUrl} type="video/mp4" />
+                                          Your browser does not support the video tag.
+                                        </video>
+                                      </div>
+                                      <div className="flex flex-col gap-1">
+                                        <h4 className="text-sm font-medium text-[var(--fg)]">
+                                          {upload.title}
+                                        </h4>
+                                        <p className="text-xs text-[var(--muted)]">
+                                          Scheduled {formatScheduleTime(upload.scheduledFor)}
+                                        </p>
+                                        <p className="text-xs text-[var(--muted)]">
+                                          Duration {formatDuration(upload.durationSec)}
+                                        </p>
+                                      </div>
+                                    </article>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-sm text-[var(--muted)]">
+                                  No upcoming uploads are scheduled for this platform.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-[var(--muted)]">
+                            Select a platform to view its scheduling details.
+                          </p>
+                        )}
+                      </>
                     ) : (
                       <p className="text-sm text-[var(--muted)]">
-                        Select a platform to view its scheduling details.
+                        Connect a platform to manage scheduling for this account.
                       </p>
                     )}
-                  </>
-                ) : (
-                  <p className="text-sm text-[var(--muted)]">
-                    Connect a platform to manage scheduling for this account.
-                  </p>
-                )}
               </div>
             </article>
           )

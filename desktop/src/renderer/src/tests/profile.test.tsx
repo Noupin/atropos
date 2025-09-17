@@ -4,6 +4,12 @@ import { describe, expect, it } from 'vitest'
 import Profile from '../pages/Profile'
 import { PROFILE_ACCOUNTS } from '../mock/accounts'
 
+const STATUS_LABELS = {
+  active: 'Authenticated',
+  expiring: 'Expiring soon',
+  disconnected: 'Not connected'
+} as const satisfies Record<string, string>
+
 const getAccountTotals = (accountId: string) => {
   const account = PROFILE_ACCOUNTS.find((item) => item.id === accountId)
   if (!account) {
@@ -35,7 +41,7 @@ const getCoverageExpectations = (readyVideos: number, dailyUploadTarget: number)
 }
 
 describe('Profile page', () => {
-  it('displays aggregate metrics for each account even when collapsed', () => {
+  it('displays aggregate metrics and platform statuses for each account when collapsed', () => {
     render(<Profile registerSearch={() => {}} />)
 
     PROFILE_ACCOUNTS.forEach((account) => {
@@ -55,6 +61,22 @@ describe('Profile page', () => {
       const coverage = getCoverageExpectations(totals.readyVideos, totals.dailyUploadTarget)
       expect(summarySection).toHaveTextContent(coverage.label)
       expect(summarySection).toHaveTextContent(coverage.description)
+
+      if (account.platforms.length > 0) {
+        const platformItems = within(summarySection).getAllByRole('listitem')
+        expect(platformItems).toHaveLength(account.platforms.length)
+
+        account.platforms.forEach((platform) => {
+          expect(summarySection).toHaveTextContent(platform.name)
+          expect(summarySection).toHaveTextContent(platform.readyVideos.toLocaleString())
+          expect(summarySection).toHaveTextContent(platform.dailyUploadTarget.toLocaleString())
+          expect(summarySection).toHaveTextContent(STATUS_LABELS[platform.status])
+        })
+      } else {
+        expect(summarySection).toHaveTextContent(
+          'Connect a platform to manage scheduling for this account.'
+        )
+      }
     })
   })
 
