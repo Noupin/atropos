@@ -214,25 +214,46 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
                   >
                     {account.initials}
                   </div>
-                  <div className="flex flex-1 flex-col gap-2">
+                  <div className="flex flex-1 flex-col gap-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-lg font-semibold text-[var(--fg)]">{account.displayName}</h2>
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyles.badge}`}>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyles.badge}`}
+                        title={statusStyles.helper}
+                      >
                         {statusStyles.label}
                       </span>
-                      <span className="rounded-full border border-white/10 px-2 py-0.5 text-xs font-medium text-[var(--muted)]">
-                        {account.platforms.length} platform{account.platforms.length === 1 ? '' : 's'}
-                      </span>
                     </div>
-                    {account.description ? (
-                      <p className="text-sm text-[var(--muted)]">{account.description}</p>
-                    ) : null}
-                    <p className="text-xs text-[var(--muted)]">
-                      {hasPlatforms
-                        ? `Connected platforms: ${account.platforms.map((platform) => platform.name).join(', ')}`
-                        : 'No platforms connected yet.'}
-                    </p>
-                    <p className="text-xs text-[var(--muted)]">{statusStyles.helper}</p>
+                    {hasPlatforms ? (
+                      <ul
+                        className="flex flex-wrap items-center gap-2 pl-0"
+                        data-testid={`account-platform-tags-${account.id}`}
+                        aria-label={`${account.displayName} connected platforms`}
+                      >
+                        {account.platforms.map((platform) => {
+                          const platformStyles = STATUS_STYLES[platform.status]
+                          return (
+                            <li
+                              key={platform.id}
+                              className="list-none"
+                              title={`${platform.name}: ${platformStyles.helper}`}
+                            >
+                              <span
+                                className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${platformStyles.badge}`}
+                              >
+                                <span
+                                  className={`h-2 w-2 rounded-full ${platformStyles.dot}`}
+                                  aria-hidden="true"
+                                />
+                                {platform.name}
+                              </span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-[var(--muted)]">No platforms connected yet.</p>
+                    )}
                   </div>
                 </div>
                 <button
@@ -249,76 +270,27 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
 
               {isCollapsed ? (
                 <div
-                  className="mt-6 flex flex-col gap-4"
+                  className="mt-6 rounded-xl border border-white/5 bg-[color:color-mix(in_srgb,var(--card)_96%,transparent)] p-4"
                   data-testid={`account-summary-${account.id}`}
                 >
-                  <div className="flex flex-col gap-2 rounded-xl border border-white/5 bg-[color:color-mix(in_srgb,var(--card)_96%,transparent)] p-4">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
-                      Overview
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-sm text-[var(--muted)]">
+                    <span>
+                      <span className="text-lg font-semibold text-[var(--fg)]">
+                        {totals.readyVideos.toLocaleString()}
+                      </span>{' '}
+                      ready videos
                     </span>
-                    <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm text-[var(--muted)]">
-                      <span>
-                        <span className="text-lg font-semibold text-[var(--fg)]">
-                          {totals.readyVideos.toLocaleString()}
-                        </span>{' '}
-                        ready videos
-                      </span>
-                      <span>
-                        <span className="text-lg font-semibold text-[var(--fg)]">
-                          {totals.dailyUploadTarget.toLocaleString()}
-                        </span>{' '}
-                        daily target
-                      </span>
-                      <span>
-                        <span className="text-lg font-semibold text-[var(--fg)]">{coverage.daysLabel}</span>{' '}
-                        coverage
-                      </span>
-                    </div>
-                    <p className="text-xs text-[var(--muted)]">{coverage.description}</p>
+                    <span>
+                      <span className="text-lg font-semibold text-[var(--fg)]">
+                        {totals.dailyUploadTarget.toLocaleString()}
+                      </span>{' '}
+                      daily target
+                    </span>
+                    <span title={coverage.description}>
+                      <span className="text-lg font-semibold text-[var(--fg)]">{coverage.daysLabel}</span>{' '}
+                      coverage
+                    </span>
                   </div>
-                  {hasPlatforms ? (
-                    <div className="flex flex-col gap-2">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
-                        Platform status
-                      </span>
-                      <ul className="flex flex-col gap-2">
-                        {account.platforms.map((platform) => {
-                          const platformStyles = STATUS_STYLES[platform.status]
-                          return (
-                            <li
-                              key={platform.id}
-                              className="flex items-start justify-between gap-3 rounded-lg border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_94%,transparent)] px-3 py-2"
-                            >
-                              <div className="flex flex-col gap-1">
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className={`h-2.5 w-2.5 rounded-full ${platformStyles.dot}`}
-                                    aria-hidden="true"
-                                  />
-                                  <span className="text-sm font-semibold text-[var(--fg)]">
-                                    {platform.name}
-                                  </span>
-                                </div>
-                                <p className="ml-4 text-xs text-[var(--muted)]">
-                                  {platform.readyVideos.toLocaleString()} ready ·{' '}
-                                  {platform.dailyUploadTarget.toLocaleString()} per day
-                                </p>
-                              </div>
-                              <span
-                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${platformStyles.badge}`}
-                              >
-                                {platformStyles.label}
-                              </span>
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    </div>
-                  ) : (
-                    <p className="rounded-xl border border-dashed border-white/10 px-4 py-3 text-sm text-[var(--muted)]">
-                      Connect a platform to manage scheduling for this account.
-                    </p>
-                  )}
                 </div>
               ) : (
                 <dl className="mt-6 grid gap-4 sm:grid-cols-3" data-testid={`account-summary-${account.id}`}>
@@ -390,6 +362,7 @@ const Profile: FC<ProfileProps> = ({ registerSearch }) => {
                                 <span className="font-medium">{platform.name}</span>
                                 <span
                                   className={`flex items-center gap-2 rounded-full px-2 py-0.5 text-xs font-medium ${platformStatus.badge}`}
+                                  title={`${platform.name}: ${platformStatus.helper}`}
                                 >
                                   <span
                                     className={`h-2 w-2 rounded-full ${platformStatus.dot}`}

@@ -10,6 +10,12 @@ const STATUS_LABELS = {
   disconnected: 'Not connected'
 } as const satisfies Record<string, string>
 
+const STATUS_HELPERS = {
+  active: 'Connection is healthy and ready to publish.',
+  expiring: 'Refresh authentication soon to avoid interruptions.',
+  disconnected: 'Reconnect this account to resume scheduling uploads.'
+} as const satisfies Record<string, string>
+
 const getAccountTotals = (accountId: string) => {
   const account = PROFILE_ACCOUNTS.find((item) => item.id === accountId)
   if (!account) {
@@ -40,6 +46,19 @@ const getCoverageExpectations = (readyVideos: number, dailyUploadTarget: number)
   }
 }
 
+const getAggregateStatus = (platforms: typeof PROFILE_ACCOUNTS[number]['platforms']) => {
+  if (platforms.some((platform) => platform.status === 'disconnected')) {
+    return 'disconnected' as const
+  }
+  if (platforms.some((platform) => platform.status === 'expiring')) {
+    return 'expiring' as const
+  }
+  if (platforms.length === 0) {
+    return 'disconnected' as const
+  }
+  return 'active' as const
+}
+
 describe('Profile page', () => {
   it('displays aggregate metrics and platform statuses for each account when collapsed', () => {
     render(<Profile registerSearch={() => {}} />)
@@ -51,6 +70,10 @@ describe('Profile page', () => {
       })
       fireEvent.click(collapseButton)
 
+      const aggregateStatus = getAggregateStatus(account.platforms)
+      const statusBadge = within(panel).getByText(STATUS_LABELS[aggregateStatus])
+      expect(statusBadge).toHaveAttribute('title', STATUS_HELPERS[aggregateStatus])
+
       const summarySection = within(panel).getByTestId(`account-summary-${account.id}`)
       expect(summarySection).toBeVisible()
 
@@ -59,23 +82,29 @@ describe('Profile page', () => {
       expect(summarySection).toHaveTextContent(totals.dailyUploadTarget.toLocaleString())
 
       const coverage = getCoverageExpectations(totals.readyVideos, totals.dailyUploadTarget)
-      expect(summarySection).toHaveTextContent(coverage.label)
-      expect(summarySection).toHaveTextContent(coverage.description)
+      const coverageLabel = within(summarySection).getByText(coverage.label)
+      const coverageElement = coverageLabel.closest('[title]')
+      expect(coverageElement).not.toBeNull()
+      expect(coverageElement).toHaveAttribute('title', coverage.description)
 
       if (account.platforms.length > 0) {
-        const platformItems = within(summarySection).getAllByRole('listitem')
+        const platformTags = within(panel).getByTestId(`account-platform-tags-${account.id}`)
+        const platformItems = within(platformTags).getAllByRole('listitem')
         expect(platformItems).toHaveLength(account.platforms.length)
 
         account.platforms.forEach((platform) => {
-          expect(summarySection).toHaveTextContent(platform.name)
-          expect(summarySection).toHaveTextContent(platform.readyVideos.toLocaleString())
-          expect(summarySection).toHaveTextContent(platform.dailyUploadTarget.toLocaleString())
-          expect(summarySection).toHaveTextContent(STATUS_LABELS[platform.status])
+          const label = within(platformTags).getByText(platform.name)
+          const tooltipHost = label.closest('[title]')
+          expect(tooltipHost).not.toBeNull()
+          expect(tooltipHost).toHaveAttribute(
+            'title',
+            `${platform.name}: ${STATUS_HELPERS[platform.status]}`
+          )
         })
       } else {
-        expect(summarySection).toHaveTextContent(
-          'Connect a platform to manage scheduling for this account.'
-        )
+        expect(
+          within(panel).getByText('No platforms connected yet.', { selector: 'p' })
+        ).toBeInTheDocument()
       }
     })
   })
