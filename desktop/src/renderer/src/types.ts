@@ -65,3 +65,11 @@ export interface PipelineStep extends PipelineStepDefinition {
   status: PipelineStepStatus
   progress: number
 }
+
+export type PipelineEventType =
+  | 'pipeline_started'
+  | 'step_started'
+  | 'step_completed'
+  | 'step_failed'
+  | 'pipeline_completed'
+  | 'log'

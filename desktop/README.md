@@ -20,6 +20,21 @@ $ npm install
 $ npm run dev
 ```
 
+### Backend integration
+
+The renderer defaults to mocked pipeline data so you can explore the UI without
+running the Python backend. To connect it to the real API, create a `.env`
+file at the repository root (or export variables in your shell) with:
+
+```env
+VITE_BACKEND_MODE=api
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+`VITE_BACKEND_MODE=mock` restores the simulated pipeline. Adjust
+`VITE_API_BASE_URL` if the FastAPI service is exposed on a different host or
+port.
+
 ### Build
 
 ```bash

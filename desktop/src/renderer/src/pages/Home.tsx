@@ -11,7 +11,17 @@ import type { FC } from 'react'
 import ClipDrawer from '../components/ClipDrawer'
 import PipelineProgress from '../components/PipelineProgress'
 import { CLIPS } from '../mock/clips'
-import { PIPELINE_STEP_DEFINITIONS } from '../mock/pipeline'
+import { BACKEND_MODE } from '../config/backend'
+import {
+  createInitialPipelineSteps,
+  PIPELINE_STEP_DEFINITIONS,
+  resolvePipelineStepId
+} from '../data/pipeline'
+import {
+  startPipelineJob,
+  subscribeToPipelineEvents,
+  type PipelineEventMessage
+} from '../services/pipelineApi'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import type { Clip, PipelineStep, SearchBridge } from '../types'
 
@@ -31,13 +41,6 @@ const isValidVideoUrl = (value: string): boolean => {
 
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value))
 
-const buildInitialSteps = (): PipelineStep[] =>
-  PIPELINE_STEP_DEFINITIONS.map((definition) => ({
-    ...definition,
-    status: 'pending',
-    progress: 0
-  }))
-
 type HomeProps = {
   registerSearch: (bridge: SearchBridge | null) => void
 }
@@ -45,13 +48,17 @@ type HomeProps = {
 const Home: FC<HomeProps> = ({ registerSearch }) => {
   const [videoUrl, setVideoUrl] = useState('')
   const [urlError, setUrlError] = useState<string | null>(null)
-  const [steps, setSteps] = useState<PipelineStep[]>(() => buildInitialSteps())
-  const [isSimulating, setIsSimulating] = useState(false)
+  const [pipelineError, setPipelineError] = useState<string | null>(null)
+  const [steps, setSteps] = useState<PipelineStep[]>(() => createInitialPipelineSteps())
+  const [isProcessing, setIsProcessing] = useState(false)
   const [clips, setClips] = useState<Clip[]>([])
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
 
   const timersRef = useRef<number[]>([])
   const runStepRef = useRef<(index: number) => void>(() => {})
+  const connectionCleanupRef = useRef<(() => void) | null>(null)
+
+  const isMockBackend = BACKEND_MODE === 'mock'
 
   const clearTimers = useCallback(() => {
     for (const id of timersRef.current) {
@@ -60,18 +67,33 @@ const Home: FC<HomeProps> = ({ registerSearch }) => {
     timersRef.current = []
   }, [])
 
+  const cleanupConnection = useCallback(() => {
+    const cleanup = connectionCleanupRef.current
+    if (cleanup) {
+      cleanup()
+      connectionCleanupRef.current = null
+    }
+  }, [])
+
   useEffect(() => {
     registerSearch(null)
     return () => {
       registerSearch(null)
       clearTimers()
+      cleanupConnection()
     }
-  }, [clearTimers, registerSearch])
+  }, [cleanupConnection, clearTimers, registerSearch])
 
   useEffect(() => {
+    if (!isMockBackend) {
+      clearTimers()
+      runStepRef.current = () => {}
+      return
+    }
+
     runStepRef.current = (stepIndex: number) => {
       if (stepIndex >= PIPELINE_STEP_DEFINITIONS.length) {
-        setIsSimulating(false)
+        setIsProcessing(false)
         return
       }
 
@@ -113,12 +135,8 @@ const Home: FC<HomeProps> = ({ registerSearch }) => {
           )
 
           if (i === increments) {
-            if (stepIndex === 5) {
-              setClips((current) => (current.length > 0 ? current : CLIPS.slice(0, CLIP_PREVIEW_LIMIT)))
-            }
-
             if (stepIndex === PIPELINE_STEP_DEFINITIONS.length - 1) {
-              setIsSimulating(false)
+              setIsProcessing(false)
             } else {
               const nextTimeout = window.setTimeout(() => runStepRef.current(stepIndex + 1), 500)
               timersRef.current.push(nextTimeout)
@@ -129,9 +147,117 @@ const Home: FC<HomeProps> = ({ registerSearch }) => {
         timersRef.current.push(timeout)
       }
     }
-  }, [])
+  }, [clearTimers, isMockBackend])
 
-  useEffect(() => () => clearTimers(), [clearTimers])
+  const handlePipelineEvent = useCallback(
+    (event: PipelineEventMessage) => {
+      if (event.type === 'pipeline_started') {
+        setSteps(createInitialPipelineSteps())
+        setPipelineError(null)
+        setIsProcessing(true)
+        return
+      }
+
+      if (event.type === 'step_started' || event.type === 'step_completed' || event.type === 'step_failed') {
+        const resolvedId = resolvePipelineStepId(event.step)
+        if (!resolvedId) {
+          return
+        }
+        const targetIndex = PIPELINE_STEP_DEFINITIONS.findIndex((definition) => definition.id === resolvedId)
+        if (targetIndex === -1) {
+          return
+        }
+
+        setSteps((prev) =>
+          prev.map((step, index) => {
+            if (index < targetIndex && step.status !== 'completed') {
+              return { ...step, status: 'completed', progress: 1 }
+            }
+            if (index === targetIndex) {
+              if (event.type === 'step_started') {
+                return { ...step, status: 'running', progress: 0 }
+              }
+              if (event.type === 'step_completed') {
+                return { ...step, status: 'completed', progress: 1 }
+              }
+              return { ...step, status: 'failed', progress: 1 }
+            }
+            return step
+          })
+        )
+
+        if (event.type === 'step_failed') {
+          setPipelineError(event.message ?? 'Pipeline step failed.')
+        }
+        return
+      }
+
+      if (event.type === 'pipeline_completed') {
+        const successValue = event.data?.success
+        const success = typeof successValue === 'boolean' ? successValue : true
+        const errorValue = event.data?.error
+        const errorMessage =
+          typeof errorValue === 'string' ? errorValue : typeof event.message === 'string' ? event.message : null
+
+        setPipelineError(success ? null : errorMessage ?? 'Pipeline failed.')
+        setIsProcessing(false)
+        setSteps((prev) =>
+          prev.map((step) => {
+            if (success) {
+              if (step.status === 'completed' || step.status === 'failed') {
+                return step
+              }
+              return { ...step, status: 'completed', progress: 1 }
+            }
+            if (step.status === 'completed' || step.status === 'failed') {
+              return step
+            }
+            return { ...step, status: 'failed', progress: 1 }
+          })
+        )
+        cleanupConnection()
+      }
+    },
+    [cleanupConnection]
+  )
+
+  const startRealProcessing = useCallback(
+    async (urlToProcess: string) => {
+      setIsProcessing(true)
+      setPipelineError(null)
+      cleanupConnection()
+
+      try {
+        const { jobId } = await startPipelineJob({ url: urlToProcess })
+        let unsubscribe: (() => void) | null = null
+        const cleanup = () => {
+          if (unsubscribe) {
+            unsubscribe()
+            unsubscribe = null
+          }
+        }
+        connectionCleanupRef.current = cleanup
+
+        unsubscribe = subscribeToPipelineEvents(jobId, {
+          onEvent: handlePipelineEvent,
+          onError: (error) => {
+            setPipelineError(error.message)
+            setIsProcessing(false)
+            cleanupConnection()
+          },
+          onClose: () => {
+            if (connectionCleanupRef.current === cleanup) {
+              connectionCleanupRef.current = null
+            }
+          }
+        })
+      } catch (error) {
+        setPipelineError(error instanceof Error ? error.message : 'Unable to start the pipeline.')
+        setIsProcessing(false)
+      }
+    },
+    [cleanupConnection, handlePipelineEvent]
+  )
 
   useEffect(() => {
     if (clips.length === 0) {
@@ -145,6 +271,13 @@ const Home: FC<HomeProps> = ({ registerSearch }) => {
       setSelectedClipId(clips[0].id)
     }
   }, [clips, selectedClipId])
+
+  useEffect(() => {
+    const candidatesStep = steps.find((step) => step.id === 'find-candidates')
+    if (candidatesStep && candidatesStep.status === 'completed') {
+      setClips((current) => (current.length > 0 ? current : CLIPS.slice(0, CLIP_PREVIEW_LIMIT)))
+    }
+  }, [steps])
 
   const handleUrlChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -172,24 +305,35 @@ const Home: FC<HomeProps> = ({ registerSearch }) => {
       }
 
       setUrlError(null)
+      setPipelineError(null)
       clearTimers()
+      cleanupConnection()
       setClips([])
-      setSteps(buildInitialSteps())
-      setIsSimulating(true)
+      setSelectedClipId(null)
+      setSteps(createInitialPipelineSteps())
+      setIsProcessing(true)
 
-      const startTimeout = window.setTimeout(() => runStepRef.current(0), 150)
-      timersRef.current.push(startTimeout)
+      if (isMockBackend) {
+        const startTimeout = window.setTimeout(() => runStepRef.current(0), 150)
+        timersRef.current.push(startTimeout)
+        return
+      }
+
+      void startRealProcessing(trimmed)
     },
-    [clearTimers, videoUrl]
+    [cleanupConnection, clearTimers, isMockBackend, startRealProcessing, videoUrl]
   )
 
   const handleReset = useCallback(() => {
     clearTimers()
-    setSteps(buildInitialSteps())
-    setIsSimulating(false)
+    cleanupConnection()
+    setSteps(createInitialPipelineSteps())
+    setIsProcessing(false)
     setClips([])
+    setPipelineError(null)
     setUrlError(null)
-  }, [clearTimers])
+    setSelectedClipId(null)
+  }, [cleanupConnection, clearTimers])
 
   const handleClipRemove = useCallback((clipId: string) => {
     setClips((current) => current.filter((clip) => clip.id !== clipId))
@@ -211,14 +355,17 @@ const Home: FC<HomeProps> = ({ registerSearch }) => {
   )
 
   const pipelineMessage = useMemo(() => {
+    if (pipelineError) {
+      return pipelineError
+    }
     if (currentStep) {
       return `Currently processing: ${currentStep.title}`
     }
-    if (clips.length > 0 && !isSimulating) {
+    if (clips.length > 0 && !isProcessing) {
       return 'Processing complete. Review the generated clips below.'
     }
     return 'Paste a supported link to kick off the Atropos pipeline.'
-  }, [clips.length, currentStep, isSimulating])
+  }, [clips.length, currentStep, isProcessing, pipelineError])
 
   return (
     <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-8">
@@ -247,15 +394,15 @@ const Home: FC<HomeProps> = ({ registerSearch }) => {
               <div className="flex items-center gap-2">
                 <button
                   type="submit"
-                  disabled={!videoUrl.trim() || isSimulating}
+                  disabled={!videoUrl.trim() || isProcessing}
                   className="rounded-lg border border-transparent bg-[var(--ring)] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isSimulating ? 'Processing…' : 'Start processing'}
+                  {isProcessing ? 'Processing…' : 'Start processing'}
                 </button>
                 <button
                   type="button"
                   onClick={handleReset}
-                  disabled={!hasProgress && clips.length === 0}
+                  disabled={!hasProgress && clips.length === 0 && !pipelineError}
                   className="rounded-lg border border-white/10 px-4 py-2 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Reset
@@ -263,7 +410,10 @@ const Home: FC<HomeProps> = ({ registerSearch }) => {
               </div>
             </div>
             <div className="text-xs text-[var(--muted)]">
-              Supports YouTube and Twitch URLs. The pipeline runs locally; progress appears as the server completes each step.
+              Supports YouTube and Twitch URLs. The pipeline runs{' '}
+              {isMockBackend
+                ? 'in simulation mode with mocked events.'
+                : 'against the backend API for live progress updates.'}
             </div>
             {urlError ? <p className="text-xs font-medium text-rose-400">{urlError}</p> : null}
           </form>
@@ -276,7 +426,9 @@ const Home: FC<HomeProps> = ({ registerSearch }) => {
             <div className="flex flex-col gap-1">
               <h3 className="text-lg font-semibold text-[var(--fg)]">Selected clip</h3>
               <p className="text-sm text-[var(--muted)]">
-                {selectedClip ? 'Preview the highlight before exporting or sharing it.' : 'Generated clips will appear once the pipeline reaches the candidate stage.'}
+                {selectedClip
+                  ? 'Preview the highlight before exporting or sharing it.'
+                  : 'Generated clips will appear once the pipeline reaches the candidate stage.'}
               </p>
             </div>
             {selectedClip ? (
