@@ -110,12 +110,12 @@ const AccountCard: FC<AccountCardProps> = ({
   const [removingPlatform, setRemovingPlatform] = useState<SupportedPlatform | null>(null)
   const isMounted = useRef(true)
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    isMounted.current = true
+    return () => {
       isMounted.current = false
-    },
-    []
-  )
+    }
+  }, [])
 
   const isAccountActive = account.active
 
