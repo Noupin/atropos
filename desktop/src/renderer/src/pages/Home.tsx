@@ -12,6 +12,7 @@ import ClipDescription from '../components/ClipDescription'
 import ClipDrawer from '../components/ClipDrawer'
 import PipelineProgress from '../components/PipelineProgress'
 import { CLIPS } from '../mock/clips'
+import { PROFILE_ACCOUNTS } from '../mock/accounts'
 import { BACKEND_MODE } from '../config/backend'
 import {
   createInitialPipelineSteps,
@@ -63,7 +64,17 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
     [onStateChange]
   )
 
-  const { videoUrl, urlError, pipelineError, steps, isProcessing, clips, selectedClipId } = state
+  const {
+    videoUrl,
+    urlError,
+    pipelineError,
+    steps,
+    isProcessing,
+    clips,
+    selectedClipId,
+    selectedAccountId,
+    accountError
+  } = state
 
   const timersRef = useRef<number[]>([])
   const runStepRef = useRef<(index: number) => void>(() => {})
@@ -242,8 +253,13 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
     [cleanupConnection, updateState]
   )
 
+  const accountOptions = useMemo(
+    () => PROFILE_ACCOUNTS.map((account) => ({ value: account.id, label: account.displayName })),
+    []
+  )
+
   const startRealProcessing = useCallback(
-    async (urlToProcess: string) => {
+    async (urlToProcess: string, accountId: string) => {
       updateState((prev) => ({
         ...prev,
         isProcessing: true,
@@ -252,7 +268,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
       cleanupConnection()
 
       try {
-        const { jobId } = await startPipelineJob({ url: urlToProcess })
+        const { jobId } = await startPipelineJob({ url: urlToProcess, account: accountId })
         let unsubscribe: (() => void) | null = null
         const cleanup = () => {
           if (unsubscribe) {
@@ -330,24 +346,50 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
     [updateState]
   )
 
+  const handleAccountChange = useCallback(
+    (event: ChangeEvent<HTMLSelectElement>) => {
+      const value = event.target.value
+      updateState((prev) => ({
+        ...prev,
+        selectedAccountId: value.length > 0 ? value : null,
+        accountError: prev.accountError ? null : prev.accountError
+      }))
+    },
+    [updateState]
+  )
+
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
       const trimmed = videoUrl.trim()
+      const accountId = selectedAccountId
+      const isUrlPresent = trimmed.length > 0
+      const isUrlValid = isUrlPresent && isValidVideoUrl(trimmed)
+      let hasError = false
 
-      if (!trimmed) {
+      if (!accountId) {
+        hasError = true
+        updateState((prev) => ({
+          ...prev,
+          accountError: 'Select an account to start processing.'
+        }))
+      }
+
+      if (!isUrlPresent) {
+        hasError = true
         updateState((prev) => ({
           ...prev,
           urlError: 'Enter a video URL to start processing.'
         }))
-        return
-      }
-
-      if (!isValidVideoUrl(trimmed)) {
+      } else if (!isUrlValid) {
+        hasError = true
         updateState((prev) => ({
           ...prev,
           urlError: 'Enter a valid YouTube or Twitch URL.'
         }))
+      }
+
+      if (hasError || !accountId || !isUrlValid) {
         return
       }
 
@@ -360,7 +402,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
         clips: [],
         selectedClipId: null,
         steps: createInitialPipelineSteps(),
-        isProcessing: true
+        isProcessing: true,
+        accountError: null
       }))
 
       if (isMockBackend) {
@@ -369,9 +412,17 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
         return
       }
 
-      void startRealProcessing(trimmed)
+      void startRealProcessing(trimmed, accountId)
     },
-    [cleanupConnection, clearTimers, isMockBackend, startRealProcessing, updateState, videoUrl]
+    [
+      cleanupConnection,
+      clearTimers,
+      isMockBackend,
+      selectedAccountId,
+      startRealProcessing,
+      updateState,
+      videoUrl
+    ]
   )
 
   const handleReset = useCallback(() => {
@@ -384,7 +435,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
       clips: [],
       pipelineError: null,
       urlError: null,
-      selectedClipId: null
+      selectedClipId: null,
+      accountError: null
     }))
   }, [cleanupConnection, clearTimers, updateState])
 
@@ -435,7 +487,29 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
               <h2 className="text-lg font-semibold text-[var(--fg)]">Process a new video</h2>
               <p className="text-sm text-[var(--muted)]">{pipelineMessage}</p>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="flex w-full flex-col gap-2 sm:max-w-xs">
+                <label className="sr-only" htmlFor="processing-account">
+                  Account
+                </label>
+                <select
+                  id="processing-account"
+                  value={selectedAccountId ?? ''}
+                  onChange={handleAccountChange}
+                  aria-invalid={accountError ? 'true' : 'false'}
+                  aria-describedby={accountError ? 'account-error' : undefined}
+                  className={`w-full rounded-lg border bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] ${accountError ? 'border-rose-400 focus-visible:ring-rose-400' : 'border-white/10 focus-visible:ring-[var(--ring)]'}`}
+                >
+                  <option value="" disabled>
+                    Select an account
+                  </option>
+                  {accountOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <label className="sr-only" htmlFor="video-url">
                 Video URL
               </label>
@@ -471,6 +545,11 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
                 ? 'in simulation mode with mocked events.'
                 : 'against the backend API for live progress updates.'}
             </div>
+            {accountError ? (
+              <p id="account-error" className="text-xs font-medium text-rose-400">
+                {accountError}
+              </p>
+            ) : null}
             {urlError ? <p className="text-xs font-medium text-rose-400">{urlError}</p> : null}
           </form>
 

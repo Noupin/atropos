@@ -22,7 +22,9 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     steps: createInitialPipelineSteps(),
     isProcessing: false,
     clips: [],
-    selectedClipId: null
+    selectedClipId: null,
+    selectedAccountId: null,
+    accountError: null
   }))
   const [isDark, setIsDark] = useState(() => {
     if (typeof document === 'undefined') {

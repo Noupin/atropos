@@ -76,6 +76,8 @@ export interface HomePipelineState {
   isProcessing: boolean
   clips: Clip[]
   selectedClipId: string | null
+  selectedAccountId: string | null
+  accountError: string | null
 }
 
 export type PipelineEventType =
