@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+from json import JSONDecodeError
 import re
 import threading
 import uuid
@@ -36,6 +37,10 @@ PLATFORM_TOKEN_FILES: dict[SupportedPlatform, str] = {
     "tiktok": "tiktok.json",
     "youtube": "youtube.json",
     "instagram": "instagram_session.json",
+}
+
+PLATFORM_TOKEN_ALIASES: dict[SupportedPlatform, tuple[str, ...]] = {
+    "instagram": ("instagram.json",),
 }
 
 
@@ -161,9 +166,10 @@ class AccountStore:
                 )
             metadata = AccountMetadata(id=account_id, display_name=account_id)
             self._write_metadata(metadata)
-            return metadata
+            return self._ensure_platform_records(metadata)
         payload = json.loads(metadata_path.read_text(encoding="utf-8"))
-        return AccountMetadata.model_validate(payload)
+        metadata = AccountMetadata.model_validate(payload)
+        return self._ensure_platform_records(metadata)
 
     def _write_metadata(self, metadata: AccountMetadata) -> None:
         account_dir = self._account_dir(metadata.id)
@@ -172,18 +178,82 @@ class AccountStore:
         with metadata_path.open("w", encoding="utf-8") as handle:
             handle.write(_json_dump(metadata.model_dump(mode="json")))
 
+    def _ensure_platform_records(self, metadata: AccountMetadata) -> AccountMetadata:
+        account_id = metadata.id
+        existing = {record.platform: record for record in metadata.platforms}
+        changed = False
+        for platform in SUPPORTED_PLATFORMS:
+            if platform in existing:
+                continue
+            token_path = self._find_token_path(account_id, platform)
+            if token_path is None:
+                continue
+            added_at = datetime.fromtimestamp(
+                token_path.stat().st_mtime, tz=timezone.utc
+            )
+            metadata.platforms.append(
+                PlatformRecord(platform=platform, label=None, added_at=added_at)
+            )
+            changed = True
+        if changed:
+            self._write_metadata(metadata)
+        return metadata
+
+    def _candidate_token_names(self, platform: SupportedPlatform) -> tuple[str, ...]:
+        primary = PLATFORM_TOKEN_FILES[platform]
+        aliases = PLATFORM_TOKEN_ALIASES.get(platform, ())
+        if not aliases:
+            return (primary,)
+        return (primary, *aliases)
+
+    def _candidate_token_paths(
+        self, account_id: str, platform: SupportedPlatform
+    ) -> list[Path]:
+        account_dir = self._account_dir(account_id)
+        return [account_dir / name for name in self._candidate_token_names(platform)]
+
+    def _find_token_path(
+        self, account_id: str, platform: SupportedPlatform
+    ) -> Path | None:
+        for path in self._candidate_token_paths(account_id, platform):
+            if path.exists():
+                return path
+        return None
+
+    def _preferred_token_path(
+        self, account_id: str, platform: SupportedPlatform
+    ) -> Path:
+        existing = self._find_token_path(account_id, platform)
+        if existing is not None:
+            return existing
+        return self._candidate_token_paths(account_id, platform)[0]
+
+    def _token_is_valid(self, token_path: Path) -> bool:
+        try:
+            raw = token_path.read_text(encoding="utf-8")
+        except OSError:
+            return False
+        if raw.strip() == "":
+            return False
+        try:
+            json.loads(raw)
+        except JSONDecodeError:
+            return False
+        return True
+
     def _build_platform_status(
         self, account_id: str, record: PlatformRecord
     ) -> AccountPlatformStatus:
-        account_dir = self._account_dir(account_id)
-        token_name = PLATFORM_TOKEN_FILES[record.platform]
-        token_path = account_dir / token_name
-        connected = token_path.exists()
+        token_path = self._find_token_path(account_id, record.platform)
+        connected = False
+        path_str: str | None = None
         last_verified: datetime | None = None
-        if connected:
+        if token_path is not None:
+            path_str = str(token_path)
             last_verified = datetime.fromtimestamp(
                 token_path.stat().st_mtime, tz=timezone.utc
             )
+            connected = self._token_is_valid(token_path)
         label = record.label or PLATFORM_LABELS[record.platform]
         status_value = "active" if connected else "disconnected"
         return AccountPlatformStatus(
@@ -191,7 +261,7 @@ class AccountStore:
             label=label,
             status=status_value,
             connected=connected,
-            token_path=str(token_path) if connected else None,
+            token_path=path_str,
             added_at=record.added_at,
             last_verified_at=last_verified,
         )
@@ -223,8 +293,7 @@ class AccountStore:
     def _persist_credentials(self, account_id: str, platform: SupportedPlatform, credentials: Dict[str, Any]) -> None:
         account_dir = self._account_dir(account_id)
         account_dir.mkdir(parents=True, exist_ok=True)
-        token_name = PLATFORM_TOKEN_FILES[platform]
-        token_path = account_dir / token_name
+        token_path = self._preferred_token_path(account_id, platform)
         payload: Dict[str, Any]
         if credentials:
             payload = credentials

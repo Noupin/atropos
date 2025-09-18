@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -87,6 +88,60 @@ def test_ping_reports_missing_tokens(account_client) -> None:
     response = client.get("/api/auth/ping")
     assert response.status_code == 200
     payload = response.json()
+    assert payload["status"] == "degraded"
+    assert payload["connectedPlatforms"] == 0
+    assert payload["totalPlatforms"] == 1
+
+
+def test_discovers_preexisting_token_files(account_client) -> None:
+    client, tokens_dir = account_client
+
+    response = client.post("/api/accounts", json={"displayName": "Funny"})
+    assert response.status_code == 201
+    account_id = response.json()["id"]
+
+    account_dir = tokens_dir / account_id
+    account_dir.mkdir(parents=True, exist_ok=True)
+    (account_dir / "tiktok.json").write_text(
+        json.dumps({"accessToken": "abc"}), encoding="utf-8"
+    )
+    (account_dir / "instagram.json").write_text(
+        json.dumps({"session": "value"}), encoding="utf-8"
+    )
+
+    response = client.get("/api/accounts")
+    assert response.status_code == 200
+    accounts = response.json()
+    assert len(accounts) == 1
+    platforms = {item["platform"]: item for item in accounts[0]["platforms"]}
+    assert set(platforms) == {"tiktok", "instagram"}
+    assert platforms["tiktok"]["connected"] is True
+    assert platforms["instagram"]["connected"] is True
+    assert platforms["instagram"]["tokenPath"].endswith("instagram.json")
+
+
+def test_invalid_token_file_marks_platform_disconnected(account_client) -> None:
+    client, tokens_dir = account_client
+
+    response = client.post("/api/accounts", json={"displayName": "News"})
+    assert response.status_code == 201
+    account_id = response.json()["id"]
+
+    account_dir = tokens_dir / account_id
+    account_dir.mkdir(parents=True, exist_ok=True)
+    (account_dir / "youtube.json").write_text("{not json", encoding="utf-8")
+
+    response = client.get("/api/accounts")
+    assert response.status_code == 200
+    accounts = response.json()
+    youtube = {item["platform"]: item for item in accounts[0]["platforms"]}["youtube"]
+    assert youtube["connected"] is False
+    assert youtube["status"] == "disconnected"
+    assert youtube["tokenPath"].endswith("youtube.json")
+
+    ping = client.get("/api/auth/ping")
+    assert ping.status_code == 200
+    payload = ping.json()
     assert payload["status"] == "degraded"
     assert payload["connectedPlatforms"] == 0
     assert payload["totalPlatforms"] == 1
