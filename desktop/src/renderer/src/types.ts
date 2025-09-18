@@ -6,6 +6,8 @@ export interface Clip {
   createdAt: string
   durationSec: number
   thumbnail: string
+  playbackUrl: string
+  description: string
 }
 
 export type AccountStatus = 'active' | 'expiring' | 'disconnected'
@@ -65,3 +67,21 @@ export interface PipelineStep extends PipelineStepDefinition {
   status: PipelineStepStatus
   progress: number
 }
+
+export interface HomePipelineState {
+  videoUrl: string
+  urlError: string | null
+  pipelineError: string | null
+  steps: PipelineStep[]
+  isProcessing: boolean
+  clips: Clip[]
+  selectedClipId: string | null
+}
+
+export type PipelineEventType =
+  | 'pipeline_started'
+  | 'step_started'
+  | 'step_completed'
+  | 'step_failed'
+  | 'pipeline_completed'
+  | 'log'

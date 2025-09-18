@@ -25,6 +25,7 @@
     "pytest",
     "PYTHONUNBUFFERED",
     "segs",
+    "uvicorn",
     "withatropos",
     "wtok"
   ],

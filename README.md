@@ -53,6 +53,20 @@ python -m server.scripts.run_bulk_upload
 The script logs `PLAN`/`OK`/`ERR` lines and prints a summary of uploads
 per platform.
 
+### API Server
+
+The processing pipeline can also be driven through a FastAPI service that
+emits real-time progress updates over WebSockets. Start the server with:
+
+```bash
+uvicorn server.app:app --reload
+```
+
+Submit jobs via `POST /api/jobs` with JSON payloads containing the `url`,
+optional `account`, and optional `tone`. Subscribe to
+`ws://<host>/ws/jobs/<job_id>` to receive step-by-step events without polling.
+Use `GET /api/jobs/<job_id>` for a simple completion status if needed.
+
 ## Docker Automation
 
 `docker compose build uploader`

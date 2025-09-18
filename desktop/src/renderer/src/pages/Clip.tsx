@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import type { FC } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
+import ClipDescription from '../components/ClipDescription'
 import { CLIPS } from '../mock/clips'
 import type { SearchBridge } from '../types'
 
@@ -50,9 +51,19 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
       </button>
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="flex-1 overflow-hidden rounded-2xl bg-black/50">
-          <img src={clip.thumbnail} alt={clip.title} className="h-full w-full object-cover" />
+          <video
+            key={clip.id}
+            src={clip.playbackUrl}
+            poster={clip.thumbnail}
+            controls
+            playsInline
+            preload="metadata"
+            className="h-full w-full object-cover"
+          >
+            Your browser does not support the video tag.
+          </video>
         </div>
-        <div className="flex w-full max-w-xl flex-col gap-4">
+        <div className="flex w-full max-w-xl flex-col gap-5">
           <h1 className="text-2xl font-semibold text-[var(--fg)]">{clip.title}</h1>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-[var(--muted)]">
             <span className="font-medium text-[var(--fg)]">{clip.channel}</span>
@@ -69,6 +80,10 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
               day: 'numeric'
             })}</dd>
           </dl>
+          <ClipDescription
+            text={clip.description}
+            className="text-sm leading-relaxed text-[var(--muted)]"
+          />
           <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm text-[var(--muted)]">
             Bookmark this clip to revisit the key moment or share it with your team for quick inspiration.
           </div>
