@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 from json import JSONDecodeError
 import re
 import threading
 import uuid
+import os
+import shutil
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Literal
+from typing import Any, Callable, Dict, Iterable, List, Literal, Mapping, MutableMapping, Optional
 
 from fastapi import HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,6 +21,8 @@ from server.config import TOKENS_DIR
 
 
 SupportedPlatform = Literal["tiktok", "youtube", "instagram"]
+
+AuthHandler = Callable[[Path, Dict[str, Any]], None]
 
 
 def _to_camel(value: str) -> str:
@@ -52,6 +57,7 @@ class PlatformRecord(BaseModel):
     platform: SupportedPlatform
     label: str | None = None
     added_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    active: bool = True
 
 
 class AccountMetadata(BaseModel):
@@ -64,6 +70,7 @@ class AccountMetadata(BaseModel):
     description: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     platforms: List[PlatformRecord] = Field(default_factory=list)
+    active: bool = True
 
 
 class AccountPlatformStatus(BaseModel):
@@ -78,6 +85,7 @@ class AccountPlatformStatus(BaseModel):
     token_path: str | None = None
     added_at: datetime
     last_verified_at: datetime | None = None
+    active: bool
 
 
 class AccountResponse(BaseModel):
@@ -90,6 +98,7 @@ class AccountResponse(BaseModel):
     description: str | None = None
     created_at: datetime
     platforms: List[AccountPlatformStatus]
+    active: bool
 
 
 class AccountCreateRequest(BaseModel):
@@ -109,6 +118,22 @@ class PlatformCreateRequest(BaseModel):
     platform: SupportedPlatform
     label: str | None = Field(default=None, max_length=120)
     credentials: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AccountUpdateRequest(BaseModel):
+    """Payload for updating account metadata."""
+
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True)
+
+    active: bool | None = None
+
+
+class PlatformUpdateRequest(BaseModel):
+    """Payload for updating a platform connection."""
+
+    model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True)
+
+    active: bool | None = None
 
 
 class AuthPingResponse(BaseModel):
@@ -139,15 +164,137 @@ def _json_dump(data: Any) -> str:
     return json.dumps(data, indent=2, ensure_ascii=False)
 
 
+@contextmanager
+def _temporary_env(overrides: Mapping[str, str | None]):
+    """Temporarily set environment variables defined in ``overrides``."""
+
+    previous: Dict[str, Optional[str]] = {}
+    for key, value in overrides.items():
+        previous[key] = os.environ.get(key)
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def _ensure_dir(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def _youtube_auth(account_dir: Path, credentials: Dict[str, Any]) -> None:
+    """Run the YouTube OAuth flow for ``account_dir``."""
+
+    token_path = account_dir / PLATFORM_TOKEN_FILES["youtube"]
+    overrides: Dict[str, str | None] = {
+        "YT_TOKENS_FILE": str(token_path),
+        "YT_ACCOUNT": account_dir.name,
+    }
+    try:
+        from server.integrations.youtube import auth as youtube_auth
+    except ImportError as exc:  # pragma: no cover - import error path
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="YouTube authentication libraries are missing. Install google-auth libraries to continue.",
+        ) from exc
+    with _temporary_env(overrides):
+        youtube_auth.ensure_creds()
+
+
+def _tiktok_auth(account_dir: Path, credentials: Dict[str, Any]) -> None:
+    """Run the TikTok OAuth flow for ``account_dir``."""
+
+    token_path = account_dir / PLATFORM_TOKEN_FILES["tiktok"]
+    overrides: Dict[str, str | None] = {
+        "TIKTOK_TOKENS_FILE": str(token_path),
+    }
+    client_key = credentials.get("clientKey")
+    client_secret = credentials.get("clientSecret")
+    if isinstance(client_key, str) and client_key.strip():
+        overrides["TIKTOK_CLIENT_KEY"] = client_key.strip()
+    if isinstance(client_secret, str) and client_secret.strip():
+        overrides["TIKTOK_CLIENT_SECRET"] = client_secret.strip()
+    try:
+        from server.integrations.tiktok import auth as tiktok_auth
+    except ImportError as exc:  # pragma: no cover - import error path
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="TikTok authentication dependencies are missing. Install requests to continue.",
+        ) from exc
+    with _temporary_env(overrides):
+        tiktok_auth.run()
+
+
+def _instagram_auth(account_dir: Path, credentials: Dict[str, Any]) -> None:
+    """Authenticate Instagram by logging in with the provided credentials."""
+
+    username = credentials.get("username")
+    password = credentials.get("password")
+    if not isinstance(username, str) or not username.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Instagram authentication requires a username.",
+        )
+    if not isinstance(password, str) or not password.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Instagram authentication requires a password.",
+        )
+    try:
+        from server.integrations.instagram import upload as instagram_auth
+    except ImportError as exc:  # pragma: no cover - import error path
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Instagram authentication dependencies are missing. Install instagrapi to continue.",
+        ) from exc
+
+    session_path = account_dir / PLATFORM_TOKEN_FILES["instagram"]
+    state_path = account_dir / "instagram_state.json"
+    client = instagram_auth.build_client(session_path=session_path)
+    instagram_auth.login_or_resume(
+        client,
+        username=username.strip(),
+        password=password.strip(),
+        session_path=session_path,
+    )
+    instagram_auth.save_state(
+        {"authenticatedAt": datetime.now(timezone.utc).isoformat()},
+        path=state_path,
+    )
+
+
+DEFAULT_AUTH_HANDLERS: Mapping[SupportedPlatform, AuthHandler] = {
+    "youtube": _youtube_auth,
+    "tiktok": _tiktok_auth,
+    "instagram": _instagram_auth,
+}
+
+
 class AccountStore:
     """Accesses and mutates account metadata stored under ``TOKENS_DIR``."""
 
-    def __init__(self, root: Path | str | None = None) -> None:
+    def __init__(
+        self,
+        root: Path | str | None = None,
+        auth_handlers: Mapping[SupportedPlatform, AuthHandler] | None = None,
+    ) -> None:
         self._root = Path(root) if root else TOKENS_DIR
         self._lock = threading.Lock()
+        if auth_handlers is None:
+            auth_handlers = DEFAULT_AUTH_HANDLERS
+        self._auth_handlers: MutableMapping[SupportedPlatform, AuthHandler] = dict(
+            auth_handlers
+        )
 
     def _ensure_root(self) -> None:
-        self._root.mkdir(parents=True, exist_ok=True)
+        _ensure_dir(self._root)
 
     def _account_dir(self, account_id: str) -> Path:
         return self._root / account_id
@@ -173,7 +320,7 @@ class AccountStore:
 
     def _write_metadata(self, metadata: AccountMetadata) -> None:
         account_dir = self._account_dir(metadata.id)
-        account_dir.mkdir(parents=True, exist_ok=True)
+        _ensure_dir(account_dir)
         metadata_path = self._metadata_path(metadata.id)
         with metadata_path.open("w", encoding="utf-8") as handle:
             handle.write(_json_dump(metadata.model_dump(mode="json")))
@@ -242,20 +389,25 @@ class AccountStore:
         return True
 
     def _build_platform_status(
-        self, account_id: str, record: PlatformRecord
+        self, account: AccountMetadata, record: PlatformRecord
     ) -> AccountPlatformStatus:
+        account_id = account.id
         token_path = self._find_token_path(account_id, record.platform)
         connected = False
         path_str: str | None = None
         last_verified: datetime | None = None
-        if token_path is not None:
+        if token_path is not None and record.active and account.active:
             path_str = str(token_path)
             last_verified = datetime.fromtimestamp(
                 token_path.stat().st_mtime, tz=timezone.utc
             )
             connected = self._token_is_valid(token_path)
         label = record.label or PLATFORM_LABELS[record.platform]
-        status_value = "active" if connected else "disconnected"
+        if not account.active or not record.active:
+            status_value = "disabled"
+            connected = False
+        else:
+            status_value = "active" if connected else "disconnected"
         return AccountPlatformStatus(
             platform=record.platform,
             label=label,
@@ -264,11 +416,12 @@ class AccountStore:
             token_path=path_str,
             added_at=record.added_at,
             last_verified_at=last_verified,
+            active=account.active and record.active,
         )
 
     def _render_account(self, metadata: AccountMetadata) -> AccountResponse:
         platforms = [
-            self._build_platform_status(metadata.id, record)
+            self._build_platform_status(metadata, record)
             for record in metadata.platforms
             if record.platform in SUPPORTED_PLATFORMS
         ]
@@ -279,7 +432,31 @@ class AccountStore:
             description=metadata.description,
             created_at=metadata.created_at,
             platforms=platforms,
+            active=metadata.active,
         )
+
+    def _get_auth_handler(self, platform: SupportedPlatform) -> AuthHandler:
+        handler = self._auth_handlers.get(platform)
+        if handler is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"No authentication handler configured for platform '{platform}'.",
+            )
+        return handler
+
+    def _authenticate_platform(
+        self, account_id: str, platform: SupportedPlatform, credentials: Dict[str, Any]
+    ) -> None:
+        handler = self._get_auth_handler(platform)
+        account_dir = self._account_dir(account_id)
+        _ensure_dir(account_dir)
+        handler(account_dir, credentials)
+        token_path = self._find_token_path(account_id, platform)
+        if token_path is None or not self._token_is_valid(token_path):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Authentication for '{platform}' did not produce valid credentials.",
+            )
 
     def _generate_unique_id(self, display_name: str) -> str:
         base = _slugify(display_name)
@@ -289,22 +466,6 @@ class AccountStore:
             candidate = f"{base}-{suffix}" if suffix > 1 else f"{base}-1"
             suffix += 1
         return candidate
-
-    def _persist_credentials(self, account_id: str, platform: SupportedPlatform, credentials: Dict[str, Any]) -> None:
-        account_dir = self._account_dir(account_id)
-        account_dir.mkdir(parents=True, exist_ok=True)
-        token_path = self._preferred_token_path(account_id, platform)
-        payload: Dict[str, Any]
-        if credentials:
-            payload = credentials
-        else:
-            payload = {"connectedAt": datetime.now(timezone.utc).isoformat()}
-        token_path.write_text(_json_dump(payload), encoding="utf-8")
-        if platform == "instagram":
-            state_path = account_dir / "instagram_state.json"
-            if not state_path.exists():
-                state_payload = {"updatedAt": datetime.now(timezone.utc).isoformat()}
-                state_path.write_text(_json_dump(state_payload), encoding="utf-8")
 
     def list_accounts(self) -> List[AccountResponse]:
         self._ensure_root()
@@ -349,14 +510,89 @@ class AccountStore:
             )
             metadata.platforms.append(record)
             self._write_metadata(metadata)
-            self._persist_credentials(account_id, platform, credentials)
+        try:
+            self._authenticate_platform(account_id, platform, credentials)
+        except Exception:
+            with self._lock:
+                metadata = self._load_metadata(account_id)
+                metadata.platforms = [
+                    item for item in metadata.platforms if item.platform != platform
+                ]
+                self._write_metadata(metadata)
+            raise
+        with self._lock:
+            metadata = self._load_metadata(account_id)
+        return self._render_account(metadata)
+
+    def update_account(self, account_id: str, payload: AccountUpdateRequest) -> AccountResponse:
+        with self._lock:
+            metadata = self._load_metadata(account_id)
+            if payload.active is not None:
+                metadata.active = payload.active
+            self._write_metadata(metadata)
+        return self._render_account(metadata)
+
+    def remove_account(self, account_id: str) -> None:
+        with self._lock:
+            metadata = self._load_metadata(account_id)
+            account_dir = self._account_dir(metadata.id)
+            if account_dir.exists():
+                shutil.rmtree(account_dir, ignore_errors=True)
+
+    def update_platform(
+        self, account_id: str, platform: SupportedPlatform, payload: PlatformUpdateRequest
+    ) -> AccountResponse:
+        with self._lock:
+            metadata = self._load_metadata(account_id)
+            for record in metadata.platforms:
+                if record.platform == platform:
+                    if payload.active is not None:
+                        record.active = payload.active
+                    self._write_metadata(metadata)
+                    break
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Platform '{platform}' is not connected to this account.",
+                )
+        return self._render_account(metadata)
+
+    def remove_platform(self, account_id: str, platform: SupportedPlatform) -> AccountResponse:
+        with self._lock:
+            metadata = self._load_metadata(account_id)
+            original_len = len(metadata.platforms)
+            metadata.platforms = [
+                record for record in metadata.platforms if record.platform != platform
+            ]
+            if len(metadata.platforms) == original_len:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Platform '{platform}' is not connected to this account.",
+                )
+            self._write_metadata(metadata)
+            account_dir = self._account_dir(account_id)
+            for path in self._candidate_token_paths(account_id, platform):
+                if path.exists():
+                    path.unlink()
+            if platform == "instagram":
+                state_path = account_dir / "instagram_state.json"
+                if state_path.exists():
+                    state_path.unlink()
+        return self._render_account(metadata)
+
+    def get_account(self, account_id: str) -> AccountResponse:
+        metadata = self._load_metadata(account_id)
         return self._render_account(metadata)
 
     def describe_platforms(self, accounts: Iterable[AccountResponse]) -> tuple[int, int]:
         total = 0
         connected = 0
         for account in accounts:
+            if not account.active:
+                continue
             for platform in account.platforms:
+                if not platform.active:
+                    continue
                 total += 1
                 if platform.connected:
                     connected += 1
@@ -383,6 +619,44 @@ def create_account(payload: AccountCreateRequest) -> AccountResponse:
 
 def add_platform(account_id: str, payload: PlatformCreateRequest) -> AccountResponse:
     return _store.add_platform(account_id, payload)
+
+
+def update_account(account_id: str, payload: AccountUpdateRequest) -> AccountResponse:
+    return _store.update_account(account_id, payload)
+
+
+def delete_account(account_id: str) -> None:
+    _store.remove_account(account_id)
+
+
+def update_platform(
+    account_id: str, platform: SupportedPlatform, payload: PlatformUpdateRequest
+) -> AccountResponse:
+    return _store.update_platform(account_id, platform, payload)
+
+
+def delete_platform(account_id: str, platform: SupportedPlatform) -> AccountResponse:
+    return _store.remove_platform(account_id, platform)
+
+
+def get_account(account_id: str) -> AccountResponse:
+    return _store.get_account(account_id)
+
+
+def ensure_account_available(account_id: str) -> AccountResponse:
+    account = _store.get_account(account_id)
+    if not account.active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Account '{account.display_name}' is disabled.",
+        )
+    active_platforms = [platform for platform in account.platforms if platform.active]
+    if not active_platforms:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The selected account does not have any active platforms.",
+        )
+    return account
 
 
 def ping_authentication() -> AuthPingResponse:

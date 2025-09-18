@@ -76,11 +76,19 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     accountError
   } = state
 
+  const availableAccounts = useMemo(
+    () =>
+      accounts.filter(
+        (account) => account.active && account.platforms.some((platform) => platform.active)
+      ),
+    [accounts]
+  )
+
   useEffect(() => {
-    if (selectedAccountId && !accounts.some((account) => account.id === selectedAccountId)) {
+    if (selectedAccountId && !availableAccounts.some((account) => account.id === selectedAccountId)) {
       updateState((prev) => ({ ...prev, selectedAccountId: null }))
     }
-  }, [accounts, selectedAccountId, updateState])
+  }, [availableAccounts, selectedAccountId, updateState])
 
   const timersRef = useRef<number[]>([])
   const runStepRef = useRef<(index: number) => void>(() => {})
@@ -260,8 +268,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   )
 
   const accountOptions = useMemo(
-    () => accounts.map((account) => ({ value: account.id, label: account.displayName })),
-    [accounts]
+    () => availableAccounts.map((account) => ({ value: account.id, label: account.displayName })),
+    [availableAccounts]
   )
 
   const startRealProcessing = useCallback(
@@ -378,8 +386,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         updateState((prev) => ({
           ...prev,
           accountError:
-            accounts.length === 0
-              ? 'Connect an account from your profile before starting the pipeline.'
+            accountOptions.length === 0
+              ? 'Enable an account with an active platform before starting the pipeline.'
               : 'Select an account to start processing.'
         }))
       }
@@ -424,7 +432,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       void startRealProcessing(trimmed, accountId)
     },
     [
-      accounts.length,
+      accountOptions.length,
       cleanupConnection,
       clearTimers,
       isMockBackend,
@@ -508,7 +516,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                   onChange={handleAccountChange}
                   aria-invalid={accountError ? 'true' : 'false'}
                   aria-describedby={accountError ? 'account-error' : undefined}
-                  disabled={accounts.length === 0}
+                  disabled={accountOptions.length === 0}
                   className={`w-full rounded-lg border bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] ${accountError ? 'border-rose-400 focus-visible:ring-rose-400' : 'border-white/10 focus-visible:ring-[var(--ring)]'}`}
                 >
                   <option value="" disabled>
@@ -520,9 +528,9 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                     </option>
                   ))}
                 </select>
-                {accounts.length === 0 && !accountError ? (
+                {accountOptions.length === 0 && !accountError ? (
                   <p className="text-xs text-amber-300">
-                    Connect an account from your profile before starting the pipeline.
+                    Enable an account with an active platform from your profile before starting the pipeline.
                   </p>
                 ) : null}
               </div>

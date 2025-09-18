@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState
 } from 'react'
 import type { FC } from 'react'
@@ -54,31 +55,69 @@ type ProfileProps = {
       credentials?: Record<string, unknown>
     }
   ) => Promise<AccountSummary>
+  onUpdateAccount: (accountId: string, payload: { active?: boolean }) => Promise<AccountSummary>
+  onDeleteAccount: (accountId: string) => Promise<void>
+  onUpdatePlatform: (
+    accountId: string,
+    platform: SupportedPlatform,
+    payload: { active?: boolean }
+  ) => Promise<AccountSummary>
+  onDeletePlatform: (accountId: string, platform: SupportedPlatform) => Promise<AccountSummary>
   onRefreshAccounts: () => Promise<void>
 }
 
 type AccountCardProps = {
   account: AccountSummary
   onAddPlatform: ProfileProps['onAddPlatform']
+  onUpdateAccount: ProfileProps['onUpdateAccount']
+  onDeleteAccount: ProfileProps['onDeleteAccount']
+  onUpdatePlatform: ProfileProps['onUpdatePlatform']
+  onDeletePlatform: ProfileProps['onDeletePlatform']
 }
 
 const statusColors: Record<string, string> = {
   ok: 'bg-emerald-400/20 text-emerald-200 border-emerald-400/60',
-  degraded: 'bg-amber-400/20 text-amber-100 border-amber-400/60'
+  degraded: 'bg-amber-400/20 text-amber-100 border-amber-400/60',
+  disabled: 'bg-slate-500/20 text-slate-200 border-slate-500/60'
 }
 
 const platformStatusStyles: Record<string, string> = {
   active: 'bg-emerald-400/10 text-emerald-200 border-emerald-400/40',
-  disconnected: 'bg-rose-500/10 text-rose-100 border-rose-500/40'
+  disconnected: 'bg-rose-500/10 text-rose-100 border-rose-500/40',
+  disabled: 'bg-slate-500/10 text-slate-200 border-slate-500/40'
 }
 
-const AccountCard: FC<AccountCardProps> = ({ account, onAddPlatform }) => {
+const AccountCard: FC<AccountCardProps> = ({
+  account,
+  onAddPlatform,
+  onUpdateAccount,
+  onDeleteAccount,
+  onUpdatePlatform,
+  onDeletePlatform
+}) => {
   const [selectedPlatform, setSelectedPlatform] = useState<SupportedPlatform | ''>('')
   const [label, setLabel] = useState('')
-  const [credentials, setCredentials] = useState('')
+  const [instagramUsername, setInstagramUsername] = useState('')
+  const [instagramPassword, setInstagramPassword] = useState('')
+  const [tiktokClientKey, setTiktokClientKey] = useState('')
+  const [tiktokClientSecret, setTiktokClientSecret] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isTogglingAccount, setIsTogglingAccount] = useState(false)
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false)
+  const [updatingPlatform, setUpdatingPlatform] = useState<SupportedPlatform | null>(null)
+  const [removingPlatform, setRemovingPlatform] = useState<SupportedPlatform | null>(null)
+  const isMounted = useRef(true)
+
+  useEffect(
+    () => () => {
+      isMounted.current = false
+    },
+    []
+  )
+
+  const isAccountActive = account.active
 
   const availablePlatforms = useMemo(
     () =>
@@ -91,7 +130,14 @@ const AccountCard: FC<AccountCardProps> = ({ account, onAddPlatform }) => {
   useEffect(() => {
     setSuccess(null)
     setError(null)
-  }, [account.platforms.length])
+  }, [account.platforms.length, account.active])
+
+  const resetCredentialFields = useCallback(() => {
+    setInstagramUsername('')
+    setInstagramPassword('')
+    setTiktokClientKey('')
+    setTiktokClientSecret('')
+  }, [])
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -101,14 +147,27 @@ const AccountCard: FC<AccountCardProps> = ({ account, onAddPlatform }) => {
         return
       }
 
-      let parsedCredentials: Record<string, unknown> | undefined
-      if (credentials.trim().length > 0) {
-        try {
-          parsedCredentials = JSON.parse(credentials) as Record<string, unknown>
-        } catch (parseError) {
-          setError('Credentials must be valid JSON.')
+      const trimmedLabel = label.trim()
+      let payloadCredentials: Record<string, unknown> | undefined
+
+      if (selectedPlatform === 'instagram') {
+        const username = instagramUsername.trim()
+        const password = instagramPassword.trim()
+        if (!username || !password) {
+          setError('Enter your Instagram username and password.')
           return
         }
+        payloadCredentials = { username, password }
+      } else if (selectedPlatform === 'tiktok') {
+        payloadCredentials = {}
+        if (tiktokClientKey.trim().length > 0) {
+          payloadCredentials.clientKey = tiktokClientKey.trim()
+        }
+        if (tiktokClientSecret.trim().length > 0) {
+          payloadCredentials.clientSecret = tiktokClientSecret.trim()
+        }
+      } else {
+        payloadCredentials = {}
       }
 
       setIsSubmitting(true)
@@ -117,37 +176,258 @@ const AccountCard: FC<AccountCardProps> = ({ account, onAddPlatform }) => {
       try {
         await onAddPlatform(account.id, {
           platform: selectedPlatform,
-          label: label.trim().length > 0 ? label.trim() : undefined,
-          credentials: parsedCredentials
+          label: trimmedLabel.length > 0 ? trimmedLabel : undefined,
+          credentials: payloadCredentials
         })
-        const platformName = PLATFORM_LABELS[selectedPlatform]
-        setSuccess(`${platformName} connected successfully.`)
-        setSelectedPlatform('')
-        setLabel('')
-        setCredentials('')
+        if (isMounted.current) {
+          const platformName = PLATFORM_LABELS[selectedPlatform]
+          setSuccess(`${platformName} connected successfully.`)
+          setSelectedPlatform('')
+          setLabel('')
+          resetCredentialFields()
+        }
       } catch (submitError) {
         const message =
           submitError instanceof Error
             ? submitError.message
             : 'Unable to connect this platform. Please try again.'
-        setError(message)
+        if (isMounted.current) {
+          setError(message)
+        }
       } finally {
-        setIsSubmitting(false)
+        if (isMounted.current) {
+          setIsSubmitting(false)
+        }
       }
     },
-    [account.id, credentials, label, onAddPlatform, selectedPlatform]
+    [
+      account.id,
+      instagramPassword,
+      instagramUsername,
+      label,
+      onAddPlatform,
+      resetCredentialFields,
+      selectedPlatform,
+      tiktokClientKey,
+      tiktokClientSecret
+    ]
+  )
+
+  const handleToggleAccountActive = useCallback(async () => {
+    setError(null)
+    setSuccess(null)
+    setIsTogglingAccount(true)
+    try {
+      const updated = await onUpdateAccount(account.id, { active: !account.active })
+      if (isMounted.current) {
+        setSuccess(updated.active ? 'Account enabled successfully.' : 'Account disabled successfully.')
+      }
+    } catch (toggleError) {
+      const message =
+        toggleError instanceof Error
+          ? toggleError.message
+          : 'Unable to update the account. Please try again.'
+      if (isMounted.current) {
+        setError(message)
+      }
+    } finally {
+      if (isMounted.current) {
+        setIsTogglingAccount(false)
+      }
+    }
+  }, [account.active, account.id, onUpdateAccount])
+
+  const handleDeleteAccount = useCallback(async () => {
+    const confirmed = window.confirm(
+      `Remove ${account.displayName}? This will delete all saved credentials for the account.`
+    )
+    if (!confirmed) {
+      return
+    }
+    setError(null)
+    setSuccess(null)
+    setIsDeletingAccount(true)
+    try {
+      await onDeleteAccount(account.id)
+    } catch (deleteError) {
+      const message =
+        deleteError instanceof Error
+          ? deleteError.message
+          : 'Unable to remove the account. Please try again.'
+      if (isMounted.current) {
+        setError(message)
+      }
+    } finally {
+      if (isMounted.current) {
+        setIsDeletingAccount(false)
+      }
+    }
+  }, [account.displayName, account.id, onDeleteAccount])
+
+  const handleTogglePlatformActive = useCallback(
+    async (platformId: SupportedPlatform, nextActive: boolean) => {
+      setError(null)
+      setSuccess(null)
+      setUpdatingPlatform(platformId)
+      try {
+        const updated = await onUpdatePlatform(account.id, platformId, { active: nextActive })
+        if (isMounted.current) {
+          const platformName = PLATFORM_LABELS[platformId]
+          setSuccess(
+            nextActive
+              ? `${platformName} enabled successfully.`
+              : `${platformName} disabled successfully.`
+          )
+        }
+        return updated
+      } catch (updateError) {
+        const message =
+          updateError instanceof Error
+            ? updateError.message
+            : 'Unable to update the platform. Please try again.'
+        if (isMounted.current) {
+          setError(message)
+        }
+        return null
+      } finally {
+        if (isMounted.current) {
+          setUpdatingPlatform(null)
+        }
+      }
+    },
+    [account.id, onUpdatePlatform]
+  )
+
+  const handleRemovePlatform = useCallback(
+    async (platformId: SupportedPlatform) => {
+      const platformName = PLATFORM_LABELS[platformId]
+      const confirmed = window.confirm(
+        `Remove ${platformName}? This will delete saved credentials for the platform.`
+      )
+      if (!confirmed) {
+        return
+      }
+      setError(null)
+      setSuccess(null)
+      setRemovingPlatform(platformId)
+      try {
+        await onDeletePlatform(account.id, platformId)
+        if (isMounted.current) {
+          setSuccess(`${platformName} removed successfully.`)
+        }
+      } catch (removeError) {
+        const message =
+          removeError instanceof Error
+            ? removeError.message
+            : 'Unable to remove the platform. Please try again.'
+        if (isMounted.current) {
+          setError(message)
+        }
+      } finally {
+        if (isMounted.current) {
+          setRemovingPlatform(null)
+        }
+      }
+    },
+    [account.id, onDeletePlatform]
   )
 
   const renderStatusTag = (platform: AccountPlatformConnection) => {
-    const labelText = platform.connected ? 'Authenticated' : 'Needs attention'
+    const isPlatformActive = platform.active
+    const labelText = !isPlatformActive
+      ? 'Disabled'
+      : platform.connected
+      ? 'Authenticated'
+      : 'Needs attention'
     const style = platformStatusStyles[platform.status] ?? platformStatusStyles.disconnected
+    const indicatorClass = !isPlatformActive
+      ? 'bg-slate-400'
+      : platform.connected
+      ? 'bg-emerald-400'
+      : 'bg-rose-400'
     return (
       <span
         className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${style}`}
       >
-        <span className={`h-2 w-2 rounded-full ${platform.connected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+        <span className={`h-2 w-2 rounded-full ${indicatorClass}`} />
         {labelText}
       </span>
+    )
+  }
+
+  const renderPlatformFields = () => {
+    if (!selectedPlatform) {
+      return (
+        <p className="text-xs text-[var(--muted)]">
+          Select a platform to see the authentication requirements.
+        </p>
+      )
+    }
+    if (selectedPlatform === 'instagram') {
+      return (
+        <>
+          <p className="text-xs text-[var(--muted)]">
+            Enter the Instagram login used for this creator account. A browser challenge may appear
+            during authentication.
+          </p>
+          <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
+            Username
+            <input
+              value={instagramUsername}
+              onChange={(event) => setInstagramUsername(event.target.value)}
+              placeholder="creator@example"
+              disabled={!isAccountActive || isSubmitting}
+              className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
+            Password
+            <input
+              type="password"
+              value={instagramPassword}
+              onChange={(event) => setInstagramPassword(event.target.value)}
+              placeholder="••••••••"
+              disabled={!isAccountActive || isSubmitting}
+              className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </label>
+        </>
+      )
+    }
+    if (selectedPlatform === 'tiktok') {
+      return (
+        <>
+          <p className="text-xs text-[var(--muted)]">
+            We will launch a browser window to complete TikTok OAuth. Provide overrides if you need
+            to use a specific client key.
+          </p>
+          <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
+            Client key (optional)
+            <input
+              value={tiktokClientKey}
+              onChange={(event) => setTiktokClientKey(event.target.value)}
+              placeholder="aw6v..."
+              disabled={!isAccountActive || isSubmitting}
+              className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
+            Client secret (optional)
+            <input
+              value={tiktokClientSecret}
+              onChange={(event) => setTiktokClientSecret(event.target.value)}
+              placeholder="Provide only if required"
+              disabled={!isAccountActive || isSubmitting}
+              className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </label>
+        </>
+      )
+    }
+    return (
+      <p className="text-xs text-[var(--muted)]">
+        A browser window will open so you can approve YouTube access for this account.
+      </p>
     )
   }
 
@@ -173,22 +453,94 @@ const AccountCard: FC<AccountCardProps> = ({ account, onAddPlatform }) => {
         ) : null}
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            void handleToggleAccountActive()
+          }}
+          disabled={isTogglingAccount || isDeletingAccount}
+          className="rounded-lg border border-white/15 px-3 py-1 text-xs font-medium text-[var(--fg)] transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isTogglingAccount
+            ? account.active
+              ? 'Disabling…'
+              : 'Enabling…'
+            : account.active
+            ? 'Disable account'
+            : 'Enable account'}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            void handleDeleteAccount()
+          }}
+          disabled={isDeletingAccount || isTogglingAccount}
+          className="rounded-lg border border-rose-500/60 px-3 py-1 text-xs font-medium text-rose-200 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isDeletingAccount ? 'Removing…' : 'Remove account'}
+        </button>
+      </div>
+
+      {!isAccountActive ? (
+        <p className="rounded-lg border border-dashed border-amber-400/60 bg-amber-400/10 p-3 text-xs text-amber-100">
+          This account is disabled. Enable it to resume authentication and publishing.
+        </p>
+      ) : null}
+
       {account.platforms.length > 0 ? (
         <ul className="flex flex-col gap-3">
-          {account.platforms.map((platform) => (
-            <li
-              key={platform.platform}
-              className="flex flex-col gap-1 rounded-lg border border-white/10 bg-black/20 p-3"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-sm font-medium text-[var(--fg)]">{platform.label}</span>
-                {renderStatusTag(platform)}
-              </div>
-              <p className="text-xs text-[var(--muted)]">
-                Last verified: {formatTimestamp(platform.lastVerifiedAt ?? null)}
-              </p>
-            </li>
-          ))}
+          {account.platforms.map((platform) => {
+            const isPlatformUpdating = updatingPlatform === platform.platform
+            const isPlatformRemoving = removingPlatform === platform.platform
+            return (
+              <li
+                key={platform.platform}
+                className="flex flex-col gap-1 rounded-lg border border-white/10 bg-black/20 p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-[var(--fg)]">{platform.label}</span>
+                  {renderStatusTag(platform)}
+                </div>
+                <p className="text-xs text-[var(--muted)]">
+                  Last verified: {formatTimestamp(platform.lastVerifiedAt ?? null)}
+                </p>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                  <span className="text-xs text-[var(--muted)]">
+                    Added {formatTimestamp(platform.addedAt)}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleTogglePlatformActive(platform.platform, !platform.active)
+                      }}
+                      disabled={isPlatformUpdating || isPlatformRemoving}
+                      className="rounded-lg border border-white/15 px-3 py-1 text-xs font-medium text-[var(--fg)] transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isPlatformUpdating
+                        ? platform.active
+                          ? 'Disabling…'
+                          : 'Enabling…'
+                        : platform.active
+                        ? 'Disable'
+                        : 'Enable'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleRemovePlatform(platform.platform)
+                      }}
+                      disabled={isPlatformRemoving || isPlatformUpdating}
+                      className="rounded-lg border border-rose-500/60 px-3 py-1 text-xs font-medium text-rose-200 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isPlatformRemoving ? 'Removing…' : 'Remove'}
+                    </button>
+                  </div>
+                </div>
+              </li>
+            )
+          })}
         </ul>
       ) : (
         <p className="rounded-lg border border-dashed border-white/10 bg-black/10 p-4 text-sm text-[var(--muted)]">
@@ -215,8 +567,10 @@ const AccountCard: FC<AccountCardProps> = ({ account, onAddPlatform }) => {
                 setSelectedPlatform((value as SupportedPlatform) || '')
                 setError(null)
                 setSuccess(null)
+                resetCredentialFields()
               }}
-              className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              disabled={!isAccountActive || isSubmitting}
+              className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <option value="">Select a platform</option>
               {availablePlatforms.map((platform) => (
@@ -232,24 +586,20 @@ const AccountCard: FC<AccountCardProps> = ({ account, onAddPlatform }) => {
               value={label}
               onChange={(event) => setLabel(event.target.value)}
               placeholder="e.g. Brand TikTok"
-              className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              disabled={!isAccountActive || isSubmitting}
+              className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
-            Credentials JSON (optional)
-            <textarea
-              value={credentials}
-              onChange={(event) => setCredentials(event.target.value)}
-              placeholder='{"accessToken": "..."}'
-              className="min-h-[96px] rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-            />
-          </label>
+          {renderPlatformFields()}
+          {!isAccountActive ? (
+            <p className="text-xs text-amber-100">Enable this account to connect new platforms.</p>
+          ) : null}
           {error ? <p className="text-xs font-medium text-rose-400">{error}</p> : null}
           {success ? <p className="text-xs font-medium text-emerald-300">{success}</p> : null}
           <div className="flex items-center justify-end gap-2">
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isAccountActive}
               className="rounded-lg border border-transparent bg-[var(--ring)] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting ? 'Connecting…' : 'Connect platform'}
@@ -274,6 +624,10 @@ const Profile: FC<ProfileProps> = ({
   isLoadingAccounts,
   onCreateAccount,
   onAddPlatform,
+  onUpdateAccount,
+  onDeleteAccount,
+  onUpdatePlatform,
+  onDeletePlatform,
   onRefreshAccounts
 }) => {
   const [newAccountName, setNewAccountName] = useState('')
@@ -434,7 +788,15 @@ const Profile: FC<ProfileProps> = ({
 
           <div className="flex flex-col gap-6">
             {accounts.map((account) => (
-              <AccountCard key={account.id} account={account} onAddPlatform={onAddPlatform} />
+              <AccountCard
+                key={account.id}
+                account={account}
+                onAddPlatform={onAddPlatform}
+                onUpdateAccount={onUpdateAccount}
+                onDeleteAccount={onDeleteAccount}
+                onUpdatePlatform={onUpdatePlatform}
+                onDeletePlatform={onDeletePlatform}
+              />
             ))}
           </div>
         </div>

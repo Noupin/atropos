@@ -16,8 +16,12 @@ import type {
 import {
   addPlatformToAccount,
   createAccount,
+  deleteAccount as deleteAccountApi,
+  deleteAccountPlatform,
   fetchAccounts,
-  pingAuth
+  pingAuth,
+  updateAccount as updateAccountApi,
+  updateAccountPlatform
 } from './services/accountsApi'
 
 type PlatformPayload = {
@@ -139,6 +143,77 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     [refreshAuthStatus]
   )
 
+  const handleUpdateAccount = useCallback(
+    async (accountId: string, payload: { active?: boolean }) => {
+      try {
+        const account = await updateAccountApi(accountId, payload)
+        setAccounts((prev) => sortAccounts(prev.map((item) => (item.id === account.id ? account : item))))
+        setAccountsError(null)
+        void refreshAuthStatus()
+        return account
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unable to update the account. Please try again.'
+        setAccountsError(message)
+        throw error instanceof Error ? error : new Error(message)
+      }
+    },
+    [refreshAuthStatus]
+  )
+
+  const handleDeleteAccount = useCallback(
+    async (accountId: string) => {
+      try {
+        await deleteAccountApi(accountId)
+        setAccounts((prev) => prev.filter((item) => item.id !== accountId))
+        setAccountsError(null)
+        void refreshAuthStatus()
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unable to remove the account. Please try again.'
+        setAccountsError(message)
+        throw error instanceof Error ? error : new Error(message)
+      }
+    },
+    [refreshAuthStatus]
+  )
+
+  const handleUpdatePlatform = useCallback(
+    async (accountId: string, platform: SupportedPlatform, payload: { active?: boolean }) => {
+      try {
+        const account = await updateAccountPlatform(accountId, platform, payload)
+        setAccounts((prev) => sortAccounts(prev.map((item) => (item.id === account.id ? account : item))))
+        setAccountsError(null)
+        void refreshAuthStatus()
+        return account
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unable to update the platform. Please try again.'
+        setAccountsError(message)
+        throw error instanceof Error ? error : new Error(message)
+      }
+    },
+    [refreshAuthStatus]
+  )
+
+  const handleDeletePlatform = useCallback(
+    async (accountId: string, platform: SupportedPlatform) => {
+      try {
+        const account = await deleteAccountPlatform(accountId, platform)
+        setAccounts((prev) => sortAccounts(prev.map((item) => (item.id === account.id ? account : item))))
+        setAccountsError(null)
+        void refreshAuthStatus()
+        return account
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unable to remove the platform. Please try again.'
+        setAccountsError(message)
+        throw error instanceof Error ? error : new Error(message)
+      }
+    },
+    [refreshAuthStatus]
+  )
+
   const registerSearch = useCallback((bridge: SearchBridge | null) => {
     setSearchBridge(bridge)
     setSearchValue(bridge?.getQuery() ?? '')
@@ -238,6 +313,10 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 isLoadingAccounts={isLoadingAccounts}
                 onCreateAccount={handleCreateAccount}
                 onAddPlatform={handleAddPlatform}
+                onUpdateAccount={handleUpdateAccount}
+                onDeleteAccount={handleDeleteAccount}
+                onUpdatePlatform={handleUpdatePlatform}
+                onDeletePlatform={handleDeletePlatform}
                 onRefreshAccounts={refreshAccounts}
               />
             }

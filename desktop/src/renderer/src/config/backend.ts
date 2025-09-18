@@ -99,8 +99,21 @@ export const buildAccountsUrl = (): string => {
   return url.toString()
 }
 
+export const buildAccountUrl = (accountId: string): string => {
+  const url = new URL(`/api/accounts/${encodeURIComponent(accountId)}`, getApiBaseUrl())
+  return url.toString()
+}
+
 export const buildAccountPlatformUrl = (accountId: string): string => {
   const url = new URL(`/api/accounts/${encodeURIComponent(accountId)}/platforms`, getApiBaseUrl())
+  return url.toString()
+}
+
+export const buildAccountPlatformDetailUrl = (accountId: string, platform: string): string => {
+  const url = new URL(
+    `/api/accounts/${encodeURIComponent(accountId)}/platforms/${encodeURIComponent(platform)}`,
+    getApiBaseUrl()
+  )
   return url.toString()
 }
 

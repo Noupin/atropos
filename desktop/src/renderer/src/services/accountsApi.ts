@@ -1,6 +1,8 @@
 import {
   advanceApiBaseUrl,
+  buildAccountPlatformDetailUrl,
   buildAccountPlatformUrl,
+  buildAccountUrl,
   buildAccountsUrl,
   buildAuthPingUrl
 } from '../config/backend'
@@ -103,6 +105,63 @@ export const addPlatformToAccount = async (
       credentials: payload.credentials ?? {}
     })
   })
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response))
+  }
+  return (await response.json()) as AccountSummary
+}
+
+export const updateAccount = async (
+  accountId: string,
+  payload: { active?: boolean }
+): Promise<AccountSummary> => {
+  const response = await requestWithFallback(() => buildAccountUrl(accountId), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ active: payload.active })
+  })
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response))
+  }
+  return (await response.json()) as AccountSummary
+}
+
+export const deleteAccount = async (accountId: string): Promise<void> => {
+  const response = await requestWithFallback(() => buildAccountUrl(accountId), {
+    method: 'DELETE'
+  })
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response))
+  }
+}
+
+export const updateAccountPlatform = async (
+  accountId: string,
+  platform: SupportedPlatform,
+  payload: { active?: boolean }
+): Promise<AccountSummary> => {
+  const response = await requestWithFallback(
+    () => buildAccountPlatformDetailUrl(accountId, platform),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active: payload.active })
+    }
+  )
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response))
+  }
+  return (await response.json()) as AccountSummary
+}
+
+export const deleteAccountPlatform = async (
+  accountId: string,
+  platform: SupportedPlatform
+): Promise<AccountSummary> => {
+  const response = await requestWithFallback(
+    () => buildAccountPlatformDetailUrl(accountId, platform),
+    { method: 'DELETE' }
+  )
   if (!response.ok) {
     throw new Error(await extractErrorMessage(response))
   }

@@ -20,7 +20,7 @@ export const PLATFORM_LABELS: Record<SupportedPlatform, string> = {
 
 export const SUPPORTED_PLATFORMS: SupportedPlatform[] = ['tiktok', 'youtube', 'instagram']
 
-export type AccountConnectionStatus = 'active' | 'disconnected'
+export type AccountConnectionStatus = 'active' | 'disconnected' | 'disabled'
 
 export interface AccountPlatformConnection {
   platform: SupportedPlatform
@@ -30,6 +30,7 @@ export interface AccountPlatformConnection {
   tokenPath?: string | null
   addedAt: string
   lastVerifiedAt?: string | null
+  active: boolean
 }
 
 export interface AccountSummary {
@@ -38,6 +39,7 @@ export interface AccountSummary {
   description?: string | null
   createdAt: string
   platforms: AccountPlatformConnection[]
+  active: boolean
 }
 
 export interface AuthPingSummary {

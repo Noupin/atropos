@@ -19,12 +19,19 @@ from pipeline import process_video
 from auth.accounts import (
     AccountCreateRequest,
     AccountResponse,
+    AccountUpdateRequest,
     AuthPingResponse,
     PlatformCreateRequest,
+    PlatformUpdateRequest,
     add_platform,
     create_account,
+    delete_account,
+    delete_platform,
+    ensure_account_available,
     list_accounts,
     ping_authentication,
+    update_account,
+    update_platform,
 )
 
 logger = logging.getLogger(__name__)
@@ -148,6 +155,9 @@ async def start_job(payload: RunRequest) -> RunResponse:
     state = JobState(loop=loop)
     observer = BroadcastObserver(state)
 
+    if payload.account:
+        ensure_account_available(payload.account)
+
     def runner() -> None:
         try:
             process_video(
@@ -223,6 +233,20 @@ async def post_account(payload: AccountCreateRequest) -> AccountResponse:
     return create_account(payload)
 
 
+@app.patch("/api/accounts/{account_id}", response_model=AccountResponse)
+async def patch_account(account_id: str, payload: AccountUpdateRequest) -> AccountResponse:
+    """Update an account's mutable fields such as its active state."""
+
+    return update_account(account_id, payload)
+
+
+@app.delete("/api/accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account_route(account_id: str) -> None:
+    """Remove an account and associated tokens from disk."""
+
+    delete_account(account_id)
+
+
 @app.post("/api/accounts/{account_id}/platforms", response_model=AccountResponse)
 async def post_account_platform(
     account_id: str, payload: PlatformCreateRequest
@@ -230,6 +254,25 @@ async def post_account_platform(
     """Add a platform connection to an account and persist credentials."""
 
     return add_platform(account_id, payload)
+
+
+@app.patch("/api/accounts/{account_id}/platforms/{platform}", response_model=AccountResponse)
+async def patch_account_platform(
+    account_id: str, platform: str, payload: PlatformUpdateRequest
+) -> AccountResponse:
+    """Update an existing platform connection (e.g. disable or enable it)."""
+
+    return update_platform(account_id, platform, payload)
+
+
+@app.delete(
+    "/api/accounts/{account_id}/platforms/{platform}",
+    response_model=AccountResponse,
+)
+async def delete_account_platform(account_id: str, platform: str) -> AccountResponse:
+    """Remove a platform connection and delete its stored tokens."""
+
+    return delete_platform(account_id, platform)
 
 
 @app.get("/api/auth/ping", response_model=AuthPingResponse)
