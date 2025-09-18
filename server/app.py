@@ -9,7 +9,14 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
@@ -240,11 +247,16 @@ async def patch_account(account_id: str, payload: AccountUpdateRequest) -> Accou
     return update_account(account_id, payload)
 
 
-@app.delete("/api/accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_account_route(account_id: str) -> None:
+@app.delete(
+    "/api/accounts/{account_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_account_route(account_id: str) -> Response:
     """Remove an account and associated tokens from disk."""
 
     delete_account(account_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.post("/api/accounts/{account_id}/platforms", response_model=AccountResponse)
