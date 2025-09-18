@@ -1,6 +1,28 @@
 import { Clip } from '../types'
 
-export const CLIPS: Clip[] = [
+const BASE_PLAYBACK_URL = 'https://samplelib.com/lib/preview/mp4/sample-5s.mp4'
+
+type ClipSeed = Omit<Clip, 'playbackUrl' | 'description'>
+
+const sanitizeForHashtag = (value: string): string => {
+  const compact = value.replace(/[^A-Za-z0-9]+/g, '')
+  return compact.length > 0 ? compact : 'Clip'
+}
+
+const toSlug = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+const createDescription = (seed: ClipSeed): string => {
+  const primaryTag = sanitizeForHashtag(seed.title)
+  const secondaryTag = sanitizeForHashtag(seed.channel)
+  const slug = toSlug(seed.id)
+  return `Relive the highlight from ${seed.channel}. #${primaryTag} #${secondaryTag} https://atropos.example/clips/${slug}`
+}
+
+const CLIP_SEEDS: ClipSeed[] = [
   {
     id: 'clip-starlight-sprint',
     title: 'Starlight Sprint: Capture the Milky Way in 60 Seconds',
@@ -200,5 +222,51 @@ export const CLIPS: Clip[] = [
     durationSec: 91,
     thumbnail:
       'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?auto=format&fit=crop&w=800&q=80'
+  },
+  {
+    id: 'clip-deep-sea',
+    title: 'Deep Sea Creatures in Glowing Detail',
+    channel: 'Ocean Pulse',
+    views: 541_320,
+    createdAt: '2024-05-29T22:55:00Z',
+    durationSec: 102,
+    thumbnail:
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80'
+  },
+  {
+    id: 'clip-bonsai-care',
+    title: 'Bonsai Care Routine for Beginners',
+    channel: 'Green Atelier',
+    views: 188_760,
+    createdAt: '2024-08-11T07:45:00Z',
+    durationSec: 112,
+    thumbnail:
+      'https://images.unsplash.com/photo-1474118828688-d7d2f1d1dfe0?auto=format&fit=crop&w=800&q=80'
+  },
+  {
+    id: 'clip-ice-climb',
+    title: 'Ice Climbing the Blue Cathedral',
+    channel: 'Summit Seekers',
+    views: 275_430,
+    createdAt: '2024-12-01T04:42:00Z',
+    durationSec: 142,
+    thumbnail:
+      'https://images.unsplash.com/photo-1521295121783-8a321d551ad2?auto=format&fit=crop&w=800&q=80'
+  },
+  {
+    id: 'clip-urban-beats',
+    title: 'Sampling Sounds from the City',
+    channel: 'Loop District',
+    views: 365_990,
+    createdAt: '2024-10-26T18:32:00Z',
+    durationSec: 87,
+    thumbnail:
+      'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=800&q=80'
   }
 ]
+
+export const CLIPS: Clip[] = CLIP_SEEDS.map((seed) => ({
+  ...seed,
+  playbackUrl: BASE_PLAYBACK_URL,
+  description: createDescription(seed)
+}))

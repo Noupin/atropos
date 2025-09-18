@@ -92,6 +92,10 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
       return nextPending
     }
 
+    if (steps.every((step) => step.status === 'completed')) {
+      return -1
+    }
+
     return steps.length - 1
   }, [steps])
 

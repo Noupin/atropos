@@ -5,7 +5,8 @@ import Search from './components/Search'
 import ClipPage from './pages/Clip'
 import Home from './pages/Home'
 import Profile from './pages/Profile'
-import type { SearchBridge } from './types'
+import { createInitialPipelineSteps } from './data/pipeline'
+import type { HomePipelineState, SearchBridge } from './types'
 
 type AppProps = {
   searchInputRef: RefObject<HTMLInputElement | null>
@@ -14,6 +15,15 @@ type AppProps = {
 const App: FC<AppProps> = ({ searchInputRef }) => {
   const [searchBridge, setSearchBridge] = useState<SearchBridge | null>(null)
   const [searchValue, setSearchValue] = useState('')
+  const [homeState, setHomeState] = useState<HomePipelineState>(() => ({
+    videoUrl: '',
+    urlError: null,
+    pipelineError: null,
+    steps: createInitialPipelineSteps(),
+    isProcessing: false,
+    clips: [],
+    selectedClipId: null
+  }))
   const [isDark, setIsDark] = useState(() => {
     if (typeof document === 'undefined') {
       return true
@@ -108,10 +118,28 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       </header>
       <main className="flex flex-1 justify-center bg-[var(--bg)] text-[var(--fg)]">
         <Routes>
-          <Route path="/" element={<Home registerSearch={registerSearch} />} />
+          <Route
+            path="/"
+            element={
+              <Home
+                registerSearch={registerSearch}
+                initialState={homeState}
+                onStateChange={setHomeState}
+              />
+            }
+          />
           <Route path="/clip/:id" element={<ClipPage registerSearch={registerSearch} />} />
           <Route path="/profile" element={<Profile registerSearch={registerSearch} />} />
-          <Route path="*" element={<Home registerSearch={registerSearch} />} />
+          <Route
+            path="*"
+            element={
+              <Home
+                registerSearch={registerSearch}
+                initialState={homeState}
+                onStateChange={setHomeState}
+              />
+            }
+          />
         </Routes>
       </main>
     </div>
