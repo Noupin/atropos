@@ -60,15 +60,26 @@ const ClipDrawer: FC<ClipDrawerProps> = ({ clips, selectedClipId, onSelect, onRe
                     }`}
                   >
                     <div className="h-16 w-24 flex-shrink-0 overflow-hidden rounded-lg bg-black/40">
-                      <img src={clip.thumbnail} alt="" className="h-full w-full object-cover" />
+                      {clip.thumbnail ? (
+                        <img src={clip.thumbnail} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <video
+                          src={clip.playbackUrl}
+                          muted
+                          playsInline
+                          preload="metadata"
+                          className="h-full w-full object-cover"
+                        />
+                      )}
                     </div>
                     <div className="flex flex-1 flex-col">
                       <span className="text-sm font-medium text-[var(--fg)] leading-snug">{clip.title}</span>
                       <span className="mt-1 text-xs text-[var(--muted)]">
-                        {clip.channel} • {formatDuration(clip.durationSec)} • {formatViews(clip.views)} views
+                        {clip.channel} • {formatDuration(clip.durationSec)} •{' '}
+                        {clip.views !== null ? `${formatViews(clip.views)} views` : 'freshly generated'}
                       </span>
                       <span className="text-[10px] uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                        {timeAgo(clip.createdAt)}
+                        {clip.sourcePublishedAt ? timeAgo(clip.sourcePublishedAt) : timeAgo(clip.createdAt)}
                       </span>
                     </div>
                     <button

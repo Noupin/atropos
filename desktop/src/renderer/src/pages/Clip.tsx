@@ -1,10 +1,9 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect } from 'react'
 import type { FC } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import ClipDescription from '../components/ClipDescription'
-import { CLIPS } from '../mock/clips'
-import type { SearchBridge } from '../types'
+import type { Clip, SearchBridge } from '../types'
 
 type ClipPageProps = {
   registerSearch: (bridge: SearchBridge | null) => void
@@ -13,12 +12,14 @@ type ClipPageProps = {
 const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
 
   useEffect(() => {
     registerSearch(null)
   }, [registerSearch])
 
-  const clip = useMemo(() => CLIPS.find((item) => item.id === id), [id])
+  const locationState = location.state as { clip?: Clip } | null
+  const clip = locationState?.clip && locationState.clip.id === id ? locationState.clip : null
 
   if (!clip) {
     return (
@@ -54,7 +55,7 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
           <video
             key={clip.id}
             src={clip.playbackUrl}
-            poster={clip.thumbnail}
+            poster={clip.thumbnail ?? undefined}
             controls
             playsInline
             preload="metadata"
@@ -67,8 +68,8 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
           <h1 className="text-2xl font-semibold text-[var(--fg)]">{clip.title}</h1>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-[var(--muted)]">
             <span className="font-medium text-[var(--fg)]">{clip.channel}</span>
-            <span>• {formatViews(clip.views)} views</span>
-            <span>• {timeAgo(clip.createdAt)}</span>
+            {clip.views !== null ? <span>• {formatViews(clip.views)} views</span> : null}
+            {clip.sourcePublishedAt ? <span>• {timeAgo(clip.sourcePublishedAt)}</span> : null}
           </div>
           <dl className="grid gap-3 text-sm text-[var(--muted)] sm:grid-cols-[auto_1fr]">
             <dt className="font-medium text-[var(--fg)]">Duration</dt>
@@ -80,6 +81,14 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
               day: 'numeric'
             })}</dd>
           </dl>
+          <a
+            href={clip.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex w-fit items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white"
+          >
+            View full video
+          </a>
           <ClipDescription
             text={clip.description}
             className="text-sm leading-relaxed text-[var(--muted)]"

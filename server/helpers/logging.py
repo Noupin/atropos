@@ -108,6 +108,30 @@ def run_step(
         return result
 
 
+def report_step_progress(
+    step_id: str,
+    progress: float,
+    *,
+    message: str | None = None,
+    observer: PipelineObserver | None = None,
+) -> None:
+    """Emit a progress update for ``step_id`` to subscribed observers."""
+
+    obs = _get_observer(observer)
+    if not obs:
+        return
+
+    clamped = max(0.0, min(1.0, progress))
+    obs.handle_event(
+        PipelineEvent(
+            type=PipelineEventType.STEP_PROGRESS,
+            message=message,
+            step=step_id,
+            data={"progress": clamped},
+        )
+    )
+
+
 @contextmanager
 def log_timing(name: str) -> Generator[None, None, None]:
     """Context manager that logs start/end and timing with colors."""

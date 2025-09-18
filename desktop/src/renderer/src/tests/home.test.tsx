@@ -1,9 +1,10 @@
 import '@testing-library/jest-dom/vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Home from '../pages/Home'
 import { createInitialPipelineSteps } from '../data/pipeline'
 import type { AccountPlatformConnection, AccountSummary, HomePipelineState } from '../types'
+import type { PipelineEventHandlers } from '../services/pipelineApi'
 
 const { startPipelineJobMock, subscribeToPipelineEventsMock } = vi.hoisted(() => ({
   startPipelineJobMock: vi.fn(),
@@ -81,6 +82,7 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
   selectedClipId: null,
   selectedAccountId: null,
   accountError: null,
+  activeJobId: null,
   ...overrides
 })
 
@@ -154,5 +156,75 @@ describe('Home account selection', () => {
     const options = within(select).getAllByRole('option')
     const optionValues = options.map((option) => (option as HTMLOptionElement).value)
     expect(optionValues).toEqual(['', AVAILABLE_ACCOUNT.id])
+  })
+})
+
+describe('Home pipeline events', () => {
+  beforeEach(() => {
+    startPipelineJobMock.mockReset()
+    startPipelineJobMock.mockResolvedValue({ jobId: 'test-job' })
+    subscribeToPipelineEventsMock.mockReset()
+  })
+
+  it('adds clips from clip_ready events and surfaces description text', async () => {
+    const unsubscribeMock = vi.fn()
+    let handlers: PipelineEventHandlers | null = null
+
+    subscribeToPipelineEventsMock.mockImplementation((_jobId, providedHandlers) => {
+      handlers = providedHandlers
+      return unsubscribeMock
+    })
+
+    render(
+      <Home
+        registerSearch={() => {}}
+        initialState={createInitialState()}
+        onStateChange={() => {}}
+        accounts={[AVAILABLE_ACCOUNT]}
+      />
+    )
+
+    const accountSelect = screen.getByLabelText(/account/i)
+    fireEvent.change(accountSelect, { target: { value: AVAILABLE_ACCOUNT.id } })
+    fireEvent.change(screen.getByLabelText(/video url/i), {
+      target: { value: 'https://www.youtube.com/watch?v=example' }
+    })
+    const [startButton] = screen.getAllByRole('button', { name: /start processing/i })
+    fireEvent.click(startButton)
+
+    await waitFor(() => expect(subscribeToPipelineEventsMock).toHaveBeenCalledTimes(1))
+    expect(handlers).not.toBeNull()
+    const timestamp = Date.now()
+
+    act(() => {
+      handlers?.onEvent({ type: 'pipeline_started', timestamp } as any)
+    })
+
+    act(() => {
+      handlers?.onEvent({
+        type: 'clip_ready',
+        step: 'step_9_description_1',
+        timestamp,
+        data: {
+          clip_id: 'clip-1',
+          title: 'Space wonders',
+          channel: 'Creator Hub',
+          description: 'Full video: https://youtube.com/watch?v=example\n#space',
+          duration_seconds: 32,
+          created_at: new Date('2024-06-01T12:00:00Z').toISOString(),
+          source_url: 'https://youtube.com/watch?v=example',
+          source_title: 'Original science video',
+          source_published_at: new Date('2024-05-20T10:00:00Z').toISOString(),
+          views: 120_000,
+          quote: 'Mind-blowing fact',
+          reason: 'High energy moment',
+          rating: 4.5
+        }
+      } as any)
+    })
+
+    expect(screen.getByText(/space wonders/i)).toBeInTheDocument()
+    expect(screen.getByText(/mind-blowing fact/i)).toBeInTheDocument()
+    expect(screen.getByText(/#space/i)).toBeInTheDocument()
   })
 })

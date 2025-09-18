@@ -2,12 +2,18 @@ export interface Clip {
   id: string
   title: string
   channel: string
-  views: number
+  views: number | null
   createdAt: string
   durationSec: number
-  thumbnail: string
+  thumbnail: string | null
   playbackUrl: string
   description: string
+  sourceUrl: string
+  sourceTitle: string
+  sourcePublishedAt: string | null
+  rating?: number | null
+  quote?: string | null
+  reason?: string | null
 }
 
 export type SupportedPlatform = 'tiktok' | 'youtube' | 'instagram'
@@ -81,6 +87,7 @@ export interface HomePipelineState {
   selectedClipId: string | null
   selectedAccountId: string | null
   accountError: string | null
+  activeJobId: string | null
 }
 
 export type PipelineEventType =
@@ -88,5 +95,7 @@ export type PipelineEventType =
   | 'step_started'
   | 'step_completed'
   | 'step_failed'
+  | 'step_progress'
+  | 'clip_ready'
   | 'pipeline_completed'
   | 'log'

@@ -62,6 +62,7 @@ from config import (
 import sys
 import time
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from helpers.audio import ensure_audio
@@ -73,7 +74,7 @@ from helpers.formatting import (
     sanitize_filename,
     youtube_timestamp_url,
 )
-from helpers.logging import run_step
+from helpers.logging import run_step, report_step_progress
 from helpers.notifications import send_failure_email
 from helpers.description import maybe_append_website_link
 from steps.candidates import ClipCandidate
@@ -154,13 +155,23 @@ def process_video(
             )
         return
 
-    upload_date = video_info["upload_date"]
-    sanitized_title = sanitize_filename(video_info["title"])
-    if len(upload_date) == 8:
-        upload_date = upload_date[:4] + upload_date[4:6] + upload_date[6:]
+    source_title = video_info.get("title", "Unknown Title")
+    uploader = video_info.get("uploader") or "Unknown Channel"
+    raw_upload = str(video_info.get("upload_date") or "Unknown_Date")
+    published_iso: str | None = None
+    if len(raw_upload) >= 8 and raw_upload[:8].isdigit():
+        date_token = raw_upload[:8]
+        try:
+            parsed_date = datetime.strptime(date_token, "%Y%m%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            safe_upload = "Unknown_Date"
+        else:
+            published_iso = parsed_date.isoformat()
+            safe_upload = f"{date_token[:4]}{date_token[4:6]}{date_token[6:]}"
     else:
-        upload_date = "Unknown_Date"
-    non_suffix_filename = f"{sanitized_title}_{upload_date}"
+        safe_upload = "Unknown_Date"
+    sanitized_title = sanitize_filename(source_title)
+    non_suffix_filename = f"{sanitized_title}_{safe_upload}"
     emit_log(f"File Name: {non_suffix_filename}")
 
     # Create a dedicated output directory for this run
@@ -573,6 +584,13 @@ def process_video(
                     step_id=f"step_6_raw_cut_{idx}",
                     observer=observer,
                 )
+                if observer and raw_candidates:
+                    report_step_progress(
+                        "step_6_raw_cut",
+                        idx / len(raw_candidates),
+                        observer=observer,
+                        message=f"Prepared raw clip {idx} of {len(raw_candidates)}",
+                    )
 
         refined_candidates = dedupe_candidates(candidates)
         export_candidates_json(refined_candidates, render_queue_path)
@@ -598,6 +616,8 @@ def process_video(
             level="warning",
         )
         export_candidates_json(refined_candidates, render_queue_path)
+
+    total_candidates = len(refined_candidates)
 
     for idx, candidate in enumerate(refined_candidates, start=1):
         def step_cut() -> Path | None:
@@ -631,6 +651,14 @@ def process_video(
                 )
                 continue
 
+        if observer and total_candidates:
+            report_step_progress(
+                "step_6_cut",
+                idx / total_candidates,
+                observer=observer,
+                message=f"Cut {idx} of {total_candidates} clips",
+            )
+
         srt_path = subtitles_dir / f"{clip_path.stem}.srt"
 
         def step_subtitles() -> Path:
@@ -652,6 +680,13 @@ def process_video(
             emit_log(
                 f"{Fore.YELLOW}Skipping STEP 7.{idx}: assuming subtitles exist at {srt_path}{Style.RESET_ALL}",
                 level="warning",
+            )
+        if observer and total_candidates:
+            report_step_progress(
+                "step_7_subtitles",
+                idx / total_candidates,
+                observer=observer,
+                message=f"Subtitles generated for clip {idx}/{total_candidates}",
             )
 
         vertical_output = shorts_dir / f"{clip_path.stem}.mp4"
@@ -675,6 +710,13 @@ def process_video(
             emit_log(
                 f"{Fore.YELLOW}Skipping STEP 8.{idx}: assuming video exists at {vertical_output}{Style.RESET_ALL}",
                 level="warning",
+            )
+        if observer and total_candidates:
+            report_step_progress(
+                "step_8_render",
+                idx / total_candidates,
+                observer=observer,
+                message=f"Rendered {idx} of {total_candidates} clips",
             )
 
         description_path = shorts_dir / f"{clip_path.stem}.txt"
@@ -725,6 +767,50 @@ def process_video(
             emit_log(
                 f"{Fore.YELLOW}Skipping STEP 9.{idx}: assuming description exists at {description_path}{Style.RESET_ALL}",
                 level="warning",
+            )
+        if observer and total_candidates:
+            report_step_progress(
+                "step_9_description",
+                idx / total_candidates,
+                observer=observer,
+                message=f"Descriptions prepared for {idx} of {total_candidates} clips",
+            )
+
+        if observer:
+            try:
+                description_text = description_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                description_text = ""
+            try:
+                short_path = vertical_output.relative_to(project_dir)
+                short_path_str = short_path.as_posix()
+            except ValueError:
+                short_path_str = vertical_output.name
+
+            clip_title = (candidate.quote or "").strip() or f"{source_title} — Clip {idx}"
+            duration_seconds = max(0.0, candidate.end - candidate.start)
+            observer.handle_event(
+                PipelineEvent(
+                    type=PipelineEventType.CLIP_READY,
+                    step=f"step_9_description_{idx}",
+                    data={
+                        "clip_id": vertical_output.stem,
+                        "title": clip_title,
+                        "channel": uploader,
+                        "description": description_text,
+                        "duration_seconds": duration_seconds,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "source_url": yt_url,
+                        "source_title": source_title,
+                        "source_published_at": published_iso,
+                        "short_path": short_path_str,
+                        "project_dir": str(project_dir),
+                        "account": account,
+                        "quote": candidate.quote,
+                        "reason": candidate.reason,
+                        "rating": candidate.rating,
+                    },
+                )
             )
 
     total_elapsed = time.perf_counter() - overall_start

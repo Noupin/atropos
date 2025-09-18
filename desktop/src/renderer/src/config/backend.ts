@@ -94,6 +94,19 @@ export const buildWebSocketUrl = (jobId: string): string => {
   return url.toString()
 }
 
+export const buildJobClipsUrl = (jobId: string): string => {
+  const url = new URL(`/api/jobs/${encodeURIComponent(jobId)}/clips`, getApiBaseUrl())
+  return url.toString()
+}
+
+export const buildJobClipVideoUrl = (jobId: string, clipId: string): string => {
+  const url = new URL(
+    `/api/jobs/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/video`,
+    getApiBaseUrl()
+  )
+  return url.toString()
+}
+
 export const buildAccountsUrl = (): string => {
   const url = new URL('/api/accounts', getApiBaseUrl())
   return url.toString()

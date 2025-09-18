@@ -49,7 +49,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     clips: [],
     selectedClipId: null,
     selectedAccountId: null,
-    accountError: null
+    accountError: null,
+    activeJobId: null
   }))
   const [accounts, setAccounts] = useState<AccountSummary[]>([])
   const [accountsError, setAccountsError] = useState<string | null>(null)
