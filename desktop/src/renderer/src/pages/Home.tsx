@@ -12,7 +12,6 @@ import ClipDescription from '../components/ClipDescription'
 import ClipDrawer from '../components/ClipDrawer'
 import PipelineProgress from '../components/PipelineProgress'
 import { CLIPS } from '../mock/clips'
-import { PROFILE_ACCOUNTS } from '../mock/accounts'
 import { BACKEND_MODE } from '../config/backend'
 import {
   createInitialPipelineSteps,
@@ -25,7 +24,7 @@ import {
   type PipelineEventMessage
 } from '../services/pipelineApi'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
-import type { HomePipelineState, SearchBridge } from '../types'
+import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
 
 const CLIP_PREVIEW_LIMIT = 6
 
@@ -47,9 +46,10 @@ type HomeProps = {
   registerSearch: (bridge: SearchBridge | null) => void
   initialState: HomePipelineState
   onStateChange: (state: HomePipelineState) => void
+  accounts: AccountSummary[]
 }
 
-const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) => {
+const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, accounts }) => {
   const [state, setState] = useState<HomePipelineState>(() => initialState)
 
   const updateState = useCallback(
@@ -75,6 +75,12 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
     selectedAccountId,
     accountError
   } = state
+
+  useEffect(() => {
+    if (selectedAccountId && !accounts.some((account) => account.id === selectedAccountId)) {
+      updateState((prev) => ({ ...prev, selectedAccountId: null }))
+    }
+  }, [accounts, selectedAccountId, updateState])
 
   const timersRef = useRef<number[]>([])
   const runStepRef = useRef<(index: number) => void>(() => {})
@@ -254,8 +260,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
   )
 
   const accountOptions = useMemo(
-    () => PROFILE_ACCOUNTS.map((account) => ({ value: account.id, label: account.displayName })),
-    []
+    () => accounts.map((account) => ({ value: account.id, label: account.displayName })),
+    [accounts]
   )
 
   const startRealProcessing = useCallback(
@@ -371,7 +377,10 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
         hasError = true
         updateState((prev) => ({
           ...prev,
-          accountError: 'Select an account to start processing.'
+          accountError:
+            accounts.length === 0
+              ? 'Connect an account from your profile before starting the pipeline.'
+              : 'Select an account to start processing.'
         }))
       }
 
@@ -415,6 +424,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
       void startRealProcessing(trimmed, accountId)
     },
     [
+      accounts.length,
       cleanupConnection,
       clearTimers,
       isMockBackend,
@@ -498,6 +508,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
                   onChange={handleAccountChange}
                   aria-invalid={accountError ? 'true' : 'false'}
                   aria-describedby={accountError ? 'account-error' : undefined}
+                  disabled={accounts.length === 0}
                   className={`w-full rounded-lg border bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] ${accountError ? 'border-rose-400 focus-visible:ring-rose-400' : 'border-white/10 focus-visible:ring-[var(--ring)]'}`}
                 >
                   <option value="" disabled>
@@ -509,6 +520,11 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
                     </option>
                   ))}
                 </select>
+                {accounts.length === 0 && !accountError ? (
+                  <p className="text-xs text-amber-300">
+                    Connect an account from your profile before starting the pipeline.
+                  </p>
+                ) : null}
               </div>
               <label className="sr-only" htmlFor="video-url">
                 Video URL

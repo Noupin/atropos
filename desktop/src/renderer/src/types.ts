@@ -10,42 +10,43 @@ export interface Clip {
   description: string
 }
 
-export type AccountStatus = 'active' | 'expiring' | 'disconnected'
+export type SupportedPlatform = 'tiktok' | 'youtube' | 'instagram'
 
-export interface AccountUpload {
-  id: string
-  title: string
-  videoUrl: string
-  scheduledFor: string
-  durationSec: number
+export const PLATFORM_LABELS: Record<SupportedPlatform, string> = {
+  tiktok: 'TikTok',
+  youtube: 'YouTube',
+  instagram: 'Instagram'
 }
 
-export interface AccountMissedUpload {
-  id: string
-  title: string
-  scheduledFor: string
-  durationSec: number
-  failureReason: string
-  canRetry: boolean
+export const SUPPORTED_PLATFORMS: SupportedPlatform[] = ['tiktok', 'youtube', 'instagram']
+
+export type AccountConnectionStatus = 'active' | 'disconnected'
+
+export interface AccountPlatformConnection {
+  platform: SupportedPlatform
+  label: string
+  status: AccountConnectionStatus
+  connected: boolean
+  tokenPath?: string | null
+  addedAt: string
+  lastVerifiedAt?: string | null
 }
 
-export interface AccountPlatform {
-  id: string
-  name: string
-  status: AccountStatus
-  statusMessage?: string
-  dailyUploadTarget: number
-  readyVideos: number
-  upcomingUploads: AccountUpload[]
-  missedUploads: AccountMissedUpload[]
-}
-
-export interface AccountProfile {
+export interface AccountSummary {
   id: string
   displayName: string
-  initials: string
-  description?: string
-  platforms: AccountPlatform[]
+  description?: string | null
+  createdAt: string
+  platforms: AccountPlatformConnection[]
+}
+
+export interface AuthPingSummary {
+  status: 'ok' | 'degraded'
+  checkedAt: string
+  accounts: number
+  connectedPlatforms: number
+  totalPlatforms: number
+  message: string
 }
 
 export type SearchBridge = {

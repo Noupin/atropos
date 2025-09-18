@@ -3,8 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Home from '../pages/Home'
 import { createInitialPipelineSteps } from '../data/pipeline'
-import type { HomePipelineState } from '../types'
-import { PROFILE_ACCOUNTS } from '../mock/accounts'
+import type { AccountSummary, HomePipelineState } from '../types'
 
 const { startPipelineJobMock, subscribeToPipelineEventsMock } = vi.hoisted(() => ({
   startPipelineJobMock: vi.fn(),
@@ -21,6 +20,16 @@ vi.mock('../services/pipelineApi', async () => {
     subscribeToPipelineEvents: subscribeToPipelineEventsMock
   }
 })
+
+const TEST_ACCOUNTS: AccountSummary[] = [
+  {
+    id: 'account-test',
+    displayName: 'Creator Hub',
+    description: null,
+    createdAt: new Date().toISOString(),
+    platforms: []
+  }
+]
 
 const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePipelineState => ({
   videoUrl: '',
@@ -45,7 +54,12 @@ describe('Home account selection', () => {
 
   it('requires an account selection before starting processing', () => {
     render(
-      <Home registerSearch={() => {}} initialState={createInitialState()} onStateChange={() => {}} />
+      <Home
+        registerSearch={() => {}}
+        initialState={createInitialState()}
+        onStateChange={() => {}}
+        accounts={TEST_ACCOUNTS}
+      />
     )
 
     fireEvent.change(screen.getByLabelText(/video url/i), {
@@ -61,11 +75,16 @@ describe('Home account selection', () => {
 
   it('passes the selected account when starting the pipeline job', async () => {
     render(
-      <Home registerSearch={() => {}} initialState={createInitialState()} onStateChange={() => {}} />
+      <Home
+        registerSearch={() => {}}
+        initialState={createInitialState()}
+        onStateChange={() => {}}
+        accounts={TEST_ACCOUNTS}
+      />
     )
 
     const videoUrl = 'https://www.youtube.com/watch?v=another'
-    const accountId = PROFILE_ACCOUNTS[0]?.id ?? 'account-1'
+    const accountId = TEST_ACCOUNTS[0]?.id ?? 'account-1'
 
     fireEvent.change(screen.getByLabelText(/account/i), { target: { value: accountId } })
     fireEvent.change(screen.getByLabelText(/video url/i), { target: { value: videoUrl } })

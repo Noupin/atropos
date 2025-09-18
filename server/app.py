@@ -16,6 +16,16 @@ from pydantic import BaseModel, Field, field_validator
 from custom_types.ETone import Tone
 from interfaces.progress import PipelineEvent, PipelineEventType, PipelineObserver
 from pipeline import process_video
+from auth.accounts import (
+    AccountCreateRequest,
+    AccountResponse,
+    AuthPingResponse,
+    PlatformCreateRequest,
+    add_platform,
+    create_account,
+    list_accounts,
+    ping_authentication,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -197,3 +207,33 @@ async def job_events(websocket: WebSocket, job_id: str) -> None:
         logger.info("Websocket disconnected for job %s", job_id)
     finally:
         state.unregister_listener(queue)
+
+
+@app.get("/api/accounts", response_model=list[AccountResponse])
+async def get_accounts() -> list[AccountResponse]:
+    """Return the list of configured publishing accounts."""
+
+    return list_accounts()
+
+
+@app.post("/api/accounts", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
+async def post_account(payload: AccountCreateRequest) -> AccountResponse:
+    """Create a new account entry and return its metadata."""
+
+    return create_account(payload)
+
+
+@app.post("/api/accounts/{account_id}/platforms", response_model=AccountResponse)
+async def post_account_platform(
+    account_id: str, payload: PlatformCreateRequest
+) -> AccountResponse:
+    """Add a platform connection to an account and persist credentials."""
+
+    return add_platform(account_id, payload)
+
+
+@app.get("/api/auth/ping", response_model=AuthPingResponse)
+async def auth_ping() -> AuthPingResponse:
+    """Report the overall authentication health."""
+
+    return ping_authentication()

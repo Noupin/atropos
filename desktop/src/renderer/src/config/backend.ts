@@ -93,3 +93,18 @@ export const buildWebSocketUrl = (jobId: string): string => {
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return url.toString()
 }
+
+export const buildAccountsUrl = (): string => {
+  const url = new URL('/api/accounts', getApiBaseUrl())
+  return url.toString()
+}
+
+export const buildAccountPlatformUrl = (accountId: string): string => {
+  const url = new URL(`/api/accounts/${encodeURIComponent(accountId)}/platforms`, getApiBaseUrl())
+  return url.toString()
+}
+
+export const buildAuthPingUrl = (): string => {
+  const url = new URL('/api/auth/ping', getApiBaseUrl())
+  return url.toString()
+}

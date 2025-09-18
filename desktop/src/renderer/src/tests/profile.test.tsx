@@ -1,159 +1,158 @@
 import '@testing-library/jest-dom/vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ComponentProps } from 'react'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import Profile from '../pages/Profile'
-import { PROFILE_ACCOUNTS } from '../mock/accounts'
+import type { AccountSummary, AuthPingSummary } from '../types'
 
-const STATUS_LABELS = {
-  active: 'Authenticated',
-  expiring: 'Expiring soon',
-  disconnected: 'Not connected'
-} as const satisfies Record<string, string>
-
-const STATUS_HELPERS = {
-  active: 'Connection is healthy and ready to publish.',
-  expiring: 'Refresh authentication soon to avoid interruptions.',
-  disconnected: 'Reconnect this account to resume scheduling uploads.'
-} as const satisfies Record<string, string>
-
-const getAccountTotals = (accountId: string) => {
-  const account = PROFILE_ACCOUNTS.find((item) => item.id === accountId)
-  if (!account) {
-    throw new Error(`Unknown account: ${accountId}`)
+const sampleAccounts: AccountSummary[] = [
+  {
+    id: 'account-1',
+    displayName: 'Creator Hub',
+    description: 'Primary publishing account',
+    createdAt: '2025-05-01T12:00:00Z',
+    platforms: [
+      {
+        platform: 'youtube',
+        label: 'YouTube Channel',
+        status: 'active',
+        connected: true,
+        tokenPath: '/tokens/account-1/youtube.json',
+        addedAt: '2025-05-01T12:00:00Z',
+        lastVerifiedAt: '2025-05-02T08:00:00Z'
+      }
+    ]
+  },
+  {
+    id: 'account-2',
+    displayName: 'Brand Studio',
+    description: null,
+    createdAt: '2025-05-01T12:00:00Z',
+    platforms: []
   }
+]
 
-  return account.platforms.reduce(
-    (totals, platform) => ({
-      readyVideos: totals.readyVideos + platform.readyVideos,
-      dailyUploadTarget: totals.dailyUploadTarget + platform.dailyUploadTarget
-    }),
-    { readyVideos: 0, dailyUploadTarget: 0 }
-  )
-}
-
-const getCoverageExpectations = (readyVideos: number, dailyUploadTarget: number) => {
-  if (dailyUploadTarget <= 0) {
-    return {
-      label: '—',
-      description: 'Set a daily upload schedule across your platforms to estimate coverage.'
-    }
-  }
-
-  const days = readyVideos / dailyUploadTarget
-  return {
-    label: `${days.toFixed(1)} days`,
-    description: 'Combined coverage across all connected platforms.'
-  }
+const sampleAuthStatus: AuthPingSummary = {
+  status: 'ok',
+  checkedAt: '2025-05-02T09:00:00Z',
+  accounts: 2,
+  connectedPlatforms: 1,
+  totalPlatforms: 1,
+  message: 'All connected platforms look healthy.'
 }
 
 describe('Profile page', () => {
-  it('displays aggregate metrics and platform statuses for each account when collapsed', () => {
-    render(<Profile registerSearch={() => {}} />)
+  const createAccountMock = vi.fn()
+  const addPlatformMock = vi.fn()
+  const refreshAccountsMock = vi.fn()
 
-    PROFILE_ACCOUNTS.forEach((account) => {
-      const panel = screen.getByTestId(`account-panel-${account.id}`)
-      const toggleButton = within(panel).getByRole('button', {
-        name: `Expand ${account.displayName} details`
-      })
-      expect(toggleButton).toHaveAttribute('aria-expanded', 'false')
-      const summarySection = within(panel).getByTestId(`account-summary-${account.id}`)
-      expect(summarySection).toBeVisible()
+  beforeEach(() => {
+    createAccountMock.mockReset()
+    addPlatformMock.mockReset()
+    refreshAccountsMock.mockReset()
+    refreshAccountsMock.mockResolvedValue(undefined)
+  })
 
-      const totals = getAccountTotals(account.id)
-      expect(summarySection).toHaveTextContent(totals.readyVideos.toLocaleString())
-      expect(summarySection).toHaveTextContent(totals.dailyUploadTarget.toLocaleString())
+  const renderProfile = (overrides: Partial<ComponentProps<typeof Profile>> = {}) =>
+    render(
+      <Profile
+        registerSearch={() => {}}
+        accounts={sampleAccounts}
+        accountsError={null}
+        authStatus={sampleAuthStatus}
+        authError={null}
+        isLoadingAccounts={false}
+        onCreateAccount={createAccountMock}
+        onAddPlatform={addPlatformMock}
+        onRefreshAccounts={refreshAccountsMock}
+        {...overrides}
+      />
+    )
 
-      const coverage = getCoverageExpectations(totals.readyVideos, totals.dailyUploadTarget)
-      const coverageLabel = within(summarySection).getByText(coverage.label)
-      const coverageElement = coverageLabel.closest('[title]')
-      expect(coverageElement).not.toBeNull()
-      expect(coverageElement).toHaveAttribute('title', coverage.description)
+  it('displays authentication status and connected platforms', () => {
+    renderProfile()
 
-      if (account.platforms.length > 0) {
-        const platformTags = within(panel).getByTestId(`account-platform-tags-${account.id}`)
-        const platformItems = within(platformTags).getAllByRole('listitem')
-        expect(platformItems).toHaveLength(account.platforms.length)
+    expect(screen.getByText('Profile')).toBeInTheDocument()
+    expect(screen.getByText(/Connected platforms:/i)).toHaveTextContent('1/1')
 
-        account.platforms.forEach((platform) => {
-          const label = within(platformTags).getByText(platform.name)
-          const tooltipHost = label.closest('[title]')
-          expect(tooltipHost).not.toBeNull()
-          expect(tooltipHost).toHaveAttribute(
-            'title',
-            `${platform.name}: ${STATUS_LABELS[platform.status]}`
-          )
-        })
-      } else {
-        expect(
-          within(panel).getByText('No platforms connected yet.', { selector: 'p' })
-        ).toBeInTheDocument()
-      }
+    const accountCards = screen.getAllByText(/Creator Hub|Brand Studio/)
+    expect(accountCards).toHaveLength(2)
+
+    const creatorCard = accountCards[0].closest('[class*="rounded-2xl"]')
+    expect(creatorCard).not.toBeNull()
+    if (creatorCard) {
+      const scope = within(creatorCard)
+      expect(scope.getByText('YouTube Channel')).toBeVisible()
+      expect(scope.getByText(/Authenticated/i)).toBeVisible()
+    }
+  })
+
+  it('submits a new account with trimmed values', async () => {
+    createAccountMock.mockResolvedValueOnce(sampleAccounts[0])
+
+    renderProfile()
+
+    const [accountNameInput] = screen.getAllByLabelText(/Account name/i)
+    fireEvent.change(accountNameInput, {
+      target: { value: '  New Account  ' }
+    })
+    const [descriptionInput] = screen.getAllByLabelText(/Description/i)
+    fireEvent.change(descriptionInput, {
+      target: { value: '  Description here  ' }
+    })
+
+    const [createButton] = screen.getAllByRole('button', { name: /Create account/i })
+    fireEvent.click(createButton)
+
+    await waitFor(() => expect(createAccountMock).toHaveBeenCalledTimes(1))
+    expect(createAccountMock).toHaveBeenCalledWith({
+      displayName: 'New Account',
+      description: 'Description here'
+    })
+
+    expect(await screen.findByText(/Account created successfully/i)).toBeInTheDocument()
+  })
+
+  it('parses JSON credentials when connecting a new platform', async () => {
+    addPlatformMock.mockResolvedValueOnce(sampleAccounts[1])
+
+    renderProfile()
+
+    const brandCard = screen.getAllByTestId('account-card-account-2')[0]
+    const scope = within(brandCard)
+    const [platformSelect] = scope.getAllByLabelText(/Platform/i)
+    fireEvent.change(platformSelect, { target: { value: 'tiktok' } })
+    fireEvent.change(scope.getByLabelText(/Label \(optional\)/i), { target: { value: 'Brand TikTok' } })
+    fireEvent.change(scope.getByLabelText(/Credentials JSON/i), {
+      target: { value: '{"accessToken":"123"}' }
+    })
+
+    const [connectButton] = scope.getAllByRole('button', { name: /Connect platform/i })
+    fireEvent.click(connectButton)
+
+    await waitFor(() => expect(addPlatformMock).toHaveBeenCalledTimes(1))
+    expect(addPlatformMock).toHaveBeenCalledWith('account-2', {
+      platform: 'tiktok',
+      label: 'Brand TikTok',
+      credentials: { accessToken: '123' }
     })
   })
 
-  it('switches platform tabs without changing next uploads and reveals platform specific recovery details', () => {
-    render(<Profile registerSearch={() => {}} />)
+  it('shows validation errors when credentials JSON is invalid', () => {
+    renderProfile()
 
-    const multiPlatformAccount = PROFILE_ACCOUNTS.find((account) => account.platforms.length > 1)
-    expect(multiPlatformAccount).toBeDefined()
-    if (!multiPlatformAccount) {
-      return
-    }
-
-    const panels = screen.getAllByTestId(`account-panel-${multiPlatformAccount.id}`)
-    expect(panels.length).toBeGreaterThan(0)
-    const panel = panels[0]
-
-    const toggleButton = within(panel).getByRole('button', {
-      name: new RegExp(`${multiPlatformAccount.displayName} details`, 'i')
+    const brandCard = screen.getAllByTestId('account-card-account-2')[0]
+    const scope = within(brandCard)
+    const [platformSelect] = scope.getAllByLabelText(/Platform/i)
+    fireEvent.change(platformSelect, { target: { value: 'instagram' } })
+    fireEvent.change(scope.getByLabelText(/Credentials JSON/i), {
+      target: { value: 'invalid-json' }
     })
-    if (toggleButton.getAttribute('aria-expanded') === 'false') {
-      fireEvent.click(toggleButton)
-    }
 
-    const aggregatedUploads = multiPlatformAccount.platforms.flatMap(
-      (platform) => platform.upcomingUploads
-    )
-    const nextUploadsToggle = within(panel).getByRole('button', { name: /Next uploads/i })
-    if (nextUploadsToggle.getAttribute('aria-expanded') === 'false') {
-      fireEvent.click(nextUploadsToggle)
-    }
+    const [connectButton] = scope.getAllByRole('button', { name: /Connect platform/i })
+    fireEvent.click(connectButton)
 
-    const upcomingSection = within(panel).getByTestId(
-      `account-upcoming-${multiPlatformAccount.id}`
-    )
-    expect(upcomingSection).toBeVisible()
-    let videos = within(upcomingSection).getAllByTestId('profile-upload-video')
-    expect(videos).toHaveLength(aggregatedUploads.length)
-
-    const targetPlatform = multiPlatformAccount.platforms[1]
-    const tab = within(panel).getByRole('tab', { name: new RegExp(targetPlatform.name, 'i') })
-    fireEvent.click(tab)
-    expect(tab).toHaveAttribute('aria-selected', 'true')
-
-    if (targetPlatform.status === 'disconnected') {
-      expect(
-        within(panel).getByRole('button', {
-          name: new RegExp(`Reconnect ${targetPlatform.name}`, 'i')
-        })
-      ).toBeVisible()
-    } else if (targetPlatform.statusMessage) {
-      expect(
-        within(panel).getByText(targetPlatform.statusMessage, { selector: 'p' })
-      ).toBeVisible()
-    }
-
-    const helperText = within(panel).getByText(STATUS_HELPERS[targetPlatform.status], {
-      selector: 'p'
-    })
-    expect(helperText).toBeVisible()
-
-    const missedUploadsSection = within(panel).getByTestId(
-      `missed-uploads-${targetPlatform.id}`
-    )
-    expect(missedUploadsSection.children.length).toBe(targetPlatform.missedUploads.length)
-
-    videos = within(upcomingSection).getAllByTestId('profile-upload-video')
-    expect(videos).toHaveLength(aggregatedUploads.length)
+    expect(scope.getByText(/Credentials must be valid JSON/i)).toBeVisible()
+    expect(addPlatformMock).not.toHaveBeenCalled()
   })
 })

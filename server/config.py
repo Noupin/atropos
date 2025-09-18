@@ -135,7 +135,11 @@ CLEANUP_NON_SHORTS = os.environ.get("CLEANUP_NON_SHORTS", "false").lower() in ("
 # ---------------------------------------
 # Multi-platform upload settings
 # ---------------------------------------
-TOKENS_DIR = Path(__file__).with_name("tokens")
+_tokens_dir_override = os.environ.get("ATROPOS_TOKENS_DIR")
+if _tokens_dir_override:
+    TOKENS_DIR = Path(_tokens_dir_override).expanduser().resolve()
+else:
+    TOKENS_DIR = Path(__file__).with_name("tokens")
 
 YOUTUBE_PRIVACY = "public"
 YOUTUBE_CATEGORY_ID = "23"
