@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { formatDuration, formatViews, timeAgo } from '../lib/format'
+import { formatDuration, formatEta, formatViews, timeAgo } from '../lib/format'
 
 describe('formatViews', () => {
   it('formats numbers below 1K without suffix', () => {
@@ -45,5 +45,22 @@ describe('formatDuration', () => {
 
   it('formats durations over an hour as h:mm:ss', () => {
     expect(formatDuration(3670)).toBe('1:01:10')
+  })
+})
+
+describe('formatEta', () => {
+  it('formats sub-minute estimates with seconds', () => {
+    expect(formatEta(0.4)).toBe('≈1s remaining')
+    expect(formatEta(42)).toBe('≈42s remaining')
+  })
+
+  it('formats minute-scale estimates with seconds when needed', () => {
+    expect(formatEta(90)).toBe('≈1m 30s remaining')
+    expect(formatEta(180)).toBe('≈3m remaining')
+  })
+
+  it('formats hour-scale estimates with minutes', () => {
+    expect(formatEta(3600)).toBe('≈1h remaining')
+    expect(formatEta(7260)).toBe('≈2h 1m remaining')
   })
 })

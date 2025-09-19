@@ -11,12 +11,11 @@ import type { FC } from 'react'
 import ClipDescription from '../components/ClipDescription'
 import ClipDrawer from '../components/ClipDrawer'
 import PipelineProgress from '../components/PipelineProgress'
-import { CLIPS } from '../mock/clips'
-import { BACKEND_MODE } from '../config/backend'
+import { BACKEND_MODE, buildJobClipVideoUrl } from '../config/backend'
 import {
   createInitialPipelineSteps,
   PIPELINE_STEP_DEFINITIONS,
-  resolvePipelineStepId
+  resolvePipelineLocation
 } from '../data/pipeline'
 import {
   startPipelineJob,
@@ -24,9 +23,7 @@ import {
   type PipelineEventMessage
 } from '../services/pipelineApi'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
-import type { HomePipelineState, SearchBridge } from '../types'
-
-const CLIP_PREVIEW_LIMIT = 6
+import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
 
 const SUPPORTED_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv'] as const
 
@@ -46,9 +43,10 @@ type HomeProps = {
   registerSearch: (bridge: SearchBridge | null) => void
   initialState: HomePipelineState
   onStateChange: (state: HomePipelineState) => void
+  accounts: AccountSummary[]
 }
 
-const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) => {
+const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, accounts }) => {
   const [state, setState] = useState<HomePipelineState>(() => initialState)
 
   const updateState = useCallback(
@@ -63,11 +61,37 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
     [onStateChange]
   )
 
-  const { videoUrl, urlError, pipelineError, steps, isProcessing, clips, selectedClipId } = state
+  const {
+    videoUrl,
+    urlError,
+    pipelineError,
+    steps,
+    isProcessing,
+    clips,
+    selectedClipId,
+    selectedAccountId,
+    accountError,
+    activeJobId
+  } = state
+
+  const availableAccounts = useMemo(
+    () =>
+      accounts.filter(
+        (account) => account.active && account.platforms.some((platform) => platform.active)
+      ),
+    [accounts]
+  )
+
+  useEffect(() => {
+    if (selectedAccountId && !availableAccounts.some((account) => account.id === selectedAccountId)) {
+      updateState((prev) => ({ ...prev, selectedAccountId: null }))
+    }
+  }, [availableAccounts, selectedAccountId, updateState])
 
   const timersRef = useRef<number[]>([])
   const runStepRef = useRef<(index: number) => void>(() => {})
   const connectionCleanupRef = useRef<(() => void) | null>(null)
+  const activeJobIdRef = useRef<string | null>(initialState.activeJobId ?? null)
 
   const isMockBackend = BACKEND_MODE === 'mock'
 
@@ -116,12 +140,17 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
         ...prev,
         steps: prev.steps.map((step, index) => {
           if (index < stepIndex) {
-            return { ...step, status: 'completed', progress: 1 }
+            return { ...step, status: 'completed', progress: 1, etaSeconds: null }
           }
           if (index === stepIndex) {
-            return { ...step, status: 'running', progress: 0 }
+            return {
+              ...step,
+              status: 'running',
+              progress: 0,
+              etaSeconds: Math.max(0, Math.round(definition.durationMs / 1000))
+            }
           }
-          return { ...step, status: 'pending', progress: 0 }
+          return { ...step, status: 'pending', progress: 0, etaSeconds: null }
         })
       }))
 
@@ -135,12 +164,16 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
                 return {
                   ...step,
                   progress,
-                  status: progress >= 1 ? 'completed' : 'running'
+                  status: progress >= 1 ? 'completed' : 'running',
+                  etaSeconds:
+                    progress >= 1
+                      ? null
+                      : Math.max(0, Math.round(((increments - i) * incrementDuration) / 1000))
                 }
               }
 
               if (index < stepIndex && (step.status !== 'completed' || step.progress !== 1)) {
-                return { ...step, status: 'completed', progress: 1 }
+                return { ...step, status: 'completed', progress: 1, etaSeconds: null }
               }
 
               return step
@@ -174,12 +207,98 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
         return
       }
 
-      if (event.type === 'step_started' || event.type === 'step_completed' || event.type === 'step_failed') {
-        const resolvedId = resolvePipelineStepId(event.step)
-        if (!resolvedId) {
+      if (event.type === 'step_progress') {
+        const location = resolvePipelineLocation(event.step)
+        if (!location || typeof event.data?.progress !== 'number') {
           return
         }
-        const targetIndex = PIPELINE_STEP_DEFINITIONS.findIndex((definition) => definition.id === resolvedId)
+        const progressValue = clamp01(event.data.progress)
+        const completedValue =
+          typeof event.data.completed === 'number' ? Math.max(0, event.data.completed) : null
+        const totalValue =
+          typeof event.data.total === 'number' ? Math.max(0, event.data.total) : null
+        const rawEta =
+          typeof event.data.eta_seconds === 'number'
+            ? event.data.eta_seconds
+            : typeof event.data.eta === 'number'
+              ? event.data.eta
+              : null
+        const etaValue =
+          rawEta !== null && Number.isFinite(rawEta) && rawEta >= 0 ? rawEta : null
+
+        updateState((prev) => ({
+          ...prev,
+          steps: prev.steps.map((step) => {
+            if (location.kind === 'step') {
+              if (step.id !== location.stepId) {
+                return step
+              }
+
+              const nextClipProgress = step.clipStage
+                ? {
+                    completed:
+                      completedValue !== null
+                        ? completedValue
+                        : step.clipProgress?.completed ?? 0,
+                    total:
+                      totalValue !== null ? totalValue : step.clipProgress?.total ?? 0
+                  }
+                : step.clipProgress
+
+              if (step.status === 'completed') {
+                return { ...step, clipProgress: nextClipProgress, etaSeconds: null }
+              }
+
+              return {
+                ...step,
+                status: 'running',
+                progress: progressValue,
+                clipProgress: nextClipProgress,
+                etaSeconds: etaValue
+              }
+            }
+
+            if (step.id !== location.stepId) {
+              return step
+            }
+
+            const nextClipProgress = step.clipStage
+              ? {
+                  completed:
+                    completedValue !== null
+                      ? completedValue
+                      : step.clipProgress?.completed ?? 0,
+                  total: totalValue !== null ? totalValue : step.clipProgress?.total ?? 0
+                }
+              : step.clipProgress
+
+            return {
+              ...step,
+              status: step.status === 'pending' ? 'running' : step.status,
+              clipProgress: nextClipProgress,
+              substeps: step.substeps.map((substep) => {
+                if (substep.id !== location.substepId) {
+                  return substep
+                }
+                return {
+                  ...substep,
+                  status: progressValue >= 1 ? 'completed' : 'running',
+                  progress: progressValue,
+                  etaSeconds: etaValue
+                }
+              })
+            }
+          })
+        }))
+        return
+      }
+
+      if (event.type === 'step_started' || event.type === 'step_completed' || event.type === 'step_failed') {
+        const location = resolvePipelineLocation(event.step)
+        if (!location) {
+          return
+        }
+        const targetIndex = PIPELINE_STEP_DEFINITIONS.findIndex((definition) => definition.id === location.stepId)
         if (targetIndex === -1) {
           return
         }
@@ -187,19 +306,77 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
         updateState((prev) => ({
           ...prev,
           steps: prev.steps.map((step, index) => {
-            if (index < targetIndex && step.status !== 'completed') {
-              return { ...step, status: 'completed', progress: 1 }
+            const shouldForceCompleted = index < targetIndex && step.status !== 'completed'
+
+            if (location.kind === 'step') {
+              if (shouldForceCompleted) {
+                return { ...step, status: 'completed', progress: 1, etaSeconds: null }
+              }
+              if (index === targetIndex) {
+                if (event.type === 'step_started') {
+                  return { ...step, status: 'running', progress: 0, etaSeconds: null }
+                }
+                if (event.type === 'step_completed') {
+                  return { ...step, status: 'completed', progress: 1, etaSeconds: null }
+                }
+                return { ...step, status: 'failed', progress: 1, etaSeconds: null }
+              }
+              return step
             }
-            if (index === targetIndex) {
+
+            if (shouldForceCompleted) {
+              return { ...step, status: 'completed', progress: 1, etaSeconds: null }
+            }
+
+            if (step.id !== location.stepId) {
+              return step
+            }
+
+            const updatedSubsteps = step.substeps.map((substep) => {
+              if (substep.id !== location.substepId) {
+                return substep
+              }
               if (event.type === 'step_started') {
-                return { ...step, status: 'running', progress: 0 }
+                return { ...substep, status: 'running', progress: 0, etaSeconds: null }
               }
               if (event.type === 'step_completed') {
-                return { ...step, status: 'completed', progress: 1 }
+                return { ...substep, status: 'completed', progress: 1, etaSeconds: null }
               }
-              return { ...step, status: 'failed', progress: 1 }
+              return { ...substep, status: 'failed', etaSeconds: null }
+            })
+
+            const allCompleted = updatedSubsteps.length > 0 &&
+              updatedSubsteps.every((substep) => substep.status === 'completed')
+
+            if (event.type === 'step_failed') {
+              return {
+                ...step,
+                status: 'failed',
+                progress: 1,
+                etaSeconds: null,
+                substeps: updatedSubsteps
+              }
             }
-            return step
+
+            if (event.type === 'step_completed' && allCompleted) {
+              return {
+                ...step,
+                status: 'completed',
+                progress: 1,
+                etaSeconds: null,
+                substeps: updatedSubsteps
+              }
+            }
+
+            if (event.type === 'step_started' && step.status === 'pending') {
+              return {
+                ...step,
+                status: 'running',
+                substeps: updatedSubsteps
+              }
+            }
+
+            return { ...step, substeps: updatedSubsteps }
           })
         }))
 
@@ -209,6 +386,72 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
             pipelineError: event.message ?? 'Pipeline step failed.'
           }))
         }
+        return
+      }
+
+      if (event.type === 'clip_ready') {
+        const jobId = activeJobIdRef.current
+        const data = event.data ?? {}
+        if (!jobId || typeof data !== 'object') {
+          return
+        }
+
+        const clipId = typeof data.clip_id === 'string' ? data.clip_id : null
+        const description = typeof data.description === 'string' ? data.description : null
+        const durationValue = typeof data.duration_seconds === 'number' ? data.duration_seconds : null
+        const createdAt = typeof data.created_at === 'string' ? data.created_at : null
+        const channel = typeof data.channel === 'string' ? data.channel : 'Unknown channel'
+        const title = typeof data.title === 'string' && data.title.length > 0 ? data.title : `Clip ${clipId ?? ''}`
+        const sourceUrl = typeof data.source_url === 'string' ? data.source_url : ''
+        const sourceTitle = typeof data.source_title === 'string' ? data.source_title : title
+        const sourcePublishedAt =
+          typeof data.source_published_at === 'string' ? data.source_published_at : null
+        const views = typeof data.views === 'number' ? data.views : null
+        const quote = typeof data.quote === 'string' ? data.quote : null
+        const reason = typeof data.reason === 'string' ? data.reason : null
+        const rating = typeof data.rating === 'number' ? data.rating : null
+        const playbackClipId = typeof data.clip_id === 'string' ? data.clip_id : null
+
+        if (!clipId || !description || !createdAt || !playbackClipId || !durationValue || !sourceUrl) {
+          return
+        }
+
+        const playbackUrl = buildJobClipVideoUrl(jobId, playbackClipId)
+
+        updateState((prev) => {
+          const incomingClip = {
+            id: clipId,
+            title,
+            channel,
+            views,
+            createdAt,
+            durationSec: durationValue,
+            thumbnail: null,
+            playbackUrl,
+            description,
+            sourceUrl,
+            sourceTitle,
+            sourcePublishedAt,
+            quote,
+            reason,
+            rating
+          }
+
+          const existingIndex = prev.clips.findIndex((clip) => clip.id === clipId)
+          const mergedClips = existingIndex === -1
+            ? [...prev.clips, incomingClip]
+            : prev.clips.map((clip, index) => (index === existingIndex ? incomingClip : clip))
+
+          mergedClips.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+
+          const hasSelection = mergedClips.some((clip) => clip.id === prev.selectedClipId)
+          return {
+            ...prev,
+            clips: mergedClips,
+            selectedClipId: hasSelection ? prev.selectedClipId : mergedClips[0]?.id ?? null
+          }
+        })
+
         return
       }
 
@@ -226,14 +469,14 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
           steps: prev.steps.map((step) => {
             if (success) {
               if (step.status === 'completed' || step.status === 'failed') {
-                return step
+                return { ...step, etaSeconds: null }
               }
-              return { ...step, status: 'completed', progress: 1 }
+              return { ...step, status: 'completed', progress: 1, etaSeconds: null }
             }
             if (step.status === 'completed' || step.status === 'failed') {
-              return step
+              return { ...step, etaSeconds: null }
             }
-            return { ...step, status: 'failed', progress: 1 }
+            return { ...step, status: 'failed', progress: 1, etaSeconds: null }
           })
         }))
         cleanupConnection()
@@ -242,8 +485,13 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
     [cleanupConnection, updateState]
   )
 
+  const accountOptions = useMemo(
+    () => availableAccounts.map((account) => ({ value: account.id, label: account.displayName })),
+    [availableAccounts]
+  )
+
   const startRealProcessing = useCallback(
-    async (urlToProcess: string) => {
+    async (urlToProcess: string, accountId: string) => {
       updateState((prev) => ({
         ...prev,
         isProcessing: true,
@@ -252,7 +500,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
       cleanupConnection()
 
       try {
-        const { jobId } = await startPipelineJob({ url: urlToProcess })
+        const { jobId } = await startPipelineJob({ url: urlToProcess, account: accountId })
+        activeJobIdRef.current = jobId
         let unsubscribe: (() => void) | null = null
         const cleanup = () => {
           if (unsubscribe) {
@@ -278,6 +527,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
             }
           }
         })
+        updateState((prev) => ({ ...prev, activeJobId: jobId }))
       } catch (error) {
         updateState((prev) => ({
           ...prev,
@@ -307,16 +557,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
   }, [clips, selectedClipId, updateState])
 
   useEffect(() => {
-    const candidatesStep = steps.find((step) => step.id === 'find-candidates')
-    if (candidatesStep && candidatesStep.status === 'completed') {
-      updateState((prev) => {
-        if (prev.clips.length > 0) {
-          return prev
-        }
-        return { ...prev, clips: CLIPS.slice(0, CLIP_PREVIEW_LIMIT) }
-      })
-    }
-  }, [steps, updateState])
+    activeJobIdRef.current = activeJobId
+  }, [activeJobId])
 
   const handleUrlChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -330,24 +572,53 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
     [updateState]
   )
 
+  const handleAccountChange = useCallback(
+    (event: ChangeEvent<HTMLSelectElement>) => {
+      const value = event.target.value
+      updateState((prev) => ({
+        ...prev,
+        selectedAccountId: value.length > 0 ? value : null,
+        accountError: prev.accountError ? null : prev.accountError
+      }))
+    },
+    [updateState]
+  )
+
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
       const trimmed = videoUrl.trim()
+      const accountId = selectedAccountId
+      const isUrlPresent = trimmed.length > 0
+      const isUrlValid = isUrlPresent && isValidVideoUrl(trimmed)
+      let hasError = false
 
-      if (!trimmed) {
+      if (!accountId) {
+        hasError = true
+        updateState((prev) => ({
+          ...prev,
+          accountError:
+            accountOptions.length === 0
+              ? 'Enable an account with an active platform before starting the pipeline.'
+              : 'Select an account to start processing.'
+        }))
+      }
+
+      if (!isUrlPresent) {
+        hasError = true
         updateState((prev) => ({
           ...prev,
           urlError: 'Enter a video URL to start processing.'
         }))
-        return
-      }
-
-      if (!isValidVideoUrl(trimmed)) {
+      } else if (!isUrlValid) {
+        hasError = true
         updateState((prev) => ({
           ...prev,
           urlError: 'Enter a valid YouTube or Twitch URL.'
         }))
+      }
+
+      if (hasError || !accountId || !isUrlValid) {
         return
       }
 
@@ -360,7 +631,9 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
         clips: [],
         selectedClipId: null,
         steps: createInitialPipelineSteps(),
-        isProcessing: true
+        isProcessing: true,
+        accountError: null,
+        activeJobId: null
       }))
 
       if (isMockBackend) {
@@ -369,9 +642,18 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
         return
       }
 
-      void startRealProcessing(trimmed)
+      void startRealProcessing(trimmed, accountId)
     },
-    [cleanupConnection, clearTimers, isMockBackend, startRealProcessing, updateState, videoUrl]
+    [
+      accountOptions.length,
+      cleanupConnection,
+      clearTimers,
+      isMockBackend,
+      selectedAccountId,
+      startRealProcessing,
+      updateState,
+      videoUrl
+    ]
   )
 
   const handleReset = useCallback(() => {
@@ -384,8 +666,11 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
       clips: [],
       pipelineError: null,
       urlError: null,
-      selectedClipId: null
+      selectedClipId: null,
+      accountError: null,
+      activeJobId: null
     }))
+    activeJobIdRef.current = null
   }, [cleanupConnection, clearTimers, updateState])
 
   const handleClipRemove = useCallback((clipId: string) => {
@@ -435,7 +720,35 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
               <h2 className="text-lg font-semibold text-[var(--fg)]">Process a new video</h2>
               <p className="text-sm text-[var(--muted)]">{pipelineMessage}</p>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="flex w-full flex-col gap-2 sm:max-w-xs">
+                <label className="sr-only" htmlFor="processing-account">
+                  Account
+                </label>
+                <select
+                  id="processing-account"
+                  value={selectedAccountId ?? ''}
+                  onChange={handleAccountChange}
+                  aria-invalid={accountError ? 'true' : 'false'}
+                  aria-describedby={accountError ? 'account-error' : undefined}
+                  disabled={accountOptions.length === 0}
+                  className={`w-full rounded-lg border bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] ${accountError ? 'border-rose-400 focus-visible:ring-rose-400' : 'border-white/10 focus-visible:ring-[var(--ring)]'}`}
+                >
+                  <option value="" disabled>
+                    Select an account
+                  </option>
+                  {accountOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {accountOptions.length === 0 && !accountError ? (
+                  <p className="text-xs text-amber-300">
+                    Enable an account with an active platform from your profile before starting the pipeline.
+                  </p>
+                ) : null}
+              </div>
               <label className="sr-only" htmlFor="video-url">
                 Video URL
               </label>
@@ -471,6 +784,11 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
                 ? 'in simulation mode with mocked events.'
                 : 'against the backend API for live progress updates.'}
             </div>
+            {accountError ? (
+              <p id="account-error" className="text-xs font-medium text-rose-400">
+                {accountError}
+              </p>
+            ) : null}
             {urlError ? <p className="text-xs font-medium text-rose-400">{urlError}</p> : null}
           </form>
 
@@ -502,16 +820,51 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange }) =>
                     Your browser does not support the video tag.
                   </video>
                 </div>
-                <div className="space-y-3 text-sm text-[var(--muted)]">
-                  <p className="text-base font-semibold text-[var(--fg)] leading-tight">{selectedClip.title}</p>
-                  <p>{selectedClip.channel} • {formatViews(selectedClip.views)} views</p>
-                  <p>
-                    Duration: {formatDuration(selectedClip.durationSec)} • Published {timeAgo(selectedClip.createdAt)}
-                  </p>
-                  <ClipDescription
-                    text={selectedClip.description}
-                    className="text-sm leading-relaxed text-[var(--muted)]"
-                  />
+                <div className="space-y-4 text-sm text-[var(--muted)]">
+                  <div className="space-y-2">
+                    <p className="text-base font-semibold text-[var(--fg)] leading-tight">
+                      {selectedClip.title}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                      <span className="font-semibold text-[var(--fg)] text-sm">{selectedClip.channel}</span>
+                      {selectedClip.views !== null ? <span>{formatViews(selectedClip.views)} views</span> : null}
+                      {selectedClip.sourcePublishedAt ? (
+                        <span>Published {timeAgo(selectedClip.sourcePublishedAt)}</span>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-xs">
+                      <span>Duration {formatDuration(selectedClip.durationSec)}</span>
+                      <span>Generated {timeAgo(selectedClip.createdAt)}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <a
+                      href={selectedClip.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white"
+                    >
+                      View full video
+                      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
+                        <path
+                          fill="currentColor"
+                          d="M13.5 2h-5a.75.75 0 0 0 0 1.5H11l-6.72 6.72a.75.75 0 0 0 1.06 1.06L12 4.56v2.5a.75.75 0 0 0 1.5 0v-5A.75.75 0 0 0 13.5 2"
+                        />
+                      </svg>
+                    </a>
+                    {selectedClip.quote ? (
+                      <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-[var(--muted)]">
+                        “{selectedClip.quote}”
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-semibold text-[var(--fg)]">Description</h4>
+                    <ClipDescription
+                      text={selectedClip.description}
+                      className="text-sm leading-relaxed text-[var(--muted)]"
+                    />
+                  </div>
                 </div>
               </div>
             ) : (

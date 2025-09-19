@@ -15,6 +15,8 @@ class PipelineEventType(str, Enum):
     STEP_STARTED = "step_started"
     STEP_COMPLETED = "step_completed"
     STEP_FAILED = "step_failed"
+    STEP_PROGRESS = "step_progress"
+    CLIP_READY = "clip_ready"
     PIPELINE_COMPLETED = "pipeline_completed"
     LOG = "log"
 

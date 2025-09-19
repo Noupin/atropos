@@ -2,6 +2,8 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path="../.env")
 
 import json
+from typing import Any, Callable, TypeVar
+
 import config
 
 from interfaces.progress import PipelineEvent, PipelineEventType, PipelineObserver
@@ -62,9 +64,11 @@ from config import (
 import sys
 import time
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from helpers.audio import ensure_audio
+from helpers.media import probe_media_duration
 from helpers.transcript import write_transcript_txt
 from helpers.transcript_quality import score_transcript_quality
 from helpers.formatting import (
@@ -73,7 +77,7 @@ from helpers.formatting import (
     sanitize_filename,
     youtube_timestamp_url,
 )
-from helpers.logging import run_step
+from helpers.logging import run_step, report_step_progress
 from helpers.notifications import send_failure_email
 from helpers.description import maybe_append_website_link
 from steps.candidates import ClipCandidate
@@ -83,6 +87,9 @@ from helpers.hashtags import generate_hashtag_strings
 
 
 GENERIC_HASHTAGS = ["foryou", "fyp", "viral", "trending"]
+
+
+TStepResult = TypeVar("TStepResult")
 
 
 def process_video(
@@ -105,6 +112,7 @@ def process_video(
 
     overall_start = time.perf_counter()
     ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
+    step_timers: dict[str, float] = {}
 
     def emit_log(message: str, level: str = "info") -> None:
         print(message)
@@ -116,6 +124,62 @@ def process_video(
                     data={"level": level},
                 )
             )
+
+    def build_eta_extra(status: Any) -> dict[str, Any] | None:
+        if isinstance(status, dict):
+            eta_value = status.get("eta_seconds")
+            if isinstance(eta_value, (int, float)) and eta_value >= 0:
+                return {"eta_seconds": float(eta_value)}
+            eta_fallback = status.get("eta")
+            if isinstance(eta_fallback, (int, float)) and eta_fallback >= 0:
+                return {"eta_seconds": float(eta_fallback)}
+        return None
+
+    def notify_progress(
+        step_id: str,
+        fraction: float,
+        *,
+        message: str | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        if not observer:
+            return
+
+        payload: dict[str, Any] = {}
+        if extra:
+            payload.update(extra)
+
+        started = step_timers.get(step_id)
+        if started is not None:
+            elapsed = max(0.0, time.perf_counter() - started)
+            payload.setdefault("elapsed_seconds", elapsed)
+            if fraction >= 1:
+                payload.setdefault("eta_seconds", 0.0)
+                step_timers.pop(step_id, None)
+            elif fraction > 0:
+                estimated_total = elapsed / max(fraction, 1e-6)
+                eta_estimate = max(0.0, estimated_total - elapsed)
+                payload.setdefault("eta_seconds", eta_estimate)
+
+        report_step_progress(
+            step_id,
+            fraction,
+            observer=observer,
+            message=message,
+            extra=payload or None,
+        )
+
+    def run_pipeline_step(
+        title: str,
+        func: Callable[[], TStepResult],
+        *,
+        step_key: str,
+    ) -> TStepResult:
+        step_timers[step_key] = time.perf_counter()
+        try:
+            return run_step(title, func, step_id=step_key, observer=observer)
+        finally:
+            step_timers.pop(step_key, None)
 
     if observer:
         observer.handle_event(
@@ -154,13 +218,23 @@ def process_video(
             )
         return
 
-    upload_date = video_info["upload_date"]
-    sanitized_title = sanitize_filename(video_info["title"])
-    if len(upload_date) == 8:
-        upload_date = upload_date[:4] + upload_date[4:6] + upload_date[6:]
+    source_title = video_info.get("title", "Unknown Title")
+    uploader = video_info.get("uploader") or "Unknown Channel"
+    raw_upload = str(video_info.get("upload_date") or "Unknown_Date")
+    published_iso: str | None = None
+    if len(raw_upload) >= 8 and raw_upload[:8].isdigit():
+        date_token = raw_upload[:8]
+        try:
+            parsed_date = datetime.strptime(date_token, "%Y%m%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            safe_upload = "Unknown_Date"
+        else:
+            published_iso = parsed_date.isoformat()
+            safe_upload = f"{date_token[:4]}{date_token[4:6]}{date_token[6:]}"
     else:
-        upload_date = "Unknown_Date"
-    non_suffix_filename = f"{sanitized_title}_{upload_date}"
+        safe_upload = "Unknown_Date"
+    sanitized_title = sanitize_filename(source_title)
+    non_suffix_filename = f"{sanitized_title}_{safe_upload}"
     emit_log(f"File Name: {non_suffix_filename}")
 
     # Create a dedicated output directory for this run
@@ -180,15 +254,28 @@ def process_video(
             emit_log(
                 f"{Fore.GREEN}STEP 1: Video already present -> {video_output_path}{Style.RESET_ALL}"
             )
+            notify_progress(
+                "step_1_download",
+                1.0,
+                message="Video already downloaded",
+            )
         else:
-            download_video(yt_url, str(video_output_path))
+            download_video(
+                yt_url,
+                str(video_output_path),
+                progress_callback=lambda fraction, status: notify_progress(
+                    "step_1_download",
+                    fraction,
+                    message=f"Downloading video {fraction * 100:.0f}%",
+                    extra=build_eta_extra(status),
+                ),
+            )
 
     if should_run(1):
-        run_step(
+        run_pipeline_step(
             f"STEP 1: Downloading video -> {video_output_path}",
             step_download,
-            step_id="step_1_download",
-            observer=observer,
+            step_key="step_1_download",
         )
     else:
         emit_log(
@@ -202,14 +289,27 @@ def process_video(
     audio_output_path = project_dir / f"{non_suffix_filename}.mp3"
 
     def step_audio() -> bool:
-        return ensure_audio(yt_url, str(audio_output_path), str(video_output_path))
+        return ensure_audio(
+            yt_url,
+            str(audio_output_path),
+            str(video_output_path),
+            progress_callback=lambda fraction, stage, status=None: notify_progress(
+                "step_2_audio",
+                fraction,
+                message=(
+                    "Audio already available"
+                    if stage == "cached"
+                    else f"Acquiring audio ({stage}) {fraction * 100:.0f}%"
+                ),
+                extra=build_eta_extra(status),
+            ),
+        )
 
     if should_run(2):
-        audio_ok = run_step(
+        audio_ok = run_pipeline_step(
             f"STEP 2: Ensuring audio -> {audio_output_path}",
             step_audio,
-            step_id="step_2_audio",
-            observer=observer,
+            step_key="step_2_audio",
         )
         if not audio_ok:
             emit_log(
@@ -226,22 +326,46 @@ def process_video(
             f"{Fore.YELLOW}Skipping STEP 2: assuming audio exists at {audio_output_path}{Style.RESET_ALL}",
             level="warning",
         )
+        if audio_ok:
+            notify_progress(
+                "step_2_audio",
+                1.0,
+                message="Audio already available",
+            )
 
     # ----------------------
     # STEP 3: Get Text (Transcript or Transcription)
     # ----------------------
     transcript_output_path = project_dir / f"{non_suffix_filename}.txt"
 
-    def step_download_transcript() -> bool:
-        return download_transcript(
+    def step_download_transcript(step_key: str = "step_3_download_transcript") -> bool:
+        notify_progress(
+            step_key,
+            0.05,
+            message="Requesting transcript from source",
+        )
+        success = download_transcript(
             yt_url,
             str(transcript_output_path),
             languages=["en", "en-US", "en-GB"],
         )
+        if success:
+            notify_progress(
+                step_key,
+                1.0,
+                message="Transcript downloaded",
+            )
+        return success
 
-    def step_transcribe() -> bool:
+    def run_transcribe(step_key: str) -> bool:
         result = transcribe_audio(
-            str(audio_output_path), model_size=WHISPER_MODEL
+            str(audio_output_path),
+            model_size=WHISPER_MODEL,
+            progress_callback=lambda fraction: notify_progress(
+                step_key,
+                fraction,
+                message=f"Transcribing audio {fraction * 100:.0f}%",
+            ),
         )
         write_transcript_txt(result, str(transcript_output_path))
         return True
@@ -251,22 +375,20 @@ def process_video(
             yt_ok = False
             transcribed = False
             if audio_ok:
-                transcribed = run_step(
+                transcribed = run_pipeline_step(
                     f"STEP 3: Transcribing with faster-whisper ({WHISPER_MODEL})",
-                    step_transcribe,
-                    step_id="step_3_transcribe",
-                    observer=observer,
+                    lambda: run_transcribe("step_3_transcribe"),
+                    step_key="step_3_transcribe",
                 )
                 if transcribed:
                     emit_log(
                         f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
                     )
             if not transcribed:
-                yt_ok = run_step(
+                yt_ok = run_pipeline_step(
                     f"STEP 3: Attempting YouTube transcript -> {transcript_output_path}",
                     step_download_transcript,
-                    step_id="step_3_download_transcript",
-                    observer=observer,
+                    step_key="step_3_download_transcript",
                 )
             if yt_ok:
                 text = transcript_output_path.read_text(encoding="utf-8")
@@ -277,11 +399,10 @@ def process_video(
                         "STEP 3: Quality below threshold, transcribing with Whisper",
                         level="warning",
                     )
-                    run_step(
+                    run_pipeline_step(
                         f"STEP 3: Transcribing with faster-whisper ({WHISPER_MODEL})",
-                        step_transcribe,
-                        step_id="step_3_transcribe_retry",
-                        observer=observer,
+                        lambda: run_transcribe("step_3_transcribe_retry"),
+                        step_key="step_3_transcribe_retry",
                     )
                     emit_log(
                         f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
@@ -300,11 +421,10 @@ def process_video(
                     f"No transcript could be retrieved or generated for video {yt_url} because audio acquisition failed.",
                 )
         else:
-            yt_ok = run_step(
+            yt_ok = run_pipeline_step(
                 f"STEP 3: Attempting YouTube transcript -> {transcript_output_path}",
                 step_download_transcript,
-                step_id="step_3_download_transcript",
-                observer=observer,
+                step_key="step_3_download_transcript",
             )
             if yt_ok:
                 text = transcript_output_path.read_text(encoding="utf-8")
@@ -315,11 +435,10 @@ def process_video(
                         "STEP 3: Quality below threshold, transcribing with Whisper",
                         level="warning",
                     )
-                    run_step(
+                    run_pipeline_step(
                         f"STEP 3: Transcribing with faster-whisper ({WHISPER_MODEL})",
-                        step_transcribe,
-                        step_id="step_3_transcribe",
-                        observer=observer,
+                        lambda: run_transcribe("step_3_transcribe"),
+                        step_key="step_3_transcribe",
                     )
                     emit_log(
                         f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
@@ -339,11 +458,10 @@ def process_video(
                         f"No transcript could be retrieved or generated for video {yt_url} because audio acquisition failed.",
                     )
                 else:
-                    run_step(
+                    run_pipeline_step(
                         f"STEP 3: Transcribing with faster-whisper ({WHISPER_MODEL})",
-                        step_transcribe,
-                        step_id="step_3_transcribe",
-                        observer=observer,
+                        lambda: run_transcribe("step_3_transcribe"),
+                        step_key="step_3_transcribe",
                     )
                     emit_log(
                         f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
@@ -353,11 +471,22 @@ def process_video(
             f"{Fore.YELLOW}Skipping STEP 3: assuming transcript exists at {transcript_output_path}{Style.RESET_ALL}",
             level="warning",
         )
+        if transcript_output_path.exists():
+            notify_progress(
+                "step_3_download_transcript",
+                1.0,
+                message="Transcript already available",
+            )
 
     # ----------------------
     # STEP 4: Detect Silence Segments
     # ----------------------
     silences_path = project_dir / "silences.json"
+    audio_duration_hint = (
+        probe_media_duration(audio_output_path)
+        if audio_output_path.exists()
+        else None
+    )
 
     def step_silences() -> list[tuple[float, float]]:
         silences = (
@@ -365,6 +494,21 @@ def process_video(
                 str(audio_output_path),
                 noise=SILENCE_DETECTION_NOISE,
                 min_duration=SILENCE_DETECTION_MIN_DURATION,
+                progress_callback=lambda fraction, timestamp: notify_progress(
+                    "step_4_silences",
+                    fraction,
+                    message=(
+                        "Silence detection complete"
+                        if fraction >= 1
+                        else f"Scanning audio — {timestamp:.0f}s analysed"
+                    ),
+                    extra=(
+                        {"eta_seconds": max(0.0, (audio_duration_hint or 0.0) - timestamp)}
+                        if audio_duration_hint is not None
+                        else None
+                    ),
+                ),
+                duration_hint=audio_duration_hint,
             )
             if audio_ok
             else []
@@ -373,11 +517,10 @@ def process_video(
         return silences
 
     if should_run(4):
-        silences = run_step(
+        silences = run_pipeline_step(
             f"STEP 4: Detecting silences -> {silences_path}",
             step_silences,
-            step_id="step_4_silences",
-            observer=observer,
+            step_key="step_4_silences",
         )
     else:
         if silences_path.exists():
@@ -386,6 +529,11 @@ def process_video(
             emit_log(
                 f"{Fore.YELLOW}Skipping STEP 4: loaded {len(silences)} silences from {silences_path}{Style.RESET_ALL}",
                 level="warning",
+            )
+            notify_progress(
+                "step_4_silences",
+                1.0,
+                message="Silence metadata already available",
             )
         else:
             silences = []
@@ -406,30 +554,53 @@ def process_video(
             segments = [(d["start"], d["end"], d["text"]) for d in segments_data]
         else:
             def step_segments() -> list[tuple[float, float, str]]:
+                notify_progress(
+                    "step_5_segments",
+                    0.05,
+                    message="Parsing transcript for segmentation",
+                )
                 items = parse_transcript(transcript_output_path)
+                notify_progress(
+                    "step_5_segments",
+                    0.35,
+                    message="Building segment windows",
+                )
                 segs = segment_transcript_items(items)
                 text = transcript_output_path.read_text(encoding="utf-8")
                 if USE_LLM_FOR_SEGMENTS:
                     segs = maybe_refine_segments_with_llm(segs)
+                notify_progress(
+                    "step_5_segments",
+                    0.75,
+                    message="Saving structured transcript",
+                )
                 write_segments_json(segs, segments_path)
+                notify_progress(
+                    "step_5_segments",
+                    1.0,
+                    message="Transcript structure ready",
+                )
                 return segs
 
-            segments = run_step(
+            segments = run_pipeline_step(
                 f"STEP 5: Segmenting transcript -> {segments_path}",
                 step_segments,
-                step_id="step_5_segments",
-                observer=observer,
+                step_key="step_5_segments",
             )
-    else:
-        if segments_path.exists():
-            segments_data = json.loads(segments_path.read_text(encoding="utf-8"))
-            segments = [(d["start"], d["end"], d["text"]) for d in segments_data]
-            emit_log(
-                f"{Fore.YELLOW}Skipping STEP 5: loaded segments from {segments_path}{Style.RESET_ALL}",
-                level="warning",
-            )
-        else:
-            segments = []
+            if segments_path.exists():
+                segments_data = json.loads(segments_path.read_text(encoding="utf-8"))
+                segments = [(d["start"], d["end"], d["text"]) for d in segments_data]
+                emit_log(
+                    f"{Fore.YELLOW}Skipping STEP 5: loaded segments from {segments_path}{Style.RESET_ALL}",
+                    level="warning",
+                )
+                notify_progress(
+                    "step_5_segments",
+                    1.0,
+                    message="Transcript structure ready",
+                )
+            else:
+                segments = []
             emit_log(
                 f"{Fore.YELLOW}Skipping STEP 5: no existing segments at {segments_path}{Style.RESET_ALL}",
                 level="warning",
@@ -445,25 +616,38 @@ def process_video(
                 emit_log(
                     f"[Pipeline] Starting dialog detection using transcript: {transcript_output_path}"
                 )
+                notify_progress(
+                    "step_5_dialog_ranges",
+                    0.1,
+                    message="Detecting dialog-heavy regions",
+                )
                 ranges = detect_dialog_ranges(transcript_output_path)
                 write_dialog_ranges_json(ranges, dialog_ranges_path)
+                notify_progress(
+                    "step_5_dialog_ranges",
+                    1.0,
+                    message="Dialog analysis complete",
+                )
                 return ranges
 
-            dialog_ranges = run_step(
+            dialog_ranges = run_pipeline_step(
                 f"STEP 5: Detecting dialog ranges -> {dialog_ranges_path}",
                 step_dialog_ranges,
-                step_id="step_5_dialog_ranges",
-                observer=observer,
+                step_key="step_5_dialog_ranges",
             )
-    else:
-        if dialog_ranges_path.exists():
-            dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
-            emit_log(
-                f"{Fore.YELLOW}Skipping STEP 5: loaded dialog ranges from {dialog_ranges_path}{Style.RESET_ALL}",
-                level="warning",
-            )
-        else:
-            dialog_ranges = []
+            if dialog_ranges_path.exists():
+                dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
+                emit_log(
+                    f"{Fore.YELLOW}Skipping STEP 5: loaded dialog ranges from {dialog_ranges_path}{Style.RESET_ALL}",
+                    level="warning",
+                )
+                notify_progress(
+                    "step_5_dialog_ranges",
+                    1.0,
+                    message="Dialog analysis complete",
+                )
+            else:
+                dialog_ranges = []
             emit_log(
                 f"{Fore.YELLOW}Skipping STEP 5: no existing dialog ranges at {dialog_ranges_path}{Style.RESET_ALL}",
                 level="warning",
@@ -498,6 +682,24 @@ def process_video(
 
     if should_run(6):
         def step_candidates() -> tuple[list[ClipCandidate], list[ClipCandidate], list[ClipCandidate]]:
+            def handle_progress(completed: int, total: int) -> None:
+                fraction = 0.0 if total <= 0 else max(0.0, min(1.0, completed / total))
+                message = (
+                    "Candidate search complete"
+                    if total > 0 and completed >= total
+                    else (
+                        f"Scanning window {min(completed, total)}/{total}"
+                        if total > 0
+                        else "Scanning transcript windows"
+                    )
+                )
+                notify_progress(
+                    "step_6_candidates",
+                    fraction,
+                    message=message,
+                    extra={"completed": completed, "total": total},
+                )
+
             return find_candidates_by_tone(
                 str(transcript_output_path),
                 tone=selected_tone,
@@ -505,6 +707,7 @@ def process_video(
                 segments=segments,
                 dialog_ranges=dialog_ranges,
                 silences=silences,
+                progress_callback=handle_progress,
             )
 
         if (
@@ -517,11 +720,10 @@ def process_video(
             top_candidates = load_candidates_json(candidates_top_path)
             all_candidates = load_candidates_json(candidates_all_path)
         else:
-            result = run_step(
+            result = run_pipeline_step(
                 "STEP 6: Finding clip candidates from transcript",
                 step_candidates,
-                step_id="step_6_candidates",
-                observer=observer,
+                step_key="step_6_candidates",
             )
             if result is None:
                 candidates = top_candidates = all_candidates = []
@@ -533,6 +735,28 @@ def process_video(
         emit_log(
             f"[Pipeline] Candidates: {len(candidates)} final, {len(top_candidates)} top, {len(all_candidates)} total"
         )
+
+        if (
+            candidates_path.exists()
+            and candidates_all_path.exists()
+            and candidates_top_path.exists()
+            and not FORCE_REBUILD
+        ):
+            notify_progress(
+                "step_6_candidates",
+                1.0,
+                message="Loaded cached candidates",
+                extra={"completed": 1, "total": 1},
+            )
+            if observer:
+                observer.handle_event(
+                    PipelineEvent(
+                        type=PipelineEventType.STEP_COMPLETED,
+                        message="STEP 6: Using cached candidates",
+                        step="step_6_candidates",
+                        data={"elapsed_seconds": 0.0},
+                    )
+                )
 
         if not candidates:
             emit_log(
@@ -567,12 +791,18 @@ def process_video(
                         video_output_path, raw_clips_dir, cand
                     )
 
-                run_step(
+                run_pipeline_step(
                     f"STEP 6R.{idx}: Cutting raw clip -> {raw_clips_dir}",
                     step_cut_raw,
-                    step_id=f"step_6_raw_cut_{idx}",
-                    observer=observer,
+                    step_key=f"step_6_raw_cut_{idx}",
                 )
+                if raw_candidates:
+                    notify_progress(
+                        "step_6_raw_cut",
+                        idx / len(raw_candidates),
+                        message=f"Prepared raw clip {idx} of {len(raw_candidates)}",
+                        extra={"completed": idx, "total": len(raw_candidates)},
+                    )
 
         refined_candidates = dedupe_candidates(candidates)
         export_candidates_json(refined_candidates, render_queue_path)
@@ -598,21 +828,109 @@ def process_video(
             level="warning",
         )
         export_candidates_json(refined_candidates, render_queue_path)
+        notify_progress(
+            "step_6_candidates",
+            1.0,
+            message="Using existing candidates",
+            extra={"completed": len(refined_candidates), "total": len(refined_candidates)},
+        )
+        if observer:
+            observer.handle_event(
+                PipelineEvent(
+                    type=PipelineEventType.STEP_COMPLETED,
+                    message="STEP 6: Using existing candidates",
+                    step="step_6_candidates",
+                    data={"elapsed_seconds": 0.0},
+                )
+            )
+
+    total_candidates = len(refined_candidates)
+
+    produce_step_id = "step_7_produce"
+    produce_step_label = "STEP 7: Producing final clips"
+    produce_started: float | None = None
+
+    if total_candidates:
+        produce_started = time.perf_counter()
+        step_timers[produce_step_id] = produce_started
+        if observer:
+            observer.handle_event(
+                PipelineEvent(
+                    type=PipelineEventType.STEP_STARTED,
+                    message=produce_step_label,
+                    step=produce_step_id,
+                )
+            )
+        notify_progress(
+            produce_step_id,
+            0.0,
+            message=f"Producing {total_candidates} clips",
+            extra={"completed": 0, "total": total_candidates},
+        )
+        notify_progress(
+            "step_7_cut",
+            0.0,
+            message="Preparing to cut clips",
+            extra={"completed": 0, "total": total_candidates},
+        )
+        notify_progress(
+            "step_7_subtitles",
+            0.0,
+            message="Waiting to generate subtitles",
+            extra={"completed": 0, "total": total_candidates},
+        )
+        notify_progress(
+            "step_7_render",
+            0.0,
+            message="Preparing renders",
+            extra={"completed": 0, "total": total_candidates},
+        )
+        notify_progress(
+            "step_7_descriptions",
+            0.0,
+            message="Preparing descriptions",
+            extra={"completed": 0, "total": total_candidates},
+        )
+    else:
+        if observer:
+            observer.handle_event(
+                PipelineEvent(
+                    type=PipelineEventType.STEP_STARTED,
+                    message=produce_step_label,
+                    step=produce_step_id,
+                )
+            )
+        notify_progress(
+            produce_step_id,
+            1.0,
+            message="No clips ready to produce",
+            extra={"completed": 0, "total": 0},
+        )
+        if observer:
+            observer.handle_event(
+                PipelineEvent(
+                    type=PipelineEventType.STEP_COMPLETED,
+                    message=produce_step_label,
+                    step=produce_step_id,
+                    data={"elapsed_seconds": 0.0},
+                )
+            )
+
+    produced_count = 0
 
     for idx, candidate in enumerate(refined_candidates, start=1):
         def step_cut() -> Path | None:
             return save_clip_from_candidate(video_output_path, clips_dir, candidate)
 
         if should_run(6):
-            clip_path = run_step(
-                f"STEP 6.{idx}: Cutting clip -> {clips_dir}",
+            clip_path = run_pipeline_step(
+                f"STEP 7.{idx}: Cutting clip -> {clips_dir}",
                 step_cut,
-                step_id=f"step_6_cut_{idx}",
-                observer=observer,
+                step_key=f"step_7_cut_{idx}",
             )
             if clip_path is None:
                 emit_log(
-                    f"{Fore.RED}STEP 6.{idx}: Failed to cut clip.{Style.RESET_ALL}",
+                    f"{Fore.RED}STEP 7.{idx}: Failed to cut clip.{Style.RESET_ALL}",
                     level="error",
                 )
                 send_failure_email(
@@ -626,10 +944,18 @@ def process_video(
             )
             if not clip_path.exists():
                 emit_log(
-                    f"{Fore.RED}STEP 6.{idx}: Expected clip not found -> {clip_path}{Style.RESET_ALL}",
+                    f"{Fore.RED}STEP 7.{idx}: Expected clip not found -> {clip_path}{Style.RESET_ALL}",
                     level="error",
                 )
                 continue
+
+        if total_candidates:
+            notify_progress(
+                "step_7_cut",
+                idx / total_candidates,
+                message=f"Cut {idx} of {total_candidates} clips",
+                extra={"completed": idx, "total": total_candidates},
+            )
 
         srt_path = subtitles_dir / f"{clip_path.stem}.srt"
 
@@ -642,16 +968,22 @@ def process_video(
             )
 
         if should_run(7):
-            run_step(
+            run_pipeline_step(
                 f"STEP 7.{idx}: Generating subtitles -> {srt_path}",
                 step_subtitles,
-                step_id=f"step_7_subtitles_{idx}",
-                observer=observer,
+                step_key=f"step_7_subtitles_{idx}",
             )
         else:
             emit_log(
                 f"{Fore.YELLOW}Skipping STEP 7.{idx}: assuming subtitles exist at {srt_path}{Style.RESET_ALL}",
                 level="warning",
+            )
+        if total_candidates:
+            notify_progress(
+                "step_7_subtitles",
+                idx / total_candidates,
+                message=f"Subtitles generated for clip {idx}/{total_candidates}",
+                extra={"completed": idx, "total": total_candidates},
             )
 
         vertical_output = shorts_dir / f"{clip_path.stem}.mp4"
@@ -665,16 +997,22 @@ def process_video(
             )
 
         if should_run(8):
-            run_step(
-                f"STEP 8.{idx}: Rendering vertical video with captions -> {vertical_output}",
+            run_pipeline_step(
+                f"STEP 7.{idx}: Rendering vertical video with captions -> {vertical_output}",
                 step_render,
-                step_id=f"step_8_render_{idx}",
-                observer=observer,
+                step_key=f"step_7_render_{idx}",
             )
         else:
             emit_log(
-                f"{Fore.YELLOW}Skipping STEP 8.{idx}: assuming video exists at {vertical_output}{Style.RESET_ALL}",
+                f"{Fore.YELLOW}Skipping STEP 7.{idx}: assuming video exists at {vertical_output}{Style.RESET_ALL}",
                 level="warning",
+            )
+        if total_candidates:
+            notify_progress(
+                "step_7_render",
+                idx / total_candidates,
+                message=f"Rendered {idx} of {total_candidates} clips",
+                extra={"completed": idx, "total": total_candidates},
             )
 
         description_path = shorts_dir / f"{clip_path.stem}.txt"
@@ -715,16 +1053,88 @@ def process_video(
             return description_path
 
         if should_run(9):
-            run_step(
-                f"STEP 9.{idx}: Writing description -> {description_path}",
+            run_pipeline_step(
+                f"STEP 7.{idx}: Writing description -> {description_path}",
                 step_description,
-                step_id=f"step_9_description_{idx}",
-                observer=observer,
+                step_key=f"step_7_descriptions_{idx}",
             )
         else:
             emit_log(
-                f"{Fore.YELLOW}Skipping STEP 9.{idx}: assuming description exists at {description_path}{Style.RESET_ALL}",
+                f"{Fore.YELLOW}Skipping STEP 7.{idx}: assuming description exists at {description_path}{Style.RESET_ALL}",
                 level="warning",
+            )
+        if total_candidates:
+            notify_progress(
+                "step_7_descriptions",
+                idx / total_candidates,
+                message=f"Descriptions prepared for {idx} of {total_candidates} clips",
+                extra={"completed": idx, "total": total_candidates},
+            )
+
+        if total_candidates:
+            produced_count += 1
+            notify_progress(
+                produce_step_id,
+                produced_count / total_candidates,
+                message=f"Produced {produced_count} of {total_candidates} clips",
+                extra={"completed": produced_count, "total": total_candidates},
+            )
+
+        if observer:
+            try:
+                description_text = description_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                description_text = ""
+            try:
+                short_path = vertical_output.relative_to(project_dir)
+                short_path_str = short_path.as_posix()
+            except ValueError:
+                short_path_str = vertical_output.name
+
+            clip_title = (candidate.quote or "").strip() or f"{source_title} — Clip {idx}"
+            duration_seconds = max(0.0, candidate.end - candidate.start)
+            observer.handle_event(
+                PipelineEvent(
+                    type=PipelineEventType.CLIP_READY,
+                    step=f"step_7_descriptions_{idx}",
+                    data={
+                        "clip_id": vertical_output.stem,
+                        "title": clip_title,
+                        "channel": uploader,
+                        "description": description_text,
+                        "duration_seconds": duration_seconds,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "source_url": yt_url,
+                        "source_title": source_title,
+                        "source_published_at": published_iso,
+                        "short_path": short_path_str,
+                        "project_dir": str(project_dir),
+                        "account": account,
+                        "quote": candidate.quote,
+                        "reason": candidate.reason,
+                        "rating": candidate.rating,
+                    },
+                )
+            )
+
+    if total_candidates:
+        notify_progress(
+            produce_step_id,
+            1.0,
+            message=f"Finished producing {produced_count} of {total_candidates} clips",
+            extra={"completed": produced_count, "total": total_candidates},
+        )
+        if observer:
+            elapsed = 0.0
+            if produce_started is not None:
+                elapsed = max(0.0, time.perf_counter() - produce_started)
+            observer.handle_event(
+                PipelineEvent(
+                    type=PipelineEventType.STEP_COMPLETED,
+                    message=produce_step_label,
+                    step=produce_step_id,
+                    data={"elapsed_seconds": elapsed, "clips": produced_count},
+                )
             )
 
     total_elapsed = time.perf_counter() - overall_start

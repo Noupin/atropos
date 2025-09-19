@@ -6,7 +6,32 @@ import ClipPage from './pages/Clip'
 import Home from './pages/Home'
 import Profile from './pages/Profile'
 import { createInitialPipelineSteps } from './data/pipeline'
-import type { HomePipelineState, SearchBridge } from './types'
+import type {
+  AccountSummary,
+  AuthPingSummary,
+  HomePipelineState,
+  SearchBridge,
+  SupportedPlatform
+} from './types'
+import {
+  addPlatformToAccount,
+  createAccount,
+  deleteAccount as deleteAccountApi,
+  deleteAccountPlatform,
+  fetchAccounts,
+  pingAuth,
+  updateAccount as updateAccountApi,
+  updateAccountPlatform
+} from './services/accountsApi'
+
+type PlatformPayload = {
+  platform: SupportedPlatform
+  label?: string | null
+  credentials?: Record<string, unknown>
+}
+
+const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
+  [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
 
 type AppProps = {
   searchInputRef: RefObject<HTMLInputElement | null>
@@ -22,8 +47,16 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     steps: createInitialPipelineSteps(),
     isProcessing: false,
     clips: [],
-    selectedClipId: null
+    selectedClipId: null,
+    selectedAccountId: null,
+    accountError: null,
+    activeJobId: null
   }))
+  const [accounts, setAccounts] = useState<AccountSummary[]>([])
+  const [accountsError, setAccountsError] = useState<string | null>(null)
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(true)
+  const [authStatus, setAuthStatus] = useState<AuthPingSummary | null>(null)
+  const [authError, setAuthError] = useState<string | null>(null)
   const [isDark, setIsDark] = useState(() => {
     if (typeof document === 'undefined') {
       return true
@@ -42,6 +75,145 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     setIsDark(root.classList.contains('dark'))
     document.title = 'Atropos'
   }, [])
+
+  const refreshAuthStatus = useCallback(async () => {
+    try {
+      const statusPayload = await pingAuth()
+      setAuthStatus(statusPayload)
+      setAuthError(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to verify authentication.'
+      setAuthError(message)
+    }
+  }, [])
+
+  const refreshAccounts = useCallback(async () => {
+    setIsLoadingAccounts(true)
+    try {
+      const items = await fetchAccounts()
+      setAccounts(sortAccounts(items))
+      setAccountsError(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load connected accounts.'
+      setAccountsError(message)
+    } finally {
+      setIsLoadingAccounts(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshAccounts()
+    void refreshAuthStatus()
+  }, [refreshAccounts, refreshAuthStatus])
+
+  const handleCreateAccount = useCallback(
+    async (payload: { displayName: string; description?: string | null }) => {
+      try {
+        const account = await createAccount(payload)
+        setAccounts((prev) => sortAccounts([...prev.filter((item) => item.id !== account.id), account]))
+        setAccountsError(null)
+        void refreshAuthStatus()
+        return account
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unable to create the account. Please try again.'
+        setAccountsError(message)
+        throw error instanceof Error ? error : new Error(message)
+      }
+    },
+    [refreshAuthStatus]
+  )
+
+  const handleAddPlatform = useCallback(
+    async (accountId: string, payload: PlatformPayload) => {
+      try {
+        const account = await addPlatformToAccount(accountId, payload)
+        setAccounts((prev) => sortAccounts(prev.map((item) => (item.id === account.id ? account : item))))
+        setAccountsError(null)
+        void refreshAuthStatus()
+        return account
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unable to connect the selected platform. Please try again.'
+        setAccountsError(message)
+        throw error instanceof Error ? error : new Error(message)
+      }
+    },
+    [refreshAuthStatus]
+  )
+
+  const handleUpdateAccount = useCallback(
+    async (accountId: string, payload: { active?: boolean }) => {
+      try {
+        const account = await updateAccountApi(accountId, payload)
+        setAccounts((prev) => sortAccounts(prev.map((item) => (item.id === account.id ? account : item))))
+        setAccountsError(null)
+        void refreshAuthStatus()
+        return account
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unable to update the account. Please try again.'
+        setAccountsError(message)
+        throw error instanceof Error ? error : new Error(message)
+      }
+    },
+    [refreshAuthStatus]
+  )
+
+  const handleDeleteAccount = useCallback(
+    async (accountId: string) => {
+      try {
+        await deleteAccountApi(accountId)
+        setAccounts((prev) => prev.filter((item) => item.id !== accountId))
+        setAccountsError(null)
+        void refreshAuthStatus()
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unable to remove the account. Please try again.'
+        setAccountsError(message)
+        throw error instanceof Error ? error : new Error(message)
+      }
+    },
+    [refreshAuthStatus]
+  )
+
+  const handleUpdatePlatform = useCallback(
+    async (accountId: string, platform: SupportedPlatform, payload: { active?: boolean }) => {
+      try {
+        const account = await updateAccountPlatform(accountId, platform, payload)
+        setAccounts((prev) => sortAccounts(prev.map((item) => (item.id === account.id ? account : item))))
+        setAccountsError(null)
+        void refreshAuthStatus()
+        return account
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unable to update the platform. Please try again.'
+        setAccountsError(message)
+        throw error instanceof Error ? error : new Error(message)
+      }
+    },
+    [refreshAuthStatus]
+  )
+
+  const handleDeletePlatform = useCallback(
+    async (accountId: string, platform: SupportedPlatform) => {
+      try {
+        const account = await deleteAccountPlatform(accountId, platform)
+        setAccounts((prev) => sortAccounts(prev.map((item) => (item.id === account.id ? account : item))))
+        setAccountsError(null)
+        void refreshAuthStatus()
+        return account
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unable to remove the platform. Please try again.'
+        setAccountsError(message)
+        throw error instanceof Error ? error : new Error(message)
+      }
+    },
+    [refreshAuthStatus]
+  )
 
   const registerSearch = useCallback((bridge: SearchBridge | null) => {
     setSearchBridge(bridge)
@@ -125,11 +297,31 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 registerSearch={registerSearch}
                 initialState={homeState}
                 onStateChange={setHomeState}
+                accounts={accounts}
               />
             }
           />
           <Route path="/clip/:id" element={<ClipPage registerSearch={registerSearch} />} />
-          <Route path="/profile" element={<Profile registerSearch={registerSearch} />} />
+          <Route
+            path="/profile"
+            element={
+              <Profile
+                registerSearch={registerSearch}
+                accounts={accounts}
+                accountsError={accountsError}
+                authStatus={authStatus}
+                authError={authError}
+                isLoadingAccounts={isLoadingAccounts}
+                onCreateAccount={handleCreateAccount}
+                onAddPlatform={handleAddPlatform}
+                onUpdateAccount={handleUpdateAccount}
+                onDeleteAccount={handleDeleteAccount}
+                onUpdatePlatform={handleUpdatePlatform}
+                onDeletePlatform={handleDeletePlatform}
+                onRefreshAccounts={refreshAccounts}
+              />
+            }
+          />
           <Route
             path="*"
             element={
@@ -137,6 +329,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 registerSearch={registerSearch}
                 initialState={homeState}
                 onStateChange={setHomeState}
+                accounts={accounts}
               />
             }
           />

@@ -1,9 +1,13 @@
+from typing import Callable
+
 from faster_whisper import WhisperModel
 from interfaces.timer import Timer
 from config import WHISPER_MODEL
 
+ProgressCallback = Callable[[float], None]
 
-def transcribe_audio(file_path, model_size=WHISPER_MODEL):
+
+def transcribe_audio(file_path, model_size=WHISPER_MODEL, progress_callback: ProgressCallback | None = None):
     """Transcribe an audio file using faster_whisper."""
     with Timer() as t:
         model = WhisperModel(model_size, device="auto")
@@ -20,7 +24,17 @@ def transcribe_audio(file_path, model_size=WHISPER_MODEL):
             )
         except TypeError:
             segments_iter, info = model.transcribe(file_path)
-        segments = list(segments_iter)
+
+        duration = getattr(info, "duration", None)
+        segments = []
+        for segment in segments_iter:
+            segments.append(segment)
+            if progress_callback and duration:
+                progress_callback(min(0.99, max(0.0, segment.end / duration)))
+
+    if progress_callback:
+        progress_callback(1.0)
+
     text = "".join(s.text for s in segments)
     segment_list = [
         {

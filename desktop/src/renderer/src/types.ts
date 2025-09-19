@@ -2,50 +2,59 @@ export interface Clip {
   id: string
   title: string
   channel: string
-  views: number
+  views: number | null
   createdAt: string
   durationSec: number
-  thumbnail: string
+  thumbnail: string | null
   playbackUrl: string
   description: string
+  sourceUrl: string
+  sourceTitle: string
+  sourcePublishedAt: string | null
+  rating?: number | null
+  quote?: string | null
+  reason?: string | null
 }
 
-export type AccountStatus = 'active' | 'expiring' | 'disconnected'
+export type SupportedPlatform = 'tiktok' | 'youtube' | 'instagram'
 
-export interface AccountUpload {
-  id: string
-  title: string
-  videoUrl: string
-  scheduledFor: string
-  durationSec: number
+export const PLATFORM_LABELS: Record<SupportedPlatform, string> = {
+  tiktok: 'TikTok',
+  youtube: 'YouTube',
+  instagram: 'Instagram'
 }
 
-export interface AccountMissedUpload {
-  id: string
-  title: string
-  scheduledFor: string
-  durationSec: number
-  failureReason: string
-  canRetry: boolean
+export const SUPPORTED_PLATFORMS: SupportedPlatform[] = ['tiktok', 'youtube', 'instagram']
+
+export type AccountConnectionStatus = 'active' | 'disconnected' | 'disabled'
+
+export interface AccountPlatformConnection {
+  platform: SupportedPlatform
+  label: string
+  status: AccountConnectionStatus
+  connected: boolean
+  tokenPath?: string | null
+  addedAt: string
+  lastVerifiedAt?: string | null
+  active: boolean
 }
 
-export interface AccountPlatform {
-  id: string
-  name: string
-  status: AccountStatus
-  statusMessage?: string
-  dailyUploadTarget: number
-  readyVideos: number
-  upcomingUploads: AccountUpload[]
-  missedUploads: AccountMissedUpload[]
-}
-
-export interface AccountProfile {
+export interface AccountSummary {
   id: string
   displayName: string
-  initials: string
-  description?: string
-  platforms: AccountPlatform[]
+  description?: string | null
+  createdAt: string
+  platforms: AccountPlatformConnection[]
+  active: boolean
+}
+
+export interface AuthPingSummary {
+  status: 'ok' | 'degraded'
+  checkedAt: string
+  accounts: number
+  connectedPlatforms: number
+  totalPlatforms: number
+  message: string
 }
 
 export type SearchBridge = {
@@ -61,11 +70,33 @@ export interface PipelineStepDefinition {
   title: string
   description: string
   durationMs: number
+  clipStage?: boolean
+  substeps?: PipelineSubstepDefinition[]
+}
+
+export interface ClipProgress {
+  completed: number
+  total: number
+}
+
+export interface PipelineSubstepDefinition {
+  id: string
+  title: string
+  description: string
+}
+
+export interface PipelineSubstep extends PipelineSubstepDefinition {
+  status: PipelineStepStatus
+  progress: number
+  etaSeconds: number | null
 }
 
 export interface PipelineStep extends PipelineStepDefinition {
   status: PipelineStepStatus
   progress: number
+  clipProgress: ClipProgress | null
+  etaSeconds: number | null
+  substeps: PipelineSubstep[]
 }
 
 export interface HomePipelineState {
@@ -76,6 +107,9 @@ export interface HomePipelineState {
   isProcessing: boolean
   clips: Clip[]
   selectedClipId: string | null
+  selectedAccountId: string | null
+  accountError: string | null
+  activeJobId: string | null
 }
 
 export type PipelineEventType =
@@ -83,5 +117,7 @@ export type PipelineEventType =
   | 'step_started'
   | 'step_completed'
   | 'step_failed'
+  | 'step_progress'
+  | 'clip_ready'
   | 'pipeline_completed'
   | 'log'

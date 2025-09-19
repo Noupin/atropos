@@ -7,15 +7,43 @@ import logging
 import threading
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
 from custom_types.ETone import Tone
 from interfaces.progress import PipelineEvent, PipelineEventType, PipelineObserver
 from pipeline import process_video
+from auth.accounts import (
+    AccountCreateRequest,
+    AccountResponse,
+    AccountUpdateRequest,
+    AuthPingResponse,
+    PlatformCreateRequest,
+    PlatformUpdateRequest,
+    add_platform,
+    create_account,
+    delete_account,
+    delete_platform,
+    ensure_account_available,
+    list_accounts,
+    ping_authentication,
+    update_account,
+    update_platform,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +90,108 @@ class JobStatus(BaseModel):
     error: str | None = None
 
 
+def _parse_datetime(value: Any) -> datetime:
+    """Return a timezone-aware datetime for ``value``."""
+
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc)
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+        else:
+            return parsed.astimezone(timezone.utc)
+    return datetime.now(timezone.utc)
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int(value: Any) -> int | None:
+    try:
+        if isinstance(value, bool):
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _ensure_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+@dataclass
+class ClipArtifact:
+    """Metadata describing a rendered clip for playback and export."""
+
+    clip_id: str
+    title: str
+    channel: str
+    source_title: str
+    source_url: str
+    source_published_at: str | None
+    created_at: datetime
+    duration_seconds: float
+    description: str
+    video_path: Path
+    account: str | None = None
+    views: int | None = None
+    rating: float | None = None
+    quote: str | None = None
+    reason: str | None = None
+
+
+class ClipManifest(BaseModel):
+    """API representation of a clip available for review."""
+
+    id: str
+    title: str
+    channel: str
+    created_at: datetime
+    duration_seconds: float = Field(..., ge=0)
+    description: str
+    playback_url: str
+    source_url: str
+    source_title: str
+    source_published_at: str | None = None
+    views: int | None = None
+    rating: float | None = None
+    quote: str | None = None
+    reason: str | None = None
+    account: str | None = None
+
+
+def _clip_to_payload(clip: ClipArtifact, request: Request, job_id: str) -> Dict[str, Any]:
+    """Return a serialisable payload for ``clip``."""
+
+    return {
+        "id": clip.clip_id,
+        "title": clip.title,
+        "channel": clip.channel,
+        "created_at": clip.created_at,
+        "duration_seconds": clip.duration_seconds,
+        "description": clip.description,
+        "playback_url": str(
+            request.url_for("get_job_clip_video", job_id=job_id, clip_id=clip.clip_id)
+        ),
+        "source_url": clip.source_url,
+        "source_title": clip.source_title,
+        "source_published_at": clip.source_published_at,
+        "views": clip.views,
+        "rating": clip.rating,
+        "quote": clip.quote,
+        "reason": clip.reason,
+        "account": clip.account,
+    }
+
+
 @dataclass
 class JobState:
     """Holds state shared between the worker thread and websocket clients."""
@@ -73,6 +203,8 @@ class JobState:
     finished: bool = False
     error: str | None = None
     thread: threading.Thread | None = None
+    project_dir: Path | None = None
+    clips: Dict[str, ClipArtifact] = field(default_factory=dict)
 
     def publish(self, event: PipelineEvent) -> None:
         """Broadcast ``event`` to all listeners and append it to history."""
@@ -81,12 +213,76 @@ class JobState:
         with self.lock:
             self.history.append(payload)
             listeners_snapshot = list(self.listeners)
+            data = event.data or {}
             if event.type == PipelineEventType.PIPELINE_COMPLETED:
                 self.finished = True
-                data = event.data or {}
                 self.error = data.get("error")
+                project_dir = _ensure_str(data.get("project_dir"))
+                if project_dir:
+                    try:
+                        self.project_dir = Path(project_dir).resolve()
+                    except OSError:
+                        self.project_dir = None
+            if event.type == PipelineEventType.CLIP_READY:
+                self._ingest_clip_event(data)
         for queue in listeners_snapshot:
             self.loop.call_soon_threadsafe(queue.put_nowait, payload)
+
+    def _ingest_clip_event(self, data: Dict[str, Any]) -> None:
+        clip_id = _ensure_str(data.get("clip_id"))
+        short_path = _ensure_str(data.get("short_path"))
+        description = _ensure_str(data.get("description"))
+        source_url = _ensure_str(data.get("source_url"))
+
+        project_dir_str = _ensure_str(data.get("project_dir"))
+        base = None
+        if project_dir_str:
+            try:
+                base = Path(project_dir_str).resolve()
+            except OSError:
+                base = None
+        if base is None and self.project_dir is not None:
+            base = self.project_dir
+
+        if not clip_id or not short_path or not description or not source_url or base is None:
+            return
+
+        try:
+            video_path = (base / short_path).resolve()
+            video_path.relative_to(base)
+        except (OSError, ValueError):
+            return
+
+        created_at = _parse_datetime(data.get("created_at"))
+        duration_value = _safe_float(data.get("duration_seconds"))
+        if duration_value is None:
+            duration_value = 0.0
+
+        views_value = _safe_int(data.get("views"))
+        rating_value = _safe_float(data.get("rating"))
+        quote_value = _ensure_str(data.get("quote"))
+        reason_value = _ensure_str(data.get("reason"))
+
+        artifact = ClipArtifact(
+            clip_id=clip_id,
+            title=_ensure_str(data.get("title")) or clip_id,
+            channel=_ensure_str(data.get("channel")) or "Unknown channel",
+            source_title=_ensure_str(data.get("source_title")) or (_ensure_str(data.get("title")) or clip_id),
+            source_url=source_url,
+            source_published_at=_ensure_str(data.get("source_published_at")),
+            created_at=created_at,
+            duration_seconds=max(0.0, duration_value),
+            description=description,
+            video_path=video_path,
+            account=_ensure_str(data.get("account")),
+            views=views_value,
+            rating=rating_value,
+            quote=quote_value,
+            reason=reason_value,
+        )
+
+        self.project_dir = base
+        self.clips[clip_id] = artifact
 
     def register_listener(self) -> tuple[asyncio.Queue[Dict[str, Any]], List[Dict[str, Any]]]:
         """Register a websocket listener and return its queue and existing history."""
@@ -137,6 +333,9 @@ async def start_job(payload: RunRequest) -> RunResponse:
     loop = asyncio.get_running_loop()
     state = JobState(loop=loop)
     observer = BroadcastObserver(state)
+
+    if payload.account:
+        ensure_account_available(payload.account)
 
     def runner() -> None:
         try:
@@ -197,3 +396,122 @@ async def job_events(websocket: WebSocket, job_id: str) -> None:
         logger.info("Websocket disconnected for job %s", job_id)
     finally:
         state.unregister_listener(queue)
+
+
+@app.get("/api/jobs/{job_id}/clips", response_model=list[ClipManifest])
+async def list_job_clips(job_id: str, request: Request) -> list[ClipManifest]:
+    """Return metadata for all clips generated by ``job_id``."""
+
+    state = _get_job(job_id)
+    if state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    with state.lock:
+        clips = sorted(state.clips.values(), key=lambda clip: clip.created_at, reverse=True)
+
+    return [ClipManifest(**_clip_to_payload(clip, request, job_id)) for clip in clips]
+
+
+@app.get("/api/jobs/{job_id}/clips/{clip_id}", response_model=ClipManifest)
+async def get_job_clip(job_id: str, clip_id: str, request: Request) -> ClipManifest:
+    """Return metadata for a single clip produced by ``job_id``."""
+
+    state = _get_job(job_id)
+    if state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    with state.lock:
+        clip = state.clips.get(clip_id)
+    if clip is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+
+    return ClipManifest(**_clip_to_payload(clip, request, job_id))
+
+
+@app.get("/api/jobs/{job_id}/clips/{clip_id}/video")
+async def get_job_clip_video(job_id: str, clip_id: str) -> FileResponse:
+    """Stream the rendered clip video for ``clip_id``."""
+
+    state = _get_job(job_id)
+    if state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    with state.lock:
+        clip = state.clips.get(clip_id)
+        video_path = clip.video_path if clip else None
+
+    if clip is None or video_path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+
+    if not video_path.exists() or not video_path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip video not found")
+
+    return FileResponse(path=video_path, media_type="video/mp4", filename=video_path.name)
+
+
+@app.get("/api/accounts", response_model=list[AccountResponse])
+async def get_accounts() -> list[AccountResponse]:
+    """Return the list of configured publishing accounts."""
+
+    return list_accounts()
+
+
+@app.post("/api/accounts", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
+async def post_account(payload: AccountCreateRequest) -> AccountResponse:
+    """Create a new account entry and return its metadata."""
+
+    return create_account(payload)
+
+
+@app.patch("/api/accounts/{account_id}", response_model=AccountResponse)
+async def patch_account(account_id: str, payload: AccountUpdateRequest) -> AccountResponse:
+    """Update an account's mutable fields such as its active state."""
+
+    return update_account(account_id, payload)
+
+
+@app.delete(
+    "/api/accounts/{account_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_account_route(account_id: str) -> Response:
+    """Remove an account and associated tokens from disk."""
+
+    delete_account(account_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/api/accounts/{account_id}/platforms", response_model=AccountResponse)
+async def post_account_platform(
+    account_id: str, payload: PlatformCreateRequest
+) -> AccountResponse:
+    """Add a platform connection to an account and persist credentials."""
+
+    return add_platform(account_id, payload)
+
+
+@app.patch("/api/accounts/{account_id}/platforms/{platform}", response_model=AccountResponse)
+async def patch_account_platform(
+    account_id: str, platform: str, payload: PlatformUpdateRequest
+) -> AccountResponse:
+    """Update an existing platform connection (e.g. disable or enable it)."""
+
+    return update_platform(account_id, platform, payload)
+
+
+@app.delete(
+    "/api/accounts/{account_id}/platforms/{platform}",
+    response_model=AccountResponse,
+)
+async def delete_account_platform(account_id: str, platform: str) -> AccountResponse:
+    """Remove a platform connection and delete its stored tokens."""
+
+    return delete_platform(account_id, platform)
+
+
+@app.get("/api/auth/ping", response_model=AuthPingResponse)
+async def auth_ping() -> AuthPingResponse:
+    """Report the overall authentication health."""
+
+    return ping_authentication()

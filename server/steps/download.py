@@ -1,6 +1,8 @@
 import subprocess
 from datetime import datetime
 
+from typing import Any, Callable
+
 import yt_dlp
 from yt_dlp.utils import DownloadError
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -117,13 +119,36 @@ def get_video_info(url: str):
         "uploader": uploader,
     }
 
-def download_video(url, output_path: str = "output_video.mp4"):
+ProgressHook = Callable[[float, dict[str, Any]], None]
+
+
+def _build_progress_hook(callback: ProgressHook | None) -> Callable[[dict[str, Any]], None]:
+    def _hook(status: dict[str, Any]) -> None:
+        if not callback:
+            return
+        state = status.get("status")
+        if state == "downloading":
+            downloaded = status.get("downloaded_bytes") or 0
+            total = status.get("total_bytes") or status.get("total_bytes_estimate") or 0
+            if total:
+                fraction = max(0.0, min(1.0, downloaded / total))
+                callback(fraction, status)
+        elif state == "finished":
+            callback(1.0, status)
+
+    return _hook
+
+
+def download_video(
+    url, output_path: str = "output_video.mp4", *, progress_callback: ProgressHook | None = None
+):
     try:
         with yt_dlp.YoutubeDL(
             {
                 "format": "bestvideo+bestaudio/best",
                 "outtmpl": output_path,
                 "merge_output_format": "mp4",
+                "progress_hooks": [_build_progress_hook(progress_callback)],
             }
         ) as ydl:
             ydl.download([url])
@@ -131,12 +156,15 @@ def download_video(url, output_path: str = "output_video.mp4"):
     except Exception as e:
         print(f"Error: {str(e)}")
 
-def download_audio(url, output_path: str = "output_audio.mp3"):
+def download_audio(
+    url, output_path: str = "output_audio.mp3", *, progress_callback: ProgressHook | None = None
+):
     try:
         with yt_dlp.YoutubeDL(
             {
                 "format": "bestaudio/best",
                 "outtmpl": output_path,
+                "progress_hooks": [_build_progress_hook(progress_callback)],
             }
         ) as ydl:
             ydl.download([url])
