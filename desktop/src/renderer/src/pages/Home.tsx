@@ -15,7 +15,7 @@ import { BACKEND_MODE, buildJobClipVideoUrl } from '../config/backend'
 import {
   createInitialPipelineSteps,
   PIPELINE_STEP_DEFINITIONS,
-  resolvePipelineStepId
+  resolvePipelineLocation
 } from '../data/pipeline'
 import {
   startPipelineJob,
@@ -208,8 +208,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       }
 
       if (event.type === 'step_progress') {
-        const resolvedId = resolvePipelineStepId(event.step)
-        if (!resolvedId || typeof event.data?.progress !== 'number') {
+        const location = resolvePipelineLocation(event.step)
+        if (!location || typeof event.data?.progress !== 'number') {
           return
         }
         const progressValue = clamp01(event.data.progress)
@@ -228,8 +228,37 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
 
         updateState((prev) => ({
           ...prev,
-          steps: prev.steps.map((step, index) => {
-            if (PIPELINE_STEP_DEFINITIONS[index]?.id !== resolvedId) {
+          steps: prev.steps.map((step) => {
+            if (location.kind === 'step') {
+              if (step.id !== location.stepId) {
+                return step
+              }
+
+              const nextClipProgress = step.clipStage
+                ? {
+                    completed:
+                      completedValue !== null
+                        ? completedValue
+                        : step.clipProgress?.completed ?? 0,
+                    total:
+                      totalValue !== null ? totalValue : step.clipProgress?.total ?? 0
+                  }
+                : step.clipProgress
+
+              if (step.status === 'completed') {
+                return { ...step, clipProgress: nextClipProgress, etaSeconds: null }
+              }
+
+              return {
+                ...step,
+                status: 'running',
+                progress: progressValue,
+                clipProgress: nextClipProgress,
+                etaSeconds: etaValue
+              }
+            }
+
+            if (step.id !== location.stepId) {
               return step
             }
 
@@ -239,20 +268,25 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                     completedValue !== null
                       ? completedValue
                       : step.clipProgress?.completed ?? 0,
-                  total:
-                    totalValue !== null ? totalValue : step.clipProgress?.total ?? 0
+                  total: totalValue !== null ? totalValue : step.clipProgress?.total ?? 0
                 }
               : step.clipProgress
 
-            if (step.status === 'completed') {
-              return { ...step, clipProgress: nextClipProgress, etaSeconds: null }
-            }
             return {
               ...step,
-              status: 'running',
-              progress: progressValue,
+              status: step.status === 'pending' ? 'running' : step.status,
               clipProgress: nextClipProgress,
-              etaSeconds: etaValue
+              substeps: step.substeps.map((substep) => {
+                if (substep.id !== location.substepId) {
+                  return substep
+                }
+                return {
+                  ...substep,
+                  status: progressValue >= 1 ? 'completed' : 'running',
+                  progress: progressValue,
+                  etaSeconds: etaValue
+                }
+              })
             }
           })
         }))
@@ -260,11 +294,11 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       }
 
       if (event.type === 'step_started' || event.type === 'step_completed' || event.type === 'step_failed') {
-        const resolvedId = resolvePipelineStepId(event.step)
-        if (!resolvedId) {
+        const location = resolvePipelineLocation(event.step)
+        if (!location) {
           return
         }
-        const targetIndex = PIPELINE_STEP_DEFINITIONS.findIndex((definition) => definition.id === resolvedId)
+        const targetIndex = PIPELINE_STEP_DEFINITIONS.findIndex((definition) => definition.id === location.stepId)
         if (targetIndex === -1) {
           return
         }
@@ -272,19 +306,77 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         updateState((prev) => ({
           ...prev,
           steps: prev.steps.map((step, index) => {
-            if (index < targetIndex && step.status !== 'completed') {
-              return { ...step, status: 'completed', progress: 1, etaSeconds: null }
-            }
-            if (index === targetIndex) {
-              if (event.type === 'step_started') {
-                return { ...step, status: 'running', progress: 0, etaSeconds: null }
-              }
-              if (event.type === 'step_completed') {
+            const shouldForceCompleted = index < targetIndex && step.status !== 'completed'
+
+            if (location.kind === 'step') {
+              if (shouldForceCompleted) {
                 return { ...step, status: 'completed', progress: 1, etaSeconds: null }
               }
-              return { ...step, status: 'failed', progress: 1, etaSeconds: null }
+              if (index === targetIndex) {
+                if (event.type === 'step_started') {
+                  return { ...step, status: 'running', progress: 0, etaSeconds: null }
+                }
+                if (event.type === 'step_completed') {
+                  return { ...step, status: 'completed', progress: 1, etaSeconds: null }
+                }
+                return { ...step, status: 'failed', progress: 1, etaSeconds: null }
+              }
+              return step
             }
-            return step
+
+            if (shouldForceCompleted) {
+              return { ...step, status: 'completed', progress: 1, etaSeconds: null }
+            }
+
+            if (step.id !== location.stepId) {
+              return step
+            }
+
+            const updatedSubsteps = step.substeps.map((substep) => {
+              if (substep.id !== location.substepId) {
+                return substep
+              }
+              if (event.type === 'step_started') {
+                return { ...substep, status: 'running', progress: 0, etaSeconds: null }
+              }
+              if (event.type === 'step_completed') {
+                return { ...substep, status: 'completed', progress: 1, etaSeconds: null }
+              }
+              return { ...substep, status: 'failed', etaSeconds: null }
+            })
+
+            const allCompleted = updatedSubsteps.length > 0 &&
+              updatedSubsteps.every((substep) => substep.status === 'completed')
+
+            if (event.type === 'step_failed') {
+              return {
+                ...step,
+                status: 'failed',
+                progress: 1,
+                etaSeconds: null,
+                substeps: updatedSubsteps
+              }
+            }
+
+            if (event.type === 'step_completed' && allCompleted) {
+              return {
+                ...step,
+                status: 'completed',
+                progress: 1,
+                etaSeconds: null,
+                substeps: updatedSubsteps
+              }
+            }
+
+            if (event.type === 'step_started' && step.status === 'pending') {
+              return {
+                ...step,
+                status: 'running',
+                substeps: updatedSubsteps
+              }
+            }
+
+            return { ...step, substeps: updatedSubsteps }
           })
         }))
 

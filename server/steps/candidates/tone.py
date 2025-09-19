@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import Any, Callable, List, Tuple
 from datetime import datetime
 from tqdm import tqdm
 
@@ -90,6 +90,9 @@ def _window_items(
     return windows
 
 
+ProgressCallback = Callable[[int, int], None]
+
+
 def find_candidates_by_tone(
     transcript_path: str | Path,
     *,
@@ -100,6 +103,7 @@ def find_candidates_by_tone(
     segments: Any | None = None,
     dialog_ranges: Any | None = None,
     silences: Any | None = None,
+    progress_callback: ProgressCallback | None = None,
     **_: Any,
 ) -> List[ClipCandidate] | tuple[List[ClipCandidate], List[ClipCandidate], List[ClipCandidate]]:
     """Generic windowed candidate finder parameterized by ``Tone``."""
@@ -112,17 +116,22 @@ def find_candidates_by_tone(
 
     items = parse_transcript(transcript_path)
     windows = _window_items(items)
+    total_windows = len(windows)
 
     _log(
-        f"Run started {datetime.utcnow().isoformat()}Z | tone={tone.name} | windows={len(windows)} | min_rating={min_rating}"
+        f"Run started {datetime.utcnow().isoformat()}Z | tone={tone.name} | windows={total_windows} | min_rating={min_rating}"
     )
+
+    if progress_callback is not None:
+        progress_callback(0, total_windows)
 
     all_candidates: List[ClipCandidate] = []
     context = WINDOW_SIZE_SECONDS * WINDOW_CONTEXT_PERCENTAGE
 
     global _TOTAL_LLM_SECONDS
-    for win_start, win_end, win_items in tqdm(
-        windows, total=len(windows), desc="[Tone] windows", unit="window"
+    for index, (win_start, win_end, win_items) in enumerate(
+        tqdm(windows, total=total_windows, desc="[Tone] windows", unit="window"),
+        start=1,
     ):
         ctx_items = [
             it
@@ -143,6 +152,9 @@ def find_candidates_by_tone(
             continue
         elapsed = time.perf_counter() - start_t
         _TOTAL_LLM_SECONDS += elapsed
+
+        if progress_callback is not None:
+            progress_callback(index, total_windows)
         for it in arr:
             start_val = _to_float(_get_field(it, "start"))
             end_val = _to_float(_get_field(it, "end"))
@@ -180,6 +192,9 @@ def find_candidates_by_tone(
     _log(
         f"Run summary | tone={tone.name} | all_candidates={len(all_candidates)} | rated_ge_min={len(filtered)} | merged={len(merged)} | final={len(final)} | total_llm_seconds={_TOTAL_LLM_SECONDS:.2f}"
     )
+
+    if progress_callback is not None:
+        progress_callback(total_windows, total_windows)
 
     if return_all_stages:
         return final, filtered, all_candidates

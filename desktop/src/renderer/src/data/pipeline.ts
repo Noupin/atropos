@@ -1,4 +1,9 @@
-import type { PipelineStep, PipelineStepDefinition } from '../types'
+import type {
+  PipelineStep,
+  PipelineStepDefinition,
+  PipelineSubstep,
+  PipelineSubstepDefinition
+} from '../types'
 
 export const PIPELINE_STEP_DEFINITIONS: PipelineStepDefinition[] = [
   {
@@ -34,59 +39,114 @@ export const PIPELINE_STEP_DEFINITIONS: PipelineStepDefinition[] = [
   {
     id: 'find-candidates',
     title: 'Select clip candidates',
-    description: 'Score potential clips, snap to silences and cut highlights for review.',
-    durationMs: 5200,
-    clipStage: true
+    description: 'Score potential clips, snap to silences and prepare highlights for review.',
+    durationMs: 5200
   },
   {
-    id: 'subtitles',
-    title: 'Generate subtitles',
-    description: 'Create caption files for each candidate clip ready for rendering.',
-    durationMs: 2400,
-    clipStage: true
-  },
-  {
-    id: 'render',
-    title: 'Render vertical formats',
-    description: 'Render short-form vertical videos with the chosen layout and captions.',
-    durationMs: 4000,
-    clipStage: true
-  },
-  {
-    id: 'descriptions',
-    title: 'Write descriptions',
-    description: 'Assemble descriptions, hashtags and links that accompany the final clips.',
-    durationMs: 2200,
-    clipStage: true
+    id: 'produce-clips',
+    title: 'Produce final clips',
+    description:
+      'Cut approved clips, generate captions, render vertical formats and write social copy.',
+    durationMs: 8800,
+    clipStage: true,
+    substeps: [
+      {
+        id: 'cut-clips',
+        title: 'Cut clips',
+        description: 'Trim the source video according to the refined candidate timing.'
+      },
+      {
+        id: 'generate-subtitles',
+        title: 'Generate subtitles',
+        description: 'Build SRT files using the transcript for each rendered clip.'
+      },
+      {
+        id: 'render-verticals',
+        title: 'Render vertical formats',
+        description: 'Render the short-form vertical video with the selected layout and captions.'
+      },
+      {
+        id: 'write-descriptions',
+        title: 'Write descriptions',
+        description: 'Assemble descriptions, hashtags and links for publishing.'
+      }
+    ]
   }
 ]
 
-const STEP_PATTERNS: Array<{ id: PipelineStepDefinition['id']; pattern: RegExp }> = [
-  { id: 'download-video', pattern: /^step[_-]?1/ },
-  { id: 'acquire-audio', pattern: /^step[_-]?2/ },
-  { id: 'transcript', pattern: /^step[_-]?3/ },
-  { id: 'silence-detection', pattern: /^step[_-]?4/ },
-  { id: 'structure-transcript', pattern: /^step[_-]?5/ },
-  { id: 'find-candidates', pattern: /^step[_-]?6/ },
-  { id: 'subtitles', pattern: /^step[_-]?7/ },
-  { id: 'render', pattern: /^step[_-]?8/ },
-  { id: 'descriptions', pattern: /^step[_-]?9/ }
+type StepPattern = { stepId: PipelineStepDefinition['id']; pattern: RegExp }
+
+type SubstepPattern = {
+  stepId: PipelineStepDefinition['id']
+  substepId: PipelineSubstepDefinition['id']
+  pattern: RegExp
+}
+
+const STEP_PATTERNS: StepPattern[] = [
+  { stepId: 'download-video', pattern: /^step[_-]?1/ },
+  { stepId: 'acquire-audio', pattern: /^step[_-]?2/ },
+  { stepId: 'transcript', pattern: /^step[_-]?3/ },
+  { stepId: 'silence-detection', pattern: /^step[_-]?4/ },
+  { stepId: 'structure-transcript', pattern: /^step[_-]?5/ },
+  { stepId: 'find-candidates', pattern: /^step[_-]?6/ },
+  { stepId: 'produce-clips', pattern: /^step[_-]?7/ }
 ]
 
-export const resolvePipelineStepId = (rawStep: string | null | undefined): PipelineStepDefinition['id'] | null => {
+const SUBSTEP_PATTERNS: SubstepPattern[] = [
+  {
+    stepId: 'produce-clips',
+    substepId: 'cut-clips',
+    pattern: /^step[_-]?7(?:_cut|cut)/
+  },
+  {
+    stepId: 'produce-clips',
+    substepId: 'generate-subtitles',
+    pattern: /^step[_-]?7(?:_subtitles|subtitles)/
+  },
+  {
+    stepId: 'produce-clips',
+    substepId: 'render-verticals',
+    pattern: /^step[_-]?7(?:_render|render)/
+  },
+  {
+    stepId: 'produce-clips',
+    substepId: 'write-descriptions',
+    pattern: /^step[_-]?7(?:_description|description|_descriptions|descriptions)/
+  }
+]
+
+export type PipelineStepLocation =
+  | { kind: 'step'; stepId: PipelineStepDefinition['id'] }
+  | { kind: 'substep'; stepId: PipelineStepDefinition['id']; substepId: PipelineSubstepDefinition['id'] }
+
+export const resolvePipelineLocation = (rawStep: string | null | undefined): PipelineStepLocation | null => {
   if (!rawStep) {
     return null
   }
 
   const normalised = rawStep.trim().toLowerCase()
+
+  const substepMatch = SUBSTEP_PATTERNS.find(({ pattern }) => pattern.test(normalised))
+  if (substepMatch) {
+    return { kind: 'substep', stepId: substepMatch.stepId, substepId: substepMatch.substepId }
+  }
+
   const direct = PIPELINE_STEP_DEFINITIONS.find((definition) => definition.id === normalised)
   if (direct) {
-    return direct.id
+    return { kind: 'step', stepId: direct.id }
   }
 
   const matched = STEP_PATTERNS.find(({ pattern }) => pattern.test(normalised))
-  return matched ? matched.id : null
+  return matched ? { kind: 'step', stepId: matched.stepId } : null
 }
+
+const initialiseSubsteps = (definitions: PipelineSubstepDefinition[] | undefined): PipelineSubstep[] =>
+  (definitions ?? []).map((definition) => ({
+    ...definition,
+    status: 'pending',
+    progress: 0,
+    etaSeconds: null
+  }))
 
 export const createInitialPipelineSteps = (): PipelineStep[] =>
   PIPELINE_STEP_DEFINITIONS.map((definition) => ({
@@ -94,5 +154,6 @@ export const createInitialPipelineSteps = (): PipelineStep[] =>
     status: 'pending',
     progress: 0,
     clipProgress: definition.clipStage ? { completed: 0, total: 0 } : null,
-    etaSeconds: null
+    etaSeconds: null,
+    substeps: initialiseSubsteps(definition.substeps)
   }))

@@ -71,6 +71,7 @@ export interface PipelineStepDefinition {
   description: string
   durationMs: number
   clipStage?: boolean
+  substeps?: PipelineSubstepDefinition[]
 }
 
 export interface ClipProgress {
@@ -78,11 +79,24 @@ export interface ClipProgress {
   total: number
 }
 
+export interface PipelineSubstepDefinition {
+  id: string
+  title: string
+  description: string
+}
+
+export interface PipelineSubstep extends PipelineSubstepDefinition {
+  status: PipelineStepStatus
+  progress: number
+  etaSeconds: number | null
+}
+
 export interface PipelineStep extends PipelineStepDefinition {
   status: PipelineStepStatus
   progress: number
   clipProgress: ClipProgress | null
   etaSeconds: number | null
+  substeps: PipelineSubstep[]
 }
 
 export interface HomePipelineState {

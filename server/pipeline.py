@@ -684,6 +684,24 @@ def process_video(
 
     if should_run(6):
         def step_candidates() -> tuple[list[ClipCandidate], list[ClipCandidate], list[ClipCandidate]]:
+            def handle_progress(completed: int, total: int) -> None:
+                fraction = 0.0 if total <= 0 else max(0.0, min(1.0, completed / total))
+                message = (
+                    "Candidate search complete"
+                    if total > 0 and completed >= total
+                    else (
+                        f"Scanning window {min(completed, total)}/{total}"
+                        if total > 0
+                        else "Scanning transcript windows"
+                    )
+                )
+                notify_progress(
+                    "step_6_candidates",
+                    fraction,
+                    message=message,
+                    extra={"completed": completed, "total": total},
+                )
+
             return find_candidates_by_tone(
                 str(transcript_output_path),
                 tone=selected_tone,
@@ -691,6 +709,7 @@ def process_video(
                 segments=segments,
                 dialog_ranges=dialog_ranges,
                 silences=silences,
+                progress_callback=handle_progress,
             )
 
         if (
@@ -718,6 +737,28 @@ def process_video(
         emit_log(
             f"[Pipeline] Candidates: {len(candidates)} final, {len(top_candidates)} top, {len(all_candidates)} total"
         )
+
+        if (
+            candidates_path.exists()
+            and candidates_all_path.exists()
+            and candidates_top_path.exists()
+            and not FORCE_REBUILD
+        ):
+            notify_progress(
+                "step_6_candidates",
+                1.0,
+                message="Loaded cached candidates",
+                extra={"completed": 1, "total": 1},
+            )
+            if observer:
+                observer.handle_event(
+                    PipelineEvent(
+                        type=PipelineEventType.STEP_COMPLETED,
+                        message="STEP 6: Using cached candidates",
+                        step="step_6_candidates",
+                        data={"elapsed_seconds": 0.0},
+                    )
+                )
 
         if not candidates:
             emit_log(
@@ -789,14 +830,49 @@ def process_video(
             level="warning",
         )
         export_candidates_json(refined_candidates, render_queue_path)
+        notify_progress(
+            "step_6_candidates",
+            1.0,
+            message="Using existing candidates",
+            extra={"completed": len(refined_candidates), "total": len(refined_candidates)},
+        )
+        if observer:
+            observer.handle_event(
+                PipelineEvent(
+                    type=PipelineEventType.STEP_COMPLETED,
+                    message="STEP 6: Using existing candidates",
+                    step="step_6_candidates",
+                    data={"elapsed_seconds": 0.0},
+                )
+            )
 
     total_candidates = len(refined_candidates)
 
+    produce_step_id = "step_7_produce"
+    produce_step_label = "STEP 7: Producing final clips"
+    produce_started: float | None = None
+
     if total_candidates:
+        produce_started = time.perf_counter()
+        step_timers[produce_step_id] = produce_started
+        if observer:
+            observer.handle_event(
+                PipelineEvent(
+                    type=PipelineEventType.STEP_STARTED,
+                    message=produce_step_label,
+                    step=produce_step_id,
+                )
+            )
         notify_progress(
-            "step_6_cut",
+            produce_step_id,
             0.0,
-            message=f"Preparing {total_candidates} clips",
+            message=f"Producing {total_candidates} clips",
+            extra={"completed": 0, "total": total_candidates},
+        )
+        notify_progress(
+            "step_7_cut",
+            0.0,
+            message="Preparing to cut clips",
             extra={"completed": 0, "total": total_candidates},
         )
         notify_progress(
@@ -806,17 +882,43 @@ def process_video(
             extra={"completed": 0, "total": total_candidates},
         )
         notify_progress(
-            "step_8_render",
+            "step_7_render",
             0.0,
             message="Preparing renders",
             extra={"completed": 0, "total": total_candidates},
         )
         notify_progress(
-            "step_9_description",
+            "step_7_descriptions",
             0.0,
             message="Preparing descriptions",
             extra={"completed": 0, "total": total_candidates},
         )
+    else:
+        if observer:
+            observer.handle_event(
+                PipelineEvent(
+                    type=PipelineEventType.STEP_STARTED,
+                    message=produce_step_label,
+                    step=produce_step_id,
+                )
+            )
+        notify_progress(
+            produce_step_id,
+            1.0,
+            message="No clips ready to produce",
+            extra={"completed": 0, "total": 0},
+        )
+        if observer:
+            observer.handle_event(
+                PipelineEvent(
+                    type=PipelineEventType.STEP_COMPLETED,
+                    message=produce_step_label,
+                    step=produce_step_id,
+                    data={"elapsed_seconds": 0.0},
+                )
+            )
+
+    produced_count = 0
 
     for idx, candidate in enumerate(refined_candidates, start=1):
         def step_cut() -> Path | None:
@@ -824,13 +926,13 @@ def process_video(
 
         if should_run(6):
             clip_path = run_pipeline_step(
-                f"STEP 6.{idx}: Cutting clip -> {clips_dir}",
+                f"STEP 7.{idx}: Cutting clip -> {clips_dir}",
                 step_cut,
-                step_key=f"step_6_cut_{idx}",
+                step_key=f"step_7_cut_{idx}",
             )
             if clip_path is None:
                 emit_log(
-                    f"{Fore.RED}STEP 6.{idx}: Failed to cut clip.{Style.RESET_ALL}",
+                    f"{Fore.RED}STEP 7.{idx}: Failed to cut clip.{Style.RESET_ALL}",
                     level="error",
                 )
                 send_failure_email(
@@ -844,14 +946,14 @@ def process_video(
             )
             if not clip_path.exists():
                 emit_log(
-                    f"{Fore.RED}STEP 6.{idx}: Expected clip not found -> {clip_path}{Style.RESET_ALL}",
+                    f"{Fore.RED}STEP 7.{idx}: Expected clip not found -> {clip_path}{Style.RESET_ALL}",
                     level="error",
                 )
                 continue
 
         if total_candidates:
             notify_progress(
-                "step_6_cut",
+                "step_7_cut",
                 idx / total_candidates,
                 message=f"Cut {idx} of {total_candidates} clips",
                 extra={"completed": idx, "total": total_candidates},
@@ -898,18 +1000,18 @@ def process_video(
 
         if should_run(8):
             run_pipeline_step(
-                f"STEP 8.{idx}: Rendering vertical video with captions -> {vertical_output}",
+                f"STEP 7.{idx}: Rendering vertical video with captions -> {vertical_output}",
                 step_render,
-                step_key=f"step_8_render_{idx}",
+                step_key=f"step_7_render_{idx}",
             )
         else:
             emit_log(
-                f"{Fore.YELLOW}Skipping STEP 8.{idx}: assuming video exists at {vertical_output}{Style.RESET_ALL}",
+                f"{Fore.YELLOW}Skipping STEP 7.{idx}: assuming video exists at {vertical_output}{Style.RESET_ALL}",
                 level="warning",
             )
         if total_candidates:
             notify_progress(
-                "step_8_render",
+                "step_7_render",
                 idx / total_candidates,
                 message=f"Rendered {idx} of {total_candidates} clips",
                 extra={"completed": idx, "total": total_candidates},
@@ -954,21 +1056,30 @@ def process_video(
 
         if should_run(9):
             run_pipeline_step(
-                f"STEP 9.{idx}: Writing description -> {description_path}",
+                f"STEP 7.{idx}: Writing description -> {description_path}",
                 step_description,
-                step_key=f"step_9_description_{idx}",
+                step_key=f"step_7_descriptions_{idx}",
             )
         else:
             emit_log(
-                f"{Fore.YELLOW}Skipping STEP 9.{idx}: assuming description exists at {description_path}{Style.RESET_ALL}",
+                f"{Fore.YELLOW}Skipping STEP 7.{idx}: assuming description exists at {description_path}{Style.RESET_ALL}",
                 level="warning",
             )
         if total_candidates:
             notify_progress(
-                "step_9_description",
+                "step_7_descriptions",
                 idx / total_candidates,
                 message=f"Descriptions prepared for {idx} of {total_candidates} clips",
                 extra={"completed": idx, "total": total_candidates},
+            )
+
+        if total_candidates:
+            produced_count += 1
+            notify_progress(
+                produce_step_id,
+                produced_count / total_candidates,
+                message=f"Produced {produced_count} of {total_candidates} clips",
+                extra={"completed": produced_count, "total": total_candidates},
             )
 
         if observer:
@@ -987,7 +1098,7 @@ def process_video(
             observer.handle_event(
                 PipelineEvent(
                     type=PipelineEventType.CLIP_READY,
-                    step=f"step_9_description_{idx}",
+                    step=f"step_7_descriptions_{idx}",
                     data={
                         "clip_id": vertical_output.stem,
                         "title": clip_title,
@@ -1005,6 +1116,26 @@ def process_video(
                         "reason": candidate.reason,
                         "rating": candidate.rating,
                     },
+                )
+            )
+
+    if total_candidates:
+        notify_progress(
+            produce_step_id,
+            1.0,
+            message=f"Finished producing {produced_count} of {total_candidates} clips",
+            extra={"completed": produced_count, "total": total_candidates},
+        )
+        if observer:
+            elapsed = 0.0
+            if produce_started is not None:
+                elapsed = max(0.0, time.perf_counter() - produce_started)
+            observer.handle_event(
+                PipelineEvent(
+                    type=PipelineEventType.STEP_COMPLETED,
+                    message=produce_step_label,
+                    step=produce_step_id,
+                    data={"elapsed_seconds": elapsed, "clips": produced_count},
                 )
             )
 

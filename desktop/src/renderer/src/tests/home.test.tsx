@@ -207,7 +207,7 @@ describe('Home pipeline events', () => {
     act(() => {
       handlers?.onEvent({
         type: 'clip_ready',
-        step: 'step_9_description_1',
+        step: 'step_7_descriptions_1',
         timestamp,
         data: {
           clip_id: 'clip-1',
@@ -275,17 +275,24 @@ describe('Home pipeline events', () => {
       handlers?.onEvent({ type: 'step_completed', step: 'step_3_transcribe', timestamp } as any)
       handlers?.onEvent({ type: 'step_completed', step: 'step_4_silences', timestamp } as any)
       handlers?.onEvent({ type: 'step_completed', step: 'step_5_segments', timestamp } as any)
-      handlers?.onEvent({ type: 'step_completed', step: 'step_6_cut_1', timestamp } as any)
+      handlers?.onEvent({ type: 'step_completed', step: 'step_6_candidates', timestamp } as any)
       handlers?.onEvent({
         type: 'step_progress',
         step: 'step_7_subtitles_2',
         timestamp,
         data: { progress: 0.4, completed: 2, total: 5 }
       } as any)
+      handlers?.onEvent({
+        type: 'step_progress',
+        step: 'step_7_produce',
+        timestamp,
+        data: { progress: 0.4, completed: 2, total: 5 }
+      } as any)
     })
 
-    const [activeStep] = screen.getAllByTestId('active-step')
-    expect(within(activeStep).getByText(/clip progress/i)).toBeInTheDocument()
-    expect(within(activeStep).getByText(/2\/5/i)).toBeInTheDocument()
+    const [stepsList] = screen.getAllByTestId('pipeline-steps')
+    expect(within(stepsList).getByText(/produce final clips/i)).toBeInTheDocument()
+    expect(within(stepsList).getByText(/clips 2\/5/i)).toBeInTheDocument()
+    expect(within(stepsList).getAllByText(/40%/i).length).toBeGreaterThan(0)
   })
 })

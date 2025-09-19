@@ -78,7 +78,7 @@ def test_clip_endpoints_expose_rendered_clips(
         observer.handle_event(
             PipelineEvent(
                 type=PipelineEventType.CLIP_READY,
-                step="step_9_description_1",
+                step="step_7_descriptions_1",
                 data={
                     "clip_id": "clip-1",
                     "title": "Space wonders",
