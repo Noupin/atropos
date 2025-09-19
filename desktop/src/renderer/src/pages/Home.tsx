@@ -204,16 +204,38 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
           return
         }
         const progressValue = clamp01(event.data.progress)
+        const completedValue =
+          typeof event.data.completed === 'number' ? Math.max(0, event.data.completed) : null
+        const totalValue =
+          typeof event.data.total === 'number' ? Math.max(0, event.data.total) : null
+
         updateState((prev) => ({
           ...prev,
           steps: prev.steps.map((step, index) => {
             if (PIPELINE_STEP_DEFINITIONS[index]?.id !== resolvedId) {
               return step
             }
+
+            const nextClipProgress = step.clipStage
+              ? {
+                  completed:
+                    completedValue !== null
+                      ? completedValue
+                      : step.clipProgress?.completed ?? 0,
+                  total:
+                    totalValue !== null ? totalValue : step.clipProgress?.total ?? 0
+                }
+              : step.clipProgress
+
             if (step.status === 'completed') {
-              return step
+              return { ...step, clipProgress: nextClipProgress }
             }
-            return { ...step, status: 'running', progress: progressValue }
+            return {
+              ...step,
+              status: 'running',
+              progress: progressValue,
+              clipProgress: nextClipProgress
+            }
           })
         }))
         return

@@ -2,6 +2,8 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path="../.env")
 
 import json
+from typing import Any, Callable
+
 import config
 
 from interfaces.progress import PipelineEvent, PipelineEventType, PipelineObserver
@@ -66,6 +68,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from helpers.audio import ensure_audio
+from helpers.media import probe_media_duration
 from helpers.transcript import write_transcript_txt
 from helpers.transcript_quality import score_transcript_quality
 from helpers.formatting import (
@@ -116,6 +119,22 @@ def process_video(
                     message=ansi_escape.sub("", message),
                     data={"level": level},
                 )
+            )
+
+    def notify_progress(
+        step_id: str,
+        fraction: float,
+        *,
+        message: str | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        if observer:
+            report_step_progress(
+                step_id,
+                fraction,
+                observer=observer,
+                message=message,
+                extra=extra,
             )
 
     if observer:
@@ -191,8 +210,21 @@ def process_video(
             emit_log(
                 f"{Fore.GREEN}STEP 1: Video already present -> {video_output_path}{Style.RESET_ALL}"
             )
+            notify_progress(
+                "step_1_download",
+                1.0,
+                message="Video already downloaded",
+            )
         else:
-            download_video(yt_url, str(video_output_path))
+            download_video(
+                yt_url,
+                str(video_output_path),
+                progress_callback=lambda fraction, _status: notify_progress(
+                    "step_1_download",
+                    fraction,
+                    message=f"Downloading video {fraction * 100:.0f}%",
+                ),
+            )
 
     if should_run(1):
         run_step(
@@ -213,7 +245,20 @@ def process_video(
     audio_output_path = project_dir / f"{non_suffix_filename}.mp3"
 
     def step_audio() -> bool:
-        return ensure_audio(yt_url, str(audio_output_path), str(video_output_path))
+        return ensure_audio(
+            yt_url,
+            str(audio_output_path),
+            str(video_output_path),
+            progress_callback=lambda fraction, stage: notify_progress(
+                "step_2_audio",
+                fraction,
+                message=(
+                    "Audio already available"
+                    if stage == "cached"
+                    else f"Acquiring audio ({stage}) {fraction * 100:.0f}%"
+                ),
+            ),
+        )
 
     if should_run(2):
         audio_ok = run_step(
@@ -237,22 +282,46 @@ def process_video(
             f"{Fore.YELLOW}Skipping STEP 2: assuming audio exists at {audio_output_path}{Style.RESET_ALL}",
             level="warning",
         )
+        if audio_ok:
+            notify_progress(
+                "step_2_audio",
+                1.0,
+                message="Audio already available",
+            )
 
     # ----------------------
     # STEP 3: Get Text (Transcript or Transcription)
     # ----------------------
     transcript_output_path = project_dir / f"{non_suffix_filename}.txt"
 
-    def step_download_transcript() -> bool:
-        return download_transcript(
+    def step_download_transcript(step_key: str = "step_3_download_transcript") -> bool:
+        notify_progress(
+            step_key,
+            0.05,
+            message="Requesting transcript from source",
+        )
+        success = download_transcript(
             yt_url,
             str(transcript_output_path),
             languages=["en", "en-US", "en-GB"],
         )
+        if success:
+            notify_progress(
+                step_key,
+                1.0,
+                message="Transcript downloaded",
+            )
+        return success
 
-    def step_transcribe() -> bool:
+    def run_transcribe(step_key: str) -> bool:
         result = transcribe_audio(
-            str(audio_output_path), model_size=WHISPER_MODEL
+            str(audio_output_path),
+            model_size=WHISPER_MODEL,
+            progress_callback=lambda fraction: notify_progress(
+                step_key,
+                fraction,
+                message=f"Transcribing audio {fraction * 100:.0f}%",
+            ),
         )
         write_transcript_txt(result, str(transcript_output_path))
         return True
@@ -264,7 +333,7 @@ def process_video(
             if audio_ok:
                 transcribed = run_step(
                     f"STEP 3: Transcribing with faster-whisper ({WHISPER_MODEL})",
-                    step_transcribe,
+                    lambda: run_transcribe("step_3_transcribe"),
                     step_id="step_3_transcribe",
                     observer=observer,
                 )
@@ -290,7 +359,7 @@ def process_video(
                     )
                     run_step(
                         f"STEP 3: Transcribing with faster-whisper ({WHISPER_MODEL})",
-                        step_transcribe,
+                        lambda: run_transcribe("step_3_transcribe_retry"),
                         step_id="step_3_transcribe_retry",
                         observer=observer,
                     )
@@ -328,7 +397,7 @@ def process_video(
                     )
                     run_step(
                         f"STEP 3: Transcribing with faster-whisper ({WHISPER_MODEL})",
-                        step_transcribe,
+                        lambda: run_transcribe("step_3_transcribe"),
                         step_id="step_3_transcribe",
                         observer=observer,
                     )
@@ -352,7 +421,7 @@ def process_video(
                 else:
                     run_step(
                         f"STEP 3: Transcribing with faster-whisper ({WHISPER_MODEL})",
-                        step_transcribe,
+                        lambda: run_transcribe("step_3_transcribe"),
                         step_id="step_3_transcribe",
                         observer=observer,
                     )
@@ -364,11 +433,22 @@ def process_video(
             f"{Fore.YELLOW}Skipping STEP 3: assuming transcript exists at {transcript_output_path}{Style.RESET_ALL}",
             level="warning",
         )
+        if transcript_output_path.exists():
+            notify_progress(
+                "step_3_download_transcript",
+                1.0,
+                message="Transcript already available",
+            )
 
     # ----------------------
     # STEP 4: Detect Silence Segments
     # ----------------------
     silences_path = project_dir / "silences.json"
+    audio_duration_hint = (
+        probe_media_duration(audio_output_path)
+        if audio_output_path.exists()
+        else None
+    )
 
     def step_silences() -> list[tuple[float, float]]:
         silences = (
@@ -376,6 +456,16 @@ def process_video(
                 str(audio_output_path),
                 noise=SILENCE_DETECTION_NOISE,
                 min_duration=SILENCE_DETECTION_MIN_DURATION,
+                progress_callback=lambda fraction, timestamp: notify_progress(
+                    "step_4_silences",
+                    fraction,
+                    message=(
+                        "Silence detection complete"
+                        if fraction >= 1
+                        else f"Scanning audio — {timestamp:.0f}s analysed"
+                    ),
+                ),
+                duration_hint=audio_duration_hint,
             )
             if audio_ok
             else []
@@ -398,6 +488,11 @@ def process_video(
                 f"{Fore.YELLOW}Skipping STEP 4: loaded {len(silences)} silences from {silences_path}{Style.RESET_ALL}",
                 level="warning",
             )
+            notify_progress(
+                "step_4_silences",
+                1.0,
+                message="Silence metadata already available",
+            )
         else:
             silences = []
             emit_log(
@@ -417,12 +512,32 @@ def process_video(
             segments = [(d["start"], d["end"], d["text"]) for d in segments_data]
         else:
             def step_segments() -> list[tuple[float, float, str]]:
+                notify_progress(
+                    "step_5_segments",
+                    0.05,
+                    message="Parsing transcript for segmentation",
+                )
                 items = parse_transcript(transcript_output_path)
+                notify_progress(
+                    "step_5_segments",
+                    0.35,
+                    message="Building segment windows",
+                )
                 segs = segment_transcript_items(items)
                 text = transcript_output_path.read_text(encoding="utf-8")
                 if USE_LLM_FOR_SEGMENTS:
                     segs = maybe_refine_segments_with_llm(segs)
+                notify_progress(
+                    "step_5_segments",
+                    0.75,
+                    message="Saving structured transcript",
+                )
                 write_segments_json(segs, segments_path)
+                notify_progress(
+                    "step_5_segments",
+                    1.0,
+                    message="Transcript structure ready",
+                )
                 return segs
 
             segments = run_step(
@@ -431,16 +546,21 @@ def process_video(
                 step_id="step_5_segments",
                 observer=observer,
             )
-    else:
-        if segments_path.exists():
-            segments_data = json.loads(segments_path.read_text(encoding="utf-8"))
-            segments = [(d["start"], d["end"], d["text"]) for d in segments_data]
-            emit_log(
-                f"{Fore.YELLOW}Skipping STEP 5: loaded segments from {segments_path}{Style.RESET_ALL}",
-                level="warning",
-            )
         else:
-            segments = []
+            if segments_path.exists():
+                segments_data = json.loads(segments_path.read_text(encoding="utf-8"))
+                segments = [(d["start"], d["end"], d["text"]) for d in segments_data]
+                emit_log(
+                    f"{Fore.YELLOW}Skipping STEP 5: loaded segments from {segments_path}{Style.RESET_ALL}",
+                    level="warning",
+                )
+                notify_progress(
+                    "step_5_segments",
+                    1.0,
+                    message="Transcript structure ready",
+                )
+            else:
+                segments = []
             emit_log(
                 f"{Fore.YELLOW}Skipping STEP 5: no existing segments at {segments_path}{Style.RESET_ALL}",
                 level="warning",
@@ -456,8 +576,18 @@ def process_video(
                 emit_log(
                     f"[Pipeline] Starting dialog detection using transcript: {transcript_output_path}"
                 )
+                notify_progress(
+                    "step_5_dialog_ranges",
+                    0.1,
+                    message="Detecting dialog-heavy regions",
+                )
                 ranges = detect_dialog_ranges(transcript_output_path)
                 write_dialog_ranges_json(ranges, dialog_ranges_path)
+                notify_progress(
+                    "step_5_dialog_ranges",
+                    1.0,
+                    message="Dialog analysis complete",
+                )
                 return ranges
 
             dialog_ranges = run_step(
@@ -466,15 +596,20 @@ def process_video(
                 step_id="step_5_dialog_ranges",
                 observer=observer,
             )
-    else:
-        if dialog_ranges_path.exists():
-            dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
-            emit_log(
-                f"{Fore.YELLOW}Skipping STEP 5: loaded dialog ranges from {dialog_ranges_path}{Style.RESET_ALL}",
-                level="warning",
-            )
         else:
-            dialog_ranges = []
+            if dialog_ranges_path.exists():
+                dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
+                emit_log(
+                    f"{Fore.YELLOW}Skipping STEP 5: loaded dialog ranges from {dialog_ranges_path}{Style.RESET_ALL}",
+                    level="warning",
+                )
+                notify_progress(
+                    "step_5_dialog_ranges",
+                    1.0,
+                    message="Dialog analysis complete",
+                )
+            else:
+                dialog_ranges = []
             emit_log(
                 f"{Fore.YELLOW}Skipping STEP 5: no existing dialog ranges at {dialog_ranges_path}{Style.RESET_ALL}",
                 level="warning",
@@ -584,12 +719,12 @@ def process_video(
                     step_id=f"step_6_raw_cut_{idx}",
                     observer=observer,
                 )
-                if observer and raw_candidates:
-                    report_step_progress(
+                if raw_candidates:
+                    notify_progress(
                         "step_6_raw_cut",
                         idx / len(raw_candidates),
-                        observer=observer,
                         message=f"Prepared raw clip {idx} of {len(raw_candidates)}",
+                        extra={"completed": idx, "total": len(raw_candidates)},
                     )
 
         refined_candidates = dedupe_candidates(candidates)
@@ -618,6 +753,32 @@ def process_video(
         export_candidates_json(refined_candidates, render_queue_path)
 
     total_candidates = len(refined_candidates)
+
+    if total_candidates:
+        notify_progress(
+            "step_6_cut",
+            0.0,
+            message=f"Preparing {total_candidates} clips",
+            extra={"completed": 0, "total": total_candidates},
+        )
+        notify_progress(
+            "step_7_subtitles",
+            0.0,
+            message="Waiting to generate subtitles",
+            extra={"completed": 0, "total": total_candidates},
+        )
+        notify_progress(
+            "step_8_render",
+            0.0,
+            message="Preparing renders",
+            extra={"completed": 0, "total": total_candidates},
+        )
+        notify_progress(
+            "step_9_description",
+            0.0,
+            message="Preparing descriptions",
+            extra={"completed": 0, "total": total_candidates},
+        )
 
     for idx, candidate in enumerate(refined_candidates, start=1):
         def step_cut() -> Path | None:
@@ -651,12 +812,12 @@ def process_video(
                 )
                 continue
 
-        if observer and total_candidates:
-            report_step_progress(
+        if total_candidates:
+            notify_progress(
                 "step_6_cut",
                 idx / total_candidates,
-                observer=observer,
                 message=f"Cut {idx} of {total_candidates} clips",
+                extra={"completed": idx, "total": total_candidates},
             )
 
         srt_path = subtitles_dir / f"{clip_path.stem}.srt"
@@ -681,12 +842,12 @@ def process_video(
                 f"{Fore.YELLOW}Skipping STEP 7.{idx}: assuming subtitles exist at {srt_path}{Style.RESET_ALL}",
                 level="warning",
             )
-        if observer and total_candidates:
-            report_step_progress(
+        if total_candidates:
+            notify_progress(
                 "step_7_subtitles",
                 idx / total_candidates,
-                observer=observer,
                 message=f"Subtitles generated for clip {idx}/{total_candidates}",
+                extra={"completed": idx, "total": total_candidates},
             )
 
         vertical_output = shorts_dir / f"{clip_path.stem}.mp4"
@@ -711,12 +872,12 @@ def process_video(
                 f"{Fore.YELLOW}Skipping STEP 8.{idx}: assuming video exists at {vertical_output}{Style.RESET_ALL}",
                 level="warning",
             )
-        if observer and total_candidates:
-            report_step_progress(
+        if total_candidates:
+            notify_progress(
                 "step_8_render",
                 idx / total_candidates,
-                observer=observer,
                 message=f"Rendered {idx} of {total_candidates} clips",
+                extra={"completed": idx, "total": total_candidates},
             )
 
         description_path = shorts_dir / f"{clip_path.stem}.txt"
@@ -768,12 +929,12 @@ def process_video(
                 f"{Fore.YELLOW}Skipping STEP 9.{idx}: assuming description exists at {description_path}{Style.RESET_ALL}",
                 level="warning",
             )
-        if observer and total_candidates:
-            report_step_progress(
+        if total_candidates:
+            notify_progress(
                 "step_9_description",
                 idx / total_candidates,
-                observer=observer,
                 message=f"Descriptions prepared for {idx} of {total_candidates} clips",
+                extra={"completed": idx, "total": total_candidates},
             )
 
         if observer:

@@ -70,11 +70,18 @@ export interface PipelineStepDefinition {
   title: string
   description: string
   durationMs: number
+  clipStage?: boolean
+}
+
+export interface ClipProgress {
+  completed: number
+  total: number
 }
 
 export interface PipelineStep extends PipelineStepDefinition {
   status: PipelineStepStatus
   progress: number
+  clipProgress: ClipProgress | null
 }
 
 export interface HomePipelineState {

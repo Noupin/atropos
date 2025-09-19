@@ -151,6 +151,11 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
         <span className={`h-2 w-2 rounded-full ${indicatorClasses[step.status]}`} aria-hidden="true" />
       </div>
       <p className="text-xs text-[var(--muted)]">{step.title}</p>
+      {step.clipStage && step.clipProgress && step.clipProgress.total > 0 ? (
+        <span className="mt-2 inline-flex w-fit items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+          Clips {step.clipProgress.completed}/{step.clipProgress.total}
+        </span>
+      ) : null}
     </li>
   )
 
@@ -230,6 +235,39 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
                 </span>
               </div>
               <p className="text-sm text-[var(--muted)]">{focusEntry.step.description}</p>
+              {focusEntry.step.clipStage && focusEntry.step.clipProgress ? (
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+                      Clip progress
+                    </p>
+                    <span className="text-xs font-medium text-[var(--fg)]">
+                      {focusEntry.step.clipProgress.completed}/{focusEntry.step.clipProgress.total}
+                    </span>
+                  </div>
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-emerald-500 transition-all duration-500 ease-out"
+                      style={{
+                        width: `${
+                          focusEntry.step.clipProgress.total > 0
+                            ? Math.min(
+                                100,
+                                Math.max(
+                                  0,
+                                  (focusEntry.step.clipProgress.completed /
+                                    focusEntry.step.clipProgress.total) * 100
+                                )
+                              )
+                            : focusEntry.step.status === 'completed'
+                              ? 100
+                              : 0
+                        }%`
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : null}
               {focusEntry.step.status === 'running' ? (
                 <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
                   <div

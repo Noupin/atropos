@@ -35,25 +35,29 @@ export const PIPELINE_STEP_DEFINITIONS: PipelineStepDefinition[] = [
     id: 'find-candidates',
     title: 'Select clip candidates',
     description: 'Score potential clips, snap to silences and cut highlights for review.',
-    durationMs: 5200
+    durationMs: 5200,
+    clipStage: true
   },
   {
     id: 'subtitles',
     title: 'Generate subtitles',
     description: 'Create caption files for each candidate clip ready for rendering.',
-    durationMs: 2400
+    durationMs: 2400,
+    clipStage: true
   },
   {
     id: 'render',
     title: 'Render vertical formats',
     description: 'Render short-form vertical videos with the chosen layout and captions.',
-    durationMs: 4000
+    durationMs: 4000,
+    clipStage: true
   },
   {
     id: 'descriptions',
     title: 'Write descriptions',
     description: 'Assemble descriptions, hashtags and links that accompany the final clips.',
-    durationMs: 2200
+    durationMs: 2200,
+    clipStage: true
   }
 ]
 
@@ -88,5 +92,6 @@ export const createInitialPipelineSteps = (): PipelineStep[] =>
   PIPELINE_STEP_DEFINITIONS.map((definition) => ({
     ...definition,
     status: 'pending',
-    progress: 0
+    progress: 0,
+    clipProgress: definition.clipStage ? { completed: 0, total: 0 } : null
   }))

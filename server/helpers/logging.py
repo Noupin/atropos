@@ -114,6 +114,7 @@ def report_step_progress(
     *,
     message: str | None = None,
     observer: PipelineObserver | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> None:
     """Emit a progress update for ``step_id`` to subscribed observers."""
 
@@ -122,12 +123,16 @@ def report_step_progress(
         return
 
     clamped = max(0.0, min(1.0, progress))
+    payload: dict[str, Any] = {"progress": clamped}
+    if extra:
+        payload.update(extra)
+
     obs.handle_event(
         PipelineEvent(
             type=PipelineEventType.STEP_PROGRESS,
             message=message,
             step=step_id,
-            data={"progress": clamped},
+            data=payload,
         )
     )
 

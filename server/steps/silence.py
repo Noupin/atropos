@@ -2,7 +2,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Callable, Iterable, List, Tuple
 
 SILENCE_START_RE = re.compile(r"silence_start: (?P<time>\d+(?:\.\d+)?)")
 SILENCE_END_RE = re.compile(r"silence_end: (?P<time>\d+(?:\.\d+)?)")
@@ -18,6 +18,8 @@ def detect_silences(
     *,
     noise: str = SILENCE_DETECTION_NOISE,
     min_duration: float = SILENCE_DETECTION_MIN_DURATION,
+    progress_callback: Callable[[float, float], None] | None = None,
+    duration_hint: float | None = None,
 ) -> List[Tuple[float, float]]:
     """Return a list of (start, end) silence segments for ``audio_path``."""
     cmd = [
@@ -30,16 +32,16 @@ def detect_silences(
         "null",
         "-",
     ]
-    proc = subprocess.run(
+    proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        check=True,
     )
     silences: List[Tuple[float, float]] = []
     start_time: float | None = None
-    for line in proc.stderr.splitlines():
+    assert proc.stderr is not None
+    for line in proc.stderr:
         m_start = SILENCE_START_RE.search(line)
         if m_start:
             start_time = float(m_start.group("time"))
@@ -48,7 +50,15 @@ def detect_silences(
         if m_end and start_time is not None:
             end_time = float(m_end.group("time"))
             silences.append((start_time, end_time))
+            if progress_callback and duration_hint:
+                fraction = min(0.99, max(0.0, end_time / duration_hint))
+                progress_callback(fraction, end_time)
             start_time = None
+    proc.wait()
+    if progress_callback:
+        progress_callback(1.0, duration_hint or 0.0)
+    if proc.returncode and proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, cmd)
     return silences
 
 

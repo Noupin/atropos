@@ -107,8 +107,9 @@ describe('Home account selection', () => {
     fireEvent.change(screen.getByLabelText(/video url/i), {
       target: { value: 'https://www.youtube.com/watch?v=example' }
     })
-    const [startButton] = screen.getAllByRole('button', { name: /start processing/i })
-    fireEvent.click(startButton)
+    const form = screen.getByLabelText(/account/i).closest('form')
+    expect(form).not.toBeNull()
+    fireEvent.submit(form as HTMLFormElement)
 
     expect(screen.getByText(/select an account to start processing/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/account/i)).toHaveAttribute('aria-invalid', 'true')
@@ -130,8 +131,9 @@ describe('Home account selection', () => {
 
     fireEvent.change(screen.getByLabelText(/account/i), { target: { value: accountId } })
     fireEvent.change(screen.getByLabelText(/video url/i), { target: { value: videoUrl } })
-    const [startButton] = screen.getAllByRole('button', { name: /start processing/i })
-    fireEvent.click(startButton)
+    const form = screen.getByLabelText(/account/i).closest('form')
+    expect(form).not.toBeNull()
+    fireEvent.submit(form as HTMLFormElement)
 
     await waitFor(() => expect(startPipelineJobMock).toHaveBeenCalledTimes(1))
     expect(startPipelineJobMock).toHaveBeenCalledWith({ account: accountId, url: videoUrl })
@@ -189,9 +191,11 @@ describe('Home pipeline events', () => {
     fireEvent.change(screen.getByLabelText(/video url/i), {
       target: { value: 'https://www.youtube.com/watch?v=example' }
     })
-    const [startButton] = screen.getAllByRole('button', { name: /start processing/i })
-    fireEvent.click(startButton)
+    const form = accountSelect.closest('form')
+    expect(form).not.toBeNull()
+    fireEvent.submit(form as HTMLFormElement)
 
+    await waitFor(() => expect(startPipelineJobMock).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(subscribeToPipelineEventsMock).toHaveBeenCalledTimes(1))
     expect(handlers).not.toBeNull()
     const timestamp = Date.now()
@@ -223,8 +227,65 @@ describe('Home pipeline events', () => {
       } as any)
     })
 
-    expect(screen.getByText(/space wonders/i)).toBeInTheDocument()
-    expect(screen.getByText(/mind-blowing fact/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/space wonders/i)[0]).toBeInTheDocument()
+    expect(screen.getAllByText(/mind-blowing fact/i)[0]).toBeInTheDocument()
     expect(screen.getByText(/#space/i)).toBeInTheDocument()
+  })
+
+  it('surfaces clip batch progress updates for multi-clip steps', async () => {
+    const unsubscribeMock = vi.fn()
+    let handlers: PipelineEventHandlers | null = null
+
+    subscribeToPipelineEventsMock.mockImplementation((_jobId, providedHandlers) => {
+      handlers = providedHandlers
+      return unsubscribeMock
+    })
+
+    render(
+      <Home
+        registerSearch={() => {}}
+        initialState={createInitialState()}
+        onStateChange={() => {}}
+        accounts={[AVAILABLE_ACCOUNT]}
+      />
+    )
+
+    const accountSelect = screen.getByLabelText(/account/i)
+    fireEvent.change(accountSelect, {
+      target: { value: AVAILABLE_ACCOUNT.id }
+    })
+    fireEvent.change(screen.getByLabelText(/video url/i), {
+      target: { value: 'https://www.youtube.com/watch?v=example' }
+    })
+
+    const form = accountSelect.closest('form')
+    expect(form).not.toBeNull()
+    fireEvent.submit(form as HTMLFormElement)
+
+    await waitFor(() => expect(startPipelineJobMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(subscribeToPipelineEventsMock).toHaveBeenCalledTimes(1))
+    expect(handlers).not.toBeNull()
+
+    const timestamp = Date.now()
+
+    act(() => {
+      handlers?.onEvent({ type: 'pipeline_started', timestamp } as any)
+      handlers?.onEvent({ type: 'step_completed', step: 'step_1_download', timestamp } as any)
+      handlers?.onEvent({ type: 'step_completed', step: 'step_2_audio', timestamp } as any)
+      handlers?.onEvent({ type: 'step_completed', step: 'step_3_transcribe', timestamp } as any)
+      handlers?.onEvent({ type: 'step_completed', step: 'step_4_silences', timestamp } as any)
+      handlers?.onEvent({ type: 'step_completed', step: 'step_5_segments', timestamp } as any)
+      handlers?.onEvent({ type: 'step_completed', step: 'step_6_cut_1', timestamp } as any)
+      handlers?.onEvent({
+        type: 'step_progress',
+        step: 'step_7_subtitles_2',
+        timestamp,
+        data: { progress: 0.4, completed: 2, total: 5 }
+      } as any)
+    })
+
+    const [activeStep] = screen.getAllByTestId('active-step')
+    expect(within(activeStep).getByText(/clip progress/i)).toBeInTheDocument()
+    expect(within(activeStep).getByText(/2\/5/i)).toBeInTheDocument()
   })
 })
