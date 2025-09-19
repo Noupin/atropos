@@ -1,8 +1,13 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
-const api = {}
+type Clip = import('../renderer/src/types').Clip
+
+const api = {
+  listAccountClips: (accountId: string | null): Promise<Clip[]> =>
+    ipcRenderer.invoke('clips:list', accountId)
+}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise

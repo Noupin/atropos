@@ -344,14 +344,14 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
     return (
       <li
         key={step.id}
-        className={`col-span-full rounded-2xl border ${
-          isActive ? 'border-sky-400 shadow-[0_20px_40px_-24px_rgba(56,189,248,0.4)]' : 'border-white/10'
+        className={`col-span-full rounded-xl border ${
+          isActive ? 'border-sky-400 shadow-[0_14px_28px_-20px_rgba(56,189,248,0.35)]' : 'border-white/10'
         } bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)]`}
       >
         <button
           type="button"
           onClick={() => toggleStep(step.id)}
-          className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left sm:px-5"
+          className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left sm:px-4"
           aria-expanded={showDetails}
           aria-controls={`step-${step.id}-details`}
         >
@@ -383,7 +383,7 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
         {showDetails ? (
           <div
             id={`step-${step.id}-details`}
-            className="flex flex-col gap-3 border-t border-white/5 px-4 pb-4 pt-3 text-sm text-[var(--muted)] sm:px-5"
+            className="flex flex-col gap-2 border-t border-white/5 px-3 pb-3 pt-2 text-sm text-[var(--muted)] sm:px-4"
           >
             <p>{step.description}</p>
             {renderStepProgress(step)}
