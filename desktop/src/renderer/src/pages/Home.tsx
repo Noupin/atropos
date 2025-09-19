@@ -22,6 +22,7 @@ import {
   subscribeToPipelineEvents,
   type PipelineEventMessage
 } from '../services/pipelineApi'
+import { parseClipTimestamp } from '../lib/clipMetadata'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
 
@@ -417,6 +418,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         }
 
         const playbackUrl = buildJobClipVideoUrl(jobId, playbackClipId)
+        const { timestampUrl, timestampSeconds } = parseClipTimestamp(description)
 
         updateState((prev) => {
           const incomingClip = {
@@ -434,7 +436,9 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
             sourcePublishedAt,
             quote,
             reason,
-            rating
+            rating,
+            timestampUrl,
+            timestampSeconds
           }
 
           const existingIndex = prev.clips.findIndex((clip) => clip.id === clipId)
@@ -820,23 +824,59 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                     Your browser does not support the video tag.
                   </video>
                 </div>
-                <div className="space-y-4 text-sm text-[var(--muted)]">
-                  <div className="space-y-2">
-                    <p className="text-base font-semibold text-[var(--fg)] leading-tight">
-                      {selectedClip.title}
-                    </p>
+                <div className="space-y-5 text-sm text-[var(--muted)]">
+                  <div className="space-y-3">
+                    {selectedClip.quote ? (
+                      <p className="text-lg font-semibold text-[var(--fg)] leading-tight">
+                        “{selectedClip.quote}”
+                      </p>
+                    ) : selectedClip.title ? (
+                      <p className="text-lg font-semibold text-[var(--fg)] leading-tight">
+                        {selectedClip.title}
+                      </p>
+                    ) : null}
+                    {selectedClip.reason ? (
+                      <div className="space-y-1">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
+                          Reason
+                        </span>
+                        <p className="rounded-lg border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-3 text-sm leading-relaxed text-[var(--fg)]/80">
+                          {selectedClip.reason}
+                        </p>
+                      </div>
+                    ) : null}
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                       <span className="font-semibold text-[var(--fg)] text-sm">{selectedClip.channel}</span>
                       {selectedClip.views !== null ? <span>{formatViews(selectedClip.views)} views</span> : null}
-                      {selectedClip.sourcePublishedAt ? (
-                        <span>Published {timeAgo(selectedClip.sourcePublishedAt)}</span>
-                      ) : null}
+                      <span>Duration {formatDuration(selectedClip.durationSec)}</span>
                     </div>
                     <div className="flex flex-wrap items-center gap-3 text-xs">
-                      <span>Duration {formatDuration(selectedClip.durationSec)}</span>
                       <span>Generated {timeAgo(selectedClip.createdAt)}</span>
+                      {selectedClip.sourcePublishedAt ? (
+                        <span>Source uploaded {timeAgo(selectedClip.sourcePublishedAt)}</span>
+                      ) : null}
                     </div>
                   </div>
+                  <dl className="grid gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm text-[var(--muted)] sm:grid-cols-[auto_1fr]">
+                    {selectedClip.rating !== null && selectedClip.rating !== undefined ? (
+                      <>
+                        <dt className="font-medium text-[var(--fg)]">Score</dt>
+                        <dd className="text-[var(--fg)]">
+                          {selectedClip.rating.toFixed(1).replace(/\.0$/, '')}
+                        </dd>
+                      </>
+                    ) : null}
+                    <dt className="font-medium text-[var(--fg)]">Clip created</dt>
+                    <dd>{new Date(selectedClip.createdAt).toLocaleString()}</dd>
+                    <dt className="font-medium text-[var(--fg)]">Source uploaded</dt>
+                    <dd>{selectedClip.sourcePublishedAt ? new Date(selectedClip.sourcePublishedAt).toLocaleString() : 'Unknown'}</dd>
+                    {selectedClip.timestampSeconds !== null && selectedClip.timestampSeconds !== undefined ? (
+                      <>
+                        <dt className="font-medium text-[var(--fg)]">Starts at</dt>
+                        <dd>{formatDuration(selectedClip.timestampSeconds)}</dd>
+                      </>
+                    ) : null}
+                  </dl>
                   <div className="flex flex-wrap items-center gap-3">
                     <a
                       href={selectedClip.sourceUrl}
@@ -852,10 +892,20 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                         />
                       </svg>
                     </a>
-                    {selectedClip.quote ? (
-                      <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-[var(--muted)]">
-                        “{selectedClip.quote}”
-                      </span>
+                    {selectedClip.timestampUrl ? (
+                      <a
+                        href={selectedClip.timestampUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white"
+                      >
+                        Jump to
+                        <span className="font-semibold text-white">
+                          {selectedClip.timestampSeconds !== null && selectedClip.timestampSeconds !== undefined
+                            ? formatDuration(selectedClip.timestampSeconds)
+                            : 'timestamp'}
+                        </span>
+                      </a>
                     ) : null}
                   </div>
                   <div className="space-y-2">

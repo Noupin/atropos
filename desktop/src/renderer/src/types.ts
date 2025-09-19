@@ -14,6 +14,8 @@ export interface Clip {
   rating?: number | null
   quote?: string | null
   reason?: string | null
+  timestampUrl?: string | null
+  timestampSeconds?: number | null
 }
 
 export type SupportedPlatform = 'tiktok' | 'youtube' | 'instagram'
