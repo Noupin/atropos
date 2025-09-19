@@ -200,12 +200,18 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
     return `Currently running: ${activeStep.title}`
   }, [activeStep])
 
-  const renderClipBadge = (step: PipelineStep) => {
+  const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'default') => {
     if (!step.clipStage || !step.clipProgress || step.clipProgress.total === 0) {
       return null
     }
+    const baseClasses =
+      'inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 uppercase tracking-wide text-[var(--muted)]'
+    const sizeClasses =
+      variant === 'compact'
+        ? 'px-1.5 py-px text-[9px] font-semibold'
+        : 'px-2 py-0.5 text-[10px] font-semibold'
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+      <span className={`${baseClasses} ${sizeClasses}`}>
         Clips {step.clipProgress.completed}/{step.clipProgress.total}
       </span>
     )
@@ -233,25 +239,93 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
     )
   }
 
-  const renderSubstepDetails = (substep: PipelineSubstep, isExpanded: boolean) => {
-    const percent = Math.round(clamp01(substep.progress) * 100)
-    const etaLabel = substep.etaSeconds !== null ? formatEta(substep.etaSeconds) : null
-    const showProgress = substep.status === 'running' || (substep.status === 'completed' && percent > 0)
+  const renderCompactSubstep = (
+    step: PipelineStep,
+    substep: PipelineSubstep,
+    isActive: boolean,
+    percent: number,
+    etaLabel: string | null
+  ) => (
+    <li key={substep.id}>
+      <button
+        type="button"
+        onClick={() => toggleSubstep(step.id, substep.id)}
+        className={`group flex w-full flex-col gap-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-left text-xs transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
+          isActive ? 'border-sky-400/60' : ''
+        }`}
+        aria-expanded={false}
+        aria-controls={`substep-${step.id}-${substep.id}`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className={`h-1.5 w-1.5 rounded-full ${indicatorClasses[substep.status]}`} aria-hidden="true" />
+            <span className="truncate font-semibold text-[var(--fg)]">{substep.title}</span>
+          </div>
+          <span className="whitespace-nowrap text-[10px] uppercase tracking-wide text-[var(--muted)]">
+            {statusLabels[substep.status]}
+          </span>
+        </div>
+        <div className="flex items-center justify-between text-[11px] text-[var(--muted)]">
+          <span className="font-semibold text-[var(--fg)]">{percent}%</span>
+          {substep.status === 'running' && etaLabel ? <span>{etaLabel}</span> : null}
+        </div>
+        <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
+          <div
+            className={`h-full rounded-full ${
+              substep.status === 'failed' ? 'bg-rose-500' : 'bg-sky-400'
+            } transition-all duration-500 ease-out`}
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+      </button>
+    </li>
+  )
 
-    if (!isExpanded) {
-      return null
-    }
-
-    return (
-      <div className="mt-2 flex flex-col gap-2 text-xs text-[var(--muted)]">
-        <p>{substep.description}</p>
-        {showProgress ? (
+  const renderExpandedSubstep = (
+    step: PipelineStep,
+    substep: PipelineSubstep,
+    percent: number,
+    etaLabel: string | null,
+    isExpanded: boolean
+  ) => (
+    <li
+      key={substep.id}
+      className="rounded-xl border border-white/10 bg-white/5"
+    >
+      <button
+        type="button"
+        onClick={() => toggleSubstep(step.id, substep.id)}
+        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+        aria-expanded={isExpanded}
+        aria-controls={`substep-${step.id}-${substep.id}`}
+      >
+        <div className="flex items-center gap-2">
+          <span className={`h-2 w-2 rounded-full ${indicatorClasses[substep.status]}`} aria-hidden="true" />
+          <div className="flex flex-col">
+            <span className="text-xs font-semibold text-[var(--fg)]">{substep.title}</span>
+            <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+              {statusLabels[substep.status]}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-[var(--muted)]">{percent}%</span>
+          {etaLabel ? <span className="text-[10px] text-[var(--muted)]">{etaLabel}</span> : null}
+          <span
+            className={`text-base leading-none transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+            aria-hidden="true"
+          >
+            ⌃
+          </span>
+        </div>
+      </button>
+      <div id={`substep-${step.id}-${substep.id}`} className="px-3 pb-3">
+        <div className="mt-2 flex flex-col gap-2 text-xs text-[var(--muted)]">
+          <p>{substep.description}</p>
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <span className="font-semibold text-[var(--fg)]">{percent}%</span>
-              {substep.status === 'running' && etaLabel ? (
-                <span>{etaLabel}</span>
-              ) : null}
+              {substep.status === 'running' && etaLabel ? <span>{etaLabel}</span> : null}
             </div>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
               <div
@@ -262,61 +336,26 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
               />
             </div>
           </div>
-        ) : null}
-        {substep.status === 'failed' ? (
-          <p className="text-[var(--danger)] font-semibold">Review server logs to retry this step.</p>
-        ) : null}
+          {substep.status === 'failed' ? (
+            <p className="text-[var(--danger)] font-semibold">Review server logs to retry this step.</p>
+          ) : null}
+        </div>
       </div>
-    )
-  }
+    </li>
+  )
 
   const renderSubstep = (step: PipelineStep, substep: PipelineSubstep) => {
     const key = buildSubstepKey(step.id, substep.id)
     const isExpanded = expandedSubsteps.has(key)
+    const isActive = substep.status === 'running' || substep.status === 'failed'
     const percent = Math.round(clamp01(substep.progress) * 100)
-    const showPercent = percent > 0 || substep.status === 'completed'
+    const etaLabel = substep.etaSeconds !== null ? formatEta(substep.etaSeconds) : null
 
-    return (
-      <li
-        key={substep.id}
-        className="rounded-xl border border-white/10 bg-white/5"
-      >
-        <button
-          type="button"
-          onClick={() => toggleSubstep(step.id, substep.id)}
-          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
-          aria-expanded={isExpanded}
-          aria-controls={`substep-${step.id}-${substep.id}`}
-        >
-          <div className="flex items-center gap-2">
-            <span
-              className={`h-2 w-2 rounded-full ${indicatorClasses[substep.status]}`}
-              aria-hidden="true"
-            />
-            <div className="flex flex-col">
-              <span className="text-xs font-semibold text-[var(--fg)]">{substep.title}</span>
-              <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
-                {statusLabels[substep.status]}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {showPercent ? (
-              <span className="text-xs font-medium text-[var(--muted)]">{percent}%</span>
-            ) : null}
-            <span
-              className={`text-base leading-none transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-              aria-hidden="true"
-            >
-              ⌃
-            </span>
-          </div>
-        </button>
-        <div id={`substep-${step.id}-${substep.id}`} className="px-3 pb-3">
-          {renderSubstepDetails(substep, isExpanded)}
-        </div>
-      </li>
-    )
+    if (isExpanded || isActive) {
+      return renderExpandedSubstep(step, substep, percent, etaLabel, isExpanded || isActive)
+    }
+
+    return renderCompactSubstep(step, substep, isActive, percent, etaLabel)
   }
 
   const renderExpandedStep = (
@@ -411,44 +450,39 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
 
   const renderCompactStep = (step: PipelineStep, index: number) => {
     const percent = Math.round(computeStepProgressValue(step) * 100)
-    const etaLabel = step.etaSeconds !== null && step.status === 'running' ? formatEta(step.etaSeconds) : null
-    const showEta = Boolean(etaLabel)
-    const showProgress = percent > 0
+    const etaLabel =
+      step.status === 'running' && step.etaSeconds !== null ? formatEta(step.etaSeconds) : null
+    const clipBadge = renderClipBadge(step, 'compact')
 
     return (
-      <li key={step.id} className="relative">
+      <li key={step.id}>
         <button
           type="button"
           onClick={() => toggleStep(step.id)}
-          className={`group flex h-full w-full flex-col justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-left transition hover:border-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 aspect-square ${
-            step.status === 'completed' ? 'opacity-90' : ''
+          className={`group flex w-full flex-col gap-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-left text-xs transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
+            step.status === 'completed' ? 'opacity-85' : ''
           }`}
           aria-expanded={false}
           aria-controls={`step-${step.id}-details`}
         >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
-              Step {index + 1}
-            </span>
-            {renderClipBadge(step)}
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-[var(--muted)]">
+            <span className={`h-2 w-2 rounded-full ${indicatorClasses[step.status]}`} aria-hidden="true" />
+            <span className="font-semibold">Step {index + 1}</span>
+            <span className="ml-auto">{statusLabels[step.status]}</span>
           </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-sm font-semibold text-[var(--fg)]">{step.title}</span>
-            <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
-              {statusLabels[step.status]}
-            </span>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="truncate font-semibold text-[var(--fg)]">{step.title}</span>
+            {clipBadge}
           </div>
-          <div className="mt-auto flex flex-col gap-1">
-            <div className="flex items-center justify-between text-[11px] text-[var(--muted)]">
-              <span className="font-semibold text-[var(--fg)]">{percent}%</span>
-              {showEta ? <span>{etaLabel}</span> : null}
-            </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-              <div
-                className={`h-full rounded-full ${segmentClasses[step.status]} transition-all duration-500 ease-out`}
-                style={{ width: `${showProgress ? percent : 0}%` }}
-              />
-            </div>
+          <div className="flex items-center justify-between text-[11px] text-[var(--muted)]">
+            <span className="font-semibold text-[var(--fg)]">{percent}%</span>
+            {etaLabel ? <span>{etaLabel}</span> : null}
+          </div>
+          <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
+            <div
+              className={`h-full rounded-full ${segmentClasses[step.status]} transition-all duration-500 ease-out`}
+              style={{ width: `${percent}%` }}
+            />
           </div>
         </button>
       </li>

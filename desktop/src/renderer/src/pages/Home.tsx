@@ -894,7 +894,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
             </div>
             {selectedClip ? (
               <div className="mt-4 flex flex-col gap-4">
-                <div className="aspect-video w-full overflow-hidden rounded-xl bg-black/60">
+                <div className="flex w-full justify-center overflow-hidden rounded-xl bg-black/80 p-2">
                   <video
                     key={selectedClip.id}
                     src={selectedClip.playbackUrl}
@@ -902,7 +902,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                     controls
                     playsInline
                     preload="metadata"
-                    className="h-full w-full object-cover"
+                    className="h-full w-full max-w-sm object-contain"
                   >
                     Your browser does not support the video tag.
                   </video>
