@@ -140,12 +140,17 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         ...prev,
         steps: prev.steps.map((step, index) => {
           if (index < stepIndex) {
-            return { ...step, status: 'completed', progress: 1 }
+            return { ...step, status: 'completed', progress: 1, etaSeconds: null }
           }
           if (index === stepIndex) {
-            return { ...step, status: 'running', progress: 0 }
+            return {
+              ...step,
+              status: 'running',
+              progress: 0,
+              etaSeconds: Math.max(0, Math.round(definition.durationMs / 1000))
+            }
           }
-          return { ...step, status: 'pending', progress: 0 }
+          return { ...step, status: 'pending', progress: 0, etaSeconds: null }
         })
       }))
 
@@ -159,12 +164,16 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                 return {
                   ...step,
                   progress,
-                  status: progress >= 1 ? 'completed' : 'running'
+                  status: progress >= 1 ? 'completed' : 'running',
+                  etaSeconds:
+                    progress >= 1
+                      ? null
+                      : Math.max(0, Math.round(((increments - i) * incrementDuration) / 1000))
                 }
               }
 
               if (index < stepIndex && (step.status !== 'completed' || step.progress !== 1)) {
-                return { ...step, status: 'completed', progress: 1 }
+                return { ...step, status: 'completed', progress: 1, etaSeconds: null }
               }
 
               return step
@@ -208,6 +217,14 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
           typeof event.data.completed === 'number' ? Math.max(0, event.data.completed) : null
         const totalValue =
           typeof event.data.total === 'number' ? Math.max(0, event.data.total) : null
+        const rawEta =
+          typeof event.data.eta_seconds === 'number'
+            ? event.data.eta_seconds
+            : typeof event.data.eta === 'number'
+              ? event.data.eta
+              : null
+        const etaValue =
+          rawEta !== null && Number.isFinite(rawEta) && rawEta >= 0 ? rawEta : null
 
         updateState((prev) => ({
           ...prev,
@@ -228,13 +245,14 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
               : step.clipProgress
 
             if (step.status === 'completed') {
-              return { ...step, clipProgress: nextClipProgress }
+              return { ...step, clipProgress: nextClipProgress, etaSeconds: null }
             }
             return {
               ...step,
               status: 'running',
               progress: progressValue,
-              clipProgress: nextClipProgress
+              clipProgress: nextClipProgress,
+              etaSeconds: etaValue
             }
           })
         }))
@@ -255,16 +273,16 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
           ...prev,
           steps: prev.steps.map((step, index) => {
             if (index < targetIndex && step.status !== 'completed') {
-              return { ...step, status: 'completed', progress: 1 }
+              return { ...step, status: 'completed', progress: 1, etaSeconds: null }
             }
             if (index === targetIndex) {
               if (event.type === 'step_started') {
-                return { ...step, status: 'running', progress: 0 }
+                return { ...step, status: 'running', progress: 0, etaSeconds: null }
               }
               if (event.type === 'step_completed') {
-                return { ...step, status: 'completed', progress: 1 }
+                return { ...step, status: 'completed', progress: 1, etaSeconds: null }
               }
-              return { ...step, status: 'failed', progress: 1 }
+              return { ...step, status: 'failed', progress: 1, etaSeconds: null }
             }
             return step
           })
@@ -359,14 +377,14 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
           steps: prev.steps.map((step) => {
             if (success) {
               if (step.status === 'completed' || step.status === 'failed') {
-                return step
+                return { ...step, etaSeconds: null }
               }
-              return { ...step, status: 'completed', progress: 1 }
+              return { ...step, status: 'completed', progress: 1, etaSeconds: null }
             }
             if (step.status === 'completed' || step.status === 'failed') {
-              return step
+              return { ...step, etaSeconds: null }
             }
-            return { ...step, status: 'failed', progress: 1 }
+            return { ...step, status: 'failed', progress: 1, etaSeconds: null }
           })
         }))
         cleanupConnection()

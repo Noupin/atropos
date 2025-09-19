@@ -82,6 +82,7 @@ export interface PipelineStep extends PipelineStepDefinition {
   status: PipelineStepStatus
   progress: number
   clipProgress: ClipProgress | null
+  etaSeconds: number | null
 }
 
 export interface HomePipelineState {

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { FC } from 'react'
 import type { PipelineStep, PipelineStepStatus } from '../types'
+import { formatEta } from '../lib/format'
 
 type PipelineProgressProps = {
   steps: PipelineStep[]
@@ -127,7 +128,7 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
     const { step } = focusEntry
 
     if (step.status === 'running') {
-      return `${step.title} — ${Math.round(clamp01(step.progress) * 100)}%`
+      return `Currently running: ${step.title}`
     }
 
     if (step.status === 'failed') {
@@ -269,11 +270,23 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
                 </div>
               ) : null}
               {focusEntry.step.status === 'running' ? (
-                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-                  <div
-                    className="h-full rounded-full bg-sky-400 transition-all duration-500 ease-out"
-                    style={{ width: `${Math.round(clamp01(focusEntry.step.progress) * 100)}%` }}
-                  />
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center justify-between text-xs">
+                    <span className="font-semibold text-[var(--fg)]">
+                      {Math.round(clamp01(focusEntry.step.progress) * 100)}%
+                    </span>
+                    {focusEntry.step.etaSeconds !== null ? (
+                      <span className="text-[var(--muted)]">
+                        {formatEta(focusEntry.step.etaSeconds)}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-sky-400 transition-all duration-500 ease-out"
+                      style={{ width: `${Math.round(clamp01(focusEntry.step.progress) * 100)}%` }}
+                    />
+                  </div>
                 </div>
               ) : null}
               {focusEntry.step.status === 'failed' ? (

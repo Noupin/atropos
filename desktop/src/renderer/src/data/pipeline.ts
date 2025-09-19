@@ -93,5 +93,6 @@ export const createInitialPipelineSteps = (): PipelineStep[] =>
     ...definition,
     status: 'pending',
     progress: 0,
-    clipProgress: definition.clipStage ? { completed: 0, total: 0 } : null
+    clipProgress: definition.clipStage ? { completed: 0, total: 0 } : null,
+    etaSeconds: null
   }))

@@ -70,3 +70,37 @@ export function formatDuration(totalSeconds: number): string {
 
   return `${minutes}:${pad(seconds)}`;
 }
+
+export function formatEta(seconds: number): string {
+  if (!Number.isFinite(seconds)) {
+    return '';
+  }
+
+  const rounded = Math.max(0, Math.round(seconds));
+  if (rounded <= 1) {
+    return '≈1s remaining';
+  }
+
+  if (rounded < 60) {
+    return `≈${rounded}s remaining`;
+  }
+
+  const minutes = Math.floor(rounded / 60);
+  const secs = rounded % 60;
+
+  if (minutes < 60) {
+    if (secs === 0) {
+      return `≈${minutes}m remaining`;
+    }
+    return `≈${minutes}m ${secs}s remaining`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  if (remainingMinutes === 0) {
+    return `≈${hours}h remaining`;
+  }
+
+  return `≈${hours}h ${remainingMinutes}m remaining`;
+}

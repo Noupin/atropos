@@ -11,7 +11,9 @@ const mockSteps: PipelineStep[] = [
     description: 'Retrieve the video file.',
     durationMs: 1000,
     status: 'completed',
-    progress: 1
+    progress: 1,
+    clipProgress: null,
+    etaSeconds: null
   },
   {
     id: 'audio',
@@ -19,7 +21,9 @@ const mockSteps: PipelineStep[] = [
     description: 'Acquire the audio track.',
     durationMs: 1000,
     status: 'running',
-    progress: 0.4
+    progress: 0.4,
+    clipProgress: null,
+    etaSeconds: 45
   },
   {
     id: 'transcript',
@@ -27,7 +31,9 @@ const mockSteps: PipelineStep[] = [
     description: 'Build the transcript file.',
     durationMs: 1000,
     status: 'pending',
-    progress: 0
+    progress: 0,
+    clipProgress: null,
+    etaSeconds: null
   }
 ]
 
@@ -38,7 +44,7 @@ describe('PipelineProgress', () => {
     expect(screen.getByLabelText(/pipeline progress overview/i)).toBeInTheDocument()
     expect(screen.getByText(/pipeline progress/i)).toBeInTheDocument()
     expect(screen.getByText(/running step 2 of 3/i)).toBeInTheDocument()
-    expect(screen.getByText(/ensure audio track — 40%/i)).toBeInTheDocument()
+    expect(screen.getByText(/currently running: ensure audio track/i)).toBeInTheDocument()
 
     const completedSteps = screen.getByTestId('completed-steps')
     expect(within(completedSteps).getByText(/step 1/i)).toBeInTheDocument()
@@ -46,6 +52,8 @@ describe('PipelineProgress', () => {
 
     const activeStepCard = screen.getByTestId('active-step')
     expect(within(activeStepCard).getByText(/step 2: ensure audio track/i)).toBeInTheDocument()
+    expect(within(activeStepCard).getByText('40%')).toBeInTheDocument()
+    expect(within(activeStepCard).getByText(/≈45s remaining/i)).toBeInTheDocument()
 
     const upcomingSteps = screen.getByTestId('upcoming-steps')
     expect(within(upcomingSteps).getByText(/step 3/i)).toBeInTheDocument()
