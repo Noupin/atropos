@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import PipelineProgress from '../components/PipelineProgress'
 import type { PipelineStep } from '../types'
@@ -86,13 +86,16 @@ describe('PipelineProgress', () => {
     expect(progressbar).toHaveAttribute('aria-valuenow', '50')
 
     const stepList = screen.getByTestId('pipeline-steps')
-    const steps = within(stepList).getAllByRole('button', { name: /step/i })
+    expect(stepList).toHaveClass('grid')
+
+    const steps = within(stepList).getAllByRole('button', { name: /step \d/i })
     expect(steps).toHaveLength(mockSteps.length)
 
     const produceButton = within(stepList).getByRole('button', { name: /produce final clips/i })
-    if (produceButton.getAttribute('aria-expanded') === 'false') {
-      fireEvent.click(produceButton)
-    }
+    expect(produceButton).toHaveAttribute('aria-expanded', 'true')
+
+    const transcriptButton = within(stepList).getByRole('button', { name: /generate transcript/i })
+    expect(within(transcriptButton).getByText(/0%/i)).toBeInTheDocument()
 
     expect(within(stepList).getByText(/clips 2\/5/i)).toBeInTheDocument()
     const substepsList = within(stepList).getByTestId('substeps-produce-clips')

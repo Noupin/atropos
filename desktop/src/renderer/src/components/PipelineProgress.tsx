@@ -33,6 +33,27 @@ const clamp01 = (value: number): number => Math.min(1, Math.max(0, value))
 
 const buildSubstepKey = (stepId: string, substepId: string): string => `${stepId}:${substepId}`
 
+const computeStepProgressValue = (step: PipelineStep): number => {
+  if (step.status === 'completed' || step.status === 'failed') {
+    return 1
+  }
+
+  if (step.status === 'pending') {
+    return 0
+  }
+
+  if (step.clipStage && step.clipProgress) {
+    const total = Math.max(0, step.clipProgress.total)
+    if (total > 0) {
+      const completed = Math.min(total, Math.max(0, step.clipProgress.completed)) / total
+      const inFlight = clamp01(step.progress) / total
+      return clamp01(completed + inFlight)
+    }
+  }
+
+  return clamp01(step.progress)
+}
+
 const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(() => new Set())
   const [expandedSubsteps, setExpandedSubsteps] = useState<Set<string>>(() => new Set())
@@ -102,35 +123,52 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
   }, [])
 
   const totalSteps = steps.length
+  const stepDurations = useMemo(
+    () => steps.map((step) => Math.max(1, step.durationMs)),
+    [steps]
+  )
+  const totalDuration = useMemo(
+    () => stepDurations.reduce((sum, duration) => sum + duration, 0),
+    [stepDurations]
+  )
 
   const { completedCount, progressPercent, activeStep, hasFailure } = useMemo(() => {
-    if (totalSteps === 0) {
-      return { completedCount: 0, progressPercent: 0, activeStep: null, hasFailure: false }
+    if (totalSteps === 0 || totalDuration === 0) {
+      return {
+        completedCount: 0,
+        progressPercent: 0,
+        activeStep: null,
+        hasFailure: false
+      }
     }
 
-    const completed = steps.filter((step) => step.status === 'completed').length
-    const aggregate = steps.reduce((total, step) => {
-      if (step.status === 'completed') {
-        return total + 1
-      }
-      if (step.status === 'running' || step.status === 'failed') {
-        return total + clamp01(step.progress)
-      }
-      return total
-    }, 0)
+    const weights = stepDurations.map((duration) => duration / totalDuration)
+    let aggregate = 0
+    let active: PipelineStep | null = null
+    let failure = false
+    let completed = 0
 
-    const percent = totalSteps === 0 ? 0 : (aggregate / totalSteps) * 100
-    const failure = steps.some((step) => step.status === 'failed')
-    const active =
-      steps.find((step) => step.status === 'running' || step.status === 'failed') ?? null
+    steps.forEach((step, index) => {
+      const weight = weights[index] ?? 0
+      aggregate += weight * computeStepProgressValue(step)
+      if (!active && (step.status === 'running' || step.status === 'failed')) {
+        active = step
+      }
+      if (step.status === 'failed') {
+        failure = true
+      }
+      if (step.status === 'completed') {
+        completed += 1
+      }
+    })
 
     return {
       completedCount: completed,
-      progressPercent: Math.round(percent),
+      progressPercent: Math.round(clamp01(aggregate) * 100),
       activeStep: active,
       hasFailure: failure
     }
-  }, [steps, totalSteps])
+  }, [stepDurations, steps, totalDuration, totalSteps])
 
   const summaryLabel = useMemo(() => {
     if (hasFailure && activeStep?.status === 'failed') {
@@ -281,9 +319,12 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
     )
   }
 
-  const renderStep = (step: PipelineStep, index: number) => {
-    const isExpanded = expandedSteps.has(step.id)
-    const isActive = step.status === 'running' || step.status === 'failed'
+  const renderExpandedStep = (
+    step: PipelineStep,
+    index: number,
+    isActive: boolean,
+    isExpanded: boolean
+  ) => {
     const percent = Math.round(clamp01(step.progress) * 100)
     const etaLabel = step.etaSeconds !== null && step.status === 'running' ? formatEta(step.etaSeconds) : null
     const headerProgressLabel = step.status === 'running'
@@ -298,10 +339,12 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
       (substep) => substep.status === 'running' || substep.status === 'failed'
     )
 
+    const showDetails = isExpanded || isActive
+
     return (
       <li
         key={step.id}
-        className={`rounded-2xl border ${
+        className={`col-span-full rounded-2xl border ${
           isActive ? 'border-sky-400 shadow-[0_20px_40px_-24px_rgba(56,189,248,0.4)]' : 'border-white/10'
         } bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)]`}
       >
@@ -309,7 +352,7 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
           type="button"
           onClick={() => toggleStep(step.id)}
           className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left sm:px-5"
-          aria-expanded={isExpanded}
+          aria-expanded={showDetails}
           aria-controls={`step-${step.id}-details`}
         >
           <div className="flex items-center gap-3">
@@ -330,14 +373,14 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
               ) : null}
             </div>
             <span
-              className={`text-lg leading-none transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+              className={`text-lg leading-none transition-transform ${showDetails ? 'rotate-180' : ''}`}
               aria-hidden="true"
             >
               ⌃
             </span>
           </div>
         </button>
-        {isExpanded ? (
+        {showDetails ? (
           <div
             id={`step-${step.id}-details`}
             className="flex flex-col gap-3 border-t border-white/5 px-4 pb-4 pt-3 text-sm text-[var(--muted)] sm:px-5"
@@ -366,6 +409,63 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
     )
   }
 
+  const renderCompactStep = (step: PipelineStep, index: number) => {
+    const percent = Math.round(computeStepProgressValue(step) * 100)
+    const etaLabel = step.etaSeconds !== null && step.status === 'running' ? formatEta(step.etaSeconds) : null
+    const showEta = Boolean(etaLabel)
+    const showProgress = percent > 0
+
+    return (
+      <li key={step.id} className="relative">
+        <button
+          type="button"
+          onClick={() => toggleStep(step.id)}
+          className={`group flex h-full w-full flex-col justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-left transition hover:border-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 aspect-square ${
+            step.status === 'completed' ? 'opacity-90' : ''
+          }`}
+          aria-expanded={false}
+          aria-controls={`step-${step.id}-details`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+              Step {index + 1}
+            </span>
+            {renderClipBadge(step)}
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-semibold text-[var(--fg)]">{step.title}</span>
+            <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+              {statusLabels[step.status]}
+            </span>
+          </div>
+          <div className="mt-auto flex flex-col gap-1">
+            <div className="flex items-center justify-between text-[11px] text-[var(--muted)]">
+              <span className="font-semibold text-[var(--fg)]">{percent}%</span>
+              {showEta ? <span>{etaLabel}</span> : null}
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+              <div
+                className={`h-full rounded-full ${segmentClasses[step.status]} transition-all duration-500 ease-out`}
+                style={{ width: `${showProgress ? percent : 0}%` }}
+              />
+            </div>
+          </div>
+        </button>
+      </li>
+    )
+  }
+
+  const renderStep = (step: PipelineStep, index: number) => {
+    const isExpanded = expandedSteps.has(step.id)
+    const isActive = step.status === 'running' || step.status === 'failed'
+
+    if (isExpanded || isActive) {
+      return renderExpandedStep(step, index, isActive, isExpanded)
+    }
+
+    return renderCompactStep(step, index)
+  }
+
   return (
     <div
       className={`flex flex-col gap-5 ${className ?? ''}`.trim()}
@@ -390,15 +490,17 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
           className="flex h-2 w-full overflow-hidden rounded-full bg-white/10"
         >
           {steps.map((step, index) => {
-            const progress =
-              step.status === 'completed' || step.status === 'failed'
-                ? 1
-                : clamp01(step.progress)
+            const progress = computeStepProgressValue(step)
+            const flexValue = stepDurations[index] ?? 1
             return (
-              <div key={step.id} className="relative flex-1">
+              <div
+                key={step.id}
+                className="relative"
+                style={{ flexGrow: flexValue, flexBasis: 0, minWidth: 0 }}
+              >
                 <div
                   className={`absolute inset-0 transition-all duration-700 ease-out ${segmentClasses[step.status]}`}
-                  style={{ width: `${progress * 100}%` }}
+                  style={{ width: `${Math.max(0, Math.min(1, progress)) * 100}%` }}
                 />
                 {index < steps.length - 1 ? (
                   <div className="absolute right-0 top-0 h-full w-px bg-white/10" aria-hidden="true" />
@@ -410,7 +512,10 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
         <p className="text-xs text-[var(--muted)]">{activeMessage}</p>
       </div>
 
-      <ul className="flex flex-col gap-3" data-testid="pipeline-steps">
+      <ul
+        className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4"
+        data-testid="pipeline-steps"
+      >
         {steps.map((step, index) => renderStep(step, index))}
       </ul>
     </div>
