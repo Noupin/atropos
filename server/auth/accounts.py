@@ -17,7 +17,7 @@ from typing import Any, Callable, Dict, Iterable, List, Literal, Mapping, Mutabl
 from fastapi import HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.config import TOKENS_DIR
+from config import TOKENS_DIR
 
 
 SupportedPlatform = Literal["tiktok", "youtube", "instagram"]

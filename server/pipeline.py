@@ -587,7 +587,6 @@ def process_video(
                 step_segments,
                 step_key="step_5_segments",
             )
-        else:
             if segments_path.exists():
                 segments_data = json.loads(segments_path.read_text(encoding="utf-8"))
                 segments = [(d["start"], d["end"], d["text"]) for d in segments_data]
@@ -636,7 +635,6 @@ def process_video(
                 step_dialog_ranges,
                 step_key="step_5_dialog_ranges",
             )
-        else:
             if dialog_ranges_path.exists():
                 dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
                 emit_log(
