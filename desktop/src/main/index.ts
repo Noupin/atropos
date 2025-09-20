@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { listAccountClips } from './clipLibrary'
+import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
 
 function createWindow(): void {
   // Create the browser window.
@@ -60,6 +60,23 @@ app.whenReady().then(() => {
     } catch (error) {
       console.error('Failed to list clips', error)
       return []
+    }
+  })
+  ipcMain.handle('clips:open-folder', async (_event, accountId: string) => {
+    try {
+      const paths = await resolveAccountClipsDirectory(accountId)
+      if (!paths) {
+        return false
+      }
+      const result = await shell.openPath(paths.accountDir)
+      if (typeof result === 'string' && result.length > 0) {
+        console.error('Unable to open clips folder', result)
+        return false
+      }
+      return true
+    } catch (error) {
+      console.error('Failed to open clips folder', error)
+      return false
     }
   })
 

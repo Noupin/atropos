@@ -6,7 +6,9 @@ type Clip = import('../renderer/src/types').Clip
 
 const api = {
   listAccountClips: (accountId: string | null): Promise<Clip[]> =>
-    ipcRenderer.invoke('clips:list', accountId)
+    ipcRenderer.invoke('clips:list', accountId),
+  openAccountClipsFolder: (accountId: string): Promise<boolean> =>
+    ipcRenderer.invoke('clips:open-folder', accountId)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

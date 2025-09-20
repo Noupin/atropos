@@ -24,9 +24,24 @@ import {
 } from '../services/pipelineApi'
 import { parseClipTimestamp } from '../lib/clipMetadata'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
-import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
+import {
+  canOpenAccountClipsFolder,
+  openAccountClipsFolder
+} from '../services/clipLibrary'
+import type {
+  AccountConnectionStatus,
+  AccountSummary,
+  HomePipelineState,
+  SearchBridge
+} from '../types'
 
 const SUPPORTED_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv'] as const
+
+const PLATFORM_STATUS_STYLES: Record<AccountConnectionStatus, string> = {
+  active: 'bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/30',
+  disconnected: 'bg-amber-500/10 text-amber-200 ring-1 ring-amber-400/30',
+  disabled: 'bg-rose-500/10 text-rose-200 ring-1 ring-rose-400/30'
+}
 
 const isValidVideoUrl = (value: string): boolean => {
   try {
@@ -49,6 +64,10 @@ type HomeProps = {
 
 const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, accounts }) => {
   const [state, setState] = useState<HomePipelineState>(initialState)
+  const [folderMessage, setFolderMessage] = useState<string | null>(null)
+  const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
+  const [isOpeningFolder, setIsOpeningFolder] = useState(false)
+  const canAttemptToOpenFolder = useMemo(() => canOpenAccountClipsFolder(), [])
 
   useEffect(() => {
     setState(initialState)
@@ -79,12 +98,27 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     activeJobId
   } = state
 
+  useEffect(() => {
+    setFolderMessage(null)
+    setFolderErrorMessage(null)
+  }, [selectedAccountId])
+
   const availableAccounts = useMemo(
     () =>
       accounts.filter(
         (account) => account.active && account.platforms.some((platform) => platform.active)
       ),
     [accounts]
+  )
+
+  const selectedAccount = useMemo(
+    () => availableAccounts.find((account) => account.id === selectedAccountId) ?? null,
+    [availableAccounts, selectedAccountId]
+  )
+
+  const accountPlatforms = useMemo(
+    () => (selectedAccount ? selectedAccount.platforms : []),
+    [selectedAccount]
   )
 
   useEffect(() => {
@@ -777,6 +811,37 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     updateState((prev) => ({ ...prev, selectedClipId: clipId }))
   }, [updateState])
 
+  const handleOpenClipsFolder = useCallback(async () => {
+    if (!canAttemptToOpenFolder) {
+      setFolderErrorMessage('Opening the clips folder is only available in the desktop app.')
+      setFolderMessage(null)
+      return
+    }
+
+    if (!selectedAccountId) {
+      setFolderErrorMessage('Select an account to open its clips folder.')
+      setFolderMessage(null)
+      return
+    }
+
+    setIsOpeningFolder(true)
+    setFolderErrorMessage(null)
+    setFolderMessage(null)
+
+    try {
+      const opened = await openAccountClipsFolder(selectedAccountId)
+      if (opened) {
+        setFolderMessage('Opened the clips folder in your file explorer.')
+      } else {
+        setFolderErrorMessage('Unable to open the clips folder for this account.')
+      }
+    } catch (error) {
+      setFolderErrorMessage('Unable to open the clips folder for this account.')
+    } finally {
+      setIsOpeningFolder(false)
+    }
+  }, [canAttemptToOpenFolder, selectedAccountId])
+
   const hasProgress = useMemo(
     () => steps.some((step) => step.status !== 'pending' || step.progress > 0),
     [steps]
@@ -787,6 +852,24 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     () => clips.find((clip) => clip.id === selectedClipId) ?? null,
     [clips, selectedClipId]
   )
+
+  const readyDateFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      }),
+    []
+  )
+
+  const upcomingClips = useMemo(() => {
+    if (selectedAccountId) {
+      return clips.filter(
+        (clip) => clip.accountId === selectedAccountId || clip.accountId === null || clip.accountId === undefined
+      )
+    }
+    return clips
+  }, [clips, selectedAccountId])
 
   const pipelineMessage = useMemo(() => {
     if (pipelineError) {
@@ -805,6 +888,96 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-8">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="flex flex-col gap-6">
+          <div className="rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
+                  <h2 className="text-lg font-semibold text-[var(--fg)]">Upcoming posts</h2>
+                  <p className="text-sm text-[var(--muted)]">
+                    {selectedAccount
+                      ? `Clips ready to publish for ${selectedAccount.displayName}.`
+                      : 'Clips ready to publish for your connected accounts.'}
+                  </p>
+                </div>
+                <div className="flex flex-col items-start gap-2 sm:items-end">
+                  <button
+                    type="button"
+                    onClick={handleOpenClipsFolder}
+                    disabled={isOpeningFolder}
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:text-sm"
+                  >
+                    {isOpeningFolder ? 'Opening…' : 'Open clips folder'}
+                  </button>
+                  <span className="text-[10px] uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                    {selectedAccount ? selectedAccount.displayName : 'No account selected'}
+                  </span>
+                </div>
+              </div>
+              {folderMessage ? (
+                <p className="text-sm text-emerald-300">{folderMessage}</p>
+              ) : null}
+              {folderErrorMessage ? (
+                <p className="text-sm text-rose-400">{folderErrorMessage}</p>
+              ) : null}
+              <p className="rounded-lg border border-dashed border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] px-4 py-3 text-xs text-[var(--muted)]">
+                Do not delete anything other than the clips and descriptions you plan to upload.
+              </p>
+              {upcomingClips.length > 0 ? (
+                <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
+                  <ul className="flex min-w-full gap-4 pb-1">
+                    {upcomingClips.map((clip) => {
+                      const readyDate = new Date(clip.createdAt)
+                      const readyLabel = Number.isNaN(readyDate.getTime())
+                        ? 'Ready soon'
+                        : readyDateFormatter.format(readyDate)
+                      return (
+                        <li
+                          key={clip.id}
+                          className="min-w-[240px] flex-shrink-0 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-4 shadow-[0_14px_28px_-22px_rgba(15,23,42,0.55)]"
+                        >
+                          <div className="flex h-full flex-col gap-3">
+                            <div className="space-y-1">
+                              <span className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                                {clip.accountId && clip.accountId !== selectedAccountId
+                                  ? 'Shared clip'
+                                  : 'Ready to post'}
+                              </span>
+                              <h3 className="text-sm font-semibold leading-snug text-[var(--fg)]">{clip.title}</h3>
+                            </div>
+                            <div className="text-xs text-[var(--muted)]">
+                              <span className="font-medium text-[var(--fg)]">Ready {readyLabel}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {accountPlatforms.length > 0 ? (
+                                accountPlatforms.map((platform) => (
+                                  <span
+                                    key={`${clip.id}-${platform.platform}`}
+                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                                      PLATFORM_STATUS_STYLES[platform.status] ?? 'bg-white/10 text-[var(--fg)]'
+                                    }`}
+                                  >
+                                    {platform.label}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="rounded-full bg-white/5 px-3 py-1 text-[11px] font-medium text-[var(--muted)]">
+                                  No platforms configured
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6 text-sm text-[var(--muted)]">
+                  No upcoming posts. Generate clips to populate this list.
+                </div>
+              )}
+            </div>
+          </div>
           <form
             onSubmit={handleSubmit}
             className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]"
