@@ -33,6 +33,17 @@ def test_build_hashtag_prompt_includes_guidelines():
     assert "No profanity" in prompt
     assert "Strict JSON" in prompt
     assert "Show: Show" in prompt
+    assert "Quote: Quote" in prompt
+    assert "Combine multi-word" in prompt
+
+
+def test_build_hashtag_prompt_truncates_and_sanitizes_quote():
+    quote = "This is a very long quote that should be truncated " * 10
+    prompt = build_hashtag_prompt("Title", quote=quote, max_quote_chars=80)
+    assert "Quote:" in prompt
+    quote_line = next(line for line in prompt.splitlines() if line.startswith("Quote:"))
+    assert len(quote_line) <= len("Quote: ") + 80
+    assert "  " not in quote_line
 
 
 def test_coerce_hashtag_list_extracts_strings():
