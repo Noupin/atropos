@@ -328,6 +328,62 @@ const buildClip = async (
   return clip
 }
 
+const findProjectDirectories = async (rootDir: string): Promise<string[]> => {
+  const queue: string[] = [rootDir]
+  const projects: string[] = []
+  const visited = new Set<string>(queue)
+
+  while (queue.length > 0) {
+    const current = queue.pop()
+    if (!current) {
+      continue
+    }
+
+    let entries: string[]
+    try {
+      entries = await fs.readdir(current)
+    } catch (error) {
+      continue
+    }
+
+    for (const entry of entries) {
+      if (entry === 'shorts') {
+        continue
+      }
+
+      const entryPath = path.join(current, entry)
+      let stats: Stats
+      try {
+        stats = await fs.stat(entryPath)
+      } catch (error) {
+        continue
+      }
+
+      if (!stats.isDirectory()) {
+        continue
+      }
+
+      const shortsDir = path.join(entryPath, 'shorts')
+      try {
+        const shortsStats = await fs.stat(shortsDir)
+        if (shortsStats.isDirectory()) {
+          projects.push(entryPath)
+          continue
+        }
+      } catch (error) {
+        // Not a project directory; keep exploring deeper paths.
+      }
+
+      if (!visited.has(entryPath)) {
+        visited.add(entryPath)
+        queue.push(entryPath)
+      }
+    }
+  }
+
+  return projects
+}
+
 export const listAccountClips = async (accountId: string | null): Promise<Clip[]> => {
   const base = await resolveOutRoot()
   if (!base) {
@@ -344,38 +400,18 @@ export const listAccountClips = async (accountId: string | null): Promise<Clip[]
     return []
   }
 
-  let entries: string[] = []
-  try {
-    entries = await fs.readdir(accountDir)
-  } catch (error) {
+  const projectDirs = await findProjectDirectories(accountDir)
+  if (projectDirs.length === 0) {
     return []
   }
 
   const clips: Clip[] = []
-  for (const entry of entries) {
-    const projectDir = path.join(accountDir, entry)
-    let projectStats: Stats
-    try {
-      projectStats = await fs.stat(projectDir)
-    } catch (error) {
-      continue
-    }
-    if (!projectStats.isDirectory()) {
-      continue
-    }
 
-    const shortsDir = path.join(projectDir, 'shorts')
-    try {
-      const shortsStats = await fs.stat(shortsDir)
-      if (!shortsStats.isDirectory()) {
-        continue
-      }
-    } catch (error) {
-      continue
-    }
-
-    const projectInfo = inferProjectMetadata(entry)
+  for (const projectDir of projectDirs) {
+    const projectName = path.basename(projectDir)
+    const projectInfo = inferProjectMetadata(projectName)
     const candidateMap = await loadCandidateMetadata(projectDir)
+    const shortsDir = path.join(projectDir, 'shorts')
 
     let shortFiles: string[] = []
     try {
