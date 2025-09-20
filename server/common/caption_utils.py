@@ -137,6 +137,7 @@ def build_hashtag_prompt(
     max_items: int = 15,
     max_tag_len: int = 24,
     max_total_chars: int = 200,
+    max_quote_chars: int = 200,
 ) -> str:
     """Create a strict instruction prompt for hashtag generation.
 
@@ -147,6 +148,7 @@ def build_hashtag_prompt(
     - No profanity or offensive language.
     - Size limits: at most `max_items` items; each string length ≤ `max_tag_len`;
       total characters across all items (including commas and quotes) ≤ `max_total_chars`.
+    - Quotes are sanitised and truncated to avoid overwhelming the LLM context.
     """
 
     base = (
@@ -156,16 +158,22 @@ def build_hashtag_prompt(
         "Rules (must all be followed):\n"
         "1) Strict JSON: no preface, no trailing commas, no comments, no backticks, no Markdown.\n"
         "2) Items: only lowercase a-z and 0-9; no spaces, punctuation, diacritics, or emojis.\n"
-        "3) Do NOT include the leading # in items.\n"
-        f"4) Limits: at most {max_items} items; each ≤ {max_tag_len} characters; total output ≤ {max_total_chars} characters.\n"
-        "5) Mix broad and specific terms relevant to the content; include the show name as one item if provided (sanitized).\n"
-        "6) If a required item would violate the rules, omit it rather than breaking format.\n"
-        "7) No profanity or offensive language.\n"
+        "3) Combine multi-word ideas into one concise tag by removing spaces; do not split phrases into multiple items.\n"
+        "4) Keep each item a short keyword or phrase fragment, not a full sentence.\n"
+        "5) Do NOT include the leading # in items.\n"
+        f"6) Limits: at most {max_items} items; each ≤ {max_tag_len} characters; total output ≤ {max_total_chars} characters.\n"
+        "7) Mix broad and specific terms relevant to the content; include the show name as one item if provided (sanitized).\n"
+        "8) If a required item would violate the rules, omit it rather than breaking format.\n"
+        "9) No profanity or offensive language.\n"
     )
 
     prompt = base + f"Title: {title}\n"
-    # if quote:
-    #     prompt += f"Quote: {quote}\n"
+    if quote:
+        cleaned_quote = truncate_word_boundary(
+            collapse_whitespace(remove_emoji(quote)), max_quote_chars
+        )
+        if cleaned_quote:
+            prompt += f"Quote: {cleaned_quote}\n"
     if show:
         prompt += f"Show: {show}\n"
     return prompt
