@@ -36,6 +36,7 @@ const Library: FC<LibraryProps> = ({
   const [clipsError, setClipsError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const queryRef = useRef('')
+  const loadRequestRef = useRef(0)
   const navigate = useNavigate()
 
   const availableAccounts = useMemo(
@@ -110,24 +111,24 @@ const Library: FC<LibraryProps> = ({
     return availableAccounts[0] ? [availableAccounts[0].id] : []
   }, [availableAccounts, hasAccounts, hasMultipleAccounts, selectedAccountId])
 
-  useEffect(() => {
-    let isActive = true
-
-    if (targetAccountIds.length === 0) {
-      setClips([])
-      setClipsError(null)
-      setIsLoadingClips(false)
-      return () => {
-        isActive = false
+  const loadClipsForAccounts = useCallback(
+    async (accountIds: string[]) => {
+      if (accountIds.length === 0) {
+        setClips([])
+        setClipsError(null)
+        setIsLoadingClips(false)
+        return
       }
-    }
 
-    const loadClips = async (): Promise<void> => {
+      const requestId = loadRequestRef.current + 1
+      loadRequestRef.current = requestId
+
       setIsLoadingClips(true)
       setClipsError(null)
+
       try {
         const results = await Promise.all(
-          targetAccountIds.map(async (accountId) => {
+          accountIds.map(async (accountId) => {
             try {
               return await listAccountClips(accountId)
             } catch (error) {
@@ -137,7 +138,7 @@ const Library: FC<LibraryProps> = ({
           })
         )
 
-        if (!isActive) {
+        if (loadRequestRef.current !== requestId) {
           return
         }
 
@@ -152,25 +153,24 @@ const Library: FC<LibraryProps> = ({
         mergedClips.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
         setClips(mergedClips)
       } catch (error) {
-        if (!isActive) {
+        if (loadRequestRef.current !== requestId) {
           return
         }
         console.error('Failed to load clips for library view', error)
         setClips([])
         setClipsError('Unable to load clips. Please try again.')
       } finally {
-        if (isActive) {
+        if (loadRequestRef.current === requestId) {
           setIsLoadingClips(false)
         }
       }
-    }
+    },
+    []
+  )
 
-    void loadClips()
-
-    return () => {
-      isActive = false
-    }
-  }, [targetAccountIds])
+  useEffect(() => {
+    void loadClipsForAccounts(targetAccountIds)
+  }, [loadClipsForAccounts, targetAccountIds])
 
   const filteredClips = useMemo(() => {
     const trimmed = query.trim().toLowerCase()
