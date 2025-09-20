@@ -28,7 +28,7 @@ const ClipDrawer: FC<ClipDrawerProps> = ({ clips, selectedClipId, onSelect, onRe
         onClick={() => setIsOpen((current) => !current)}
         className="flex items-center justify-between gap-3 px-4 py-3 text-left text-sm font-medium text-[var(--fg)] transition hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
       >
-        <span>Clip library</span>
+        <span>Clips from source</span>
         <span className="flex items-center gap-2 text-xs text-[var(--muted)]">
           {clips.length} {clips.length === 1 ? 'clip' : 'clips'}
           <svg

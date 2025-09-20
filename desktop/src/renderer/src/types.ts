@@ -11,11 +11,14 @@ export interface Clip {
   sourceUrl: string
   sourceTitle: string
   sourcePublishedAt: string | null
+  videoId: string
+  videoTitle: string
   rating?: number | null
   quote?: string | null
   reason?: string | null
   timestampUrl?: string | null
   timestampSeconds?: number | null
+  accountId?: string | null
 }
 
 export type SupportedPlatform = 'tiktok' | 'youtube' | 'instagram'

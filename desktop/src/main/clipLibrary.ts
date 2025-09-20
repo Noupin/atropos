@@ -259,33 +259,64 @@ const loadCandidateMetadata = async (projectDir: string): Promise<Map<string, Ca
   return map
 }
 
+const toBase64Url = (value: string): string =>
+  Buffer.from(value, 'utf-8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+
+const encodeClipId = (baseDir: string, filePath: string): string | null => {
+  const relative = path.relative(baseDir, filePath)
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    return null
+  }
+  const normalised = relative.split(path.sep).join('/')
+  return toBase64Url(normalised)
+}
+
+const tryReadDescription = async (candidates: string[]): Promise<string> => {
+  for (const candidate of candidates) {
+    try {
+      const content = await fs.readFile(candidate, 'utf-8')
+      const trimmed = content.trim()
+      if (trimmed.length > 0) {
+        return trimmed
+      }
+    } catch (error) {
+      // Ignore missing files
+    }
+  }
+  return ''
+}
+
 const buildClip = async (
   filePath: string,
+  projectDir: string,
   projectInfo: ProjectMetadata,
-  candidateMap: Map<string, CandidateMetadata>
+  candidateMap: Map<string, CandidateMetadata>,
+  baseDir: string,
+  accountId: string | null
 ): Promise<Clip | null> => {
   const fileName = path.basename(filePath)
   const stem = fileName.replace(/\.mp4$/i, '')
   const parsed = parseClipFilename(stem)
-  if (!parsed) {
-    return null
-  }
+  const start = parsed?.start ?? null
+  const end = parsed?.end ?? null
+  const candidateKey = parsed ? formatCandidateKey(parsed.start, parsed.end) : null
+  const candidate = candidateKey ? candidateMap.get(candidateKey) : undefined
+  const descriptionCandidates = [
+    path.join(path.dirname(filePath), `${stem}.txt`),
+    path.join(path.dirname(filePath), `${stem}.md`),
+    path.join(path.dirname(filePath), 'description.txt'),
+    path.join(path.dirname(filePath), 'description.md')
+  ]
 
-  const { start, end, rating } = parsed
-  const candidateKey = formatCandidateKey(start, end)
-  const candidate = candidateMap.get(candidateKey)
-  const descriptionPath = path.join(path.dirname(filePath), `${stem}.txt`)
-
-  let descriptionText = ''
-  try {
-    descriptionText = (await fs.readFile(descriptionPath, 'utf-8')).trim()
-  } catch (error) {
-    descriptionText = ''
-  }
+  const descriptionText = await tryReadDescription(descriptionCandidates)
 
   const descriptionMetadata = parseDescriptionMetadata(descriptionText)
   const stats = await fs.stat(filePath)
-  const duration = Math.max(0, end - start)
+  const duration = start !== null && end !== null ? Math.max(0, end - start) : 0
 
   let title = candidate?.quote ?? ''
   if (!title) {
@@ -295,7 +326,7 @@ const buildClip = async (
   const playbackUrl = pathToFileURL(filePath).toString()
 
   let timestampUrl = descriptionMetadata.timestampUrl
-  if (!timestampUrl && descriptionMetadata.sourceUrl && Number.isFinite(start)) {
+  if (!timestampUrl && descriptionMetadata.sourceUrl && start !== null && Number.isFinite(start)) {
     try {
       const url = new URL(descriptionMetadata.sourceUrl)
       url.searchParams.set('t', Math.round(start).toString())
@@ -305,8 +336,16 @@ const buildClip = async (
     }
   }
 
+  const clipId = encodeClipId(baseDir, filePath)
+  if (!clipId) {
+    return null
+  }
+
+  const projectId = encodeClipId(baseDir, projectDir)
+  const projectTitle = projectInfo.title || path.basename(projectDir)
+
   const clip: Clip = {
-    id: stem,
+    id: clipId,
     title,
     channel: descriptionMetadata.channel ?? 'Unknown channel',
     views: null,
@@ -316,16 +355,76 @@ const buildClip = async (
     playbackUrl,
     description: descriptionText,
     sourceUrl: descriptionMetadata.sourceUrl ?? descriptionMetadata.timestampUrl ?? '',
-    sourceTitle: projectInfo.title,
+    sourceTitle: projectTitle,
     sourcePublishedAt: projectInfo.publishedAt,
-    rating: candidate?.rating ?? rating,
+    videoId: projectId ?? clipId,
+    videoTitle: projectTitle,
+    rating: candidate?.rating ?? parsed?.rating ?? null,
     quote: candidate?.quote ?? null,
     reason: candidate?.reason ?? null,
     timestampUrl,
-    timestampSeconds: descriptionMetadata.timestampSeconds ?? (Number.isFinite(start) ? start : null)
+    timestampSeconds:
+      descriptionMetadata.timestampSeconds ?? (start !== null && Number.isFinite(start) ? start : null),
+    accountId
   }
 
   return clip
+}
+
+const findProjectDirectories = async (rootDir: string): Promise<string[]> => {
+  const queue: string[] = [rootDir]
+  const projects: string[] = []
+  const visited = new Set<string>(queue)
+
+  while (queue.length > 0) {
+    const current = queue.pop()
+    if (!current) {
+      continue
+    }
+
+    let entries: string[]
+    try {
+      entries = await fs.readdir(current)
+    } catch (error) {
+      continue
+    }
+
+    for (const entry of entries) {
+      if (entry === 'shorts') {
+        continue
+      }
+
+      const entryPath = path.join(current, entry)
+      let stats: Stats
+      try {
+        stats = await fs.stat(entryPath)
+      } catch (error) {
+        continue
+      }
+
+      if (!stats.isDirectory()) {
+        continue
+      }
+
+      const shortsDir = path.join(entryPath, 'shorts')
+      try {
+        const shortsStats = await fs.stat(shortsDir)
+        if (shortsStats.isDirectory()) {
+          projects.push(entryPath)
+          continue
+        }
+      } catch (error) {
+        // Not a project directory; keep exploring deeper paths.
+      }
+
+      if (!visited.has(entryPath)) {
+        visited.add(entryPath)
+        queue.push(entryPath)
+      }
+    }
+  }
+
+  return projects
 }
 
 export const listAccountClips = async (accountId: string | null): Promise<Clip[]> => {
@@ -344,38 +443,18 @@ export const listAccountClips = async (accountId: string | null): Promise<Clip[]
     return []
   }
 
-  let entries: string[] = []
-  try {
-    entries = await fs.readdir(accountDir)
-  } catch (error) {
+  const projectDirs = await findProjectDirectories(accountDir)
+  if (projectDirs.length === 0) {
     return []
   }
 
   const clips: Clip[] = []
-  for (const entry of entries) {
-    const projectDir = path.join(accountDir, entry)
-    let projectStats: Stats
-    try {
-      projectStats = await fs.stat(projectDir)
-    } catch (error) {
-      continue
-    }
-    if (!projectStats.isDirectory()) {
-      continue
-    }
 
-    const shortsDir = path.join(projectDir, 'shorts')
-    try {
-      const shortsStats = await fs.stat(shortsDir)
-      if (!shortsStats.isDirectory()) {
-        continue
-      }
-    } catch (error) {
-      continue
-    }
-
-    const projectInfo = inferProjectMetadata(entry)
+  for (const projectDir of projectDirs) {
+    const projectName = path.basename(projectDir)
+    const projectInfo = inferProjectMetadata(projectName)
     const candidateMap = await loadCandidateMetadata(projectDir)
+    const shortsDir = path.join(projectDir, 'shorts')
 
     let shortFiles: string[] = []
     try {
@@ -390,7 +469,7 @@ export const listAccountClips = async (accountId: string | null): Promise<Clip[]
       }
       const filePath = path.join(shortsDir, fileName)
       try {
-        const clip = await buildClip(filePath, projectInfo, candidateMap)
+        const clip = await buildClip(filePath, projectDir, projectInfo, candidateMap, base, accountId)
         if (clip) {
           clips.push(clip)
         }

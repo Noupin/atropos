@@ -117,6 +117,11 @@ export const buildAccountUrl = (accountId: string): string => {
   return url.toString()
 }
 
+export const buildAccountClipsUrl = (accountId: string): string => {
+  const url = new URL(`/api/accounts/${encodeURIComponent(accountId)}/clips`, getApiBaseUrl())
+  return url.toString()
+}
+
 export const buildAccountPlatformUrl = (accountId: string): string => {
   const url = new URL(`/api/accounts/${encodeURIComponent(accountId)}/platforms`, getApiBaseUrl())
   return url.toString()

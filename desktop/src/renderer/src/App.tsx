@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FC, RefObject } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
 import Search from './components/Search'
 import ClipPage from './pages/Clip'
 import Home from './pages/Home'
+import Library from './pages/Library'
 import Profile from './pages/Profile'
 import { createInitialPipelineSteps } from './data/pipeline'
 import type {
@@ -63,6 +64,13 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     }
     return document.documentElement.classList.contains('dark')
   })
+  const availableAccounts = useMemo(
+    () =>
+      accounts.filter(
+        (account) => account.active && account.platforms.some((platform) => platform.active)
+      ),
+    [accounts]
+  )
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -105,6 +113,58 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     void refreshAccounts()
     void refreshAuthStatus()
   }, [refreshAccounts, refreshAuthStatus])
+
+  useEffect(() => {
+    setHomeState((prev) => {
+      const activeAccountIds = new Set(availableAccounts.map((account) => account.id))
+
+      if (availableAccounts.length === 1) {
+        const soleAccountId = availableAccounts[0].id
+        if (prev.selectedAccountId !== soleAccountId) {
+          return {
+            ...prev,
+            selectedAccountId: soleAccountId,
+            accountError: null
+          }
+        }
+        return prev
+      }
+
+      if (prev.selectedAccountId && !activeAccountIds.has(prev.selectedAccountId)) {
+        return {
+          ...prev,
+          selectedAccountId: null,
+          clips: [],
+          selectedClipId: null,
+          accountError: null
+        }
+      }
+
+      return prev
+    })
+  }, [availableAccounts, setHomeState])
+
+  const handleSelectAccount = useCallback(
+    (accountId: string | null) => {
+      setHomeState((prev) => {
+        const didChange = prev.selectedAccountId !== accountId
+        const shouldReset = didChange || !accountId
+
+        if (!didChange && !shouldReset && prev.accountError === null) {
+          return prev
+        }
+
+        return {
+          ...prev,
+          selectedAccountId: accountId,
+          accountError: null,
+          clips: shouldReset ? [] : prev.clips,
+          selectedClipId: shouldReset ? null : prev.selectedClipId
+        }
+      })
+    },
+    [setHomeState]
+  )
 
   const handleCreateAccount = useCallback(
     async (payload: { displayName: string; description?: string | null }) => {
@@ -264,6 +324,9 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 className="flex items-center gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-1"
               >
                 <NavLink to="/" end className={navLinkClassName}>
+                  Home
+                </NavLink>
+                <NavLink to="/library" className={navLinkClassName}>
                   Library
                 </NavLink>
                 <NavLink to="/profile" className={navLinkClassName}>
@@ -298,6 +361,18 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 initialState={homeState}
                 onStateChange={setHomeState}
                 accounts={accounts}
+              />
+            }
+          />
+          <Route
+            path="/library"
+            element={
+              <Library
+                registerSearch={registerSearch}
+                accounts={accounts}
+                selectedAccountId={homeState.selectedAccountId}
+                onSelectAccount={handleSelectAccount}
+                isLoadingAccounts={isLoadingAccounts}
               />
             }
           />

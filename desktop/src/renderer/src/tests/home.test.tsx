@@ -6,7 +6,6 @@ import { createInitialPipelineSteps } from '../data/pipeline'
 import type {
   AccountPlatformConnection,
   AccountSummary,
-  Clip,
   HomePipelineState
 } from '../types'
 import type { PipelineEventHandlers } from '../services/pipelineApi'
@@ -14,10 +13,6 @@ import type { PipelineEventHandlers } from '../services/pipelineApi'
 const { startPipelineJobMock, subscribeToPipelineEventsMock } = vi.hoisted(() => ({
   startPipelineJobMock: vi.fn(),
   subscribeToPipelineEventsMock: vi.fn()
-}))
-
-const { listAccountClipsMock } = vi.hoisted(() => ({
-  listAccountClipsMock: vi.fn<[_accountId: string | null], Promise<Clip[]>>()
 }))
 
 vi.mock('../services/pipelineApi', async () => {
@@ -30,10 +25,6 @@ vi.mock('../services/pipelineApi', async () => {
     subscribeToPipelineEvents: subscribeToPipelineEventsMock
   }
 })
-
-vi.mock('../services/clipLibrary', () => ({
-  listAccountClips: listAccountClipsMock
-}))
 
 const createPlatform = (
   overrides: Partial<AccountPlatformConnection> = {}
@@ -99,11 +90,6 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
   ...overrides
 })
 
-beforeEach(() => {
-  listAccountClipsMock.mockReset()
-  listAccountClipsMock.mockResolvedValue([])
-})
-
 describe('Home account selection', () => {
   beforeEach(() => {
     startPipelineJobMock.mockReset()
@@ -155,51 +141,6 @@ describe('Home account selection', () => {
 
   await waitFor(() => expect(startPipelineJobMock).toHaveBeenCalledTimes(1))
   expect(startPipelineJobMock).toHaveBeenCalledWith({ account: accountId, url: videoUrl })
-  })
-
-  it('loads existing clips for the selected account', async () => {
-    const existingClip: Clip = {
-      id: 'clip-001',
-      title: 'Existing Clip',
-      channel: 'Creator',
-      views: null,
-      createdAt: new Date('2024-05-01T12:00:00Z').toISOString(),
-      durationSec: 42,
-      thumbnail: null,
-      playbackUrl: 'file:///clip.mp4',
-      description: 'Full video: https://example.com\nCredit: Creator',
-      sourceUrl: 'https://example.com',
-      sourceTitle: 'Example Video',
-      sourcePublishedAt: null,
-      rating: 4.5,
-      quote: 'Existing Clip',
-      reason: null,
-      timestampUrl: 'https://example.com?t=12',
-      timestampSeconds: 12
-    }
-
-    listAccountClipsMock.mockResolvedValueOnce([existingClip])
-
-    render(
-      <Home
-        registerSearch={() => {}}
-        initialState={createInitialState()}
-        onStateChange={() => {}}
-        accounts={[AVAILABLE_ACCOUNT]}
-      />
-    )
-
-    const select = screen.getByLabelText(/account/i)
-    await act(async () => {
-      fireEvent.change(select, { target: { value: AVAILABLE_ACCOUNT.id } })
-    })
-    await act(async () => {})
-    expect((select as HTMLSelectElement).value).toBe(AVAILABLE_ACCOUNT.id)
-
-    await waitFor(() => expect(listAccountClipsMock).toHaveBeenCalled())
-    expect(await screen.findByText(existingClip.title)).toBeInTheDocument()
-    const [[accountUsed]] = listAccountClipsMock.mock.calls
-    expect(accountUsed).toBe(AVAILABLE_ACCOUNT.id)
   })
 
   it('filters the account dropdown to active accounts with active platforms', () => {

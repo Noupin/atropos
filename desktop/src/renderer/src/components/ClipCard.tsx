@@ -25,12 +25,22 @@ const ClipCard: FC<ClipCardProps> = ({ clip, onClick }) => {
       className="group relative flex cursor-pointer flex-col overflow-hidden rounded-xl bg-[var(--card)] shadow-sm transition hover:-translate-y-1 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
     >
       <div className="relative aspect-video w-full overflow-hidden">
-        <img
-          src={clip.thumbnail}
-          alt={clip.title}
-          loading="lazy"
-          className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-        />
+        {clip.thumbnail ? (
+          <img
+            src={clip.thumbnail}
+            alt={clip.title}
+            loading="lazy"
+            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+          />
+        ) : (
+          <video
+            src={clip.playbackUrl}
+            muted
+            playsInline
+            preload="metadata"
+            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+          />
+        )}
         <span className="absolute bottom-2 right-2 rounded-md bg-black/70 px-2 py-0.5 text-xs font-medium text-white">
           {formatDuration(clip.durationSec)}
         </span>
