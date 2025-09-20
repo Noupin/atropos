@@ -28,12 +28,15 @@ import {
   canOpenAccountClipsFolder,
   openAccountClipsFolder
 } from '../services/clipLibrary'
+import { uploadJobClip, type UploadJobClipRequest } from '../services/uploadApi'
 import type {
+  SupportedPlatform,
   AccountConnectionStatus,
   AccountSummary,
   HomePipelineState,
   SearchBridge
 } from '../types'
+import { PLATFORM_LABELS } from '../types'
 
 const SUPPORTED_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv'] as const
 
@@ -67,6 +70,12 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   const [folderMessage, setFolderMessage] = useState<string | null>(null)
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
   const [isOpeningFolder, setIsOpeningFolder] = useState(false)
+  const selectAllPlatformsRef = useRef<HTMLInputElement | null>(null)
+  const [selectedUploadPlatforms, setSelectedUploadPlatforms] = useState<SupportedPlatform[]>([])
+  const [deleteAfterUpload, setDeleteAfterUpload] = useState(false)
+  const [isUploadingClip, setIsUploadingClip] = useState(false)
+  const [uploadErrorMessage, setUploadErrorMessage] = useState<string | null>(null)
+  const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null)
   const canAttemptToOpenFolder = useMemo(() => canOpenAccountClipsFolder(), [])
 
   useEffect(() => {
@@ -120,6 +129,46 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     () => (selectedAccount ? selectedAccount.platforms : []),
     [selectedAccount]
   )
+
+  const activePlatformOptions = useMemo(
+    () =>
+      accountPlatforms.filter(
+        (platform) => platform.active && platform.status === 'active'
+      ),
+    [accountPlatforms]
+  )
+
+  const defaultUploadPlatforms = useMemo(
+    () => activePlatformOptions.map((platform) => platform.platform),
+    [activePlatformOptions]
+  )
+
+  useEffect(() => {
+    setSelectedUploadPlatforms((prev) => {
+      const sortedPrev = [...prev].sort().join('|')
+      const sortedNext = [...defaultUploadPlatforms].sort().join('|')
+      if (sortedPrev !== sortedNext) {
+        return [...defaultUploadPlatforms]
+      }
+      return prev
+    })
+    setDeleteAfterUpload(false)
+    setUploadErrorMessage(null)
+    setUploadSuccessMessage(null)
+  }, [defaultUploadPlatforms, selectedClipId])
+
+  useEffect(() => {
+    if (!selectAllPlatformsRef.current) {
+      return
+    }
+    const total = defaultUploadPlatforms.length
+    const selectedCount = selectedUploadPlatforms.length
+    selectAllPlatformsRef.current.indeterminate = selectedCount > 0 && selectedCount < total
+  }, [defaultUploadPlatforms, selectedUploadPlatforms])
+
+  const hasUploadPlatforms = defaultUploadPlatforms.length > 0
+  const areAllUploadPlatformsSelected =
+    hasUploadPlatforms && selectedUploadPlatforms.length === defaultUploadPlatforms.length
 
   useEffect(() => {
     if (selectedAccountId && !availableAccounts.some((account) => account.id === selectedAccountId)) {
@@ -807,6 +856,40 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     }))
   }, [updateState])
 
+  const handleToggleAllPlatforms = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      if (event.target.checked) {
+        setSelectedUploadPlatforms([...defaultUploadPlatforms])
+      } else {
+        setSelectedUploadPlatforms([])
+      }
+      setUploadErrorMessage(null)
+      setUploadSuccessMessage(null)
+    },
+    [defaultUploadPlatforms]
+  )
+
+  const handleTogglePlatform = useCallback(
+    (platform: SupportedPlatform) => {
+      if (!defaultUploadPlatforms.includes(platform)) {
+        return
+      }
+      setSelectedUploadPlatforms((prev) => {
+        if (prev.includes(platform)) {
+          return prev.filter((value) => value !== platform)
+        }
+        return [...prev, platform]
+      })
+      setUploadErrorMessage(null)
+      setUploadSuccessMessage(null)
+    },
+    [defaultUploadPlatforms]
+  )
+
+  const handleDeleteAfterUploadChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    setDeleteAfterUpload(event.target.checked)
+  }, [])
+
   const handleClipSelect = useCallback((clipId: string) => {
     updateState((prev) => ({ ...prev, selectedClipId: clipId }))
   }, [updateState])
@@ -852,6 +935,61 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     () => clips.find((clip) => clip.id === selectedClipId) ?? null,
     [clips, selectedClipId]
   )
+
+  const handleUploadSelectedClip = useCallback(async () => {
+    if (!selectedClip) {
+      setUploadErrorMessage('Select a clip before uploading.')
+      setUploadSuccessMessage(null)
+      return
+    }
+    if (!activeJobId) {
+      setUploadErrorMessage('Upload is unavailable. Start the pipeline to generate clips again.')
+      setUploadSuccessMessage(null)
+      return
+    }
+    if (selectedUploadPlatforms.length === 0) {
+      setUploadErrorMessage('Select at least one platform to upload to.')
+      setUploadSuccessMessage(null)
+      return
+    }
+    if (isUploadingClip) {
+      return
+    }
+
+    setIsUploadingClip(true)
+    setUploadErrorMessage(null)
+    setUploadSuccessMessage(null)
+
+    try {
+      const payload: UploadJobClipRequest = {
+        platforms: selectedUploadPlatforms
+      }
+      if (deleteAfterUpload) {
+        payload.delete_after_upload = true
+      }
+      const result = await uploadJobClip(activeJobId, selectedClip.id, payload)
+      const platformsForMessage =
+        result.platforms.length > 0 ? result.platforms : selectedUploadPlatforms
+      const platformLabels = platformsForMessage.map((platform) => PLATFORM_LABELS[platform]).join(', ')
+      const deletionNote = result.deleted ? ' Clip files were deleted after upload.' : ''
+      setUploadSuccessMessage(`Uploaded to ${platformLabels || 'selected platforms'}.${deletionNote}`)
+      if (result.deleted) {
+        handleClipRemove(selectedClip.id)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Upload failed. Please try again.'
+      setUploadErrorMessage(message)
+    } finally {
+      setIsUploadingClip(false)
+    }
+  }, [
+    activeJobId,
+    deleteAfterUpload,
+    handleClipRemove,
+    isUploadingClip,
+    selectedClip,
+    selectedUploadPlatforms
+  ])
 
   const readyDateFormatter = useMemo(
     () =>
@@ -1176,6 +1314,83 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                       text={selectedClip.description}
                       className="text-sm leading-relaxed text-[var(--muted)]"
                     />
+                  </div>
+                  <div className="space-y-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-[var(--fg)]">Upload clip</h4>
+                        <p className="text-xs text-[var(--muted)]">Select platforms and start the upload.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleUploadSelectedClip}
+                        disabled={
+                          isUploadingClip || !selectedClip || !activeJobId || selectedUploadPlatforms.length === 0
+                        }
+                        className="rounded-lg border border-transparent bg-[var(--ring)] px-3 py-1.5 text-xs font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isUploadingClip ? 'Uploading…' : 'Upload'}
+                      </button>
+                    </div>
+                    {activeJobId ? (
+                      hasUploadPlatforms ? (
+                        <div className="space-y-3">
+                          <label className="flex items-center gap-2 text-xs text-[var(--fg)]">
+                            <input
+                              ref={selectAllPlatformsRef}
+                              type="checkbox"
+                              checked={areAllUploadPlatformsSelected}
+                              onChange={handleToggleAllPlatforms}
+                              className="h-4 w-4 rounded border-white/20 bg-transparent text-[var(--ring)] focus:ring-[var(--ring)]"
+                            />
+                            <span>Select all platforms</span>
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {activePlatformOptions.map((option) => (
+                              <label
+                                key={option.platform}
+                                className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition ${
+                                  selectedUploadPlatforms.includes(option.platform)
+                                    ? 'border-[var(--ring)] text-white'
+                                    : 'border-white/10 text-[var(--fg)] hover:border-[var(--ring)]'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedUploadPlatforms.includes(option.platform)}
+                                  onChange={() => handleTogglePlatform(option.platform)}
+                                  className="h-4 w-4 rounded border-white/20 bg-transparent text-[var(--ring)] focus:ring-[var(--ring)]"
+                                />
+                                <span>{option.label || PLATFORM_LABELS[option.platform]}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
+                            <input
+                              type="checkbox"
+                              checked={deleteAfterUpload}
+                              onChange={handleDeleteAfterUploadChange}
+                              className="h-4 w-4 rounded border-white/20 bg-transparent text-[var(--ring)] focus:ring-[var(--ring)]"
+                            />
+                            <span>Delete clip files after upload (overrides config for this upload)</span>
+                          </label>
+                          {uploadErrorMessage ? (
+                            <p className="text-xs font-medium text-rose-400">{uploadErrorMessage}</p>
+                          ) : null}
+                          {uploadSuccessMessage ? (
+                            <p className="text-xs text-emerald-300">{uploadSuccessMessage}</p>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-[var(--muted)]">
+                          Enable at least one active platform for this account to upload directly from here.
+                        </p>
+                      )
+                    ) : (
+                      <p className="text-xs text-[var(--muted)]">
+                        Uploads are available once a pipeline job has started.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

@@ -102,6 +102,9 @@ now inferred from this folder structure and the matching tokens are loaded from
 - The render layout for generated shorts can be selected via `RENDER_LAYOUT` in
   `server/config.py`. Available options are `centered`, `centered_with_corners`,
   `no_zoom`, and `left_aligned`.
+- Set `DELETE_UPLOADED_CLIPS` in `server/config.py` to automatically remove
+  rendered clip files after successful uploads. The desktop upload controls can
+  override this setting for individual clips when needed.
 
 ## Git Reversion
 

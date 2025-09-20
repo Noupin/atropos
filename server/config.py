@@ -155,6 +155,9 @@ WEBSITE_URL = "https://atropos-video.com"
 YOUTUBE_DESC_LIMIT = 5000
 TIKTOK_DESC_LIMIT = 2000
 
+# Remove rendered clip assets after a successful manual upload
+DELETE_UPLOADED_CLIPS = False
+
 # ---------------------------------------
 # Deprecated chunk-based LLM settings
 # ---------------------------------------
@@ -214,6 +217,7 @@ __all__ = [
     "WEBSITE_URL",
     "YOUTUBE_DESC_LIMIT",
     "TIKTOK_DESC_LIMIT",
+    "DELETE_UPLOADED_CLIPS",
     "MAX_LLM_CHARS",
     "LLM_API_TIMEOUT",
     "SEGMENT_OR_DIALOG_CHUNK_MAX_ITEMS",
