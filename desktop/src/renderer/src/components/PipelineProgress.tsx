@@ -42,6 +42,38 @@ const computeStepProgressValue = (step: PipelineStep): number => {
     return 0
   }
 
+  if (step.id === 'produce-clips') {
+    const totalClips = step.substeps.reduce(
+      (max, substep) => Math.max(max, substep.totalClips),
+      step.clipProgress?.total ?? 0
+    )
+    const substepCount = step.substeps.length
+
+    if (totalClips === 0 || substepCount === 0) {
+      if (step.clipProgress && step.clipProgress.total === 0) {
+        return 1
+      }
+      return clamp01(step.progress)
+    }
+
+    const totalUnits = totalClips * substepCount
+    let completedUnits = 0
+    let inFlightUnits = 0
+
+    step.substeps.forEach((substep) => {
+      const boundedCompleted = Math.min(totalClips, Math.max(0, substep.completedClips))
+      completedUnits += boundedCompleted
+      if (substep.status === 'running' && boundedCompleted < totalClips) {
+        inFlightUnits += clamp01(substep.progress)
+      } else if (substep.status === 'failed') {
+        inFlightUnits += clamp01(substep.progress)
+      }
+    })
+
+    const aggregate = (completedUnits + inFlightUnits) / Math.max(1, totalUnits)
+    return clamp01(aggregate)
+  }
+
   if (step.clipStage && step.clipProgress) {
     const total = Math.max(0, step.clipProgress.total)
     if (total > 0) {
@@ -91,6 +123,39 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
         if (!next.has(key)) {
           next.add(key)
           changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [steps])
+
+  useEffect(() => {
+    setExpandedSteps((prev) => {
+      let changed = false
+      const next = new Set(prev)
+      for (const step of steps) {
+        if (step.status === 'completed' && next.has(step.id)) {
+          next.delete(step.id)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [steps])
+
+  useEffect(() => {
+    setExpandedSubsteps((prev) => {
+      let changed = false
+      const next = new Set(prev)
+      for (const step of steps) {
+        for (const substep of step.substeps) {
+          const key = buildSubstepKey(step.id, substep.id)
+          if (step.status === 'completed' || substep.status === 'completed') {
+            if (next.has(key)) {
+              next.delete(key)
+              changed = true
+            }
+          }
         }
       }
       return changed ? next : prev
@@ -271,6 +336,26 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
     )
   }
 
+  const getSubstepClipLabel = (substep: PipelineSubstep): string | null => {
+    if (substep.totalClips <= 0) {
+      return null
+    }
+    const candidate =
+      substep.status === 'completed'
+        ? substep.totalClips
+        : substep.activeClipIndex ?? substep.completedClips + 1
+    const position = Math.min(substep.totalClips, Math.max(1, candidate))
+    return `Clip ${position}/${substep.totalClips}`
+  }
+
+  const getSubstepCompletedSummary = (substep: PipelineSubstep): string | null => {
+    if (substep.totalClips <= 0) {
+      return null
+    }
+    const completed = Math.min(substep.totalClips, Math.max(0, substep.completedClips))
+    return `${completed}/${substep.totalClips} clips done`
+  }
+
   const renderCompactSubstep = (
     step: PipelineStep,
     substep: PipelineSubstep,
@@ -286,6 +371,8 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
           : substep.status === 'running'
             ? 'bg-sky-400'
             : 'bg-white/40'
+    const clipLabel = getSubstepClipLabel(substep)
+    const completedSummary = getSubstepCompletedSummary(substep)
 
     return (
       <li key={substep.id} className="h-full">
@@ -303,11 +390,17 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
           </div>
           <div className="flex items-center gap-2 text-[11px]">
             <span className="truncate font-semibold text-[var(--fg)]">{substep.title}</span>
-            <span className="ml-auto flex items-center gap-1 text-[10px] text-[var(--muted)]">
+            <span className="ml-auto flex items-center gap-2 text-[10px] text-[var(--muted)]">
+              {clipLabel ? <span className="font-semibold uppercase tracking-wide">{clipLabel}</span> : null}
               <span className="font-semibold text-[var(--fg)]">{percent}%</span>
               {substep.status === 'running' && etaLabel ? <span>{etaLabel}</span> : null}
             </span>
           </div>
+          {completedSummary ? (
+            <div className="text-[9px] uppercase tracking-[0.16em] text-[var(--muted)]">
+              {completedSummary}
+            </div>
+          ) : null}
           <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
             <div
               className={`h-full rounded-full ${progressColor} transition-all duration-500 ease-out`}
@@ -335,6 +428,8 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
           : substep.status === 'running'
             ? 'bg-sky-400'
             : 'bg-white/40'
+    const clipLabel = getSubstepClipLabel(substep)
+    const completedSummary = getSubstepCompletedSummary(substep)
 
     return (
       <li
@@ -360,6 +455,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-[var(--muted)]">
             <span>{statusLabels[substep.status]}</span>
             <span className="text-xs normal-case text-[var(--muted)]">{percent}%</span>
+            {clipLabel ? <span className="text-[9px] uppercase tracking-[0.16em]">{clipLabel}</span> : null}
             {etaLabel ? <span className="normal-case">{etaLabel}</span> : null}
             <span
               className={`text-base leading-none transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -383,6 +479,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
                   style={{ width: `${percent}%` }}
                 />
               </div>
+              {completedSummary ? <span>{completedSummary}</span> : null}
             </div>
             {substep.status === 'failed' ? (
               <p className="text-[var(--danger)] font-semibold">Review server logs to retry this step.</p>
@@ -397,7 +494,8 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
     const key = buildSubstepKey(step.id, substep.id)
     const isExpanded = expandedSubsteps.has(key)
     const isActive = substep.status === 'running' || substep.status === 'failed'
-    const percent = Math.round(clamp01(substep.progress) * 100)
+    const progressValue = substep.status === 'completed' ? 1 : substep.progress
+    const percent = Math.round(clamp01(progressValue) * 100)
     const etaLabel = substep.etaSeconds !== null ? formatEta(substep.etaSeconds) : null
 
     if (isExpanded || isActive) {

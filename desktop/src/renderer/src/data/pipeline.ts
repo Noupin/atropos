@@ -115,20 +115,34 @@ const SUBSTEP_PATTERNS: SubstepPattern[] = [
   }
 ]
 
+export type PipelineSubstepLocation = {
+  kind: 'substep'
+  stepId: PipelineStepDefinition['id']
+  substepId: PipelineSubstepDefinition['id']
+  clipIndex: number | null
+}
+
 export type PipelineStepLocation =
   | { kind: 'step'; stepId: PipelineStepDefinition['id'] }
-  | { kind: 'substep'; stepId: PipelineStepDefinition['id']; substepId: PipelineSubstepDefinition['id'] }
+  | PipelineSubstepLocation
 
 export const resolvePipelineLocation = (rawStep: string | null | undefined): PipelineStepLocation | null => {
   if (!rawStep) {
     return null
   }
 
-  const normalised = rawStep.trim().toLowerCase()
+  let clipIndex: number | null = null
+  let normalised = rawStep.trim().toLowerCase()
+
+  const clipMatch = normalised.match(/^(.*?)(?:_(\d+))?$/)
+  if (clipMatch) {
+    normalised = clipMatch[1]
+    clipIndex = clipMatch[2] ? Number.parseInt(clipMatch[2], 10) : null
+  }
 
   const substepMatch = SUBSTEP_PATTERNS.find(({ pattern }) => pattern.test(normalised))
   if (substepMatch) {
-    return { kind: 'substep', stepId: substepMatch.stepId, substepId: substepMatch.substepId }
+    return { kind: 'substep', stepId: substepMatch.stepId, substepId: substepMatch.substepId, clipIndex }
   }
 
   const direct = PIPELINE_STEP_DEFINITIONS.find((definition) => definition.id === normalised)
@@ -145,7 +159,10 @@ const initialiseSubsteps = (definitions: PipelineSubstepDefinition[] | undefined
     ...definition,
     status: 'pending',
     progress: 0,
-    etaSeconds: null
+    etaSeconds: null,
+    completedClips: 0,
+    totalClips: 0,
+    activeClipIndex: null
   }))
 
 export const createInitialPipelineSteps = (): PipelineStep[] =>
