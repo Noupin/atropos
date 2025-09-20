@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
@@ -12,6 +13,7 @@ import uuid
 import os
 import shutil
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Callable, Dict, Iterable, List, Literal, Mapping, MutableMapping, Optional
 
 from fastapi import HTTPException, status
@@ -189,6 +191,43 @@ def _ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
+def _import_integration_module(
+    primary: str,
+    fallback: str | None,
+    dependency_error: str,
+) -> ModuleType:
+    """Import an integration module, allowing for a fallback path.
+
+    ``primary`` is attempted first; if it cannot be imported because the top-level package
+    is missing (e.g. ``server`` when running with ``PYTHONPATH=server``), ``fallback`` is
+    tried next. Import errors stemming from missing third-party dependencies propagate as
+    ``HTTPException`` with ``dependency_error`` to preserve the original behaviour.
+    """
+
+    candidates = [primary]
+    if fallback:
+        candidates.append(fallback)
+
+    last_exc: ImportError | None = None
+    for module_name in candidates:
+        try:
+            return importlib.import_module(module_name)
+        except ImportError as exc:  # pragma: no cover - exercised via runtime imports
+            last_exc = exc
+            if isinstance(exc, ModuleNotFoundError):
+                missing = exc.name or ""
+                top_level = module_name.split(".")[0]
+                if missing == top_level:
+                    # Try the next candidate when the module hierarchy itself is missing.
+                    continue
+            break
+
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=dependency_error,
+    ) from last_exc
+
+
 def _youtube_auth(account_dir: Path, credentials: Dict[str, Any]) -> None:
     """Run the YouTube OAuth flow for ``account_dir``."""
 
@@ -197,13 +236,11 @@ def _youtube_auth(account_dir: Path, credentials: Dict[str, Any]) -> None:
         "YT_TOKENS_FILE": str(token_path),
         "YT_ACCOUNT": account_dir.name,
     }
-    try:
-        from server.integrations.youtube import auth as youtube_auth
-    except ImportError as exc:  # pragma: no cover - import error path
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="YouTube authentication libraries are missing. Install google-auth libraries to continue.",
-        ) from exc
+    youtube_auth = _import_integration_module(
+        "server.integrations.youtube.auth",
+        "integrations.youtube.auth",
+        "YouTube authentication libraries are missing. Install google-auth libraries to continue.",
+    )
     with _temporary_env(overrides):
         youtube_auth.ensure_creds()
 
@@ -221,13 +258,11 @@ def _tiktok_auth(account_dir: Path, credentials: Dict[str, Any]) -> None:
         overrides["TIKTOK_CLIENT_KEY"] = client_key.strip()
     if isinstance(client_secret, str) and client_secret.strip():
         overrides["TIKTOK_CLIENT_SECRET"] = client_secret.strip()
-    try:
-        from server.integrations.tiktok import auth as tiktok_auth
-    except ImportError as exc:  # pragma: no cover - import error path
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="TikTok authentication dependencies are missing. Install requests to continue.",
-        ) from exc
+    tiktok_auth = _import_integration_module(
+        "server.integrations.tiktok.auth",
+        "integrations.tiktok.auth",
+        "TikTok authentication dependencies are missing. Install requests to continue.",
+    )
     with _temporary_env(overrides):
         tiktok_auth.run()
 
@@ -247,13 +282,11 @@ def _instagram_auth(account_dir: Path, credentials: Dict[str, Any]) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Instagram authentication requires a password.",
         )
-    try:
-        from server.integrations.instagram import upload as instagram_auth
-    except ImportError as exc:  # pragma: no cover - import error path
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Instagram authentication dependencies are missing. Install instagrapi to continue.",
-        ) from exc
+    instagram_auth = _import_integration_module(
+        "server.integrations.instagram.upload",
+        "integrations.instagram.upload",
+        "Instagram authentication dependencies are missing. Install instagrapi to continue.",
+    )
 
     session_path = account_dir / PLATFORM_TOKEN_FILES["instagram"]
     state_path = account_dir / "instagram_state.json"
