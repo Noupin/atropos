@@ -108,6 +108,9 @@ const AccountCard: FC<AccountCardProps> = ({
   const [isDeletingAccount, setIsDeletingAccount] = useState(false)
   const [updatingPlatform, setUpdatingPlatform] = useState<SupportedPlatform | null>(null)
   const [removingPlatform, setRemovingPlatform] = useState<SupportedPlatform | null>(null)
+  const [collapsedPlatforms, setCollapsedPlatforms] = useState<
+    Partial<Record<SupportedPlatform, boolean>>
+  >({})
   const isMounted = useRef(true)
 
   useEffect(() => {
@@ -131,6 +134,30 @@ const AccountCard: FC<AccountCardProps> = ({
     setSuccess(null)
     setError(null)
   }, [account.platforms.length, account.active])
+
+  useEffect(() => {
+    setCollapsedPlatforms((previous) => {
+      let hasChanged = false
+      const nextState: Partial<Record<SupportedPlatform, boolean>> = {}
+
+      for (const item of account.platforms) {
+        const current = previous[item.platform]
+        nextState[item.platform] = current ?? false
+        if (current === undefined) {
+          hasChanged = true
+        }
+      }
+
+      for (const key of Object.keys(previous) as SupportedPlatform[]) {
+        if (!account.platforms.some((item) => item.platform === key)) {
+          hasChanged = true
+          break
+        }
+      }
+
+      return hasChanged ? nextState : previous
+    })
+  }, [account.platforms])
 
   const resetCredentialFields = useCallback(() => {
     setInstagramUsername('')
@@ -493,51 +520,76 @@ const AccountCard: FC<AccountCardProps> = ({
           {account.platforms.map((platform) => {
             const isPlatformUpdating = updatingPlatform === platform.platform
             const isPlatformRemoving = removingPlatform === platform.platform
+            const isCollapsed = collapsedPlatforms[platform.platform] ?? false
             return (
               <li
                 key={platform.platform}
-                className="flex flex-col gap-1 rounded-lg border border-white/10 bg-black/20 p-3"
+                className="flex flex-col gap-2 rounded-lg border border-white/10 bg-black/20 p-3"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-[var(--fg)]">{platform.label}</span>
-                  {renderStatusTag(platform)}
-                </div>
-                <p className="text-xs text-[var(--muted)]">
-                  Last verified: {formatTimestamp(platform.lastVerifiedAt ?? null)}
-                </p>
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
-                  <span className="text-xs text-[var(--muted)]">
-                    Added {formatTimestamp(platform.addedAt)}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCollapsedPlatforms((previous) => ({
+                        ...previous,
+                        [platform.platform]: !isCollapsed
+                      }))
+                    }}
+                    aria-expanded={!isCollapsed}
+                    className="inline-flex items-center gap-2 rounded-lg border border-transparent px-2 py-1 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+                  >
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/20 text-xs">
+                      {isCollapsed ? '+' : '−'}
+                    </span>
+                    <span>{platform.label}</span>
+                  </button>
                   <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleTogglePlatformActive(platform.platform, !platform.active)
-                      }}
-                      disabled={isPlatformUpdating || isPlatformRemoving}
-                      className="rounded-lg border border-white/15 px-3 py-1 text-xs font-medium text-[var(--fg)] transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isPlatformUpdating
-                        ? platform.active
-                          ? 'Disabling…'
-                          : 'Enabling…'
-                        : platform.active
-                        ? 'Disable'
-                        : 'Enable'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleRemovePlatform(platform.platform)
-                      }}
-                      disabled={isPlatformRemoving || isPlatformUpdating}
-                      className="rounded-lg border border-rose-500/60 px-3 py-1 text-xs font-medium text-rose-200 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isPlatformRemoving ? 'Removing…' : 'Remove'}
-                    </button>
+                    <span className="text-xs text-[var(--muted)]">
+                      {PLATFORM_LABELS[platform.platform]}
+                    </span>
+                    {renderStatusTag(platform)}
                   </div>
                 </div>
+                {!isCollapsed ? (
+                  <>
+                    <p className="text-xs text-[var(--muted)]">
+                      Last verified: {formatTimestamp(platform.lastVerifiedAt ?? null)}
+                    </p>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                      <span className="text-xs text-[var(--muted)]">
+                        Added {formatTimestamp(platform.addedAt)}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleTogglePlatformActive(platform.platform, !platform.active)
+                          }}
+                          disabled={isPlatformUpdating || isPlatformRemoving}
+                          className="rounded-lg border border-white/15 px-3 py-1 text-xs font-medium text-[var(--fg)] transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isPlatformUpdating
+                            ? platform.active
+                              ? 'Disabling…'
+                              : 'Enabling…'
+                            : platform.active
+                            ? 'Disable'
+                            : 'Enable'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleRemovePlatform(platform.platform)
+                          }}
+                          disabled={isPlatformRemoving || isPlatformUpdating}
+                          className="rounded-lg border border-rose-500/60 px-3 py-1 text-xs font-medium text-rose-200 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isPlatformRemoving ? 'Removing…' : 'Remove'}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
               </li>
             )
           })}
@@ -676,6 +728,8 @@ const Profile: FC<ProfileProps> = ({
     (total, account) => total + account.platforms.length,
     0
   )
+  const totalAccounts = authStatus?.accounts ?? accounts.length
+  const accountLabel = totalAccounts === 1 ? 'account' : 'accounts'
 
   return (
     <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-10">
@@ -716,7 +770,8 @@ const Profile: FC<ProfileProps> = ({
               </button>
             </div>
             <div className="text-xs text-[var(--muted)]">
-              Connected platforms: {connectedPlatforms}/{totalPlatforms}
+              Connected platforms across {totalAccounts} {accountLabel}: {connectedPlatforms}/
+              {totalPlatforms}
             </div>
             {authError && !authStatus ? (
               <p className="text-xs font-medium text-rose-400">{authError}</p>
