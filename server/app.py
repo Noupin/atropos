@@ -27,6 +27,11 @@ from pydantic import BaseModel, Field, field_validator
 from custom_types.ETone import Tone
 from interfaces.progress import PipelineEvent, PipelineEventType, PipelineObserver
 from pipeline import process_video
+from library import (
+    DEFAULT_ACCOUNT_PLACEHOLDER,
+    list_account_clips,
+    resolve_clip_video_path,
+)
 from auth.accounts import (
     AccountCreateRequest,
     AccountResponse,
@@ -166,6 +171,14 @@ class ClipManifest(BaseModel):
     quote: str | None = None
     reason: str | None = None
     account: str | None = None
+
+
+class LibraryClipManifest(ClipManifest):
+    """Extended manifest for archived library clips."""
+
+    timestamp_url: str | None = None
+    timestamp_seconds: float | None = None
+    thumbnail_url: str | None = None
 
 
 def _clip_to_payload(clip: ClipArtifact, request: Request, job_id: str) -> Dict[str, Any]:
@@ -447,6 +460,24 @@ async def get_job_clip_video(job_id: str, clip_id: str) -> FileResponse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip video not found")
 
     return FileResponse(path=video_path, media_type="video/mp4", filename=video_path.name)
+
+
+@app.get("/api/accounts/{account_id}/clips", response_model=list[LibraryClipManifest])
+async def list_account_clip_library(account_id: str, request: Request) -> list[LibraryClipManifest]:
+    """Return stored clips for ``account_id`` from the library."""
+
+    account_value = None if account_id == DEFAULT_ACCOUNT_PLACEHOLDER else account_id
+    clips = await list_account_clips(account_value)
+    return [LibraryClipManifest(**clip.to_payload(request)) for clip in clips]
+
+
+@app.get("/api/accounts/{account_id}/clips/{clip_id}/video")
+async def get_account_clip_video(account_id: str, clip_id: str) -> FileResponse:
+    """Stream the archived clip video for ``clip_id``."""
+
+    account_value = None if account_id == DEFAULT_ACCOUNT_PLACEHOLDER else account_id
+    clip_path = resolve_clip_video_path(account_value, clip_id)
+    return FileResponse(path=clip_path, media_type="video/mp4", filename=clip_path.name)
 
 
 @app.get("/api/accounts", response_model=list[AccountResponse])

@@ -494,6 +494,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         const reason = typeof data.reason === 'string' ? data.reason : null
         const rating = typeof data.rating === 'number' ? data.rating : null
         const playbackClipId = typeof data.clip_id === 'string' ? data.clip_id : null
+        const accountIdValue = typeof data.account === 'string' ? data.account : null
 
         if (!clipId || !description || !createdAt || !playbackClipId || !durationValue || !sourceUrl) {
           return
@@ -520,7 +521,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
             reason,
             rating,
             timestampUrl,
-            timestampSeconds
+            timestampSeconds,
+            accountId: accountIdValue
           }
 
           const existingIndex = prev.clips.findIndex((clip) => clip.id === clipId)

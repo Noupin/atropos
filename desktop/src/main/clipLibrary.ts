@@ -259,10 +259,28 @@ const loadCandidateMetadata = async (projectDir: string): Promise<Map<string, Ca
   return map
 }
 
+const toBase64Url = (value: string): string =>
+  Buffer.from(value, 'utf-8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+
+const encodeClipId = (baseDir: string, filePath: string): string | null => {
+  const relative = path.relative(baseDir, filePath)
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    return null
+  }
+  const normalised = relative.split(path.sep).join('/')
+  return toBase64Url(normalised)
+}
+
 const buildClip = async (
   filePath: string,
   projectInfo: ProjectMetadata,
-  candidateMap: Map<string, CandidateMetadata>
+  candidateMap: Map<string, CandidateMetadata>,
+  baseDir: string,
+  accountId: string | null
 ): Promise<Clip | null> => {
   const fileName = path.basename(filePath)
   const stem = fileName.replace(/\.mp4$/i, '')
@@ -305,8 +323,13 @@ const buildClip = async (
     }
   }
 
+  const clipId = encodeClipId(baseDir, filePath)
+  if (!clipId) {
+    return null
+  }
+
   const clip: Clip = {
-    id: stem,
+    id: clipId,
     title,
     channel: descriptionMetadata.channel ?? 'Unknown channel',
     views: null,
@@ -322,7 +345,8 @@ const buildClip = async (
     quote: candidate?.quote ?? null,
     reason: candidate?.reason ?? null,
     timestampUrl,
-    timestampSeconds: descriptionMetadata.timestampSeconds ?? (Number.isFinite(start) ? start : null)
+    timestampSeconds: descriptionMetadata.timestampSeconds ?? (Number.isFinite(start) ? start : null),
+    accountId
   }
 
   return clip
@@ -426,7 +450,7 @@ export const listAccountClips = async (accountId: string | null): Promise<Clip[]
       }
       const filePath = path.join(shortsDir, fileName)
       try {
-        const clip = await buildClip(filePath, projectInfo, candidateMap)
+        const clip = await buildClip(filePath, projectInfo, candidateMap, base, accountId)
         if (clip) {
           clips.push(clip)
         }
