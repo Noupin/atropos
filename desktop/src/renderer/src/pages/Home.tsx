@@ -49,7 +49,11 @@ type HomeProps = {
 }
 
 const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, accounts }) => {
-  const [state, setState] = useState<HomePipelineState>(() => initialState)
+  const [state, setState] = useState<HomePipelineState>(initialState)
+
+  useEffect(() => {
+    setState(initialState)
+  }, [initialState])
 
   const updateState = useCallback(
     (updater: (prev: HomePipelineState) => HomePipelineState) =>
