@@ -6,6 +6,7 @@ import ClipPage from './pages/Clip'
 import Home from './pages/Home'
 import Library from './pages/Library'
 import Profile from './pages/Profile'
+import Settings from './pages/Settings'
 import { createInitialPipelineSteps } from './data/pipeline'
 import type {
   AccountSummary,
@@ -33,6 +34,20 @@ type PlatformPayload = {
 
 const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
+
+const NavItemLabel: FC<{ label: string; isActive: boolean }> = ({ label, isActive }) => (
+  <span className="flex flex-col items-center gap-1">
+    <span>{label}</span>
+    <span
+      aria-hidden
+      className={`h-0.5 w-8 rounded-full transition ${
+        isActive
+          ? 'bg-[var(--fg)] opacity-100'
+          : 'bg-white/70 opacity-0 group-hover:opacity-60'
+      }`}
+    />
+  </span>
+)
 
 type AppProps = {
   searchInputRef: RefObject<HTMLInputElement | null>
@@ -304,7 +319,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   const navLinkClassName = useCallback(
     ({ isActive }: { isActive: boolean }) =>
-      `rounded-lg px-3 py-1.5 text-sm transition ${
+      `group relative rounded-lg px-3 py-1.5 text-sm transition ${
         isActive
           ? 'bg-[color:color-mix(in_srgb,var(--card)_80%,transparent)] text-[var(--fg)] shadow-sm'
           : 'text-[var(--muted)] hover:bg-white/10 hover:text-[var(--fg)]'
@@ -324,13 +339,16 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 className="flex items-center gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-1"
               >
                 <NavLink to="/" end className={navLinkClassName}>
-                  Home
+                  {({ isActive }) => <NavItemLabel label="Home" isActive={isActive} />}
                 </NavLink>
                 <NavLink to="/library" className={navLinkClassName}>
-                  Library
+                  {({ isActive }) => <NavItemLabel label="Library" isActive={isActive} />}
+                </NavLink>
+                <NavLink to="/settings" className={navLinkClassName}>
+                  {({ isActive }) => <NavItemLabel label="Settings" isActive={isActive} />}
                 </NavLink>
                 <NavLink to="/profile" className={navLinkClassName}>
-                  Profile
+                  {({ isActive }) => <NavItemLabel label="Profile" isActive={isActive} />}
                 </NavLink>
               </nav>
             </div>
@@ -377,6 +395,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
             }
           />
           <Route path="/clip/:id" element={<ClipPage registerSearch={registerSearch} />} />
+          <Route path="/settings" element={<Settings registerSearch={registerSearch} />} />
           <Route
             path="/profile"
             element={

@@ -139,3 +139,8 @@ export const buildAuthPingUrl = (): string => {
   const url = new URL('/api/auth/ping', getApiBaseUrl())
   return url.toString()
 }
+
+export const buildConfigUrl = (): string => {
+  const url = new URL('/api/config', getApiBaseUrl())
+  return url.toString()
+}

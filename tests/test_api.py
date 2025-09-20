@@ -10,6 +10,7 @@ from typing import List
 from fastapi.testclient import TestClient
 
 import server.app
+import server.config as pipeline_config
 from interfaces.progress import PipelineEvent, PipelineEventType
 
 
@@ -146,3 +147,54 @@ def test_clip_endpoints_expose_rendered_clips(
         state.thread.join(timeout=1)
     with server.app._jobs_lock:
         server.app._jobs.clear()
+
+
+def test_config_endpoint_lists_and_updates_values() -> None:
+    client = TestClient(server.app.app)
+
+    response = client.get("/api/config")
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload, list)
+
+    names = {item["name"] for item in payload}
+    assert "CAPTION_FONT_SCALE" in names
+    assert "MIN_DURATION_SECONDS" in names
+
+    original_font_scale = pipeline_config.CAPTION_FONT_SCALE
+    original_min_duration = pipeline_config.MIN_DURATION_SECONDS
+    original_candidate_min = pipeline_config.CANDIDATE_SELECTION.min_duration_seconds
+
+    try:
+        update_response = client.patch(
+            "/api/config",
+            json={"values": {"CAPTION_FONT_SCALE": 3.5}},
+        )
+        assert update_response.status_code == 200
+        assert pipeline_config.CAPTION_FONT_SCALE == 3.5
+        updated_payload = update_response.json()
+        assert any(
+            entry["name"] == "CAPTION_FONT_SCALE" and entry["value"] == 3.5
+            for entry in updated_payload
+        )
+
+        min_duration_response = client.patch(
+            "/api/config",
+            json={"values": {"MIN_DURATION_SECONDS": 11}},
+        )
+        assert min_duration_response.status_code == 200
+        assert pipeline_config.MIN_DURATION_SECONDS == 11
+        assert pipeline_config.CANDIDATE_SELECTION.min_duration_seconds == 11
+    finally:
+        client.patch(
+            "/api/config",
+            json={
+                "values": {
+                    "CAPTION_FONT_SCALE": original_font_scale,
+                    "MIN_DURATION_SECONDS": original_min_duration,
+                }
+            },
+        )
+        pipeline_config.CAPTION_FONT_SCALE = original_font_scale
+        pipeline_config.MIN_DURATION_SECONDS = original_min_duration
+        pipeline_config.CANDIDATE_SELECTION.min_duration_seconds = original_candidate_min
