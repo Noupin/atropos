@@ -30,4 +30,15 @@ describe('ClipCard', () => {
 
     expect(handleClick).toHaveBeenCalledTimes(1)
   })
+
+  it('falls back to inline video preview when thumbnail is missing', () => {
+    const clipWithoutThumbnail: Clip = { ...mockClip, thumbnail: null }
+
+    render(<ClipCard clip={clipWithoutThumbnail} onClick={() => {}} />)
+
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    const video = screen.getByRole('button').querySelector('video')
+    expect(video).not.toBeNull()
+    expect(video?.getAttribute('src')).toBe(clipWithoutThumbnail.playbackUrl)
+  })
 })

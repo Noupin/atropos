@@ -22,7 +22,6 @@ import {
   subscribeToPipelineEvents,
   type PipelineEventMessage
 } from '../services/pipelineApi'
-import { listAccountClips } from '../services/clipLibrary'
 import { parseClipTimestamp } from '../lib/clipMetadata'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
@@ -98,7 +97,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   const runStepRef = useRef<(index: number) => void>(() => {})
   const connectionCleanupRef = useRef<(() => void) | null>(null)
   const activeJobIdRef = useRef<string | null>(initialState.activeJobId ?? null)
-  const lastLoadedAccountRef = useRef<string | null>(null)
 
   const isMockBackend = BACKEND_MODE === 'mock'
 
@@ -653,78 +651,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     activeJobIdRef.current = activeJobId
   }, [activeJobId])
 
-  const loadAccountClips = useCallback(
-    async (
-      accountId: string,
-      options?: { force?: boolean; canceledRef?: { current: boolean } }
-    ) => {
-      if (!accountId) {
-        return
-      }
-      if (!options?.force && lastLoadedAccountRef.current === accountId) {
-        return
-      }
-
-      try {
-        const existingClips = await listAccountClips(accountId)
-        if (options?.canceledRef?.current) {
-          return
-        }
-        let didUpdate = false
-        updateState((prev) => {
-          if (prev.selectedAccountId !== accountId) {
-            return prev
-          }
-          const mergedMap = new Map<string, typeof existingClips[number]>()
-          for (const clip of existingClips) {
-            mergedMap.set(clip.id, clip)
-          }
-          for (const clip of prev.clips) {
-            mergedMap.set(clip.id, clip)
-          }
-          const mergedClips = Array.from(mergedMap.values())
-          mergedClips.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-          const hasSelection = mergedClips.some((clip) => clip.id === prev.selectedClipId)
-          didUpdate = true
-          return {
-            ...prev,
-            clips: mergedClips,
-            selectedClipId: hasSelection ? prev.selectedClipId : mergedClips[0]?.id ?? null
-          }
-        })
-        if (didUpdate) {
-          lastLoadedAccountRef.current = accountId
-        }
-      } catch (error) {
-        if (!options?.canceledRef?.current) {
-          console.error('Failed to load clips for account', accountId, error)
-        }
-      }
-    },
-    [updateState]
-  )
-
-  useEffect(() => {
-    let isActive = true
-    const accountId = selectedAccountId
-
-    if (!accountId) {
-      lastLoadedAccountRef.current = null
-      updateState((prev) => ({ ...prev, clips: [], selectedClipId: null }))
-      return () => {
-        isActive = false
-      }
-    }
-
-    const canceledRef = { current: false }
-    void loadAccountClips(accountId, { canceledRef })
-
-    return () => {
-      canceledRef.current = true
-      isActive = false
-    }
-  }, [loadAccountClips, selectedAccountId, updateState])
-
   const handleUrlChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const value = event.target.value
@@ -740,9 +666,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   const handleAccountChange = useCallback(
     (event: ChangeEvent<HTMLSelectElement>) => {
       const value = event.target.value
-      if (value.length === 0) {
-        lastLoadedAccountRef.current = null
-      }
       updateState((prev) => ({
         ...prev,
         selectedAccountId: value.length > 0 ? value : null,
@@ -750,12 +673,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         clips: [],
         selectedClipId: null
       }))
-      if (value.length > 0) {
-        lastLoadedAccountRef.current = null
-        void loadAccountClips(value, { force: true })
-      }
     },
-    [loadAccountClips, updateState]
+    [updateState]
   )
 
   const handleSubmit = useCallback(
