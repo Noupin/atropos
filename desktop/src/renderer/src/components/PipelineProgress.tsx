@@ -238,21 +238,32 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
   )
 }
 
-const renderStepProgress = (step: PipelineStep) => {
-    if (step.status !== 'running') {
-      return null
-    }
-    const percent = Math.round(clamp01(step.progress) * 100)
-    const etaLabel = step.etaSeconds !== null ? formatEta(step.etaSeconds) : null
+  const renderStepProgress = (step: PipelineStep) => {
+    const percent = Math.round(computeStepProgressValue(step) * 100)
+    const etaLabel =
+      step.status === 'running' && step.etaSeconds !== null ? formatEta(step.etaSeconds) : null
+    const progressColor =
+      step.status === 'failed'
+        ? 'bg-rose-500'
+        : step.status === 'completed'
+          ? 'bg-emerald-500'
+          : step.status === 'running'
+            ? 'bg-sky-400'
+            : 'bg-white/30'
+
     return (
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between text-xs">
+      <div
+        className="flex flex-col gap-1.5"
+        data-testid={`step-progress-${step.id}`}
+        aria-label={`${step.title} progress`}
+      >
+        <div className="flex items-center justify-between text-[11px] text-[var(--muted)]">
           <span className="font-semibold text-[var(--fg)]">{percent}%</span>
-          {etaLabel ? <span className="text-[var(--muted)]">{etaLabel}</span> : null}
+          {etaLabel ? <span>{etaLabel}</span> : null}
         </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
           <div
-            className="h-full rounded-full bg-sky-400 transition-all duration-500 ease-out"
+            className={`h-full rounded-full transition-all duration-500 ease-out ${progressColor}`}
             style={{ width: `${percent}%` }}
           />
         </div>
@@ -281,24 +292,20 @@ const renderStepProgress = (step: PipelineStep) => {
         <button
           type="button"
           onClick={() => toggleSubstep(step.id, substep.id)}
-          className="group flex w-full flex-col gap-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-left text-xs transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+          className="group flex w-full flex-col gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-left text-[11px] transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
           aria-expanded={false}
           aria-controls={`substep-${step.id}-${substep.id}`}
         >
-          <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-[var(--muted)]">
+          <div className="flex items-center gap-2 text-[9px] uppercase tracking-[0.16em] text-[var(--muted)]">
             <span className={`h-1.5 w-1.5 rounded-full ${indicatorClasses[substep.status]}`} aria-hidden="true" />
             <span className="font-semibold">Substep {getSubstepLabel(index)}</span>
             <span className="ml-auto">{statusLabels[substep.status]}</span>
           </div>
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 text-[11px]">
             <span className="truncate font-semibold text-[var(--fg)]">{substep.title}</span>
-            <span className="ml-auto flex items-center gap-2 text-[11px] text-[var(--muted)]">
+            <span className="ml-auto flex items-center gap-1 text-[10px] text-[var(--muted)]">
               <span className="font-semibold text-[var(--fg)]">{percent}%</span>
-              {substep.status === 'running' && etaLabel ? (
-                <span className="text-[10px] uppercase tracking-wide text-[var(--muted)] normal-case">
-                  {etaLabel}
-                </span>
-              ) : null}
+              {substep.status === 'running' && etaLabel ? <span>{etaLabel}</span> : null}
             </span>
           </div>
           <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
@@ -406,7 +413,7 @@ const renderStepProgress = (step: PipelineStep) => {
     isActive: boolean,
     isExpanded: boolean
   ) => {
-    const percent = Math.round(clamp01(step.progress) * 100)
+    const percent = Math.round(computeStepProgressValue(step) * 100)
     const etaLabel = step.etaSeconds !== null && step.status === 'running' ? formatEta(step.etaSeconds) : null
     const headerProgressLabel = step.status === 'running'
       ? `${percent}%${etaLabel ? ` • ${etaLabel}` : ''}`
@@ -501,22 +508,22 @@ const renderStepProgress = (step: PipelineStep) => {
         <button
           type="button"
           onClick={() => toggleStep(step.id)}
-          className={`group flex w-full flex-col gap-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-left text-xs transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
+          className={`group flex w-full flex-col gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-left text-[11px] transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
             step.status === 'completed' ? 'opacity-85' : ''
           }`}
           aria-expanded={false}
           aria-controls={`step-${step.id}-details`}
         >
-          <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-[var(--muted)]">
+          <div className="flex items-center gap-2 text-[9px] uppercase tracking-[0.16em] text-[var(--muted)]">
             <span className={`h-2 w-2 rounded-full ${indicatorClasses[step.status]}`} aria-hidden="true" />
             <span className="font-semibold">Step {index + 1}</span>
             <span className="ml-auto">{statusLabels[step.status]}</span>
           </div>
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 text-[11px]">
             <span className="truncate font-semibold text-[var(--fg)]">{step.title}</span>
             {clipBadge}
           </div>
-          <div className="flex items-center justify-between text-[11px] text-[var(--muted)]">
+          <div className="flex items-center justify-between text-[10px] text-[var(--muted)]">
             <span className="font-semibold text-[var(--fg)]">{percent}%</span>
             {etaLabel ? <span>{etaLabel}</span> : null}
           </div>
