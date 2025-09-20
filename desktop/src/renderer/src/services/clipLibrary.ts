@@ -150,4 +150,32 @@ export const listAccountClips = async (accountId: string | null): Promise<Clip[]
   }
 }
 
+const isFolderBridgeAvailable = (): boolean => {
+  return typeof window !== 'undefined' && typeof window.api?.openAccountClipsFolder === 'function'
+}
+
+export const canOpenAccountClipsFolder = (): boolean => {
+  if (BACKEND_MODE === 'api') {
+    return false
+  }
+  return isFolderBridgeAvailable()
+}
+
+export const openAccountClipsFolder = async (accountId: string): Promise<boolean> => {
+  if (!accountId) {
+    return false
+  }
+  if (BACKEND_MODE === 'api' || typeof window === 'undefined' || !window.api?.openAccountClipsFolder) {
+    console.warn('openAccountClipsFolder bridge is unavailable in API mode.')
+    return false
+  }
+
+  try {
+    return await window.api.openAccountClipsFolder(accountId)
+  } catch (error) {
+    console.error('Unable to open clips folder through bridge', error)
+    return false
+  }
+}
+
 export default listAccountClips

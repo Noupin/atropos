@@ -427,21 +427,39 @@ const findProjectDirectories = async (rootDir: string): Promise<string[]> => {
   return projects
 }
 
-export const listAccountClips = async (accountId: string | null): Promise<Clip[]> => {
+export interface AccountClipsPaths {
+  base: string
+  accountDir: string
+}
+
+export const resolveAccountClipsDirectory = async (
+  accountId: string | null
+): Promise<AccountClipsPaths | null> => {
   const base = await resolveOutRoot()
   if (!base) {
-    return []
+    return null
   }
 
   const accountDir = accountId ? path.join(base, accountId) : base
   try {
     const stats = await fs.stat(accountDir)
-    if (!stats.isDirectory()) {
-      return []
+    if (stats.isDirectory()) {
+      return { base, accountDir }
     }
   } catch (error) {
+    return null
+  }
+
+  return null
+}
+
+export const listAccountClips = async (accountId: string | null): Promise<Clip[]> => {
+  const paths = await resolveAccountClipsDirectory(accountId)
+  if (!paths) {
     return []
   }
+
+  const { base, accountDir } = paths
 
   const projectDirs = await findProjectDirectories(accountDir)
   if (projectDirs.length === 0) {
