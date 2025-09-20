@@ -356,6 +356,8 @@ describe('Home pipeline events', () => {
     const [stepsList] = screen.getAllByTestId('pipeline-steps')
     expect(within(stepsList).getByText(/produce final clips/i)).toBeInTheDocument()
     expect(within(stepsList).getByText(/clips 2\/5/i)).toBeInTheDocument()
+    expect(within(stepsList).getByText(/clip 2\/5/i)).toBeInTheDocument()
+    expect(within(stepsList).getByText(/2\/5 clips done/i)).toBeInTheDocument()
     expect(within(stepsList).getAllByText(/40%/i).length).toBeGreaterThan(0)
   })
 })

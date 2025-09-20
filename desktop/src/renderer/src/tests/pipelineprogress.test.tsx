@@ -34,7 +34,10 @@ const mockSteps: PipelineStep[] = [
         description: 'Trim the source video according to clip timing.',
         status: 'completed',
         progress: 1,
-        etaSeconds: null
+        etaSeconds: null,
+        completedClips: 2,
+        totalClips: 5,
+        activeClipIndex: null
       },
       {
         id: 'generate-subtitles',
@@ -42,7 +45,10 @@ const mockSteps: PipelineStep[] = [
         description: 'Produce subtitles for each clip.',
         status: 'running',
         progress: 0.4,
-        etaSeconds: 60
+        etaSeconds: 60,
+        completedClips: 1,
+        totalClips: 5,
+        activeClipIndex: 2
       },
       {
         id: 'render-verticals',
@@ -50,7 +56,10 @@ const mockSteps: PipelineStep[] = [
         description: 'Render the vertical video output.',
         status: 'pending',
         progress: 0,
-        etaSeconds: null
+        etaSeconds: null,
+        completedClips: 0,
+        totalClips: 5,
+        activeClipIndex: null
       }
     ]
   },
@@ -83,7 +92,7 @@ describe('PipelineProgress', () => {
     expect(screen.getByText(/currently running: produce final clips/i)).toBeInTheDocument()
 
     const progressbar = screen.getByRole('progressbar')
-    expect(progressbar).toHaveAttribute('aria-valuenow', '50')
+    expect(progressbar).toHaveAttribute('aria-valuenow', '41')
 
     const stepList = screen.getByTestId('pipeline-steps')
     expect(stepList).toHaveClass('grid')
@@ -108,6 +117,8 @@ describe('PipelineProgress', () => {
     expect(within(substepsList).getByText(/generate subtitles/i)).toBeInTheDocument()
     expect(within(substepsList).getByText(/substep a/i)).toBeInTheDocument()
     expect(within(stepList).getAllByText(/40%/i).length).toBeGreaterThan(0)
+    expect(within(stepList).getByText(/clip 2\/5/i)).toBeInTheDocument()
+    expect(within(stepList).getByText(/2\/5 clips done/i)).toBeInTheDocument()
     expect(within(stepList).getAllByText(/≈1m remaining/i).length).toBeGreaterThan(0)
     const produceStepProgress = within(stepList).getByTestId('step-progress-produce-clips')
     expect(produceStepProgress).toHaveAccessibleName(/produce final clips progress/i)

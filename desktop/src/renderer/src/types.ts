@@ -91,6 +91,9 @@ export interface PipelineSubstep extends PipelineSubstepDefinition {
   status: PipelineStepStatus
   progress: number
   etaSeconds: number | null
+  completedClips: number
+  totalClips: number
+  activeClipIndex: number | null
 }
 
 export interface PipelineStep extends PipelineStepDefinition {
