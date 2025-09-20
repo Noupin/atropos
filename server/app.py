@@ -6,7 +6,7 @@ import asyncio
 import logging
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -49,6 +49,7 @@ from auth.accounts import (
     update_account,
     update_platform,
 )
+import config as pipeline_config
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+_config_all = list(getattr(pipeline_config, "__all__", []))
+_CONFIG_DATACLASS_NAMES = {
+    name for name in _config_all if is_dataclass(getattr(pipeline_config, name, None))
+}
+CONFIG_ATTRIBUTE_NAMES = [name for name in _config_all if name not in _CONFIG_DATACLASS_NAMES]
+_CONFIG_ALLOWED_NAMES = set(CONFIG_ATTRIBUTE_NAMES) | _CONFIG_DATACLASS_NAMES
+_CONFIG_DATACLASS_FIELD_MAP: Dict[str, tuple[str, str]] = {}
+for dataclass_name in _CONFIG_DATACLASS_NAMES:
+    dataclass_value = getattr(pipeline_config, dataclass_name, None)
+    if dataclass_value is None:
+        continue
+    for field_info in fields(dataclass_value):
+        constant_name = field_info.name.upper()
+        if hasattr(pipeline_config, constant_name):
+            _CONFIG_DATACLASS_FIELD_MAP[constant_name] = (dataclass_name, field_info.name)
 
 
 class RunRequest(BaseModel):
@@ -93,6 +111,150 @@ class JobStatus(BaseModel):
     job_id: str
     finished: bool
     error: str | None = None
+
+
+class ConfigEntry(BaseModel):
+    """Serializable representation of a configuration value."""
+
+    name: str
+    value: Any
+    type: str
+
+
+class ConfigUpdateRequest(BaseModel):
+    """Payload describing configuration updates to apply."""
+
+    values: Dict[str, Any] = Field(default_factory=dict)
+
+
+_TRUE_STRINGS = {"true", "1", "yes", "y", "on"}
+_FALSE_STRINGS = {"false", "0", "no", "n", "off"}
+
+
+def _describe_config_type(value: Any) -> str:
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return "integer"
+    if isinstance(value, float):
+        return "float"
+    if isinstance(value, Tone):
+        return "tone"
+    if isinstance(value, Path):
+        return "path"
+    if isinstance(value, (list, tuple)):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, str):
+        return "string"
+    if value is None:
+        return "null"
+    return value.__class__.__name__
+
+
+def _serialise_config_value(value: Any) -> Any:
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Tone):
+        return value.value
+    if isinstance(value, tuple):
+        return list(value)
+    if isinstance(value, set):
+        return sorted(value)
+    return value
+
+
+def _coerce_config_value(name: str, original: Any, raw: Any) -> Any:
+    if isinstance(original, bool):
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            lowered = raw.strip().lower()
+            if lowered in _TRUE_STRINGS:
+                return True
+            if lowered in _FALSE_STRINGS:
+                return False
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            return bool(raw)
+        raise ValueError(f"Configuration '{name}' requires a boolean value.")
+    if isinstance(original, int) and not isinstance(original, bool):
+        try:
+            return int(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Configuration '{name}' requires an integer value.") from exc
+    if isinstance(original, float):
+        try:
+            return float(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Configuration '{name}' requires a numeric value.") from exc
+    if isinstance(original, Tone):
+        if isinstance(raw, Tone):
+            return raw
+        try:
+            return Tone(raw)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Configuration '{name}' requires a valid tone value.") from exc
+    if isinstance(original, Path):
+        if isinstance(raw, Path):
+            return raw
+        if isinstance(raw, str):
+            return Path(raw)
+        raise ValueError(f"Configuration '{name}' requires a filesystem path string.")
+    if isinstance(original, tuple):
+        if isinstance(raw, (list, tuple)):
+            return tuple(raw)
+        raise ValueError(f"Configuration '{name}' requires an array value.")
+    if isinstance(original, list):
+        if isinstance(raw, (list, tuple)):
+            return list(raw)
+        raise ValueError(f"Configuration '{name}' requires an array value.")
+    if isinstance(original, str):
+        if raw is None:
+            return ""
+        return str(raw)
+    if original is None:
+        return raw
+    return raw
+
+
+def _build_config_entry(name: str) -> ConfigEntry:
+    value = getattr(pipeline_config, name)
+    return ConfigEntry(
+        name=name,
+        value=_serialise_config_value(value),
+        type=_describe_config_type(value),
+    )
+
+
+def _apply_config_update(name: str, raw_value: Any) -> None:
+    if not hasattr(pipeline_config, name):
+        raise ValueError(f"Unknown configuration '{name}'.")
+    current_value = getattr(pipeline_config, name)
+    if is_dataclass(current_value):
+        if not isinstance(raw_value, dict):
+            raise ValueError(f"Configuration '{name}' expects an object value.")
+        for field_info in fields(current_value):
+            if field_info.name not in raw_value:
+                continue
+            field_value = getattr(current_value, field_info.name)
+            coerced = _coerce_config_value(
+                f"{name}.{field_info.name}", field_value, raw_value[field_info.name]
+            )
+            setattr(current_value, field_info.name, coerced)
+            constant_name = field_info.name.upper()
+            if hasattr(pipeline_config, constant_name):
+                setattr(pipeline_config, constant_name, coerced)
+        return
+
+    coerced_value = _coerce_config_value(name, current_value, raw_value)
+    setattr(pipeline_config, name, coerced_value)
+    mapping = _CONFIG_DATACLASS_FIELD_MAP.get(name)
+    if mapping:
+        dataclass_name, field_name = mapping
+        dataclass_value = getattr(pipeline_config, dataclass_name, None)
+        if dataclass_value is not None and is_dataclass(dataclass_value):
+            setattr(dataclass_value, field_name, coerced_value)
 
 
 def _parse_datetime(value: Any) -> datetime:
@@ -546,3 +708,33 @@ async def auth_ping() -> AuthPingResponse:
     """Report the overall authentication health."""
 
     return ping_authentication()
+
+
+@app.get("/api/config", response_model=list[ConfigEntry])
+async def list_configuration() -> list[ConfigEntry]:
+    """Expose the current configuration values."""
+
+    return [_build_config_entry(name) for name in CONFIG_ATTRIBUTE_NAMES]
+
+
+@app.patch("/api/config", response_model=list[ConfigEntry])
+async def update_configuration(payload: ConfigUpdateRequest) -> list[ConfigEntry]:
+    """Apply configuration overrides at runtime."""
+
+    if not payload.values:
+        return [_build_config_entry(name) for name in CONFIG_ATTRIBUTE_NAMES]
+
+    for name, value in payload.values.items():
+        if name not in _CONFIG_ALLOWED_NAMES:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Unknown configuration '{name}'.",
+            )
+        try:
+            _apply_config_update(name, value)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+
+    return [_build_config_entry(name) for name in CONFIG_ATTRIBUTE_NAMES]
