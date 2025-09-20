@@ -288,7 +288,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
             : 'bg-white/40'
 
     return (
-      <li key={substep.id} className="flex max-w-full">
+      <li key={substep.id} className="w-full">
         <button
           type="button"
           onClick={() => toggleSubstep(step.id, substep.id)}
@@ -339,7 +339,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
     return (
       <li
         key={substep.id}
-        className="flex w-full flex-col rounded-xl border border-white/10 bg-white/5"
+        className="col-span-full flex w-full flex-col rounded-xl border border-white/10 bg-white/5"
       >
         <button
           type="button"
@@ -486,7 +486,10 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
                   <span>Substeps</span>
                   {activeSubstep ? <span>Active: {activeSubstep.title}</span> : null}
                 </div>
-                <ul className="flex flex-wrap gap-2" data-testid={`substeps-${step.id}`}>
+                <ul
+                  className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4"
+                  data-testid={`substeps-${step.id}`}
+                >
                   {step.substeps.map((substep, subIndex) => renderSubstep(step, substep, subIndex))}
                 </ul>
               </div>
