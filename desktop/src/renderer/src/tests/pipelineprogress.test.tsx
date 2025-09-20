@@ -100,6 +100,7 @@ describe('PipelineProgress', () => {
     expect(within(stepList).getByText(/clips 2\/5/i)).toBeInTheDocument()
     const substepsList = within(stepList).getByTestId('substeps-produce-clips')
     expect(within(substepsList).getByText(/generate subtitles/i)).toBeInTheDocument()
+    expect(within(substepsList).getByText(/substep a/i)).toBeInTheDocument()
     expect(within(stepList).getAllByText(/40%/i).length).toBeGreaterThan(0)
     expect(within(stepList).getAllByText(/≈1m remaining/i).length).toBeGreaterThan(0)
   })

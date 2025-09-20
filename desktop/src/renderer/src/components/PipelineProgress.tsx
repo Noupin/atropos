@@ -200,24 +200,45 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
     return `Currently running: ${activeStep.title}`
   }, [activeStep])
 
-  const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'default') => {
-    if (!step.clipStage || !step.clipProgress || step.clipProgress.total === 0) {
-      return null
-    }
-    const baseClasses =
-      'inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 uppercase tracking-wide text-[var(--muted)]'
-    const sizeClasses =
-      variant === 'compact'
-        ? 'px-1.5 py-px text-[9px] font-semibold'
-        : 'px-2 py-0.5 text-[10px] font-semibold'
-    return (
-      <span className={`${baseClasses} ${sizeClasses}`}>
-        Clips {step.clipProgress.completed}/{step.clipProgress.total}
-      </span>
-    )
-  }
+const clipBadgeStateClasses: Record<PipelineStepStatus, string> = {
+  pending: 'border-white/10 text-[var(--muted)] bg-white/5',
+  running: 'border-sky-400/40 bg-sky-400/10 text-sky-200',
+  completed: 'border-emerald-400/40 bg-emerald-500/10 text-emerald-200',
+  failed: 'border-rose-400/40 bg-rose-500/10 text-rose-200'
+}
 
-  const renderStepProgress = (step: PipelineStep) => {
+const getSubstepLabel = (index: number): string => {
+  let value = index
+  let label = ''
+
+  do {
+    label = String.fromCharCode(65 + (value % 26)) + label
+    value = Math.floor(value / 26) - 1
+  } while (value >= 0)
+
+  return label
+}
+
+const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'default') => {
+  if (!step.clipStage || !step.clipProgress || step.clipProgress.total === 0) {
+    return null
+  }
+  const baseClasses =
+    'inline-flex items-center gap-1 rounded-full border uppercase tracking-wide'
+  const sizeClasses =
+    variant === 'compact'
+      ? 'px-1.5 py-px text-[9px] font-semibold'
+      : 'px-2 py-0.5 text-[10px] font-semibold'
+  const stateClasses = clipBadgeStateClasses[step.status]
+
+  return (
+    <span className={`${baseClasses} ${sizeClasses} ${stateClasses}`}>
+      Clips {step.clipProgress.completed}/{step.clipProgress.total}
+    </span>
+  )
+}
+
+const renderStepProgress = (step: PipelineStep) => {
     if (step.status !== 'running') {
       return null
     }
@@ -242,109 +263,130 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
   const renderCompactSubstep = (
     step: PipelineStep,
     substep: PipelineSubstep,
-    isActive: boolean,
+    index: number,
     percent: number,
     etaLabel: string | null
-  ) => (
-    <li key={substep.id}>
-      <button
-        type="button"
-        onClick={() => toggleSubstep(step.id, substep.id)}
-        className={`group flex w-full flex-col gap-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-left text-xs transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
-          isActive ? 'border-sky-400/60' : ''
-        }`}
-        aria-expanded={false}
-        aria-controls={`substep-${step.id}-${substep.id}`}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
+  ) => {
+    const progressColor =
+      substep.status === 'failed'
+        ? 'bg-rose-500'
+        : substep.status === 'completed'
+          ? 'bg-emerald-500'
+          : substep.status === 'running'
+            ? 'bg-sky-400'
+            : 'bg-white/40'
+
+    return (
+      <li key={substep.id}>
+        <button
+          type="button"
+          onClick={() => toggleSubstep(step.id, substep.id)}
+          className="group flex w-full flex-col gap-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-left text-xs transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+          aria-expanded={false}
+          aria-controls={`substep-${step.id}-${substep.id}`}
+        >
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-[var(--muted)]">
             <span className={`h-1.5 w-1.5 rounded-full ${indicatorClasses[substep.status]}`} aria-hidden="true" />
-            <span className="truncate font-semibold text-[var(--fg)]">{substep.title}</span>
+            <span className="font-semibold">Substep {getSubstepLabel(index)}</span>
+            <span className="ml-auto">{statusLabels[substep.status]}</span>
           </div>
-          <span className="whitespace-nowrap text-[10px] uppercase tracking-wide text-[var(--muted)]">
-            {statusLabels[substep.status]}
-          </span>
-        </div>
-        <div className="flex items-center justify-between text-[11px] text-[var(--muted)]">
-          <span className="font-semibold text-[var(--fg)]">{percent}%</span>
-          {substep.status === 'running' && etaLabel ? <span>{etaLabel}</span> : null}
-        </div>
-        <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
-          <div
-            className={`h-full rounded-full ${
-              substep.status === 'failed' ? 'bg-rose-500' : 'bg-sky-400'
-            } transition-all duration-500 ease-out`}
-            style={{ width: `${percent}%` }}
-          />
-        </div>
-      </button>
-    </li>
-  )
+          <div className="flex items-center gap-2 text-sm">
+            <span className="truncate font-semibold text-[var(--fg)]">{substep.title}</span>
+            <span className="ml-auto flex items-center gap-2 text-[11px] text-[var(--muted)]">
+              <span className="font-semibold text-[var(--fg)]">{percent}%</span>
+              {substep.status === 'running' && etaLabel ? (
+                <span className="text-[10px] uppercase tracking-wide text-[var(--muted)] normal-case">
+                  {etaLabel}
+                </span>
+              ) : null}
+            </span>
+          </div>
+          <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
+            <div
+              className={`h-full rounded-full ${progressColor} transition-all duration-500 ease-out`}
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        </button>
+      </li>
+    )
+  }
 
   const renderExpandedSubstep = (
     step: PipelineStep,
     substep: PipelineSubstep,
+    index: number,
     percent: number,
     etaLabel: string | null,
     isExpanded: boolean
-  ) => (
-    <li
-      key={substep.id}
-      className="rounded-xl border border-white/10 bg-white/5"
-    >
-      <button
-        type="button"
-        onClick={() => toggleSubstep(step.id, substep.id)}
-        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
-        aria-expanded={isExpanded}
-        aria-controls={`substep-${step.id}-${substep.id}`}
+  ) => {
+    const progressColor =
+      substep.status === 'failed'
+        ? 'bg-rose-500'
+        : substep.status === 'completed'
+          ? 'bg-emerald-500'
+          : substep.status === 'running'
+            ? 'bg-sky-400'
+            : 'bg-white/40'
+
+    return (
+      <li
+        key={substep.id}
+        className="rounded-xl border border-white/10 bg-white/5"
       >
-        <div className="flex items-center gap-2">
-          <span className={`h-2 w-2 rounded-full ${indicatorClasses[substep.status]}`} aria-hidden="true" />
-          <div className="flex flex-col">
-            <span className="text-xs font-semibold text-[var(--fg)]">{substep.title}</span>
-            <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
-              {statusLabels[substep.status]}
+        <button
+          type="button"
+          onClick={() => toggleSubstep(step.id, substep.id)}
+          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+          aria-expanded={isExpanded}
+          aria-controls={`substep-${step.id}-${substep.id}`}
+        >
+          <div className="flex items-center gap-2">
+            <span className={`h-2 w-2 rounded-full ${indicatorClasses[substep.status]}`} aria-hidden="true" />
+            <div className="flex flex-col">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+                Substep {getSubstepLabel(index)}
+              </span>
+              <span className="text-xs font-semibold text-[var(--fg)]">{substep.title}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-[var(--muted)]">
+            <span>{statusLabels[substep.status]}</span>
+            <span className="text-xs normal-case text-[var(--muted)]">{percent}%</span>
+            {etaLabel ? <span className="normal-case">{etaLabel}</span> : null}
+            <span
+              className={`text-base leading-none transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+              aria-hidden="true"
+            >
+              ⌃
             </span>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-[var(--muted)]">{percent}%</span>
-          {etaLabel ? <span className="text-[10px] text-[var(--muted)]">{etaLabel}</span> : null}
-          <span
-            className={`text-base leading-none transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-            aria-hidden="true"
-          >
-            ⌃
-          </span>
-        </div>
-      </button>
-      <div id={`substep-${step.id}-${substep.id}`} className="px-3 pb-3">
-        <div className="mt-2 flex flex-col gap-2 text-xs text-[var(--muted)]">
-          <p>{substep.description}</p>
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="font-semibold text-[var(--fg)]">{percent}%</span>
-              {substep.status === 'running' && etaLabel ? <span>{etaLabel}</span> : null}
+        </button>
+        <div id={`substep-${step.id}-${substep.id}`} className="px-3 pb-3">
+          <div className="mt-2 flex flex-col gap-2 text-xs text-[var(--muted)]">
+            <p>{substep.description}</p>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-[var(--fg)]">{percent}%</span>
+                {substep.status === 'running' && etaLabel ? <span>{etaLabel}</span> : null}
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                <div
+                  className={`h-full rounded-full ${progressColor} transition-all duration-500 ease-out`}
+                  style={{ width: `${percent}%` }}
+                />
+              </div>
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-              <div
-                className={`h-full rounded-full ${
-                  substep.status === 'failed' ? 'bg-rose-500' : 'bg-sky-400'
-                } transition-all duration-500 ease-out`}
-                style={{ width: `${percent}%` }}
-              />
-            </div>
+            {substep.status === 'failed' ? (
+              <p className="text-[var(--danger)] font-semibold">Review server logs to retry this step.</p>
+            ) : null}
           </div>
-          {substep.status === 'failed' ? (
-            <p className="text-[var(--danger)] font-semibold">Review server logs to retry this step.</p>
-          ) : null}
         </div>
-      </div>
-    </li>
-  )
+      </li>
+    )
+  }
 
-  const renderSubstep = (step: PipelineStep, substep: PipelineSubstep) => {
+  const renderSubstep = (step: PipelineStep, substep: PipelineSubstep, index: number) => {
     const key = buildSubstepKey(step.id, substep.id)
     const isExpanded = expandedSubsteps.has(key)
     const isActive = substep.status === 'running' || substep.status === 'failed'
@@ -352,10 +394,10 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
     const etaLabel = substep.etaSeconds !== null ? formatEta(substep.etaSeconds) : null
 
     if (isExpanded || isActive) {
-      return renderExpandedSubstep(step, substep, percent, etaLabel, isExpanded || isActive)
+      return renderExpandedSubstep(step, substep, index, percent, etaLabel, isExpanded || isActive)
     }
 
-    return renderCompactSubstep(step, substep, isActive, percent, etaLabel)
+    return renderCompactSubstep(step, substep, index, percent, etaLabel)
   }
 
   const renderExpandedStep = (
@@ -438,7 +480,7 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
                   {activeSubstep ? <span>Active: {activeSubstep.title}</span> : null}
                 </div>
                 <ul className="flex flex-col gap-2" data-testid={`substeps-${step.id}`}>
-                  {step.substeps.map((substep) => renderSubstep(step, substep))}
+                  {step.substeps.map((substep, subIndex) => renderSubstep(step, substep, subIndex))}
                 </ul>
               </div>
             ) : null}
