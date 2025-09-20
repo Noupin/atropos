@@ -22,6 +22,7 @@ import {
   subscribeToPipelineEvents,
   type PipelineEventMessage
 } from '../services/pipelineApi'
+import { listAccountClips } from '../services/clipLibrary'
 import { parseClipTimestamp } from '../lib/clipMetadata'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
@@ -93,6 +94,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   const runStepRef = useRef<(index: number) => void>(() => {})
   const connectionCleanupRef = useRef<(() => void) | null>(null)
   const activeJobIdRef = useRef<string | null>(initialState.activeJobId ?? null)
+  const lastLoadedAccountRef = useRef<string | null>(null)
 
   const isMockBackend = BACKEND_MODE === 'mock'
 
@@ -564,6 +566,78 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     activeJobIdRef.current = activeJobId
   }, [activeJobId])
 
+  const loadAccountClips = useCallback(
+    async (
+      accountId: string,
+      options?: { force?: boolean; canceledRef?: { current: boolean } }
+    ) => {
+      if (!accountId) {
+        return
+      }
+      if (!options?.force && lastLoadedAccountRef.current === accountId) {
+        return
+      }
+
+      try {
+        const existingClips = await listAccountClips(accountId)
+        if (options?.canceledRef?.current) {
+          return
+        }
+        let didUpdate = false
+        updateState((prev) => {
+          if (prev.selectedAccountId !== accountId) {
+            return prev
+          }
+          const mergedMap = new Map<string, typeof existingClips[number]>()
+          for (const clip of existingClips) {
+            mergedMap.set(clip.id, clip)
+          }
+          for (const clip of prev.clips) {
+            mergedMap.set(clip.id, clip)
+          }
+          const mergedClips = Array.from(mergedMap.values())
+          mergedClips.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+          const hasSelection = mergedClips.some((clip) => clip.id === prev.selectedClipId)
+          didUpdate = true
+          return {
+            ...prev,
+            clips: mergedClips,
+            selectedClipId: hasSelection ? prev.selectedClipId : mergedClips[0]?.id ?? null
+          }
+        })
+        if (didUpdate) {
+          lastLoadedAccountRef.current = accountId
+        }
+      } catch (error) {
+        if (!options?.canceledRef?.current) {
+          console.error('Failed to load clips for account', accountId, error)
+        }
+      }
+    },
+    [updateState]
+  )
+
+  useEffect(() => {
+    let isActive = true
+    const accountId = selectedAccountId
+
+    if (!accountId) {
+      lastLoadedAccountRef.current = null
+      updateState((prev) => ({ ...prev, clips: [], selectedClipId: null }))
+      return () => {
+        isActive = false
+      }
+    }
+
+    const canceledRef = { current: false }
+    void loadAccountClips(accountId, { canceledRef })
+
+    return () => {
+      canceledRef.current = true
+      isActive = false
+    }
+  }, [loadAccountClips, selectedAccountId, updateState])
+
   const handleUrlChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const value = event.target.value
@@ -579,13 +653,22 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   const handleAccountChange = useCallback(
     (event: ChangeEvent<HTMLSelectElement>) => {
       const value = event.target.value
+      if (value.length === 0) {
+        lastLoadedAccountRef.current = null
+      }
       updateState((prev) => ({
         ...prev,
         selectedAccountId: value.length > 0 ? value : null,
-        accountError: prev.accountError ? null : prev.accountError
+        accountError: prev.accountError ? null : prev.accountError,
+        clips: [],
+        selectedClipId: null
       }))
+      if (value.length > 0) {
+        lastLoadedAccountRef.current = null
+        void loadAccountClips(value, { force: true })
+      }
     },
-    [updateState]
+    [loadAccountClips, updateState]
   )
 
   const handleSubmit = useCallback(
@@ -768,7 +851,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                 <button
                   type="submit"
                   disabled={!videoUrl.trim() || isProcessing}
-                  className="rounded-lg border border-transparent bg-[var(--ring)] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-lg border border-transparent bg-[var(--ring)] px-3 py-2 text-xs font-semibold leading-tight text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:text-sm whitespace-nowrap"
                 >
                   {isProcessing ? 'Processing…' : 'Start processing'}
                 </button>
@@ -776,7 +859,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                   type="button"
                   onClick={handleReset}
                   disabled={!hasProgress && clips.length === 0 && !pipelineError}
-                  className="rounded-lg border border-white/10 px-4 py-2 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg border border-white/10 px-3 py-2 text-xs font-medium leading-tight text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:text-sm whitespace-nowrap"
                 >
                   Reset
                 </button>
@@ -796,11 +879,11 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
             {urlError ? <p className="text-xs font-medium text-rose-400">{urlError}</p> : null}
           </form>
 
-          <div className="rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]">
+          <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 shadow-[0_14px_28px_-22px_rgba(15,23,42,0.55)]">
             <PipelineProgress steps={steps} />
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]">
+          <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 shadow-[0_14px_28px_-22px_rgba(15,23,42,0.55)]">
             <div className="flex flex-col gap-1">
               <h3 className="text-lg font-semibold text-[var(--fg)]">Selected clip</h3>
               <p className="text-sm text-[var(--muted)]">
@@ -811,7 +894,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
             </div>
             {selectedClip ? (
               <div className="mt-4 flex flex-col gap-4">
-                <div className="aspect-video w-full overflow-hidden rounded-xl bg-black/60">
+                <div className="flex w-full justify-center overflow-hidden rounded-xl bg-black/80 p-2">
                   <video
                     key={selectedClip.id}
                     src={selectedClip.playbackUrl}
@@ -819,7 +902,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                     controls
                     playsInline
                     preload="metadata"
-                    className="h-full w-full object-cover"
+                    className="h-full w-full max-w-sm object-contain"
                   >
                     Your browser does not support the video tag.
                   </video>

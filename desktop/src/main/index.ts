@@ -2,6 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { listAccountClips } from './clipLibrary'
 
 function createWindow(): void {
   // Create the browser window.
@@ -53,6 +54,14 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+  ipcMain.handle('clips:list', async (_event, accountId: string | null) => {
+    try {
+      return await listAccountClips(accountId)
+    } catch (error) {
+      console.error('Failed to list clips', error)
+      return []
+    }
+  })
 
   createWindow()
 

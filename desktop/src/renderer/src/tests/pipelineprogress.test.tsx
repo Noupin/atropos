@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import PipelineProgress from '../components/PipelineProgress'
 import type { PipelineStep } from '../types'
@@ -97,10 +97,19 @@ describe('PipelineProgress', () => {
     const transcriptButton = within(stepList).getByRole('button', { name: /generate transcript/i })
     expect(within(transcriptButton).getByText(/0%/i)).toBeInTheDocument()
 
+    fireEvent.click(transcriptButton)
+    expect(transcriptButton).toHaveAttribute('aria-expanded', 'true')
+    const transcriptProgress = within(stepList).getByTestId('step-progress-transcript')
+    expect(within(transcriptProgress).getByText('0%')).toBeInTheDocument()
+
     expect(within(stepList).getByText(/clips 2\/5/i)).toBeInTheDocument()
     const substepsList = within(stepList).getByTestId('substeps-produce-clips')
+    expect(substepsList).toHaveClass('grid')
     expect(within(substepsList).getByText(/generate subtitles/i)).toBeInTheDocument()
+    expect(within(substepsList).getByText(/substep a/i)).toBeInTheDocument()
     expect(within(stepList).getAllByText(/40%/i).length).toBeGreaterThan(0)
-    expect(within(stepList).getByText(/≈1m remaining/i)).toBeInTheDocument()
+    expect(within(stepList).getAllByText(/≈1m remaining/i).length).toBeGreaterThan(0)
+    const produceStepProgress = within(stepList).getByTestId('step-progress-produce-clips')
+    expect(produceStepProgress).toHaveAccessibleName(/produce final clips progress/i)
   })
 })
