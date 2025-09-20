@@ -187,12 +187,42 @@ const Library: FC<LibraryProps> = ({
         clip.reason ?? undefined
       ]
         .filter((value): value is string => typeof value === 'string' && value.length > 0)
-        .join(' ') 
+        .join(' ')
         .toLowerCase()
 
       return haystack.includes(trimmed)
     })
   }, [clips, query])
+
+  const groupedClips = useMemo(() => {
+    const groups = new Map<
+      string,
+      { title: string; clips: Clip[]; latestCreatedAt: string }
+    >()
+
+    for (const clip of filteredClips) {
+      const key = clip.videoId ?? clip.id
+      const title = clip.videoTitle || clip.sourceTitle || clip.title
+      const existing = groups.get(key)
+      if (!existing) {
+        groups.set(key, { title, clips: [clip], latestCreatedAt: clip.createdAt })
+      } else {
+        existing.clips.push(clip)
+        if (clip.createdAt > existing.latestCreatedAt) {
+          existing.latestCreatedAt = clip.createdAt
+        }
+      }
+    }
+
+    return Array.from(groups.entries())
+      .map(([id, value]) => ({
+        id,
+        title: value.title,
+        clips: value.clips.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
+        latestCreatedAt: value.latestCreatedAt
+      }))
+      .sort((a, b) => (a.latestCreatedAt < b.latestCreatedAt ? 1 : -1))
+  }, [filteredClips])
 
   const handleAccountChange = useCallback(
     (event: ChangeEvent<HTMLSelectElement>) => {
@@ -281,9 +311,21 @@ const Library: FC<LibraryProps> = ({
 
       {hasAccounts ? (
         filteredClips.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filteredClips.map((clip) => (
-              <ClipCard key={clip.id} clip={clip} onClick={() => handleClipOpen(clip)} />
+          <div className="flex flex-col gap-6">
+            {groupedClips.map((group) => (
+              <div key={group.id} className="flex flex-col gap-3">
+                <div className="flex items-baseline justify-between">
+                  <h3 className="text-lg font-semibold text-[var(--fg)]">{group.title}</h3>
+                  <span className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
+                    {group.clips.length} {group.clips.length === 1 ? 'clip' : 'clips'}
+                  </span>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {group.clips.map((clip) => (
+                    <ClipCard key={clip.id} clip={clip} onClick={() => handleClipOpen(clip)} />
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         ) : (

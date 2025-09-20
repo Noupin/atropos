@@ -12,6 +12,8 @@ type RawClipPayload = {
   source_url?: unknown
   source_title?: unknown
   source_published_at?: unknown
+  video_id?: unknown
+  video_title?: unknown
   views?: unknown
   rating?: unknown
   quote?: unknown
@@ -38,6 +40,8 @@ const normaliseClip = (payload: RawClipPayload): Clip | null => {
     source_url: sourceUrl,
     source_title: sourceTitle,
     source_published_at: sourcePublishedAt,
+    video_id: videoId,
+    video_title: videoTitle,
     views,
     rating,
     quote,
@@ -66,12 +70,15 @@ const normaliseClip = (payload: RawClipPayload): Clip | null => {
   if (typeof description !== 'string') {
     return null
   }
-  if (typeof sourceUrl !== 'string' || sourceUrl.length === 0) {
+  if (typeof sourceUrl !== 'string') {
     return null
   }
   if (typeof sourceTitle !== 'string' || sourceTitle.length === 0) {
     return null
   }
+  const videoIdValue = typeof videoId === 'string' && videoId.length > 0 ? videoId : id
+  const videoTitleValue =
+    typeof videoTitle === 'string' && videoTitle.length > 0 ? videoTitle : sourceTitle
 
   const clip: Clip = {
     id,
@@ -86,6 +93,8 @@ const normaliseClip = (payload: RawClipPayload): Clip | null => {
     sourceUrl,
     sourceTitle,
     sourcePublishedAt: typeof sourcePublishedAt === 'string' ? sourcePublishedAt : null,
+    videoId: videoIdValue,
+    videoTitle: videoTitleValue,
     rating: typeof rating === 'number' ? rating : rating === null ? null : undefined,
     quote: typeof quote === 'string' ? quote : quote === null ? null : undefined,
     reason: typeof reason === 'string' ? reason : reason === null ? null : undefined,

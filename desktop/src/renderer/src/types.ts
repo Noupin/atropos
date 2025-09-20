@@ -11,6 +11,8 @@ export interface Clip {
   sourceUrl: string
   sourceTitle: string
   sourcePublishedAt: string | null
+  videoId: string
+  videoTitle: string
   rating?: number | null
   quote?: string | null
   reason?: string | null

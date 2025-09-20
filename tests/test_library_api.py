@@ -76,6 +76,10 @@ def test_list_account_clips(monkeypatch, tmp_path):
     assert clip["source_url"] == "https://example.com/watch?v=abc123"
     assert clip["source_title"] == "Amazing Project"
     assert clip["description"].startswith("Full video:")
+    project_relative = clip_path.parent.parent.relative_to(out_root)
+    expected_video_id = base64.urlsafe_b64encode(project_relative.as_posix().encode("utf-8")).decode("ascii").rstrip("=")
+    assert clip["video_id"] == expected_video_id
+    assert clip["video_title"] == "Amazing Project"
     assert clip["playback_url"].endswith(f"/api/accounts/{account_id}/clips/{clip['id']}/video")
 
 

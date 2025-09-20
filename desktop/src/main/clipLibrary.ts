@@ -275,8 +275,24 @@ const encodeClipId = (baseDir: string, filePath: string): string | null => {
   return toBase64Url(normalised)
 }
 
+const tryReadDescription = async (candidates: string[]): Promise<string> => {
+  for (const candidate of candidates) {
+    try {
+      const content = await fs.readFile(candidate, 'utf-8')
+      const trimmed = content.trim()
+      if (trimmed.length > 0) {
+        return trimmed
+      }
+    } catch (error) {
+      // Ignore missing files
+    }
+  }
+  return ''
+}
+
 const buildClip = async (
   filePath: string,
+  projectDir: string,
   projectInfo: ProjectMetadata,
   candidateMap: Map<string, CandidateMetadata>,
   baseDir: string,
@@ -285,25 +301,22 @@ const buildClip = async (
   const fileName = path.basename(filePath)
   const stem = fileName.replace(/\.mp4$/i, '')
   const parsed = parseClipFilename(stem)
-  if (!parsed) {
-    return null
-  }
+  const start = parsed?.start ?? null
+  const end = parsed?.end ?? null
+  const candidateKey = parsed ? formatCandidateKey(parsed.start, parsed.end) : null
+  const candidate = candidateKey ? candidateMap.get(candidateKey) : undefined
+  const descriptionCandidates = [
+    path.join(path.dirname(filePath), `${stem}.txt`),
+    path.join(path.dirname(filePath), `${stem}.md`),
+    path.join(path.dirname(filePath), 'description.txt'),
+    path.join(path.dirname(filePath), 'description.md')
+  ]
 
-  const { start, end, rating } = parsed
-  const candidateKey = formatCandidateKey(start, end)
-  const candidate = candidateMap.get(candidateKey)
-  const descriptionPath = path.join(path.dirname(filePath), `${stem}.txt`)
-
-  let descriptionText = ''
-  try {
-    descriptionText = (await fs.readFile(descriptionPath, 'utf-8')).trim()
-  } catch (error) {
-    descriptionText = ''
-  }
+  const descriptionText = await tryReadDescription(descriptionCandidates)
 
   const descriptionMetadata = parseDescriptionMetadata(descriptionText)
   const stats = await fs.stat(filePath)
-  const duration = Math.max(0, end - start)
+  const duration = start !== null && end !== null ? Math.max(0, end - start) : 0
 
   let title = candidate?.quote ?? ''
   if (!title) {
@@ -313,7 +326,7 @@ const buildClip = async (
   const playbackUrl = pathToFileURL(filePath).toString()
 
   let timestampUrl = descriptionMetadata.timestampUrl
-  if (!timestampUrl && descriptionMetadata.sourceUrl && Number.isFinite(start)) {
+  if (!timestampUrl && descriptionMetadata.sourceUrl && start !== null && Number.isFinite(start)) {
     try {
       const url = new URL(descriptionMetadata.sourceUrl)
       url.searchParams.set('t', Math.round(start).toString())
@@ -328,6 +341,9 @@ const buildClip = async (
     return null
   }
 
+  const projectId = encodeClipId(baseDir, projectDir)
+  const projectTitle = projectInfo.title || path.basename(projectDir)
+
   const clip: Clip = {
     id: clipId,
     title,
@@ -339,13 +355,16 @@ const buildClip = async (
     playbackUrl,
     description: descriptionText,
     sourceUrl: descriptionMetadata.sourceUrl ?? descriptionMetadata.timestampUrl ?? '',
-    sourceTitle: projectInfo.title,
+    sourceTitle: projectTitle,
     sourcePublishedAt: projectInfo.publishedAt,
-    rating: candidate?.rating ?? rating,
+    videoId: projectId ?? clipId,
+    videoTitle: projectTitle,
+    rating: candidate?.rating ?? parsed?.rating ?? null,
     quote: candidate?.quote ?? null,
     reason: candidate?.reason ?? null,
     timestampUrl,
-    timestampSeconds: descriptionMetadata.timestampSeconds ?? (Number.isFinite(start) ? start : null),
+    timestampSeconds:
+      descriptionMetadata.timestampSeconds ?? (start !== null && Number.isFinite(start) ? start : null),
     accountId
   }
 
@@ -450,7 +469,7 @@ export const listAccountClips = async (accountId: string | null): Promise<Clip[]
       }
       const filePath = path.join(shortsDir, fileName)
       try {
-        const clip = await buildClip(filePath, projectInfo, candidateMap, base, accountId)
+        const clip = await buildClip(filePath, projectDir, projectInfo, candidateMap, base, accountId)
         if (clip) {
           clips.push(clip)
         }

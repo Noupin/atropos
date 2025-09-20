@@ -171,6 +171,8 @@ describe('Home account selection', () => {
       sourceUrl: 'https://example.com',
       sourceTitle: 'Example Video',
       sourcePublishedAt: null,
+      videoId: 'video-001',
+      videoTitle: 'Example Video',
       rating: 4.5,
       quote: 'Existing Clip',
       reason: null,

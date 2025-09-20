@@ -69,6 +69,8 @@ class LibraryClip:
     source_url: str
     source_title: str
     source_published_at: Optional[str]
+    video_id: str
+    video_title: str
     rating: Optional[float]
     quote: Optional[str]
     reason: Optional[str]
@@ -101,6 +103,8 @@ class LibraryClip:
             "source_url": self.source_url,
             "source_title": self.source_title,
             "source_published_at": self.source_published_at,
+            "video_id": self.video_id,
+            "video_title": self.video_title,
             "views": None,
             "rating": self.rating,
             "quote": self.quote,
@@ -345,8 +349,20 @@ def _decode_clip_id(token: str) -> Path:
     return Path(raw)
 
 
+def _read_description_file(candidates: List[Path]) -> str:
+    for candidate in candidates:
+        try:
+            content = candidate.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if content:
+            return content
+    return ""
+
+
 def _build_clip(
     clip_path: Path,
+    project_dir: Path,
     project_info: ProjectMetadata,
     candidate_map: Dict[str, CandidateMetadata],
     account_id: Optional[str],
@@ -354,25 +370,40 @@ def _build_clip(
 ) -> Optional[LibraryClip]:
     stem = clip_path.stem
     parsed = _parse_clip_filename(stem)
-    if not parsed:
-        return None
-    start, end, rating = parsed
-    key = _format_candidate_key(start, end)
-    candidate = candidate_map.get(key)
-    description_path = clip_path.with_suffix(".txt")
-    try:
-        description_text = description_path.read_text(encoding="utf-8").strip()
-    except OSError:
-        description_text = ""
+    start: Optional[float]
+    end: Optional[float]
+    rating: Optional[float]
+    candidate: Optional[CandidateMetadata]
+    if parsed:
+        start, end, rating = parsed
+        key = _format_candidate_key(start, end)
+        candidate = candidate_map.get(key)
+    else:
+        start = end = rating = None
+        candidate = None
+    description_text = _read_description_file(
+        [
+            clip_path.with_suffix(".txt"),
+            clip_path.with_suffix(".md"),
+            clip_path.parent / "description.txt",
+            clip_path.parent / "description.md",
+        ]
+    )
     description_metadata = _parse_description_metadata(description_text)
     try:
         stats = clip_path.stat()
     except OSError:
         return None
-    duration = max(0.0, end - start)
-    title = candidate.quote or project_info.title or stem
+    duration = max(0.0, end - start) if start is not None and end is not None else 0.0
+    project_title = project_info.title or project_dir.name
+    title = candidate.quote or project_title or stem
     timestamp_url = description_metadata.timestamp_url
-    if not timestamp_url and description_metadata.source_url and math.isfinite(start):
+    if (
+        not timestamp_url
+        and description_metadata.source_url
+        and start is not None
+        and math.isfinite(start)
+    ):
         try:
             parsed_url = urlparse(description_metadata.source_url)
             query = parse_qs(parsed_url.query)
@@ -385,10 +416,12 @@ def _build_clip(
     timestamp_seconds = (
         description_metadata.timestamp_seconds
         if description_metadata.timestamp_seconds is not None
-        else (start if math.isfinite(start) else None)
+        else (start if start is not None and math.isfinite(start) else None)
     )
     relative_path = clip_path.relative_to(base)
     clip_id = _encode_clip_id(relative_path)
+    project_relative = project_dir.relative_to(base)
+    video_id = _encode_clip_id(project_relative)
     created_at = datetime.fromtimestamp(stats.st_mtime, tz=timezone.utc)
     return LibraryClip(
         clip_id=clip_id,
@@ -400,8 +433,10 @@ def _build_clip(
         source_url=description_metadata.source_url
         or description_metadata.timestamp_url
         or "",
-        source_title=project_info.title,
+        source_title=project_title,
         source_published_at=project_info.published_at,
+        video_id=video_id,
+        video_title=project_title,
         rating=candidate.rating if candidate else rating,
         quote=candidate.quote if candidate else None,
         reason=candidate.reason if candidate else None,
@@ -431,7 +466,7 @@ def list_account_clips_sync(account_id: Optional[str]) -> List[LibraryClip]:
         for file_path in short_files:
             if file_path.suffix.lower() != ".mp4":
                 continue
-            clip = _build_clip(file_path, project_info, candidate_map, account_id, base)
+            clip = _build_clip(file_path, project_dir, project_info, candidate_map, account_id, base)
             if clip is not None:
                 clips.append(clip)
     clips.sort(key=lambda clip: clip.created_at, reverse=True)

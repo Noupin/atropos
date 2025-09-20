@@ -489,6 +489,9 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         const sourceTitle = typeof data.source_title === 'string' ? data.source_title : title
         const sourcePublishedAt =
           typeof data.source_published_at === 'string' ? data.source_published_at : null
+        const videoId = typeof data.video_id === 'string' && data.video_id.length > 0 ? data.video_id : clipId
+        const videoTitle =
+          typeof data.video_title === 'string' && data.video_title.length > 0 ? data.video_title : sourceTitle
         const views = typeof data.views === 'number' ? data.views : null
         const quote = typeof data.quote === 'string' ? data.quote : null
         const reason = typeof data.reason === 'string' ? data.reason : null
@@ -517,6 +520,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
             sourceUrl,
             sourceTitle,
             sourcePublishedAt,
+            videoId,
+            videoTitle,
             quote,
             reason,
             rating,
