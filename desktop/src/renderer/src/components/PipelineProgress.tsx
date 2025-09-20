@@ -288,11 +288,11 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
             : 'bg-white/40'
 
     return (
-      <li key={substep.id} className="w-full">
+      <li key={substep.id} className="h-full">
         <button
           type="button"
           onClick={() => toggleSubstep(step.id, substep.id)}
-          className="group flex min-w-0 max-w-full flex-col gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-left text-[11px] transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+          className="group flex h-full w-full min-w-0 max-w-full flex-col gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-left text-[11px] transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
           aria-expanded={false}
           aria-controls={`substep-${step.id}-${substep.id}`}
         >
@@ -487,7 +487,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
                   {activeSubstep ? <span>Active: {activeSubstep.title}</span> : null}
                 </div>
                 <ul
-                  className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4"
+                  className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4"
                   data-testid={`substeps-${step.id}`}
                 >
                   {step.substeps.map((substep, subIndex) => renderSubstep(step, substep, subIndex))}
