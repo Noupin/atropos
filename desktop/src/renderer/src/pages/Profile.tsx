@@ -441,19 +441,17 @@ const AccountCard: FC<AccountCardProps> = ({
     >
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                setIsCollapsed((previous) => !previous)
-              }}
-              aria-expanded={!isCollapsed}
-              aria-controls={detailsId}
-              className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 text-sm text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
-            >
-              <span aria-hidden="true">{isCollapsed ? '+' : '−'}</span>
-              <span className="sr-only">{isCollapsed ? 'Expand account' : 'Collapse account'}</span>
-            </button>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-[var(--muted)]">
+                {account.platforms.length} platform{account.platforms.length === 1 ? '' : 's'}
+              </span>
+              {!isAccountActive ? (
+                <span className="rounded-full border border-amber-400/60 bg-amber-400/10 px-3 py-1 text-xs font-medium text-amber-100">
+                  Disabled
+                </span>
+              ) : null}
+            </div>
             <div>
               <h3 className="text-xl font-semibold text-[var(--fg)]">{account.displayName}</h3>
               <p className="text-xs text-[var(--muted)]">
@@ -464,16 +462,17 @@ const AccountCard: FC<AccountCardProps> = ({
               ) : null}
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-[var(--muted)]">
-              {account.platforms.length} platform{account.platforms.length === 1 ? '' : 's'}
-            </span>
-            {!isAccountActive ? (
-              <span className="rounded-full border border-amber-400/60 bg-amber-400/10 px-3 py-1 text-xs font-medium text-amber-100">
-                Disabled
-              </span>
-            ) : null}
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsCollapsed((previous) => !previous)
+            }}
+            aria-expanded={!isCollapsed}
+            aria-controls={detailsId}
+            className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          >
+            {isCollapsed ? 'Expand' : 'Collapse'}
+          </button>
         </div>
       </div>
 
