@@ -1,11 +1,4 @@
-import {
-  FormEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FC } from 'react'
 import {
   PLATFORM_LABELS,
@@ -223,7 +216,9 @@ const AccountCard: FC<AccountCardProps> = ({
     try {
       const updated = await onUpdateAccount(account.id, { active: !account.active })
       if (isMounted.current) {
-        setSuccess(updated.active ? 'Account enabled successfully.' : 'Account disabled successfully.')
+        setSuccess(
+          updated.active ? 'Account enabled successfully.' : 'Account disabled successfully.'
+        )
       }
     } catch (toggleError) {
       const message =
@@ -340,14 +335,14 @@ const AccountCard: FC<AccountCardProps> = ({
     const labelText = !isPlatformActive
       ? 'Disabled'
       : platform.connected
-      ? 'Authenticated'
-      : 'Needs attention'
+        ? 'Authenticated'
+        : 'Needs attention'
     const style = platformStatusStyles[platform.status] ?? platformStatusStyles.disconnected
     const indicatorClass = !isPlatformActive
       ? 'bg-slate-400'
       : platform.connected
-      ? 'bg-emerald-400'
-      : 'bg-rose-400'
+        ? 'bg-emerald-400'
+        : 'bg-rose-400'
     return (
       <span
         className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${style}`}
@@ -520,8 +515,8 @@ const AccountCard: FC<AccountCardProps> = ({
                   ? 'Disabling…'
                   : 'Enabling…'
                 : account.active
-                ? 'Disable account'
-                : 'Enable account'}
+                  ? 'Disable account'
+                  : 'Enable account'}
             </button>
             <button
               type="button"
@@ -553,7 +548,9 @@ const AccountCard: FC<AccountCardProps> = ({
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-col">
-                        <span className="text-sm font-semibold text-[var(--fg)]">{platform.label}</span>
+                        <span className="text-sm font-semibold text-[var(--fg)]">
+                          {platform.label}
+                        </span>
                         <span className="text-xs text-[var(--muted)]">
                           {PLATFORM_LABELS[platform.platform]}
                         </span>
@@ -581,8 +578,8 @@ const AccountCard: FC<AccountCardProps> = ({
                               ? 'Disabling…'
                               : 'Enabling…'
                             : platform.active
-                            ? 'Disable'
-                            : 'Enable'}
+                              ? 'Disable'
+                              : 'Enable'}
                         </button>
                         <button
                           type="button"
@@ -607,7 +604,10 @@ const AccountCard: FC<AccountCardProps> = ({
           )}
 
           {availablePlatforms.length > 0 ? (
-            <form onSubmit={handleSubmit} className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 p-4">
+            <form
+              onSubmit={handleSubmit}
+              className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 p-4"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h4 className="text-sm font-semibold text-[var(--fg)]">Add a platform</h4>
                 {selectedPlatform ? (
@@ -650,7 +650,9 @@ const AccountCard: FC<AccountCardProps> = ({
               </label>
               {renderPlatformFields()}
               {!isAccountActive ? (
-                <p className="text-xs text-amber-100">Enable this account to connect new platforms.</p>
+                <p className="text-xs text-amber-100">
+                  Enable this account to connect new platforms.
+                </p>
               ) : null}
               {error ? <p className="text-xs font-medium text-rose-400">{error}</p> : null}
               {success ? <p className="text-xs font-medium text-emerald-300">{success}</p> : null}
@@ -715,7 +717,8 @@ const Profile: FC<ProfileProps> = ({
       try {
         await onCreateAccount({
           displayName,
-          description: newAccountDescription.trim().length > 0 ? newAccountDescription.trim() : undefined
+          description:
+            newAccountDescription.trim().length > 0 ? newAccountDescription.trim() : undefined
         })
         setNewAccountName('')
         setNewAccountDescription('')
@@ -732,10 +735,9 @@ const Profile: FC<ProfileProps> = ({
   )
 
   const connectedPlatforms = authStatus?.connectedPlatforms ?? 0
-  const totalPlatforms = authStatus?.totalPlatforms ?? accounts.reduce(
-    (total, account) => total + account.platforms.length,
-    0
-  )
+  const totalPlatforms =
+    authStatus?.totalPlatforms ??
+    accounts.reduce((total, account) => total + account.platforms.length, 0)
   const totalAccounts = authStatus?.accounts ?? accounts.length
   const accountLabel = totalAccounts === 1 ? 'account' : 'accounts'
 
@@ -744,8 +746,8 @@ const Profile: FC<ProfileProps> = ({
       <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold text-[var(--fg)]">Profile</h1>
         <p className="text-sm text-[var(--muted)]">
-          Manage authenticated accounts and connect platforms for publishing. Accounts determine where
-          processed videos will be delivered.
+          Manage authenticated accounts and connect platforms for publishing. Accounts determine
+          where processed videos will be delivered.
         </p>
       </header>
 
@@ -756,7 +758,9 @@ const Profile: FC<ProfileProps> = ({
               <div className="flex items-center gap-2">
                 <span
                   className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${
-                    authStatus ? statusColors[authStatus.status] ?? statusColors.degraded : 'border-white/10 bg-white/5 text-[var(--muted)]'
+                    authStatus
+                      ? (statusColors[authStatus.status] ?? statusColors.degraded)
+                      : 'border-white/10 bg-white/5 text-[var(--muted)]'
                   }`}
                 >
                   <span
@@ -764,7 +768,9 @@ const Profile: FC<ProfileProps> = ({
                       authStatus?.status === 'ok' ? 'bg-emerald-400' : 'bg-amber-400'
                     }`}
                   />
-                  {authStatus ? authStatus.message : authError ?? 'Checking authentication status…'}
+                  {authStatus
+                    ? authStatus.message
+                    : (authError ?? 'Checking authentication status…')}
                 </span>
               </div>
               <button
@@ -868,13 +874,19 @@ const Profile: FC<ProfileProps> = ({
           <h3 className="text-base font-semibold text-[var(--fg)]">Supported platforms</h3>
           <ul className="flex flex-col gap-3">
             {SUPPORTED_PLATFORMS.map((platform) => (
-              <li key={platform} className="flex flex-col gap-1 rounded-lg border border-white/10 bg-black/20 p-3">
-                <span className="text-sm font-medium text-[var(--fg)]">{PLATFORM_LABELS[platform]}</span>
+              <li
+                key={platform}
+                className="flex flex-col gap-1 rounded-lg border border-white/10 bg-black/20 p-3"
+              >
+                <span className="text-sm font-medium text-[var(--fg)]">
+                  {PLATFORM_LABELS[platform]}
+                </span>
                 <p>
                   Tokens are stored under{' '}
                   <code className="font-mono text-xs text-[var(--fg)]">
                     tokens/&lt;account&gt;/{PLATFORM_TOKEN_FILES[platform]}
                   </code>
+                  {'. '}
                   Ensure credentials remain valid to publish successfully.
                 </p>
               </li>
