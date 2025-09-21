@@ -37,6 +37,7 @@ from auth.accounts import (
     AccountResponse,
     AccountUpdateRequest,
     AuthPingResponse,
+    SUPPORTED_PLATFORMS,
     PlatformCreateRequest,
     PlatformUpdateRequest,
     add_platform,
@@ -50,6 +51,7 @@ from auth.accounts import (
     update_platform,
 )
 import config as pipeline_config
+from upload_all import run as run_uploads
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +127,39 @@ class ConfigUpdateRequest(BaseModel):
     """Payload describing configuration updates to apply."""
 
     values: Dict[str, Any] = Field(default_factory=dict)
+
+
+class UploadClipRequest(BaseModel):
+    """Payload describing an upload request for a rendered clip."""
+
+    platforms: list[str] | None = None
+    delete_after_upload: bool | None = Field(default=None, alias="delete_after_upload")
+
+    @field_validator("platforms", mode="before")
+    @classmethod
+    def _normalise_platforms(cls, value: Any) -> list[str] | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            token = value.strip().lower()
+            return [token] if token else []
+        if isinstance(value, (list, tuple, set)):
+            normalised: list[str] = []
+            for item in value:
+                if isinstance(item, str):
+                    token = item.strip().lower()
+                    if token:
+                        normalised.append(token)
+            return normalised
+        raise ValueError("Platforms must be provided as strings.")
+
+
+class UploadClipResponse(BaseModel):
+    """Response returned after triggering a clip upload."""
+
+    success: bool
+    deleted: bool
+    platforms: list[str]
 
 
 _TRUE_STRINGS = {"true", "1", "yes", "y", "on"}
@@ -500,6 +535,49 @@ def _get_job(job_id: str) -> JobState | None:
         return _jobs.get(job_id)
 
 
+def _resolve_description_path(video_path: Path) -> Path:
+    """Return the best description file path for ``video_path``."""
+
+    candidates = [
+        video_path.with_suffix(".txt"),
+        video_path.with_suffix(".md"),
+        video_path.parent / "description.txt",
+        video_path.parent / "description.md",
+    ]
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Clip description not found",
+    )
+
+
+def _delete_clip_artifacts(video_path: Path) -> bool:
+    """Delete the rendered clip file and related assets."""
+
+    deleted = False
+    parent = video_path.parent
+    stem = video_path.stem
+    for candidate in parent.glob(f"{stem}.*"):
+        if not candidate.is_file():
+            continue
+        try:
+            candidate.unlink()
+            deleted = True
+        except FileNotFoundError:
+            continue
+    try:
+        if not any(parent.iterdir()):
+            parent.rmdir()
+            project_dir = parent.parent
+            if project_dir.exists() and not any(project_dir.iterdir()):
+                project_dir.rmdir()
+    except OSError:
+        pass
+    return deleted
+
+
 @app.post("/api/jobs", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED)
 async def start_job(payload: RunRequest) -> RunResponse:
     """Start processing ``payload.url`` in a background thread."""
@@ -622,6 +700,82 @@ async def get_job_clip_video(job_id: str, clip_id: str) -> FileResponse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip video not found")
 
     return FileResponse(path=video_path, media_type="video/mp4", filename=video_path.name)
+
+
+@app.post("/api/jobs/{job_id}/clips/{clip_id}/upload", response_model=UploadClipResponse)
+async def upload_job_clip(job_id: str, clip_id: str, payload: UploadClipRequest) -> UploadClipResponse:
+    """Trigger uploads for ``clip_id`` to the selected platforms."""
+
+    state = _get_job(job_id)
+    if state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    with state.lock:
+        clip = state.clips.get(clip_id)
+
+    if clip is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+
+    video_path = clip.video_path
+    if not video_path.exists() or not video_path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip video not found")
+
+    desc_path = _resolve_description_path(video_path)
+
+    requested = payload.platforms
+    if requested is None:
+        platform_list = list(SUPPORTED_PLATFORMS)
+    else:
+        seen: set[str] = set()
+        platform_list: list[str] = []
+        invalid: list[str] = []
+        for name in requested:
+            normalised = name.lower()
+            if normalised not in SUPPORTED_PLATFORMS:
+                invalid.append(normalised)
+                continue
+            if normalised not in seen:
+                seen.add(normalised)
+                platform_list.append(normalised)
+        if invalid:
+            invalid_tokens = ", ".join(sorted(set(invalid)))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown platforms requested: {invalid_tokens}",
+            )
+        if not platform_list:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Select at least one platform to upload to.",
+            )
+
+    delete_after = payload.delete_after_upload
+    if delete_after is None:
+        delete_after = getattr(pipeline_config, "DELETE_UPLOADED_CLIPS", False)
+
+    try:
+        await asyncio.to_thread(
+            run_uploads,
+            video_path,
+            desc_path,
+            account=clip.account,
+            platforms=platform_list,
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Upload failed for job %s clip %s", job_id, clip_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Upload failed: {exc}",
+        ) from exc
+
+    deleted = False
+    if delete_after:
+        deleted = await asyncio.to_thread(_delete_clip_artifacts, video_path)
+        if deleted:
+            with state.lock:
+                state.clips.pop(clip_id, None)
+
+    return UploadClipResponse(success=True, deleted=deleted, platforms=platform_list)
 
 
 @app.get("/api/accounts/{account_id}/clips", response_model=list[LibraryClipManifest])
