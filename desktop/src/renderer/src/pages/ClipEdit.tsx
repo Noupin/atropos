@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FC, ChangeEvent, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatDuration } from '../lib/format'
+import useSharedVolume from '../hooks/useSharedVolume'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
 import type { Clip, SearchBridge } from '../types'
@@ -140,6 +141,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     end: sourceClip ? Math.max(sourceClip.startSeconds + minGap, sourceClip.endSeconds) : minGap
   }))
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
+  const [sharedVolume, setSharedVolume] = useSharedVolume()
   const [isVideoBuffering, setIsVideoBuffering] = useState(false)
   const [saveSteps, setSaveSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
 
@@ -692,6 +694,15 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     setIsVideoBuffering(false)
   }, [activeVideoSrc, previewMode])
 
+  useEffect(() => {
+    const element = previewVideoRef.current
+    if (!element) {
+      return
+    }
+    element.volume = sharedVolume.volume
+    element.muted = sharedVolume.muted
+  }, [sharedVolume, videoKey])
+
   const handleVideoLoadStart = useCallback(() => {
     setIsVideoBuffering(true)
   }, [])
@@ -711,6 +722,14 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const handleVideoError = useCallback(() => {
     setIsVideoBuffering(false)
   }, [])
+
+  const handleVideoVolumeChange = useCallback(() => {
+    const element = previewVideoRef.current
+    if (!element) {
+      return
+    }
+    setSharedVolume({ volume: element.volume, muted: element.muted })
+  }, [setSharedVolume])
 
   const handleVideoLoadedMetadata = useCallback(() => {
     if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
@@ -926,6 +945,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 onError={handleVideoError}
                 onTimeUpdate={handleVideoTimeUpdate}
                 onPlay={handleVideoPlay}
+                onVolumeChange={handleVideoVolumeChange}
                 className="h-full w-full bg-black object-contain"
               >
                 Your browser does not support the video tag.

@@ -12,6 +12,7 @@ import ClipDescription from '../components/ClipDescription'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import { listAccountClips } from '../services/clipLibrary'
 import type { AccountSummary, Clip, SearchBridge } from '../types'
+import useSharedVolume from '../hooks/useSharedVolume'
 
 const ALL_ACCOUNTS_VALUE = 'all'
 
@@ -40,6 +41,8 @@ const Library: FC<LibraryProps> = ({
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
   const queryRef = useRef('')
   const loadRequestRef = useRef(0)
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null)
+  const [sharedVolume, setSharedVolume] = useSharedVolume()
   const navigate = useNavigate()
 
   const availableAccounts = useMemo(
@@ -332,6 +335,23 @@ const Library: FC<LibraryProps> = ({
     [filteredClips, selectedClipId]
   )
 
+  useEffect(() => {
+    const element = previewVideoRef.current
+    if (!element) {
+      return
+    }
+    element.volume = sharedVolume.volume
+    element.muted = sharedVolume.muted
+  }, [selectedClip?.id, sharedVolume])
+
+  const handlePreviewVolumeChange = useCallback(() => {
+    const element = previewVideoRef.current
+    if (!element) {
+      return
+    }
+    setSharedVolume({ volume: element.volume, muted: element.muted })
+  }, [setSharedVolume])
+
   const handleAccountChange = useCallback(
     (event: ChangeEvent<HTMLSelectElement>) => {
       const { value } = event.target
@@ -486,6 +506,8 @@ const Library: FC<LibraryProps> = ({
                     controls
                     playsInline
                     preload="metadata"
+                    ref={previewVideoRef}
+                    onVolumeChange={handlePreviewVolumeChange}
                     className="h-full w-full max-w-sm object-contain"
                   >
                     Your browser does not support the video tag.

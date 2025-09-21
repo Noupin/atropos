@@ -1,9 +1,10 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { FC } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import ClipDescription from '../components/ClipDescription'
 import type { Clip, SearchBridge } from '../types'
+import useSharedVolume from '../hooks/useSharedVolume'
 
 type ClipPageProps = {
   registerSearch: (bridge: SearchBridge | null) => void
@@ -20,6 +21,26 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
 
   const locationState = location.state as { clip?: Clip } | null
   const clip = locationState?.clip && locationState.clip.id === id ? locationState.clip : null
+
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const [sharedVolume, setSharedVolume] = useSharedVolume()
+
+  useEffect(() => {
+    const element = videoRef.current
+    if (!element) {
+      return
+    }
+    element.volume = sharedVolume.volume
+    element.muted = sharedVolume.muted
+  }, [sharedVolume, clip?.id])
+
+  const handleVolumeChange = useCallback(() => {
+    const element = videoRef.current
+    if (!element) {
+      return
+    }
+    setSharedVolume({ volume: element.volume, muted: element.muted })
+  }, [setSharedVolume])
 
   if (!clip) {
     return (
@@ -59,6 +80,8 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
             controls
             playsInline
             preload="metadata"
+            ref={videoRef}
+            onVolumeChange={handleVolumeChange}
             className="h-full w-full object-cover"
           >
             Your browser does not support the video tag.
