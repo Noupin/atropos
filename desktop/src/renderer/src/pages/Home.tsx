@@ -767,36 +767,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     activeJobIdRef.current = null
   }, [cleanupConnection, clearTimers, updateState])
 
-  const handleToggleAllPlatforms = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      if (event.target.checked) {
-        setSelectedUploadPlatforms([...defaultUploadPlatforms])
-      } else {
-        setSelectedUploadPlatforms([])
-      }
-      setUploadErrorMessage(null)
-      setUploadSuccessMessage(null)
-    },
-    [defaultUploadPlatforms]
-  )
-
-  const handleTogglePlatform = useCallback(
-    (platform: SupportedPlatform) => {
-      if (!defaultUploadPlatforms.includes(platform)) {
-        return
-      }
-      setSelectedUploadPlatforms((prev) => {
-        if (prev.includes(platform)) {
-          return prev.filter((value) => value !== platform)
-        }
-        return [...prev, platform]
-      })
-      setUploadErrorMessage(null)
-      setUploadSuccessMessage(null)
-    },
-    [defaultUploadPlatforms]
-  )
-
   const handleOpenClipsFolder = useCallback(async () => {
     if (!canAttemptToOpenFolder) {
       setFolderErrorMessage('Opening the clips folder is only available in the desktop app.')
