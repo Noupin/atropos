@@ -24,6 +24,42 @@ type RawClipPayload = {
   thumbnail_url?: unknown
 }
 
+type ClipLibraryBridge = {
+  listAccountClips: (accountId: string | null) => Promise<Clip[]>
+  openAccountClipsFolder: (accountId: string) => Promise<OpenAccountClipsFolderResult>
+  invoke?: (channel: string, ...args: unknown[]) => Promise<unknown>
+}
+
+const ensureClipLibraryBridge = (): ClipLibraryBridge | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const existingBridge = window.api as Partial<ClipLibraryBridge> | undefined
+  if (existingBridge?.listAccountClips && existingBridge?.openAccountClipsFolder) {
+    return existingBridge as ClipLibraryBridge
+  }
+
+  const ipcRenderer = window.electron?.ipcRenderer
+  if (!ipcRenderer?.invoke) {
+    return null
+  }
+
+  const fallbackBridge: ClipLibraryBridge = {
+    listAccountClips: async (accountId: string | null) => {
+      const result = await ipcRenderer.invoke('clips:list', accountId)
+      return Array.isArray(result) ? (result as Clip[]) : []
+    },
+    openAccountClipsFolder: (accountId: string) =>
+      ipcRenderer.invoke('clips:open-folder', accountId) as Promise<OpenAccountClipsFolderResult>,
+    invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args)
+  }
+
+  ;(window as typeof window & { api: ClipLibraryBridge }).api = fallbackBridge
+
+  return fallbackBridge
+}
+
 const isClipArray = (value: unknown): value is Clip[] => {
   return Array.isArray(value) && value.every((item) => typeof item === 'object' && item !== null && 'id' in item)
 }
@@ -146,7 +182,7 @@ export const listAccountClips = async (accountId: string | null): Promise<Clip[]
     return []
   }
 
-  if (BACKEND_MODE === 'api' || typeof window === 'undefined' || !window.api?.listAccountClips) {
+  if (BACKEND_MODE === 'api') {
     try {
       return await fetchAccountClipsFromApi(accountId)
     } catch (error) {
@@ -156,7 +192,13 @@ export const listAccountClips = async (accountId: string | null): Promise<Clip[]
   }
 
   try {
-    const clips = await window.api.listAccountClips(accountId)
+    const bridge = ensureClipLibraryBridge()
+    if (!bridge) {
+      console.warn('Clip library bridge is unavailable in this environment.')
+      return []
+    }
+
+    const clips = await bridge.listAccountClips(accountId)
     return isClipArray(clips) ? clips : []
   } catch (error) {
     console.error('Unable to load clips from library bridge', error)
@@ -170,17 +212,19 @@ export const openAccountClipsFolder = async (
   if (!accountId) {
     return { success: false, accountDir: null, error: 'Select an account to open its clips folder.' }
   }
-  if (typeof window === 'undefined' || !window.api?.openAccountClipsFolder) {
-    console.warn('openAccountClipsFolder bridge is unavailable in this environment.')
-    return {
-      success: false,
-      accountDir: null,
-      error: 'Opening the clips folder is only available in the desktop app.'
-    }
-  }
 
   try {
-    const result = await window.api.openAccountClipsFolder(accountId)
+    const bridge = ensureClipLibraryBridge()
+    if (!bridge) {
+      console.warn('openAccountClipsFolder bridge is unavailable in this environment.')
+      return {
+        success: false,
+        accountDir: null,
+        error: 'Opening the clips folder is only available in the desktop app.'
+      }
+    }
+
+    const result = await bridge.openAccountClipsFolder(accountId)
     if (isOpenFolderResult(result)) {
       return result
     }

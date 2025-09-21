@@ -9,7 +9,9 @@ const api = {
   listAccountClips: (accountId: string | null): Promise<Clip[]> =>
     ipcRenderer.invoke('clips:list', accountId),
   openAccountClipsFolder: (accountId: string): Promise<OpenAccountClipsFolderResult> =>
-    ipcRenderer.invoke('clips:open-folder', accountId)
+    ipcRenderer.invoke('clips:open-folder', accountId),
+  invoke: (channel: string, ...args: unknown[]): Promise<unknown> =>
+    ipcRenderer.invoke(channel, ...args)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
