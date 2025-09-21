@@ -182,6 +182,28 @@ const inferProjectMetadata = (projectName: string): ProjectMetadata => {
   return { title, publishedAt }
 }
 
+const ensureDirectoryExists = async (target: string): Promise<boolean> => {
+  try {
+    const stats = await fs.stat(target)
+    if (stats.isDirectory()) {
+      return true
+    }
+    return false
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException
+    if (err?.code && err.code !== 'ENOENT') {
+      return false
+    }
+  }
+
+  try {
+    await fs.mkdir(target, { recursive: true })
+    return true
+  } catch (mkdirError) {
+    return false
+  }
+}
+
 const resolveOutRoot = async (): Promise<string | null> => {
   if (cachedOutRoot !== undefined) {
     return cachedOutRoot
@@ -189,8 +211,11 @@ const resolveOutRoot = async (): Promise<string | null> => {
 
   const configured = process.env.OUT_ROOT
   if (configured && configured.length > 0) {
-    cachedOutRoot = configured
-    return cachedOutRoot
+    if (await ensureDirectoryExists(configured)) {
+      cachedOutRoot = configured
+      return cachedOutRoot
+    }
+    return null
   }
 
   const candidates = [
@@ -199,18 +224,13 @@ const resolveOutRoot = async (): Promise<string | null> => {
   ]
 
   for (const candidate of candidates) {
-    try {
-      const stats = await fs.stat(candidate)
-      if (stats.isDirectory()) {
-        cachedOutRoot = candidate
-        return candidate
-      }
-    } catch (error) {
-      // Ignore candidates that do not exist
+    if (await ensureDirectoryExists(candidate)) {
+      cachedOutRoot = candidate
+      return candidate
     }
   }
 
-  cachedOutRoot = candidates[0] ?? null
+  cachedOutRoot = null
   return cachedOutRoot
 }
 
@@ -441,13 +461,8 @@ export const resolveAccountClipsDirectory = async (
   }
 
   const accountDir = accountId ? path.join(base, accountId) : base
-  try {
-    const stats = await fs.stat(accountDir)
-    if (stats.isDirectory()) {
-      return { base, accountDir }
-    }
-  } catch (error) {
-    return null
+  if (await ensureDirectoryExists(accountDir)) {
+    return { base, accountDir }
   }
 
   return null
