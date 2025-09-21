@@ -50,13 +50,13 @@ const ClipCard: FC<ClipCardProps> = ({ clip, onClick, isActive = false }) => {
         <span
           className={`absolute left-2 top-2 rounded-md px-2 py-0.5 text-xs font-semibold ${
             clip.hasAdjustments
-              ? 'bg-[var(--ring)] text-black shadow-[0_4px_12px_rgba(15,23,42,0.45)]'
-              : 'bg-black/70 text-white/80'
+              ? 'bg-[var(--ring)] text-[color:var(--accent-contrast)] shadow-[0_4px_12px_rgba(15,23,42,0.45)]'
+              : 'bg-black/70 text-[color:var(--fg-inverse-soft)]'
           }`}
         >
           {clip.hasAdjustments ? 'Adjusted' : 'Original'}
         </span>
-        <span className="absolute bottom-2 right-2 rounded-md bg-black/70 px-2 py-0.5 text-xs font-medium text-white">
+        <span className="absolute bottom-2 right-2 rounded-md bg-black/70 px-2 py-0.5 text-xs font-medium text-[color:var(--fg-inverse)]">
           {formatDuration(clip.durationSec)}
         </span>
       </div>

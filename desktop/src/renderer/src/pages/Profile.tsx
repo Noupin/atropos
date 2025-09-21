@@ -660,7 +660,7 @@ const AccountCard: FC<AccountCardProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmitting || !isAccountActive}
-                  className="rounded-lg border border-transparent bg-[var(--ring)] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-lg border border-transparent bg-[var(--ring)] px-4 py-2 text-sm font-semibold text-[color:var(--accent-contrast)] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isSubmitting ? 'Connecting…' : 'Connect platform'}
                 </button>
@@ -836,7 +836,7 @@ const Profile: FC<ProfileProps> = ({
               <button
                 type="submit"
                 disabled={isCreatingAccount}
-                className="rounded-lg border border-transparent bg-[var(--ring)] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-lg border border-transparent bg-[var(--ring)] px-4 py-2 text-sm font-semibold text-[color:var(--accent-contrast)] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isCreatingAccount ? 'Creating…' : 'Create account'}
               </button>

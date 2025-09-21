@@ -514,7 +514,7 @@ const Library: FC<LibraryProps> = ({
             <button
               type="button"
               onClick={() => toggleProjectCollapse(projectGroupId)}
-              className="flex items-center gap-2 text-left text-lg font-semibold text-[var(--fg)] transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+              className="flex items-center gap-2 text-left text-lg font-semibold text-[var(--fg)] transition hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
               aria-expanded={!isCollapsed}
             >
               <svg
@@ -683,13 +683,13 @@ const Library: FC<LibraryProps> = ({
                       return (
                         <div
                           key={accountGroup.id}
-                          className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-4"
+                          className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:var(--card-strong)] p-4"
                         >
                           <div className="flex items-center justify-between">
                             <button
                               type="button"
                               onClick={() => toggleAccountCollapse(accountGroup.id)}
-                              className="flex items-center gap-2 text-left text-lg font-semibold text-[var(--fg)] transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+                              className="flex items-center gap-2 text-left text-lg font-semibold text-[var(--fg)] transition hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
                               aria-expanded={!isCollapsed}
                             >
                               <svg
@@ -770,16 +770,16 @@ const Library: FC<LibraryProps> = ({
                     ) : (
                       <p className="text-lg font-semibold text-[var(--fg)] leading-tight">{selectedClip.title}</p>
                     )}
-                    {selectedClip.reason ? (
-                      <div className="space-y-1">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
-                          Reason
-                        </span>
-                        <p className="rounded-lg border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-3 text-sm leading-relaxed text-[var(--fg)]/80">
-                          {selectedClip.reason}
-                        </p>
-                      </div>
-                    ) : null}
+                      {selectedClip.reason ? (
+                        <div className="space-y-1">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
+                            Reason
+                          </span>
+                          <p className="rounded-lg border border-white/10 bg-[color:var(--card-strong)] p-3 text-sm leading-relaxed text-[color:color-mix(in_srgb,var(--fg)_82%,transparent)]">
+                            {selectedClip.reason}
+                          </p>
+                        </div>
+                      ) : null}
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                       <span className="font-semibold text-[var(--fg)]">{selectedClip.channel}</span>
                       {selectedClip.views !== null ? <span>{formatViews(selectedClip.views)} views</span> : null}
@@ -792,7 +792,7 @@ const Library: FC<LibraryProps> = ({
                       ) : null}
                     </div>
                   </div>
-                  <dl className="grid gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_75%,transparent)] p-4 text-xs text-[var(--muted)] sm:grid-cols-[auto_1fr]">
+                  <dl className="grid gap-3 rounded-xl border border-white/10 bg-[color:var(--card-strong)] p-4 text-xs text-[var(--muted)] sm:grid-cols-[auto_1fr]">
                     {selectedClip.rating !== null && selectedClip.rating !== undefined ? (
                       <>
                         <dt className="font-medium text-[var(--fg)]">Score</dt>
@@ -816,14 +816,14 @@ const Library: FC<LibraryProps> = ({
                     <button
                       type="button"
                       onClick={() => handleClipOpen(selectedClip)}
-                      className="rounded-lg border border-transparent bg-[var(--ring)] px-3 py-1.5 text-xs font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+                      className="rounded-lg border border-transparent bg-[var(--ring)] px-3 py-1.5 text-xs font-semibold text-[color:var(--accent-contrast)] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
                     >
                       Open clip details
                     </button>
                     <button
                       type="button"
                       onClick={() => handleAdjustClipBoundaries(selectedClip)}
-                      className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                      className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                     >
                       Edit adjust clip
                     </button>
@@ -831,7 +831,7 @@ const Library: FC<LibraryProps> = ({
                       href={selectedClip.sourceUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white"
+                      className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-[color:var(--accent)]"
                     >
                       View full video
                       <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
@@ -846,10 +846,10 @@ const Library: FC<LibraryProps> = ({
                         href={selectedClip.timestampUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white"
+                        className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-[color:var(--accent)]"
                       >
                         Jump to{' '}
-                        <span className="font-semibold text-white">
+                        <span className="font-semibold text-[color:var(--fg-inverse)]">
                           {selectedClip.timestampSeconds !== null && selectedClip.timestampSeconds !== undefined
                             ? formatDuration(selectedClip.timestampSeconds)
                             : 'timestamp'}

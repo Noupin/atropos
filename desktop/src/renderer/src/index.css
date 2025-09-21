@@ -7,6 +7,8 @@
   --bg-vein: #e4e0d9;
   --depth: #d9d5ce;
   --fg: #181818;
+  --fg-inverse: #fdfbf7;
+  --fg-inverse-soft: color-mix(in srgb, var(--fg-inverse) 80%, transparent);
   --muted: #6f6f6f;
   --card: color-mix(in srgb, #ffffff 80%, transparent);
   --card-strong: color-mix(in srgb, #ffffff 92%, transparent);
@@ -33,6 +35,8 @@
   --bg-vein: #2c2a28;
   --depth: #3a3734;
   --fg: #f3f2f0;
+  --fg-inverse: #171614;
+  --fg-inverse-soft: color-mix(in srgb, var(--fg-inverse) 80%, transparent);
   --muted: #b3b0aa;
   --card: color-mix(in srgb, rgba(36, 35, 33, 0.78) 100%, transparent);
   --card-strong: color-mix(in srgb, rgba(46, 45, 43, 0.92) 100%, transparent);
@@ -170,14 +174,17 @@ body {
   background-color: color-mix(in srgb, var(--panel-strong) 78%, transparent) !important;
 }
 
-.text-white,
-.hover\:text-white:hover,
-.focus-visible\:text-white:focus-visible {
+.text-white {
   color: var(--accent-contrast) !important;
 }
 
+.hover\:text-white:hover,
+.focus-visible\:text-white:focus-visible {
+  color: var(--fg) !important;
+}
+
 .text-white\/80 {
-  color: color-mix(in srgb, var(--accent-contrast) 80%, transparent) !important;
+  color: var(--fg-inverse-soft) !important;
 }
 
 .text-amber-50 {
