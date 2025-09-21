@@ -44,7 +44,7 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
     duration_seconds: durationSeconds,
     description,
     playback_url: playbackUrl,
-    preview_url: previewUrl,
+    preview_url: previewUrlRaw,
     source_url: sourceUrl,
     source_title: sourceTitle,
     source_published_at: sourcePublishedAt,
@@ -86,7 +86,9 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
   if (typeof sourceUrl !== 'string') {
     return null
   }
-  if (typeof previewUrl !== 'string') {
+  const previewUrl =
+    typeof previewUrlRaw === 'string' && previewUrlRaw.length > 0 ? previewUrlRaw : playbackUrl
+  if (typeof previewUrl !== 'string' || previewUrl.length === 0) {
     return null
   }
   if (typeof sourceTitle !== 'string' || sourceTitle.length === 0) {

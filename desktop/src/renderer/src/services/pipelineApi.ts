@@ -97,7 +97,11 @@ export const normaliseJobClip = (payload: UnknownRecord): Clip | null => {
   const durationSeconds = typeof payload.duration_seconds === 'number' ? payload.duration_seconds : null
   const description = typeof payload.description === 'string' ? payload.description : null
   const playbackUrl = typeof payload.playback_url === 'string' ? payload.playback_url : null
-  const previewUrl = typeof payload.preview_url === 'string' ? payload.preview_url : null
+  const previewUrlRaw = payload.preview_url
+  const previewUrl =
+    typeof previewUrlRaw === 'string' && previewUrlRaw.length > 0
+      ? previewUrlRaw
+      : playbackUrl
   const sourceUrl = typeof payload.source_url === 'string' ? payload.source_url : null
   const sourceTitle = typeof payload.source_title === 'string' ? payload.source_title : title
   if (!id || !title || !createdAt || durationSeconds === null || !description || !playbackUrl || !previewUrl || !sourceUrl) {

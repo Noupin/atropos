@@ -18,6 +18,9 @@ const MIN_CLIP_GAP = 0.25
 const MIN_PREVIEW_DURATION = 0.05
 const DEFAULT_EXPAND_SECONDS = 10
 
+const getDefaultPreviewMode = (clip: Clip | null): 'adjusted' | 'rendered' =>
+  clip && clip.previewUrl === clip.playbackUrl ? 'rendered' : 'adjusted'
+
 const formatRelativeSeconds = (value: number): string => {
   if (!Number.isFinite(value) || value === 0) {
     return '0'
@@ -117,7 +120,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
-  const [previewMode, setPreviewMode] = useState<'adjusted' | 'original' | 'rendered'>('adjusted')
+  const [previewMode, setPreviewMode] = useState<'adjusted' | 'original' | 'rendered'>(() =>
+    getDefaultPreviewMode(sourceClip ?? null)
+  )
   const [previewTarget, setPreviewTarget] = useState(() => ({
     start: sourceClip ? sourceClip.startSeconds : 0,
     end: sourceClip ? Math.max(sourceClip.startSeconds + minGap, sourceClip.endSeconds) : minGap
@@ -128,6 +133,13 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
 
   const originalStart = clipState?.originalStartSeconds ?? 0
   const originalEnd = clipState?.originalEndSeconds ?? (originalStart + (clipState?.durationSec ?? 10))
+  const supportsSourcePreview = clipState ? clipState.previewUrl !== clipState.playbackUrl : false
+
+  useEffect(() => {
+    if (!supportsSourcePreview && previewMode !== 'rendered') {
+      setPreviewMode('rendered')
+    }
+  }, [previewMode, supportsSourcePreview])
 
   const applyUpdatedClip = useCallback(
     (updated: Clip) => {
@@ -144,6 +156,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         )
       )
       setPreviewTarget({ start: updated.startSeconds, end: updated.endSeconds })
+      setPreviewMode(getDefaultPreviewMode(updated))
     },
     [minGap]
   )
@@ -231,7 +244,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       )
     )
     setPreviewTarget({ start: clipState.startSeconds, end: clipState.endSeconds })
-    setPreviewMode('adjusted')
+    setPreviewMode(getDefaultPreviewMode(clipState))
     setSaveSteps(createInitialSaveSteps())
   }, [clipState, minGap])
 
@@ -431,8 +444,11 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       setRangeEnd(Math.max(clipState.originalStartSeconds + minGap, clipState.originalEndSeconds))
       setWindowStart(baseStart)
       setWindowEnd(baseEnd)
-      setPreviewTarget({ start: clipState.originalStartSeconds, end: Math.max(clipState.originalStartSeconds + MIN_PREVIEW_DURATION, clipState.originalEndSeconds) })
-      setPreviewMode('original')
+      setPreviewTarget({
+        start: clipState.originalStartSeconds,
+        end: Math.max(clipState.originalStartSeconds + MIN_PREVIEW_DURATION, clipState.originalEndSeconds)
+      })
+      setPreviewMode(getDefaultPreviewMode(clipState) === 'adjusted' ? 'original' : 'rendered')
     }
     setSaveError(null)
     setSaveSuccess(null)
@@ -857,25 +873,33 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 <div className="flex overflow-hidden rounded-lg border border-white/10">
                   <button
                     type="button"
-                    onClick={() => setPreviewMode('adjusted')}
+                    onClick={() => supportsSourcePreview && setPreviewMode('adjusted')}
                     className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                       previewMode === 'adjusted'
                         ? 'bg-[var(--ring)] text-black'
-                        : 'text-[var(--fg)] hover:bg-white/10'
+                        : supportsSourcePreview
+                          ? 'text-[var(--fg)] hover:bg-white/10'
+                          : 'cursor-not-allowed text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]'
                     }`}
                     aria-pressed={previewMode === 'adjusted'}
+                    aria-disabled={!supportsSourcePreview}
+                    disabled={!supportsSourcePreview}
                   >
                     Adjusted preview
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPreviewMode('original')}
+                    onClick={() => supportsSourcePreview && setPreviewMode('original')}
                     className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                       previewMode === 'original'
                         ? 'bg-[var(--ring)] text-black'
-                        : 'text-[var(--fg)] hover:bg-white/10'
+                        : supportsSourcePreview
+                          ? 'text-[var(--fg)] hover:bg-white/10'
+                          : 'cursor-not-allowed text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]'
                     }`}
                     aria-pressed={previewMode === 'original'}
+                    aria-disabled={!supportsSourcePreview}
+                    disabled={!supportsSourcePreview}
                   >
                     Original clip
                   </button>
@@ -894,11 +918,13 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 </div>
               </div>
               <p className="text-xs text-[var(--muted)]">
-                {previewMode === 'rendered'
-                  ? 'Review the exported vertical clip with captions and layout applied.'
-                  : previewMode === 'original'
-                    ? 'Viewing the untouched source range from the original footage.'
-                    : 'Previewing the adjusted range directly from the source video without captions or layout.'}
+                {!supportsSourcePreview
+                  ? 'Showing the exported clip because a direct source preview is unavailable on this device.'
+                  : previewMode === 'rendered'
+                    ? 'Review the exported vertical clip with captions and layout applied.'
+                    : previewMode === 'original'
+                      ? 'Viewing the untouched source range from the original footage.'
+                      : 'Previewing the adjusted range directly from the source video without captions or layout.'}
               </p>
             </div>
           </div>
