@@ -118,6 +118,8 @@ export interface HomePipelineState {
   selectedAccountId: string | null
   accountError: string | null
   activeJobId: string | null
+  reviewMode: boolean
+  awaitingReview: boolean
 }
 
 export type PipelineEventType =

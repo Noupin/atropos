@@ -97,6 +97,9 @@ def process_video(
     account: str | None = None,
     tone: Tone | None = None,
     observer: PipelineObserver | None = None,
+    *,
+    pause_for_review: bool = False,
+    review_gate: Callable[[], None] | None = None,
 ) -> None:
     """Run the clipping pipeline for ``yt_url``.
 
@@ -1116,6 +1119,22 @@ def process_video(
                     },
                 )
             )
+
+    if pause_for_review and total_candidates and review_gate is not None:
+        emit_log(
+            "Pausing after clip production for manual review. Resume when adjustments are complete.",
+            level="info",
+        )
+        if observer:
+            observer.handle_event(
+                PipelineEvent(
+                    type=PipelineEventType.LOG,
+                    message="Awaiting manual clip review before completion.",
+                    data={"status": "waiting_for_review"},
+                )
+            )
+        review_gate()
+        emit_log("Resuming pipeline after manual review.", level="info")
 
     if total_candidates:
         notify_progress(

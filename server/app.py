@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import threading
 import uuid
 from dataclasses import dataclass, field, fields, is_dataclass
@@ -22,16 +23,25 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from custom_types.ETone import Tone
 from interfaces.progress import PipelineEvent, PipelineEventType, PipelineObserver
-from pipeline import process_video
+from pipeline import GENERIC_HASHTAGS, process_video
 from library import (
     DEFAULT_ACCOUNT_PLACEHOLDER,
     list_account_clips,
+    list_account_clips_sync,
     resolve_clip_video_path,
 )
+from steps.cut import save_clip
+from steps.subtitle import build_srt_for_range
+from steps.render import render_vertical_with_captions
+from steps.render_layouts import get_layout
+from helpers.description import maybe_append_website_link
+from common.caption_utils import prepare_hashtags
+from helpers.hashtags import generate_hashtag_strings
+from helpers.formatting import youtube_timestamp_url
 from auth.accounts import (
     AccountCreateRequest,
     AccountResponse,
@@ -89,6 +99,7 @@ class RunRequest(BaseModel):
     url: str = Field(..., min_length=1)
     account: str | None = Field(default=None, max_length=128)
     tone: Tone | None = Field(default=None)
+    review_mode: bool = Field(default=False)
 
     @field_validator("tone", mode="before")
     @classmethod
@@ -160,6 +171,19 @@ class UploadClipResponse(BaseModel):
     success: bool
     deleted: bool
     platforms: list[str]
+
+
+class ClipAdjustmentRequest(BaseModel):
+    """Request payload for updating clip boundaries."""
+
+    start_seconds: float = Field(..., ge=0)
+    end_seconds: float = Field(..., gt=0)
+
+    @model_validator(mode="after")
+    def _validate_range(self) -> "ClipAdjustmentRequest":
+        if self.end_seconds <= self.start_seconds:
+            raise ValueError("end_seconds must be greater than start_seconds")
+        return self
 
 
 _TRUE_STRINGS = {"true", "1", "yes", "y", "on"}
@@ -415,6 +439,8 @@ class JobState:
     thread: threading.Thread | None = None
     project_dir: Path | None = None
     clips: Dict[str, ClipArtifact] = field(default_factory=dict)
+    review_mode: bool = False
+    resume_event: threading.Event | None = None
 
     def publish(self, event: PipelineEvent) -> None:
         """Broadcast ``event`` to all listeners and append it to history."""
@@ -510,6 +536,21 @@ class JobState:
             if queue in self.listeners:
                 self.listeners.remove(queue)
 
+    def wait_for_resume(self) -> None:
+        """Block until the job is resumed when review mode is active."""
+
+        event = self.resume_event
+        if not event:
+            return
+        event.wait()
+
+    def resume(self) -> None:
+        """Allow a paused job to continue processing."""
+
+        event = self.resume_event
+        if event and not event.is_set():
+            event.set()
+
 
 class BroadcastObserver(PipelineObserver):
     """Observer that forwards events to all websocket listeners."""
@@ -578,13 +619,151 @@ def _delete_clip_artifacts(video_path: Path) -> bool:
     return deleted
 
 
+def _build_description_text(
+    description_path: Path,
+    *,
+    source_url: str,
+    channel: str,
+    source_title: str,
+    start_seconds: float,
+    quote: str | None,
+) -> str:
+    """Regenerate the clip description using the adjusted boundaries."""
+
+    tags = generate_hashtag_strings(title=source_title, quote=quote, show=channel)
+    fallback_words: list[str] = []
+    if not tags:
+        fallback_words = [
+            re.sub(r"[^0-9A-Za-z]", "", word)
+            for word in source_title.split()
+            if re.sub(r"[^0-9A-Za-z]", "", word)
+        ][:3]
+    hashtags = prepare_hashtags(tags + fallback_words + list(GENERIC_HASHTAGS), channel)
+    hashtags.extend(["#shorts", "#withatropos"])
+
+    full_video_link = youtube_timestamp_url(source_url, start_seconds)
+    credited_channel = channel or "Unknown Channel"
+    description = (
+        f"Full video: {full_video_link}\n\n"
+        f"Credit: {credited_channel}\n"
+        "Made by Atropos\n"
+    )
+    description = maybe_append_website_link(description)
+    description += "\nIf you know any more creators who don't do clips, leave them in the comments below!\n"
+    description += "\n" + " ".join(hashtags)
+
+    description_path.parent.mkdir(parents=True, exist_ok=True)
+    description_path.write_text(description, encoding="utf-8")
+    return description
+
+
+def _apply_clip_adjustment(
+    *,
+    project_dir: Path,
+    stem: str,
+    start_seconds: float,
+    end_seconds: float,
+    title: str,
+    channel: str,
+    source_url: str,
+    source_title: str,
+    quote: str | None,
+) -> tuple[float, str]:
+    """Rebuild clip assets for the provided ``stem`` using the new range."""
+
+    if end_seconds <= start_seconds:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="End time must be greater than start time.",
+        )
+
+    project_dir = project_dir.resolve()
+    if not project_dir.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project directory not found")
+
+    project_name = project_dir.name
+    source_video = project_dir / f"{project_name}.mp4"
+    transcript_path = project_dir / f"{project_name}.txt"
+    if not source_video.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source video not found")
+    if not transcript_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transcript not found")
+
+    clips_dir = project_dir / "clips"
+    subtitles_dir = project_dir / "subtitles"
+    shorts_dir = project_dir / "shorts"
+    clips_dir.mkdir(parents=True, exist_ok=True)
+    subtitles_dir.mkdir(parents=True, exist_ok=True)
+    shorts_dir.mkdir(parents=True, exist_ok=True)
+
+    raw_clip_path = clips_dir / f"{stem}.mp4"
+    subtitle_path = subtitles_dir / f"{stem}.srt"
+    vertical_path = shorts_dir / f"{stem}.mp4"
+    description_path = shorts_dir / f"{stem}.txt"
+
+    ok = save_clip(
+        source_video,
+        raw_clip_path,
+        start=start_seconds,
+        end=end_seconds,
+        reencode=False,
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to cut clip with the requested boundaries.",
+        )
+
+    try:
+        build_srt_for_range(
+            transcript_path,
+            global_start=start_seconds,
+            global_end=end_seconds,
+            srt_path=subtitle_path,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Failed to rebuild subtitles for clip %s", stem, exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to regenerate subtitles for the clip.",
+        ) from exc
+
+    try:
+        render_vertical_with_captions(
+            raw_clip_path,
+            subtitle_path,
+            vertical_path,
+            layout=get_layout(pipeline_config.RENDER_LAYOUT),
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Failed to render adjusted clip %s", stem, exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to render the adjusted clip.",
+        ) from exc
+
+    description_text = _build_description_text(
+        description_path,
+        source_url=source_url,
+        channel=channel,
+        source_title=source_title or title,
+        start_seconds=start_seconds,
+        quote=quote,
+    )
+
+    duration = max(0.0, end_seconds - start_seconds)
+    return duration, description_text
+
+
 @app.post("/api/jobs", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED)
 async def start_job(payload: RunRequest) -> RunResponse:
     """Start processing ``payload.url`` in a background thread."""
 
     job_id = uuid.uuid4().hex
     loop = asyncio.get_running_loop()
-    state = JobState(loop=loop)
+    state = JobState(loop=loop, review_mode=payload.review_mode)
+    if payload.review_mode:
+        state.resume_event = threading.Event()
     observer = BroadcastObserver(state)
 
     if payload.account:
@@ -597,6 +776,8 @@ async def start_job(payload: RunRequest) -> RunResponse:
                 account=payload.account,
                 tone=payload.tone,
                 observer=observer,
+                pause_for_review=payload.review_mode,
+                review_gate=state.wait_for_resume if payload.review_mode else None,
             )
         except Exception as exc:  # pragma: no cover - exercised in integration
             logger.exception("Pipeline job %s failed", job_id)
@@ -613,6 +794,23 @@ async def start_job(payload: RunRequest) -> RunResponse:
     _record_job(job_id, state)
     thread.start()
     return RunResponse(job_id=job_id)
+
+
+@app.post("/api/jobs/{job_id}/resume", status_code=status.HTTP_204_NO_CONTENT)
+async def resume_job(job_id: str) -> Response:
+    """Resume a paused pipeline job after manual clip review."""
+
+    state = _get_job(job_id)
+    if state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    if not state.review_mode or state.resume_event is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Job is not waiting for manual review.",
+        )
+
+    state.resume()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatus)
@@ -700,6 +898,62 @@ async def get_job_clip_video(job_id: str, clip_id: str) -> FileResponse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip video not found")
 
     return FileResponse(path=video_path, media_type="video/mp4", filename=video_path.name)
+
+
+@app.post("/api/jobs/{job_id}/clips/{clip_id}/adjust", response_model=ClipManifest)
+async def adjust_job_clip(
+    job_id: str,
+    clip_id: str,
+    payload: ClipAdjustmentRequest,
+    request: Request,
+) -> ClipManifest:
+    """Adjust the boundaries of a clip produced by an in-flight job."""
+
+    state = _get_job(job_id)
+    if state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    with state.lock:
+        clip = state.clips.get(clip_id)
+        project_dir = state.project_dir
+
+    if clip is None or project_dir is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+
+    duration, description_text = _apply_clip_adjustment(
+        project_dir=project_dir,
+        stem=clip.video_path.stem,
+        start_seconds=float(payload.start_seconds),
+        end_seconds=float(payload.end_seconds),
+        title=clip.title,
+        channel=clip.channel,
+        source_url=clip.source_url,
+        source_title=clip.source_title,
+        quote=clip.quote,
+    )
+
+    updated = ClipArtifact(
+        clip_id=clip.clip_id,
+        title=clip.title,
+        channel=clip.channel,
+        source_title=clip.source_title,
+        source_url=clip.source_url,
+        source_published_at=clip.source_published_at,
+        created_at=datetime.now(timezone.utc),
+        duration_seconds=duration,
+        description=description_text,
+        video_path=clip.video_path,
+        account=clip.account,
+        views=clip.views,
+        rating=clip.rating,
+        quote=clip.quote,
+        reason=clip.reason,
+    )
+
+    with state.lock:
+        state.clips[clip_id] = updated
+
+    return ClipManifest(**_clip_to_payload(updated, request, job_id))
 
 
 @app.post("/api/jobs/{job_id}/clips/{clip_id}/upload", response_model=UploadClipResponse)
@@ -794,6 +1048,48 @@ async def get_account_clip_video(account_id: str, clip_id: str) -> FileResponse:
     account_value = None if account_id == DEFAULT_ACCOUNT_PLACEHOLDER else account_id
     clip_path = resolve_clip_video_path(account_value, clip_id)
     return FileResponse(path=clip_path, media_type="video/mp4", filename=clip_path.name)
+
+
+@app.post(
+    "/api/accounts/{account_id}/clips/{clip_id}/adjust",
+    response_model=LibraryClipManifest,
+)
+async def adjust_library_clip(
+    account_id: str,
+    clip_id: str,
+    payload: ClipAdjustmentRequest,
+    request: Request,
+) -> LibraryClipManifest:
+    """Adjust clip boundaries for a library clip and rebuild derived assets."""
+
+    account_value = None if account_id == DEFAULT_ACCOUNT_PLACEHOLDER else account_id
+    clips = list_account_clips_sync(account_value)
+    target = next((clip for clip in clips if clip.clip_id == clip_id), None)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+
+    project_dir = target.playback_path.parent.parent
+    _apply_clip_adjustment(
+        project_dir=project_dir,
+        stem=target.playback_path.stem,
+        start_seconds=float(payload.start_seconds),
+        end_seconds=float(payload.end_seconds),
+        title=target.title,
+        channel=target.channel,
+        source_url=target.source_url,
+        source_title=target.source_title,
+        quote=target.quote,
+    )
+
+    refreshed = list_account_clips_sync(account_value)
+    updated = next((clip for clip in refreshed if clip.clip_id == clip_id), None)
+    if updated is None:  # pragma: no cover - defensive
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Clip metadata could not be refreshed",
+        )
+
+    return LibraryClipManifest(**updated.to_payload(request))
 
 
 @app.get("/api/accounts", response_model=list[AccountResponse])

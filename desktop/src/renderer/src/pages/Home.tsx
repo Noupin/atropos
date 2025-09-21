@@ -8,6 +8,7 @@ import {
   useState
 } from 'react'
 import type { FC } from 'react'
+import { useNavigate } from 'react-router-dom'
 import PipelineProgress from '../components/PipelineProgress'
 import { BACKEND_MODE, buildJobClipVideoUrl } from '../config/backend'
 import {
@@ -16,11 +17,12 @@ import {
   resolvePipelineLocation
 } from '../data/pipeline'
 import {
+  normaliseJobClip,
+  resumePipelineJob,
   startPipelineJob,
   subscribeToPipelineEvents,
   type PipelineEventMessage
 } from '../services/pipelineApi'
-import { parseClipTimestamp } from '../lib/clipMetadata'
 import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
 import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
@@ -47,6 +49,7 @@ type HomeProps = {
 }
 
 const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, accounts }) => {
+  const navigate = useNavigate()
   const [state, setState] = useState<HomePipelineState>(initialState)
   const [folderMessage, setFolderMessage] = useState<string | null>(null)
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
@@ -79,7 +82,9 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     selectedClipId,
     selectedAccountId,
     accountError,
-    activeJobId
+    activeJobId,
+    reviewMode,
+    awaitingReview
   } = state
 
   useEffect(() => {
@@ -483,6 +488,15 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         return
       }
 
+      if (event.type === 'log') {
+        const statusValue =
+          event.data && typeof event.data === 'object' ? (event.data as Record<string, unknown>).status : null
+        if (statusValue === 'waiting_for_review') {
+          updateState((prev) => ({ ...prev, awaitingReview: true }))
+        }
+        return
+      }
+
       if (event.type === 'clip_ready') {
         const jobId = activeJobIdRef.current
         const data = event.data ?? {}
@@ -494,57 +508,45 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         const description = typeof data.description === 'string' ? data.description : null
         const durationValue = typeof data.duration_seconds === 'number' ? data.duration_seconds : null
         const createdAt = typeof data.created_at === 'string' ? data.created_at : null
-        const channel = typeof data.channel === 'string' ? data.channel : 'Unknown channel'
-        const title = typeof data.title === 'string' && data.title.length > 0 ? data.title : `Clip ${clipId ?? ''}`
-        const sourceUrl = typeof data.source_url === 'string' ? data.source_url : ''
-        const sourceTitle = typeof data.source_title === 'string' ? data.source_title : title
-        const sourcePublishedAt =
-          typeof data.source_published_at === 'string' ? data.source_published_at : null
-        const videoId = typeof data.video_id === 'string' && data.video_id.length > 0 ? data.video_id : clipId
-        const videoTitle =
-          typeof data.video_title === 'string' && data.video_title.length > 0 ? data.video_title : sourceTitle
-        const views = typeof data.views === 'number' ? data.views : null
-        const quote = typeof data.quote === 'string' ? data.quote : null
-        const reason = typeof data.reason === 'string' ? data.reason : null
-        const rating = typeof data.rating === 'number' ? data.rating : null
-        const playbackClipId = typeof data.clip_id === 'string' ? data.clip_id : null
-        const accountIdValue = typeof data.account === 'string' ? data.account : null
+        const sourceUrl = typeof data.source_url === 'string' ? data.source_url : null
+        const sourceTitle = typeof data.source_title === 'string' ? data.source_title : null
 
-        if (!clipId || !description || !createdAt || !playbackClipId || !durationValue || !sourceUrl) {
+        if (!clipId || !description || !createdAt || durationValue === null || !sourceUrl || !sourceTitle) {
           return
         }
 
-        const playbackUrl = buildJobClipVideoUrl(jobId, playbackClipId)
-        const { timestampUrl, timestampSeconds } = parseClipTimestamp(description)
+        const playbackUrl = buildJobClipVideoUrl(jobId, clipId)
+        const manifestPayload: Record<string, unknown> = {
+          ...data,
+          id: clipId,
+          playback_url: playbackUrl,
+          description,
+          duration_seconds: durationValue,
+          created_at: createdAt,
+          source_url: sourceUrl,
+          source_title: sourceTitle,
+          source_published_at:
+            typeof data.source_published_at === 'string' ? data.source_published_at : null,
+          views: typeof data.views === 'number' ? data.views : null,
+          rating: typeof data.rating === 'number' ? data.rating : null,
+          quote: typeof data.quote === 'string' ? data.quote : null,
+          reason: typeof data.reason === 'string' ? data.reason : null,
+          account: typeof data.account === 'string' ? data.account : null,
+          video_id: typeof data.video_id === 'string' ? data.video_id : clipId,
+          video_title: typeof data.video_title === 'string' ? data.video_title : sourceTitle
+        }
+
+        const incomingClip = normaliseJobClip(manifestPayload)
+        if (!incomingClip) {
+          return
+        }
 
         updateState((prev) => {
-          const incomingClip = {
-            id: clipId,
-            title,
-            channel,
-            views,
-            createdAt,
-            durationSec: durationValue,
-            thumbnail: null,
-            playbackUrl,
-            description,
-            sourceUrl,
-            sourceTitle,
-            sourcePublishedAt,
-            videoId,
-            videoTitle,
-            quote,
-            reason,
-            rating,
-            timestampUrl,
-            timestampSeconds,
-            accountId: accountIdValue
-          }
-
-          const existingIndex = prev.clips.findIndex((clip) => clip.id === clipId)
-          const mergedClips = existingIndex === -1
-            ? [...prev.clips, incomingClip]
-            : prev.clips.map((clip, index) => (index === existingIndex ? incomingClip : clip))
+          const existingIndex = prev.clips.findIndex((clip) => clip.id === incomingClip.id)
+          const mergedClips =
+            existingIndex === -1
+              ? [...prev.clips, incomingClip]
+              : prev.clips.map((clip, index) => (index === existingIndex ? incomingClip : clip))
 
           mergedClips.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
 
@@ -570,6 +572,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
           ...prev,
           pipelineError: success ? null : errorMessage ?? 'Pipeline failed.',
           isProcessing: false,
+          awaitingReview: false,
           steps: prev.steps.map((step) => {
             if (success) {
               if (step.status === 'completed' || step.status === 'failed') {
@@ -595,16 +598,21 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   )
 
   const startRealProcessing = useCallback(
-    async (urlToProcess: string, accountId: string) => {
+    async (urlToProcess: string, accountId: string, shouldPauseForReview: boolean) => {
       updateState((prev) => ({
         ...prev,
         isProcessing: true,
-        pipelineError: null
+        pipelineError: null,
+        awaitingReview: false
       }))
       cleanupConnection()
 
       try {
-        const { jobId } = await startPipelineJob({ url: urlToProcess, account: accountId })
+        const { jobId } = await startPipelineJob({
+          url: urlToProcess,
+          account: accountId,
+          reviewMode: shouldPauseForReview
+        })
         activeJobIdRef.current = jobId
         let unsubscribe: (() => void) | null = null
         const cleanup = () => {
@@ -631,7 +639,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
             }
           }
         })
-        updateState((prev) => ({ ...prev, activeJobId: jobId }))
+        updateState((prev) => ({ ...prev, activeJobId: jobId, awaitingReview: false }))
       } catch (error) {
         updateState((prev) => ({
           ...prev,
@@ -690,6 +698,14 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     [updateState]
   )
 
+  const handleReviewModeChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const { checked } = event.target
+      updateState((prev) => ({ ...prev, reviewMode: checked }))
+    },
+    [updateState]
+  )
+
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
@@ -739,7 +755,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         steps: createInitialPipelineSteps(),
         isProcessing: true,
         accountError: null,
-        activeJobId: null
+        activeJobId: null,
+        awaitingReview: false
       }))
 
       if (isMockBackend) {
@@ -748,7 +765,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         return
       }
 
-      void startRealProcessing(trimmed, accountId)
+      void startRealProcessing(trimmed, accountId, reviewMode)
     },
     [
       accountOptions.length,
@@ -757,6 +774,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       isMockBackend,
       selectedAccountId,
       startRealProcessing,
+      reviewMode,
       updateState,
       videoUrl
     ]
@@ -774,7 +792,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       urlError: null,
       selectedClipId: null,
       accountError: null,
-      activeJobId: null
+      activeJobId: null,
+      awaitingReview: false
     }))
     activeJobIdRef.current = null
   }, [cleanupConnection, clearTimers, updateState])
@@ -809,6 +828,41 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       setIsOpeningFolder(false)
     }
   }, [canAttemptToOpenFolder, selectedAccountId])
+
+  const handleReviewClip = useCallback(
+    (clipId: string) => {
+      const clip = clips.find((item) => item.id === clipId)
+      if (!clip) {
+        return
+      }
+      navigate(`/clip/${encodeURIComponent(clip.id)}/edit`, {
+        state: {
+          clip,
+          jobId: activeJobIdRef.current,
+          accountId: clip.accountId ?? null,
+          context: 'job'
+        }
+      })
+    },
+    [clips, navigate]
+  )
+
+  const handleResumePipeline = useCallback(async () => {
+    const jobId = activeJobIdRef.current
+    if (!jobId) {
+      return
+    }
+    try {
+      await resumePipelineJob(jobId)
+      updateState((prev) => ({ ...prev, awaitingReview: false }))
+    } catch (error) {
+      updateState((prev) => ({
+        ...prev,
+        pipelineError:
+          error instanceof Error ? error.message : 'Unable to resume the pipeline. Try again shortly.'
+      }))
+    }
+  }, [updateState])
 
   const hasProgress = useMemo(
     () => steps.some((step) => step.status !== 'pending' || step.progress > 0),
@@ -856,6 +910,9 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     if (pipelineError) {
       return pipelineError
     }
+    if (awaitingReview) {
+      return 'Pipeline paused for manual clip review. Adjust boundaries, then resume when ready.'
+    }
     if (currentStep) {
       return `Currently processing: ${currentStep.title}`
     }
@@ -863,7 +920,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       return 'Processing complete. Review the generated clips below.'
     }
     return 'Paste a supported link to kick off the Atropos pipeline.'
-  }, [clips.length, currentStep, isProcessing, pipelineError])
+  }, [awaitingReview, clips.length, currentStep, isProcessing, pipelineError])
 
   return (
     <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-8">
@@ -937,6 +994,20 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                 </button>
               </div>
             </div>
+            <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
+              <input
+                type="checkbox"
+                checked={reviewMode}
+                onChange={handleReviewModeChange}
+                className="h-4 w-4 rounded border border-white/20 bg-[var(--card)] text-[var(--ring)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              />
+              <span>Pause after producing clips to review boundaries manually.</span>
+            </label>
+            {reviewMode ? (
+              <p className="text-xs text-[var(--muted)]">
+                The pipeline will wait after step 7 so you can fine-tune each clip before resuming.
+              </p>
+            ) : null}
             <div className="text-xs text-[var(--muted)]">
               Supports YouTube and Twitch URLs. The pipeline runs{' '}
               {isMockBackend
@@ -959,6 +1030,72 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
             <div className="mt-4 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_75%,transparent)] p-4">
               <PipelineProgress steps={steps} />
             </div>
+            {awaitingReview ? (
+              <div className="mt-4 rounded-lg border border-amber-400/40 bg-[color:color-mix(in_srgb,var(--card)_75%,transparent)] p-4 text-sm text-amber-200">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <span>Review the clips below and resume the pipeline once you&apos;re happy with the trims.</span>
+                  <button
+                    type="button"
+                    onClick={handleResumePipeline}
+                    className="inline-flex items-center justify-center rounded-lg border border-white/20 bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-50 transition hover:bg-amber-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                  >
+                    Resume pipeline
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]">
+            <div className="flex flex-col gap-1">
+              <h3 className="text-lg font-semibold text-[var(--fg)]">Generated clips</h3>
+              <p className="text-sm text-[var(--muted)]">
+                Fine-tune the start and end points to give each highlight a polished finish.
+              </p>
+            </div>
+            {clips.length > 0 ? (
+              <ul className="mt-4 flex flex-col gap-4">
+                {clips.map((clip) => {
+                  const isActive = clip.id === selectedClipId
+                  return (
+                    <li
+                      key={clip.id}
+                      className={`flex flex-col gap-3 rounded-xl border px-4 py-3 transition ${
+                        isActive
+                          ? 'border-[var(--ring)] bg-[color:color-mix(in_srgb,var(--card)_80%,transparent)]'
+                          : 'border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] hover:border-[var(--ring)]'
+                      }`}
+                    >
+                      <div className="flex flex-col gap-1">
+                        <h4 className="text-sm font-semibold text-[var(--fg)]">{clip.title || 'Clip ready for review'}</h4>
+                        <p className="text-xs text-[var(--muted)]">
+                          {clip.channel ? `${clip.channel} • ` : ''}
+                          {formatDuration(clip.durationSec)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleReviewClip(clip.id)}
+                          className="inline-flex items-center justify-center rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                        >
+                          Review clip window
+                        </button>
+                        {clip.accountId ? (
+                          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
+                            {clip.accountId}
+                          </span>
+                        ) : null}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : (
+              <div className="mt-4 rounded-xl border border-dashed border-white/15 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-6 text-sm text-[var(--muted)]">
+                No clips generated yet. Start the pipeline to create highlights ready for review.
+              </div>
+            )}
           </div>
         </div>
 

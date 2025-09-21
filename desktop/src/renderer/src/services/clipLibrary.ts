@@ -1,5 +1,6 @@
 import { BACKEND_MODE, buildAccountClipsUrl } from '../config/backend'
 import type { Clip } from '../types'
+import type { ClipAdjustmentPayload } from './pipelineApi'
 
 type RawClipPayload = {
   id?: unknown
@@ -28,7 +29,7 @@ const isClipArray = (value: unknown): value is Clip[] => {
   return Array.isArray(value) && value.every((item) => typeof item === 'object' && item !== null && 'id' in item)
 }
 
-const normaliseClip = (payload: RawClipPayload): Clip | null => {
+export const normaliseClip = (payload: RawClipPayload): Clip | null => {
   const {
     id,
     title,
@@ -176,6 +177,36 @@ export const openAccountClipsFolder = async (accountId: string): Promise<boolean
     console.error('Unable to open clips folder through bridge', error)
     return false
   }
+}
+
+export const adjustLibraryClip = async (
+  accountId: string,
+  clipId: string,
+  adjustment: ClipAdjustmentPayload
+): Promise<Clip> => {
+  const baseUrl = buildAccountClipsUrl(accountId)
+  const url = `${baseUrl}/${encodeURIComponent(clipId)}/adjust`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      start_seconds: adjustment.startSeconds,
+      end_seconds: adjustment.endSeconds
+    })
+  })
+
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`)
+  }
+
+  const payload = (await response.json()) as RawClipPayload
+  const clip = normaliseClip(payload)
+  if (!clip) {
+    throw new Error('Received malformed clip data from the library API.')
+  }
+  return clip
 }
 
 export default listAccountClips

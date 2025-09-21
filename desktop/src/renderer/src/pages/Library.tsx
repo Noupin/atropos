@@ -156,6 +156,21 @@ const Library: FC<LibraryProps> = ({
     return () => registerSearch(null)
   }, [handleQueryChange, handleQueryClear, registerSearch])
 
+  const handleAdjustClipBoundaries = useCallback(
+    (clip: Clip) => {
+      navigate(`/clip/${encodeURIComponent(clip.id)}/edit`, {
+        state: {
+          clip,
+          jobId: null,
+          accountId:
+            clip.accountId ?? (accountFilter === ALL_ACCOUNTS_VALUE ? selectedAccountId : accountFilter),
+          context: 'library'
+        }
+      })
+    },
+    [accountFilter, navigate, selectedAccountId]
+  )
+
   const targetAccountIds = useMemo(() => {
     if (!hasAccounts) {
       return []
@@ -532,6 +547,13 @@ const Library: FC<LibraryProps> = ({
                       className="rounded-lg border border-transparent bg-[var(--ring)] px-3 py-1.5 text-xs font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
                     >
                       Open clip details
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAdjustClipBoundaries(selectedClip)}
+                      className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    >
+                      Adjust clip boundaries
                     </button>
                     <a
                       href={selectedClip.sourceUrl}
