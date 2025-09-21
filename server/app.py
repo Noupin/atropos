@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import math
 import re
@@ -16,6 +17,7 @@ from typing import Any, Dict, List
 from fastapi import (
     FastAPI,
     HTTPException,
+    Query,
     Request,
     Response,
     WebSocket,
@@ -408,6 +410,7 @@ class ClipManifest(BaseModel):
     duration_seconds: float = Field(..., ge=0)
     description: str
     playback_url: str
+    preview_url: str
     source_url: str
     source_title: str
     source_published_at: str | None = None
@@ -448,6 +451,9 @@ def _clip_to_payload(clip: ClipArtifact, request: Request, job_id: str) -> Dict[
         "description": clip.description,
         "playback_url": str(
             request.url_for("get_job_clip_video", job_id=job_id, clip_id=clip.clip_id)
+        ),
+        "preview_url": str(
+            request.url_for("get_job_clip_preview", job_id=job_id, clip_id=clip.clip_id)
         ),
         "source_url": clip.source_url,
         "source_title": clip.source_title,
@@ -833,6 +839,56 @@ def _apply_clip_adjustment(
     return duration, description_text
 
 
+def _generate_preview_clip(
+    *,
+    project_dir: Path,
+    stem: str,
+    start_seconds: float,
+    end_seconds: float,
+) -> Path:
+    """Render or reuse a lightweight preview clip for the provided range."""
+
+    project_dir = project_dir.resolve()
+    if not project_dir.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project directory not found")
+
+    start_value = max(0.0, round(float(start_seconds), 3))
+    end_value = max(0.0, round(float(end_seconds), 3))
+    if end_value <= start_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Preview range must be greater than zero.",
+        )
+
+    project_name = project_dir.name
+    source_video = project_dir / f"{project_name}.mp4"
+    if not source_video.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source video not found")
+
+    preview_dir = project_dir / "previews"
+    preview_dir.mkdir(parents=True, exist_ok=True)
+
+    key_input = f"{stem}:{start_value:.3f}:{end_value:.3f}".encode("utf-8")
+    digest = hashlib.sha1(key_input).hexdigest()[:16]
+    preview_path = preview_dir / f"{stem}-{digest}.mp4"
+
+    if not preview_path.exists():
+        ok = save_clip(
+            source_video,
+            preview_path,
+            start=start_value,
+            end=end_value,
+            reencode=False,
+        )
+        if not ok:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to generate preview clip.",
+            )
+
+    return preview_path
+
+
 @app.post("/api/jobs", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED)
 async def start_job(payload: RunRequest) -> RunResponse:
     """Start processing ``payload.url`` in a background thread."""
@@ -976,6 +1032,53 @@ async def get_job_clip_video(job_id: str, clip_id: str) -> FileResponse:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip video not found")
 
     return FileResponse(path=video_path, media_type="video/mp4", filename=video_path.name)
+
+
+@app.get("/api/jobs/{job_id}/clips/{clip_id}/preview")
+async def get_job_clip_preview(
+    job_id: str,
+    clip_id: str,
+    start: float | None = Query(default=None, ge=0.0),
+    end: float | None = Query(default=None, ge=0.0),
+) -> FileResponse:
+    """Stream a lightweight preview of the clip from the original source video."""
+
+    state = _get_job(job_id)
+    if state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    with state.lock:
+        clip = state.clips.get(clip_id)
+        project_dir = state.project_dir
+
+    if clip is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+
+    clip_project_dir = clip.video_path.parent.parent
+    if project_dir is None:
+        project_dir = clip_project_dir
+    else:
+        try:
+            clip_project_dir.relative_to(project_dir)
+        except ValueError:
+            project_dir = clip_project_dir
+
+    start_seconds = float(start) if start is not None else clip.start_seconds
+    end_seconds = float(end) if end is not None else clip.end_seconds
+
+    preview_path = _generate_preview_clip(
+        project_dir=project_dir,
+        stem=clip.video_path.stem,
+        start_seconds=start_seconds,
+        end_seconds=end_seconds,
+    )
+
+    return FileResponse(
+        path=preview_path,
+        media_type="video/mp4",
+        filename=preview_path.name,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.post("/api/jobs/{job_id}/clips/{clip_id}/adjust", response_model=ClipManifest)
@@ -1148,6 +1251,40 @@ async def get_account_clip_video(account_id: str, clip_id: str) -> FileResponse:
     account_value = None if account_id == DEFAULT_ACCOUNT_PLACEHOLDER else account_id
     clip_path = resolve_clip_video_path(account_value, clip_id)
     return FileResponse(path=clip_path, media_type="video/mp4", filename=clip_path.name)
+
+
+@app.get("/api/accounts/{account_id}/clips/{clip_id}/preview")
+async def get_account_clip_preview(
+    account_id: str,
+    clip_id: str,
+    start: float | None = Query(default=None, ge=0.0),
+    end: float | None = Query(default=None, ge=0.0),
+) -> FileResponse:
+    """Stream a preview of a library clip from the original project source."""
+
+    account_value = None if account_id == DEFAULT_ACCOUNT_PLACEHOLDER else account_id
+    clips = list_account_clips_sync(account_value)
+    target = next((clip for clip in clips if clip.clip_id == clip_id), None)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+
+    start_seconds = float(start) if start is not None else target.start_seconds
+    end_seconds = float(end) if end is not None else target.end_seconds
+
+    project_dir = target.playback_path.parent.parent
+    preview_path = _generate_preview_clip(
+        project_dir=project_dir,
+        stem=target.playback_path.stem,
+        start_seconds=start_seconds,
+        end_seconds=end_seconds,
+    )
+
+    return FileResponse(
+        path=preview_path,
+        media_type="video/mp4",
+        filename=preview_path.name,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.post(

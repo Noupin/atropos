@@ -104,6 +104,11 @@ class LibraryClip:
             account_id=self.account_id or DEFAULT_ACCOUNT_PLACEHOLDER,
             clip_id=self.clip_id,
         )
+        preview_url = request.url_for(
+            "get_account_clip_preview",
+            account_id=self.account_id or DEFAULT_ACCOUNT_PLACEHOLDER,
+            clip_id=self.clip_id,
+        )
 
         return {
             "id": self.clip_id,
@@ -113,6 +118,7 @@ class LibraryClip:
             "duration_seconds": self.duration_seconds,
             "description": self.description,
             "playback_url": str(playback_url),
+            "preview_url": str(preview_url),
             "source_url": self.source_url,
             "source_title": self.source_title,
             "source_published_at": self.source_published_at,

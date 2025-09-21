@@ -10,6 +10,7 @@ type RawClipPayload = {
   duration_seconds?: unknown
   description?: unknown
   playback_url?: unknown
+  preview_url?: unknown
   source_url?: unknown
   source_title?: unknown
   source_published_at?: unknown
@@ -43,6 +44,7 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
     duration_seconds: durationSeconds,
     description,
     playback_url: playbackUrl,
+    preview_url: previewUrl,
     source_url: sourceUrl,
     source_title: sourceTitle,
     source_published_at: sourcePublishedAt,
@@ -84,6 +86,9 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
   if (typeof sourceUrl !== 'string') {
     return null
   }
+  if (typeof previewUrl !== 'string') {
+    return null
+  }
   if (typeof sourceTitle !== 'string' || sourceTitle.length === 0) {
     return null
   }
@@ -118,6 +123,7 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
     durationSec: durationSeconds,
     thumbnail: typeof thumbnailUrl === 'string' && thumbnailUrl.length > 0 ? thumbnailUrl : null,
     playbackUrl,
+    previewUrl,
     description,
     sourceUrl,
     sourceTitle,

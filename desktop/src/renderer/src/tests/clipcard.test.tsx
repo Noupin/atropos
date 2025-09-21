@@ -13,6 +13,7 @@ const mockClip: Clip = {
   durationSec: 75,
   thumbnail: 'https://images.unsplash.com/photo-1517430816045-df4b7de11d1d?auto=format&fit=crop&w=800&q=80',
   playbackUrl: 'file:///videos/test-clip.mp4',
+  previewUrl: 'file:///videos/test-clip-source.mp4',
   description: 'Full video: https://example.com/watch?v=clip\nCredit: UI Lab',
   sourceUrl: 'https://example.com/watch?v=clip',
   sourceTitle: 'Testing React Components the Easy Way',

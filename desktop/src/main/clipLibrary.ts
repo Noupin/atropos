@@ -357,6 +357,16 @@ const buildClip = async (
   }
 
   const playbackUrl = pathToFileURL(filePath).toString()
+  const projectSourcePath = path.join(projectDir, `${path.basename(projectDir)}.mp4`)
+  let previewUrl = playbackUrl
+  try {
+    const previewStats = await fs.stat(projectSourcePath)
+    if (previewStats.isFile()) {
+      previewUrl = pathToFileURL(projectSourcePath).toString()
+    }
+  } catch (error) {
+    // ignore missing source video; fall back to playbackUrl for preview
+  }
 
   let timestampUrl = descriptionMetadata.timestampUrl
   const adjustments = await loadAdjustmentMetadata(filePath)
@@ -426,6 +436,7 @@ const buildClip = async (
     durationSec: duration,
     thumbnail: null,
     playbackUrl,
+    previewUrl,
     description: descriptionText,
     sourceUrl: descriptionMetadata.sourceUrl ?? descriptionMetadata.timestampUrl ?? '',
     sourceTitle: projectTitle,

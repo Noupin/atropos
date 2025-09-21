@@ -7,6 +7,7 @@ export interface Clip {
   durationSec: number
   thumbnail: string | null
   playbackUrl: string
+  previewUrl: string
   description: string
   sourceUrl: string
   sourceTitle: string

@@ -8,6 +8,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
+from urllib.parse import urlparse
 
 import pytest
 
@@ -220,6 +221,7 @@ def test_clip_endpoints_expose_rendered_clips(
     assert clip_manifest["description"] == description
     assert clip_manifest["account"] == "account-1"
     assert clip_manifest["playback_url"].endswith("/clips/clip-1/video")
+    assert clip_manifest["preview_url"].endswith("/clips/clip-1/preview")
 
     detail_response = client.get(f"/api/jobs/{job_id}/clips/clip-1")
     assert detail_response.status_code == 200
@@ -267,8 +269,13 @@ def test_adjust_job_clip_rebuilds_assets(monkeypatch, tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    def _fake_save_clip(*_, **__) -> bool:
-        raw_clip_path.write_bytes(b"raw-updated")
+    def _fake_save_clip(source, output_path, *_, **__) -> bool:
+        target = Path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target == raw_clip_path:
+            target.write_bytes(b"raw-updated")
+        else:
+            target.write_bytes(b"preview-bytes")
         return True
 
     def _fake_render_vertical(*_, **__) -> Path:
@@ -324,6 +331,12 @@ def test_adjust_job_clip_rebuilds_assets(monkeypatch, tmp_path: Path) -> None:
     assert body["original_start_seconds"] == pytest.approx(5.0)
     assert body["original_end_seconds"] == pytest.approx(15.0)
     assert body["has_adjustments"] is True
+    assert body["preview_url"].endswith(f"/api/jobs/{job_id}/clips/{clip_id}/preview")
+
+    preview_path = urlparse(body["preview_url"]).path
+    preview_response = client.get(preview_path, params={"start": 7.0, "end": 18.0})
+    assert preview_response.status_code == 200
+    assert preview_response.content == b"preview-bytes"
 
     updated_clip = server.app._get_job(job_id).clips[clip_id]
     assert updated_clip.duration_seconds == pytest.approx(11.0)
@@ -379,8 +392,13 @@ def test_adjust_library_clip_updates_files(monkeypatch, tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    def _fake_save_clip(*_, **__) -> bool:
-        raw_clip_path.write_bytes(b"raw-updated")
+    def _fake_save_clip(source, output_path, *_, **__) -> bool:
+        target = Path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target == raw_clip_path:
+            target.write_bytes(b"raw-updated")
+        else:
+            target.write_bytes(b"preview-bytes")
         return True
 
     def _fake_render_vertical(*_, **__) -> Path:
@@ -408,6 +426,12 @@ def test_adjust_library_clip_updates_files(monkeypatch, tmp_path: Path) -> None:
     assert payload["original_start_seconds"] == pytest.approx(5.0)
     assert payload["original_end_seconds"] == pytest.approx(15.0)
     assert payload["has_adjustments"] is True
+    assert payload["preview_url"].endswith(f"/api/accounts/account-1/clips/{clip_id}/preview")
+
+    preview_path = urlparse(payload["preview_url"]).path
+    preview_response = client.get(preview_path, params={"start": 6.0, "end": 20.0})
+    assert preview_response.status_code == 200
+    assert preview_response.content == b"preview-bytes"
 
     refreshed_description = description_path.read_text(encoding="utf-8")
     assert "t=6" in refreshed_description.lower()

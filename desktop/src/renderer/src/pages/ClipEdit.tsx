@@ -15,6 +15,7 @@ type ClipEditLocationState = {
 
 const toSeconds = (value: number): number => Math.max(0, Number.isFinite(value) ? value : 0)
 const MIN_CLIP_GAP = 0.25
+const MIN_PREVIEW_DURATION = 0.05
 const DEFAULT_EXPAND_SECONDS = 10
 
 const formatRelativeSeconds = (value: number): string => {
@@ -25,6 +26,42 @@ const formatRelativeSeconds = (value: number): string => {
   const formatted = Math.abs(value).toFixed(2).replace(/\.?0+$/, '')
   return `${sign}${formatted}`
 }
+
+type SaveStepId = 'cut' | 'subtitles' | 'render'
+type SaveStepStatus = 'pending' | 'running' | 'completed' | 'failed'
+
+type SaveStepState = {
+  id: SaveStepId
+  label: string
+  description: string
+  status: SaveStepStatus
+}
+
+const SAVE_STEP_DEFINITIONS: ReadonlyArray<Omit<SaveStepState, 'status'>> = [
+  {
+    id: 'cut',
+    label: 'Cut clip',
+    description: 'Trim the source footage to the requested window'
+  },
+  {
+    id: 'subtitles',
+    label: 'Regenerate subtitles',
+    description: 'Update transcript snippets to match the new timing'
+  },
+  {
+    id: 'render',
+    label: 'Render vertical clip',
+    description: 'Apply layout and export the final short'
+  }
+]
+
+const createInitialSaveSteps = (): SaveStepState[] =>
+  SAVE_STEP_DEFINITIONS.map((step) => ({ ...step, status: 'pending' }))
+
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
 
 const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = ({ registerSearch }) => {
   const { id } = useParams<{ id: string }>()
@@ -80,6 +117,14 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
+  const [previewMode, setPreviewMode] = useState<'adjusted' | 'original' | 'rendered'>('adjusted')
+  const [previewTarget, setPreviewTarget] = useState(() => ({
+    start: sourceClip ? sourceClip.startSeconds : 0,
+    end: sourceClip ? Math.max(sourceClip.startSeconds + minGap, sourceClip.endSeconds) : minGap
+  }))
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null)
+  const [isVideoBuffering, setIsVideoBuffering] = useState(false)
+  const [saveSteps, setSaveSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
 
   const originalStart = clipState?.originalStartSeconds ?? 0
   const originalEnd = clipState?.originalEndSeconds ?? (originalStart + (clipState?.durationSec ?? 10))
@@ -98,6 +143,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
           updated.originalStartSeconds + minGap
         )
       )
+      setPreviewTarget({ start: updated.startSeconds, end: updated.endSeconds })
     },
     [minGap]
   )
@@ -168,6 +214,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       setRangeEnd(minGap)
       setWindowStart(0)
       setWindowEnd(minGap)
+      setPreviewTarget({ start: 0, end: minGap })
+      setPreviewMode('adjusted')
+      setSaveSteps(createInitialSaveSteps())
       return
     }
     setRangeStart(clipState.startSeconds)
@@ -181,7 +230,27 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         clipState.originalStartSeconds + minGap
       )
     )
+    setPreviewTarget({ start: clipState.startSeconds, end: clipState.endSeconds })
+    setPreviewMode('adjusted')
+    setSaveSteps(createInitialSaveSteps())
   }, [clipState, minGap])
+
+  useEffect(() => {
+    if (!clipState || previewMode !== 'adjusted') {
+      return
+    }
+    if (typeof window === 'undefined') {
+      setPreviewTarget({ start: rangeStart, end: rangeEnd })
+      return
+    }
+    const delayMs = activeHandle ? 200 : 80
+    const handle = window.setTimeout(() => {
+      setPreviewTarget({ start: rangeStart, end: rangeEnd })
+    }, delayMs)
+    return () => {
+      window.clearTimeout(handle)
+    }
+  }, [activeHandle, clipState, previewMode, rangeEnd, rangeStart])
 
   const clampWithinWindow = useCallback(
     (value: number, kind: 'start' | 'end'): number => {
@@ -348,6 +417,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       setRangeEnd(minGap)
       setWindowStart(0)
       setWindowEnd(minGap)
+      setPreviewTarget({ start: 0, end: minGap })
+      setPreviewMode('adjusted')
     } else {
       const baseStart = Math.max(0, Math.min(clipState.originalStartSeconds, clipState.startSeconds))
       const baseEnd = Math.max(
@@ -360,9 +431,12 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       setRangeEnd(Math.max(clipState.originalStartSeconds + minGap, clipState.originalEndSeconds))
       setWindowStart(baseStart)
       setWindowEnd(baseEnd)
+      setPreviewTarget({ start: clipState.originalStartSeconds, end: Math.max(clipState.originalStartSeconds + MIN_PREVIEW_DURATION, clipState.originalEndSeconds) })
+      setPreviewMode('original')
     }
     setSaveError(null)
     setSaveSuccess(null)
+    setSaveSteps(createInitialSaveSteps())
   }, [clipState, minGap])
 
   const durationSeconds = Math.max(minGap, rangeEnd - rangeStart)
@@ -375,17 +449,23 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const endOffsetDescription =
     formattedEndOffset === '0' ? 'Original end' : `${formattedEndOffset}s from original end`
 
-  const playbackSrc = useMemo(() => {
+  const shouldShowSaveSteps =
+    isSaving || Boolean(saveError) || Boolean(saveSuccess) || saveSteps.some((step) => step.status !== 'pending')
+
+  const renderedSrc = useMemo(() => {
     if (!clipState) {
       return ''
     }
     const cacheKey = `${clipState.createdAt}-${clipState.startSeconds}-${clipState.endSeconds}`
     try {
-      const absolute = clipState.playbackUrl.startsWith('http')
-        ? new URL(clipState.playbackUrl)
-        : typeof window !== 'undefined'
-        ? new URL(clipState.playbackUrl, window.location.origin)
-        : null
+      const absolute =
+        clipState.playbackUrl.startsWith('http://') ||
+        clipState.playbackUrl.startsWith('https://') ||
+        clipState.playbackUrl.startsWith('file://')
+          ? new URL(clipState.playbackUrl)
+          : typeof window !== 'undefined'
+          ? new URL(clipState.playbackUrl, window.location.origin)
+          : null
       if (absolute) {
         absolute.searchParams.set('_', cacheKey)
         return absolute.toString()
@@ -396,6 +476,178 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     const separator = clipState.playbackUrl.includes('?') ? '&' : '?'
     return `${clipState.playbackUrl}${separator}_=${encodeURIComponent(cacheKey)}`
   }, [clipState])
+
+  const buildPreviewSrc = useCallback(
+    (range: { start: number; end: number }, variant: string) => {
+      if (!clipState) {
+        return ''
+      }
+      const safeStart = Math.max(0, Number.isFinite(range.start) ? range.start : 0)
+      const rawEnd = Number.isFinite(range.end) ? range.end : safeStart
+      const safeEnd = rawEnd > safeStart + MIN_PREVIEW_DURATION ? rawEnd : safeStart + MIN_PREVIEW_DURATION
+      const cacheToken = `${clipState.id}-${variant}-${safeStart.toFixed(3)}-${safeEnd.toFixed(3)}`
+      const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+      try {
+        const absolute =
+          clipState.previewUrl.startsWith('http://') ||
+          clipState.previewUrl.startsWith('https://') ||
+          clipState.previewUrl.startsWith('file://')
+            ? new URL(clipState.previewUrl)
+            : new URL(clipState.previewUrl, baseOrigin)
+        absolute.searchParams.set('start', safeStart.toFixed(3))
+        absolute.searchParams.set('end', safeEnd.toFixed(3))
+        absolute.searchParams.set('_', cacheToken)
+        return absolute.toString()
+      } catch (error) {
+        const separator = clipState.previewUrl.includes('?') ? '&' : '?'
+        return `${clipState.previewUrl}${separator}start=${safeStart.toFixed(3)}&end=${safeEnd
+          .toFixed(3)}&_=${encodeURIComponent(cacheToken)}`
+      }
+    },
+    [clipState]
+  )
+
+  const adjustedPreviewSrc = useMemo(() => {
+    if (!clipState) {
+      return ''
+    }
+    return buildPreviewSrc(previewTarget, 'adjusted')
+  }, [buildPreviewSrc, clipState, previewTarget])
+
+  const originalPreviewRange = useMemo(() => {
+    if (!clipState) {
+      return { start: 0, end: minGap }
+    }
+    const originalStart = Math.max(0, clipState.originalStartSeconds)
+    const rawEnd = clipState.originalEndSeconds
+    const safeEnd = rawEnd > originalStart + MIN_PREVIEW_DURATION ? rawEnd : originalStart + MIN_PREVIEW_DURATION
+    return { start: originalStart, end: safeEnd }
+  }, [clipState, minGap])
+
+  const originalPreviewSrc = useMemo(() => {
+    if (!clipState) {
+      return ''
+    }
+    return buildPreviewSrc(originalPreviewRange, 'original')
+  }, [buildPreviewSrc, clipState, originalPreviewRange])
+
+  const previewSourceIsFile = clipState ? clipState.previewUrl.startsWith('file://') : false
+
+  const currentPreviewRange = useMemo(() => {
+    if (!clipState) {
+      return { start: 0, end: 0 }
+    }
+    if (previewMode === 'original') {
+      return originalPreviewRange
+    }
+    if (previewMode === 'adjusted') {
+      return previewTarget
+    }
+    return { start: clipState.startSeconds, end: clipState.endSeconds }
+  }, [clipState, originalPreviewRange, previewMode, previewTarget])
+
+  const sanitisedPreviewRange = useMemo(() => {
+    const start = Math.max(0, Number.isFinite(currentPreviewRange.start) ? currentPreviewRange.start : 0)
+    const rawEnd = Number.isFinite(currentPreviewRange.end) ? currentPreviewRange.end : start
+    const end = rawEnd > start + MIN_PREVIEW_DURATION ? rawEnd : start + MIN_PREVIEW_DURATION
+    return { start, end }
+  }, [currentPreviewRange])
+
+  const previewStart = sanitisedPreviewRange.start
+  const previewEnd = sanitisedPreviewRange.end
+
+  const activeVideoSrc =
+    previewMode === 'rendered'
+      ? renderedSrc
+      : previewMode === 'original'
+      ? originalPreviewSrc
+      : adjustedPreviewSrc
+
+  const activePoster = previewMode === 'rendered' ? clipState?.thumbnail ?? undefined : undefined
+  const videoKey = clipState ? `${clipState.id}-${previewMode}-${activeVideoSrc}` : `${previewMode}-${activeVideoSrc}`
+
+  useEffect(() => {
+    setIsVideoBuffering(false)
+  }, [activeVideoSrc, previewMode])
+
+  const handleVideoLoadStart = useCallback(() => {
+    setIsVideoBuffering(true)
+  }, [])
+
+  const handleVideoCanPlay = useCallback(() => {
+    setIsVideoBuffering(false)
+  }, [])
+
+  const handleVideoPlaying = useCallback(() => {
+    setIsVideoBuffering(false)
+  }, [])
+
+  const handleVideoWaiting = useCallback(() => {
+    setIsVideoBuffering(true)
+  }, [])
+
+  const handleVideoError = useCallback(() => {
+    setIsVideoBuffering(false)
+  }, [])
+
+  const handleVideoLoadedMetadata = useCallback(() => {
+    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
+      return
+    }
+    const element = previewVideoRef.current
+    if (!element) {
+      return
+    }
+    if (Math.abs(element.currentTime - previewStart) > 0.05) {
+      element.currentTime = previewStart
+    }
+  }, [clipState, previewMode, previewSourceIsFile, previewStart])
+
+  const handleVideoPlay = useCallback(() => {
+    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
+      return
+    }
+    const element = previewVideoRef.current
+    if (!element) {
+      return
+    }
+    if (Math.abs(element.currentTime - previewStart) > 0.05) {
+      element.currentTime = previewStart
+    }
+  }, [clipState, previewMode, previewSourceIsFile, previewStart])
+
+  const handleVideoTimeUpdate = useCallback(() => {
+    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
+      return
+    }
+    const element = previewVideoRef.current
+    if (!element) {
+      return
+    }
+    if (previewEnd > previewStart && element.currentTime > previewEnd - 0.05) {
+      element.pause()
+      element.currentTime = previewStart
+    }
+  }, [clipState, previewEnd, previewMode, previewSourceIsFile, previewStart])
+
+  const runSaveStepAnimation = useCallback(async () => {
+    for (let index = 1; index < SAVE_STEP_DEFINITIONS.length; index += 1) {
+      await delay(200)
+      setSaveSteps((prev) =>
+        prev.map((step, stepIndex) => {
+          if (stepIndex < index) {
+            return { ...step, status: 'completed' }
+          }
+          if (stepIndex === index) {
+            return { ...step, status: 'running' }
+          }
+          return { ...step, status: 'pending' }
+        })
+      )
+    }
+    await delay(200)
+    setSaveSteps((prev) => prev.map((step) => ({ ...step, status: 'completed' })))
+  }, [])
 
   const handleBack = useCallback(() => {
     navigate(-1)
@@ -413,8 +665,15 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       return
     }
 
+    setSaveSteps(
+      SAVE_STEP_DEFINITIONS.map((step, index) => ({
+        ...step,
+        status: index === 0 ? 'running' : 'pending'
+      }))
+    )
     setIsSaving(true)
     setSaveError(null)
+    setSaveSuccess(null)
     try {
       if (context === 'library') {
         const accountId = state?.accountId ?? clipState.accountId
@@ -437,12 +696,15 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         })
         applyUpdatedClip(updated)
       }
+      await runSaveStepAnimation()
       setSaveSuccess('Clip boundaries updated successfully.')
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unable to update the clip boundaries. Please try again.'
       setSaveError(message)
-      setSaveSuccess(null)
+      setSaveSteps((prev) =>
+        prev.map((step) => (step.status === 'running' ? { ...step, status: 'failed' } : step))
+      )
     } finally {
       setIsSaving(false)
     }
@@ -452,6 +714,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     context,
     rangeEnd,
     rangeStart,
+    runSaveStepAnimation,
     state?.accountId,
     state?.jobId
   ])
@@ -510,17 +773,90 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       </button>
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="flex-1 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
-          <video
-            key={`${clipState.id}-${playbackSrc}`}
-            src={playbackSrc}
-            poster={clipState.thumbnail ?? undefined}
-            controls
-            playsInline
-            preload="metadata"
-            className="h-full w-full rounded-xl bg-black/50 object-contain"
-          >
-            Your browser does not support the video tag.
-          </video>
+          <div className="flex h-full flex-col gap-4">
+            <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black">
+              <video
+                ref={previewVideoRef}
+                key={videoKey}
+                src={activeVideoSrc}
+                poster={activePoster}
+                controls
+                playsInline
+                preload="metadata"
+                onLoadStart={handleVideoLoadStart}
+                onLoadedMetadata={handleVideoLoadedMetadata}
+                onCanPlay={handleVideoCanPlay}
+                onPlaying={handleVideoPlaying}
+                onWaiting={handleVideoWaiting}
+                onError={handleVideoError}
+                onTimeUpdate={handleVideoTimeUpdate}
+                onPlay={handleVideoPlay}
+                className="h-full w-full bg-black object-contain"
+              >
+                Your browser does not support the video tag.
+              </video>
+              {isVideoBuffering ? (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/40">
+                  <div
+                    className="h-10 w-10 animate-spin rounded-full border-2 border-white/30 border-t-transparent"
+                    aria-hidden
+                  />
+                </div>
+              ) : null}
+            </div>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                  View mode
+                </span>
+                <div className="flex overflow-hidden rounded-lg border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode('adjusted')}
+                    className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                      previewMode === 'adjusted'
+                        ? 'bg-[var(--ring)] text-black'
+                        : 'text-[var(--fg)] hover:bg-white/10'
+                    }`}
+                    aria-pressed={previewMode === 'adjusted'}
+                  >
+                    Adjusted preview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode('original')}
+                    className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                      previewMode === 'original'
+                        ? 'bg-[var(--ring)] text-black'
+                        : 'text-[var(--fg)] hover:bg-white/10'
+                    }`}
+                    aria-pressed={previewMode === 'original'}
+                  >
+                    Original clip
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewMode('rendered')}
+                    className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                      previewMode === 'rendered'
+                        ? 'bg-[var(--ring)] text-black'
+                        : 'text-[var(--fg)] hover:bg-white/10'
+                    }`}
+                    aria-pressed={previewMode === 'rendered'}
+                  >
+                    Rendered output
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-[var(--muted)]">
+                {previewMode === 'rendered'
+                  ? 'Review the exported vertical clip with captions and layout applied.'
+                  : previewMode === 'original'
+                    ? 'Viewing the untouched source range from the original footage.'
+                    : 'Previewing the adjusted range directly from the source video without captions or layout.'}
+              </p>
+            </div>
+          </div>
         </div>
         <div className="flex w-full max-w-xl flex-col gap-6">
           <div className="space-y-2">
@@ -687,6 +1023,47 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
               Reset to original
             </button>
           </div>
+          {shouldShowSaveSteps ? (
+            <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-4 text-sm text-[var(--muted)]">
+              <h2 className="text-sm font-semibold text-[var(--fg)]">Rebuilding assets</h2>
+              <ol className="mt-3 space-y-3">
+                {saveSteps.map((step) => {
+                  const isCompleted = step.status === 'completed'
+                  const isRunning = step.status === 'running'
+                  const isFailed = step.status === 'failed'
+                  const indicatorClasses = isCompleted
+                    ? 'bg-emerald-500/10 text-emerald-200 border border-emerald-500/40'
+                    : isFailed
+                    ? 'bg-rose-500/10 text-rose-200 border border-rose-500/40'
+                    : isRunning
+                    ? 'border-[var(--ring)] text-[var(--ring)]'
+                    : 'border-white/15 text-[var(--muted)]'
+                  return (
+                    <li key={step.id} className="flex items-start gap-3">
+                      <span
+                        className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${indicatorClasses}`}
+                        aria-hidden
+                      >
+                        {isRunning ? (
+                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        ) : isCompleted ? (
+                          '✓'
+                        ) : isFailed ? (
+                          '!'
+                        ) : (
+                          '•'
+                        )}
+                      </span>
+                      <div>
+                        <p className="font-medium text-[var(--fg)]">{step.label}</p>
+                        <p className="text-xs">{step.description}</p>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ol>
+            </div>
+          ) : null}
           {saveError ? <p className="text-sm text-rose-400">{saveError}</p> : null}
           {saveSuccess ? <p className="text-sm text-emerald-300">{saveSuccess}</p> : null}
         </div>
