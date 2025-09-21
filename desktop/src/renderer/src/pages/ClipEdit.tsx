@@ -289,12 +289,12 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         return
       }
       if (kind === 'start') {
-        handleStartChange(originalStart + value)
+        handleStartChange(offsetReference.startBase + value)
       } else {
-        handleEndChange(originalEnd + value)
+        handleEndChange(offsetReference.endBase + value)
       }
     },
-    [handleEndChange, handleStartChange, originalEnd, originalStart]
+    [handleEndChange, handleStartChange, offsetReference.endBase, offsetReference.startBase]
   )
 
   const updateRangeFromPointer = useCallback(
@@ -439,15 +439,60 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     setSaveSteps(createInitialSaveSteps())
   }, [clipState, minGap])
 
+  const offsetReference = useMemo(() => {
+    if (!clipState) {
+      return {
+        startBase: rangeStart,
+        endBase: rangeEnd,
+        startLabel: 'adjusted start',
+        endLabel: 'adjusted end',
+        startTitle: 'Adjusted start',
+        endTitle: 'Adjusted end'
+      }
+    }
+    if (previewMode === 'original') {
+      return {
+        startBase: clipState.originalStartSeconds,
+        endBase: clipState.originalEndSeconds,
+        startLabel: 'original start',
+        endLabel: 'original end',
+        startTitle: 'Original start',
+        endTitle: 'Original end'
+      }
+    }
+    if (previewMode === 'rendered') {
+      return {
+        startBase: clipState.startSeconds,
+        endBase: clipState.endSeconds,
+        startLabel: 'rendered start',
+        endLabel: 'rendered end',
+        startTitle: 'Rendered start',
+        endTitle: 'Rendered end'
+      }
+    }
+    return {
+      startBase: rangeStart,
+      endBase: rangeEnd,
+      startLabel: 'adjusted start',
+      endLabel: 'adjusted end',
+      startTitle: 'Adjusted start',
+      endTitle: 'Adjusted end'
+    }
+  }, [clipState, previewMode, rangeEnd, rangeStart])
+
   const durationSeconds = Math.max(minGap, rangeEnd - rangeStart)
-  const startOffsetSeconds = rangeStart - originalStart
-  const endOffsetSeconds = rangeEnd - originalEnd
+  const startOffsetSeconds = rangeStart - offsetReference.startBase
+  const endOffsetSeconds = rangeEnd - offsetReference.endBase
   const formattedStartOffset = formatRelativeSeconds(startOffsetSeconds)
   const formattedEndOffset = formatRelativeSeconds(endOffsetSeconds)
   const startOffsetDescription =
-    formattedStartOffset === '0' ? 'Original start' : `${formattedStartOffset}s from original start`
+    formattedStartOffset === '0'
+      ? `Matches the ${offsetReference.startLabel}`
+      : `${formattedStartOffset}s from the ${offsetReference.startLabel}`
   const endOffsetDescription =
-    formattedEndOffset === '0' ? 'Original end' : `${formattedEndOffset}s from original end`
+    formattedEndOffset === '0'
+      ? `Matches the ${offsetReference.endLabel}`
+      : `${formattedEndOffset}s from the ${offsetReference.endLabel}`
 
   const shouldShowSaveSteps =
     isSaving || Boolean(saveError) || Boolean(saveSuccess) || saveSteps.some((step) => step.status !== 'pending')
@@ -948,7 +993,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                 />
                 <span className="text-[10px] font-normal uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                  Relative to original start
+                  Relative to the {offsetReference.startLabel}
                 </span>
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
@@ -963,7 +1008,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                 />
                 <span className="text-[10px] font-normal uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                  Relative to original end
+                  Relative to the {offsetReference.endLabel}
                 </span>
               </label>
             </div>
