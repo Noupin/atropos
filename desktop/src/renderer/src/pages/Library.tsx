@@ -621,7 +621,7 @@ const Library: FC<LibraryProps> = ({
   }, [availableAccounts, hasAccounts, hasMultipleAccounts])
 
   return (
-    <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-8">
+    <section className="flex w-full flex-1 flex-col gap-6 px-6 py-8 lg:px-8">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)] xl:grid-cols-[minmax(0,1.8fr)_400px]">
         <div className="flex flex-col gap-6">
           <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]">

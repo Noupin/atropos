@@ -780,7 +780,7 @@ const Profile: FC<ProfileProps> = ({
   const authStatusDot = authStatusVariant?.dot ?? 'status-pill__dot status-pill__dot--muted'
 
   return (
-    <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-10">
+    <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
       <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold text-[var(--fg)]">Profile</h1>
         <p className="text-sm text-[var(--muted)]">

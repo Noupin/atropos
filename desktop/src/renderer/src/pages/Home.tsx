@@ -923,7 +923,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   }, [awaitingReview, clips.length, currentStep, isProcessing, pipelineError])
 
   return (
-    <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-8">
+    <section className="flex w-full flex-1 flex-col gap-6 px-6 py-8 lg:px-8">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(260px,1fr)] xl:grid-cols-[minmax(0,1.4fr)_360px]">
         <div className="flex flex-col gap-6">
           <form

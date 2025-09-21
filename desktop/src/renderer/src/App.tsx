@@ -361,7 +361,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   return (
     <div className="flex min-h-full flex-col bg-[var(--bg)] text-[var(--fg)]">
       <header className="border-b border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] backdrop-blur-md">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-5 py-5">
+        <div className="flex w-full flex-col gap-4 px-6 py-5 lg:px-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-3xl font-semibold tracking-tight text-[var(--fg)]">Atropos</h1>
@@ -400,7 +400,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
           />
         </div>
       </header>
-      <main className="flex flex-1 justify-center bg-[var(--bg)] text-[var(--fg)]">
+      <main className="flex-1 bg-[var(--bg)] text-[var(--fg)]">
         <Routes>
           <Route
             path="/"
