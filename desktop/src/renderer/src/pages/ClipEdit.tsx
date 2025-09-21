@@ -30,6 +30,15 @@ const formatRelativeSeconds = (value: number): string => {
   return `${sign}${formatted}`
 }
 
+const formatTooltipLabel = (offset: string, change: string | null): string => {
+  const offsetValue = offset === '0' ? '0s' : `${offset}s`
+  if (!change) {
+    return offsetValue
+  }
+  const changeValue = change === '0' ? 'Δ 0s' : `Δ ${change}s`
+  return `${offsetValue} • ${changeValue}`
+}
+
 type SaveStepId = 'cut' | 'subtitles' | 'render'
 type SaveStepStatus = 'pending' | 'running' | 'completed' | 'failed'
 
@@ -117,6 +126,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const [expandAmount, setExpandAmount] = useState(DEFAULT_EXPAND_SECONDS)
   const [activeHandle, setActiveHandle] = useState<'start' | 'end' | null>(null)
   const [engagedHandle, setEngagedHandle] = useState<'start' | 'end' | null>(null)
+  const [startInteractionOrigin, setStartInteractionOrigin] = useState<number | null>(null)
+  const [endInteractionOrigin, setEndInteractionOrigin] = useState<number | null>(null)
   const timelineRef = useRef<HTMLDivElement | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -364,6 +375,11 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       event.preventDefault()
       setActiveHandle(kind)
       setEngagedHandle(kind)
+      if (kind === 'start') {
+        setStartInteractionOrigin(rangeStart)
+      } else {
+        setEndInteractionOrigin(rangeEnd)
+      }
       try {
         event.currentTarget.setPointerCapture(event.pointerId)
       } catch (error) {
@@ -371,7 +387,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       }
       updateRangeFromPointer(event, kind)
     },
-    [updateRangeFromPointer]
+    [rangeEnd, rangeStart, updateRangeFromPointer]
   )
 
   const handleHandlePointerMove = useCallback(
@@ -393,10 +409,14 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     }
     setActiveHandle(null)
     setEngagedHandle(null)
+    setStartInteractionOrigin(null)
+    setEndInteractionOrigin(null)
   }, [])
 
   const handleHandleBlur = useCallback(() => {
     setEngagedHandle(null)
+    setStartInteractionOrigin(null)
+    setEndInteractionOrigin(null)
   }, [])
 
   const handleHandleKeyDown = useCallback(
@@ -404,6 +424,11 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       const { key } = event
       const step = event.shiftKey ? 1 : 0.1
       setEngagedHandle(kind)
+      if (kind === 'start') {
+        setStartInteractionOrigin((prev) => (prev ?? rangeStart))
+      } else {
+        setEndInteractionOrigin((prev) => (prev ?? rangeEnd))
+      }
       if (key === 'ArrowLeft' || key === 'ArrowDown') {
         event.preventDefault()
         if (kind === 'start') {
@@ -434,7 +459,15 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         }
       }
     },
-    [handleEndChange, handleStartChange, minGap, rangeEnd, rangeStart, windowEnd, windowStart]
+    [
+      handleEndChange,
+      handleStartChange,
+      minGap,
+      rangeEnd,
+      rangeStart,
+      windowEnd,
+      windowStart
+    ]
   )
 
   const handleExpandAmountChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
@@ -495,6 +528,13 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const endOffsetSeconds = rangeEnd - offsetReference.endBase
   const formattedStartOffset = formatRelativeSeconds(startOffsetSeconds)
   const formattedEndOffset = formatRelativeSeconds(endOffsetSeconds)
+  const startInteractionChangeSeconds =
+    startInteractionOrigin == null ? null : rangeStart - startInteractionOrigin
+  const endInteractionChangeSeconds = endInteractionOrigin == null ? null : rangeEnd - endInteractionOrigin
+  const formattedStartChange =
+    startInteractionChangeSeconds == null ? null : formatRelativeSeconds(startInteractionChangeSeconds)
+  const formattedEndChange =
+    endInteractionChangeSeconds == null ? null : formatRelativeSeconds(endInteractionChangeSeconds)
   const startOffsetDescription =
     formattedStartOffset === '0'
       ? 'Matches the original start'
@@ -503,8 +543,24 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     formattedEndOffset === '0'
       ? 'Matches the original end'
       : `${formattedEndOffset}s from the original end`
-  const startOffsetTooltip = formattedStartOffset === '0' ? '0s' : `${formattedStartOffset}s`
-  const endOffsetTooltip = formattedEndOffset === '0' ? '0s' : `${formattedEndOffset}s`
+  const startChangeDescription =
+    formattedStartChange && startInteractionOrigin != null
+      ? formattedStartChange === '0'
+        ? 'Change 0s from the last position'
+        : `Change ${formattedStartChange}s from the last position`
+      : null
+  const endChangeDescription =
+    formattedEndChange && endInteractionOrigin != null
+      ? formattedEndChange === '0'
+        ? 'Change 0s from the last position'
+        : `Change ${formattedEndChange}s from the last position`
+      : null
+  const startAriaValueText = startChangeDescription
+    ? `${startOffsetDescription}; ${startChangeDescription}`
+    : startOffsetDescription
+  const endAriaValueText = endChangeDescription
+    ? `${endOffsetDescription}; ${endChangeDescription}`
+    : endOffsetDescription
 
   const renderedOutOfSync = useMemo(() => {
     if (!clipState) {
@@ -836,6 +892,10 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const renderedEndMarkerPercent = renderedEndRatio * 100
   const showStartTooltip = engagedHandle === 'start'
   const showEndTooltip = engagedHandle === 'end'
+  const startTooltipChange = showStartTooltip && formattedStartChange ? formattedStartChange : null
+  const endTooltipChange = showEndTooltip && formattedEndChange ? formattedEndChange : null
+  const startOffsetTooltip = formatTooltipLabel(formattedStartOffset, startTooltipChange)
+  const endOffsetTooltip = formatTooltipLabel(formattedEndOffset, endTooltipChange)
 
   return (
     <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-10">
@@ -968,37 +1028,37 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 className="relative mt-6 h-2 rounded-full bg-white/10"
               >
                 <div
-                  className="pointer-events-none absolute inset-y-0 z-10 rounded-full bg-sky-400/35"
+                  className="pointer-events-none absolute -top-1 -bottom-1 z-10 rounded-full bg-sky-400/35"
                   style={{ left: `${originalOverlayLeftPercent}%`, right: `${originalOverlayRightPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute inset-y-0 z-20 rounded-full bg-emerald-400/35"
+                  className="pointer-events-none absolute -top-1 -bottom-1 z-20 rounded-full bg-emerald-400/35"
                   style={{ left: `${renderedOverlayLeftPercent}%`, right: `${renderedOverlayRightPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute -top-2 z-30 h-3 w-px -translate-x-1/2 rounded bg-sky-300/80"
+                  className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-sky-300/80"
                   style={{ left: `${originalStartMarkerPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute -top-2 z-30 h-3 w-px -translate-x-1/2 rounded bg-sky-300/80"
+                  className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-sky-300/80"
                   style={{ left: `${originalEndMarkerPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute -bottom-2 z-30 h-3 w-px -translate-x-1/2 rounded bg-emerald-300/80"
+                  className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-emerald-300/80"
                   style={{ left: `${renderedStartMarkerPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute -bottom-2 z-30 h-3 w-px -translate-x-1/2 rounded bg-emerald-300/80"
+                  className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-emerald-300/80"
                   style={{ left: `${renderedEndMarkerPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute top-0 bottom-0 z-40 rounded-full bg-[color:color-mix(in_srgb,var(--ring)_80%,transparent)]"
+                  className="pointer-events-none absolute -top-1 -bottom-1 z-40 rounded-full bg-[color:color-mix(in_srgb,var(--ring)_80%,transparent)]"
                   style={{ left: `${startPercent}%`, right: `${100 - endPercent}%` }}
                 />
                 {showStartTooltip ? (
@@ -1024,7 +1084,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   aria-valuemin={Number(windowStart.toFixed(2))}
                   aria-valuemax={Number((rangeEnd - minGap).toFixed(2))}
                   aria-valuenow={Number(rangeStart.toFixed(2))}
-                  aria-valuetext={startOffsetDescription}
+                  aria-valuetext={startAriaValueText}
                   onPointerDown={(event) => handleHandlePointerDown(event, 'start')}
                   onPointerMove={(event) => handleHandlePointerMove(event, 'start')}
                   onPointerUp={handleHandlePointerEnd}
@@ -1043,7 +1103,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   aria-valuemin={Number((rangeStart + minGap).toFixed(2))}
                   aria-valuemax={Number(windowEnd.toFixed(2))}
                   aria-valuenow={Number(rangeEnd.toFixed(2))}
-                  aria-valuetext={endOffsetDescription}
+                  aria-valuetext={endAriaValueText}
                   onPointerDown={(event) => handleHandlePointerDown(event, 'end')}
                   onPointerMove={(event) => handleHandlePointerMove(event, 'end')}
                   onPointerUp={handleHandlePointerEnd}
