@@ -1045,40 +1045,40 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
               </div>
               <div
                 ref={timelineRef}
-                className="relative mt-6 h-2 rounded-full bg-white/10"
+                className="relative mt-6 h-2 rounded-full bg-[color:var(--clip-track)] shadow-inner"
               >
                 <div
-                  className="pointer-events-none absolute -top-1 -bottom-1 z-10 rounded-full bg-sky-400/35"
+                  className="pointer-events-none absolute -top-1 -bottom-1 z-10 rounded-full bg-[color:var(--clip-original)]"
                   style={{ left: `${originalOverlayLeftPercent}%`, right: `${originalOverlayRightPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute -top-1 -bottom-1 z-20 rounded-full bg-emerald-400/35"
+                  className="pointer-events-none absolute -top-1 -bottom-1 z-20 rounded-full bg-[color:var(--clip-rendered)]"
                   style={{ left: `${renderedOverlayLeftPercent}%`, right: `${renderedOverlayRightPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-sky-300/80"
+                  className="pointer-events-none absolute -top-3 -bottom-3 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-original-marker)]"
                   style={{ left: `${originalStartMarkerPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-sky-300/80"
+                  className="pointer-events-none absolute -top-3 -bottom-3 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-original-marker)]"
                   style={{ left: `${originalEndMarkerPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-emerald-300/80"
+                  className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-rendered-marker)]"
                   style={{ left: `${renderedStartMarkerPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-emerald-300/80"
+                  className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-rendered-marker)]"
                   style={{ left: `${renderedEndMarkerPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute -top-1 -bottom-1 z-40 rounded-full bg-[color:color-mix(in_srgb,var(--ring)_80%,transparent)]"
+                  className="pointer-events-none absolute -top-1 -bottom-1 z-40 rounded-full bg-[color:var(--clip-current)]"
                   style={{ left: `${startPercent}%`, right: `${100 - endPercent}%` }}
                 />
                 {showStartTooltip ? (
@@ -1111,7 +1111,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   onPointerCancel={handleHandlePointerEnd}
                   onKeyDown={(event) => handleHandleKeyDown(event, 'start')}
                   onBlur={handleHandleBlur}
-                  className="absolute top-1/2 z-40 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--card)] shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  className="absolute top-1/2 z-40 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[color:var(--clip-handle-border)] bg-[color:var(--clip-handle)] shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] hover:bg-[color:var(--clip-handle-hover)]"
                   style={{ left: `${startPercent}%` }}
                 >
                   <span className="sr-only">Drag to adjust start</span>
@@ -1130,7 +1130,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   onPointerCancel={handleHandlePointerEnd}
                   onKeyDown={(event) => handleHandleKeyDown(event, 'end')}
                   onBlur={handleHandleBlur}
-                  className="absolute top-1/2 z-40 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--card)] shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  className="absolute top-1/2 z-40 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[color:var(--clip-handle-border)] bg-[color:var(--clip-handle)] shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] hover:bg-[color:var(--clip-handle-hover)]"
                   style={{ left: `${endPercent}%` }}
                 >
                   <span className="sr-only">Drag to adjust end</span>
@@ -1138,15 +1138,15 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
                 <span className="flex items-center gap-2">
-                  <span className="h-2 w-6 rounded-full bg-sky-400/60" aria-hidden="true" />
+                  <span className="h-2 w-6 rounded-full bg-[color:var(--clip-original)]" aria-hidden="true" />
                   Original range
                 </span>
                 <span className="flex items-center gap-2">
-                  <span className="h-2 w-6 rounded-full bg-emerald-400/60" aria-hidden="true" />
+                  <span className="h-2 w-6 rounded-full bg-[color:var(--clip-rendered)]" aria-hidden="true" />
                   Rendered output
                 </span>
                 <span className="flex items-center gap-2">
-                  <span className="h-2 w-6 rounded-full bg-[color:color-mix(in_srgb,var(--ring)_80%,transparent)]" aria-hidden="true" />
+                  <span className="h-2 w-6 rounded-full bg-[color:var(--clip-current)]" aria-hidden="true" />
                   Current window
                 </span>
               </div>
