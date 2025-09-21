@@ -211,8 +211,9 @@ const resolveOutRoot = async (): Promise<string | null> => {
 
   const configured = process.env.OUT_ROOT
   if (configured && configured.length > 0) {
-    if (await ensureDirectoryExists(configured)) {
-      cachedOutRoot = configured
+    const resolvedConfigured = path.resolve(configured)
+    if (await ensureDirectoryExists(resolvedConfigured)) {
+      cachedOutRoot = resolvedConfigured
       return cachedOutRoot
     }
     return null
@@ -460,9 +461,16 @@ export const resolveAccountClipsDirectory = async (
     return null
   }
 
-  const accountDir = accountId ? path.join(base, accountId) : base
-  if (await ensureDirectoryExists(accountDir)) {
-    return { base, accountDir }
+  const resolvedBase = path.resolve(base)
+  const candidateDir = accountId ? path.resolve(resolvedBase, accountId) : resolvedBase
+
+  const relativeToBase = path.relative(resolvedBase, candidateDir)
+  if (relativeToBase.startsWith('..') || path.isAbsolute(relativeToBase)) {
+    return null
+  }
+
+  if (await ensureDirectoryExists(candidateDir)) {
+    return { base: resolvedBase, accountDir: candidateDir }
   }
 
   return null
