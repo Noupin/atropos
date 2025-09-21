@@ -30,34 +30,129 @@ type ClipLibraryBridge = {
   invoke?: (channel: string, ...args: unknown[]) => Promise<unknown>
 }
 
-const ensureClipLibraryBridge = (): ClipLibraryBridge | null => {
+type IpcRendererLike = {
+  invoke: (channel: string, ...args: unknown[]) => Promise<unknown>
+}
+
+const UNAVAILABLE_BRIDGE_MARKER = Symbol('clip-library-unavailable-bridge')
+
+type PossiblyUnavailableBridge = ClipLibraryBridge & {
+  [UNAVAILABLE_BRIDGE_MARKER]?: boolean
+}
+
+let cachedBridge: PossiblyUnavailableBridge | null = null
+
+const getIpcRenderer = (): IpcRendererLike | null => {
+  const electronBridge = window.electron as { ipcRenderer?: IpcRendererLike } | undefined
+  if (electronBridge?.ipcRenderer?.invoke) {
+    return electronBridge.ipcRenderer
+  }
+
+  const legacyRequire = (window as typeof window & {
+    require?: (module: string) => { ipcRenderer?: IpcRendererLike }
+  }).require
+
+  if (typeof legacyRequire === 'function') {
+    try {
+      const electronModule = legacyRequire('electron') as { ipcRenderer?: IpcRendererLike } | undefined
+      if (electronModule?.ipcRenderer?.invoke) {
+        return electronModule.ipcRenderer
+      }
+    } catch (error) {
+      console.warn('Unable to load ipcRenderer from window.require', error)
+    }
+  }
+
+  return null
+}
+
+const isUnavailableBridge = (
+  bridge: Partial<PossiblyUnavailableBridge> | null | undefined
+): bridge is PossiblyUnavailableBridge => {
+  return Boolean(bridge && bridge[UNAVAILABLE_BRIDGE_MARKER])
+}
+
+const assignBridge = (bridge: PossiblyUnavailableBridge): PossiblyUnavailableBridge => {
+  cachedBridge = bridge
+  ;(window as typeof window & { api: PossiblyUnavailableBridge }).api = bridge
+  return bridge
+}
+
+const createBridgeFromIpcRenderer = (ipcRenderer: IpcRendererLike): PossiblyUnavailableBridge => ({
+  listAccountClips: async (accountId: string | null) => {
+    const result = await ipcRenderer.invoke('clips:list', accountId)
+    return Array.isArray(result) ? (result as Clip[]) : []
+  },
+  openAccountClipsFolder: (accountId: string) =>
+    ipcRenderer.invoke('clips:open-folder', accountId) as Promise<OpenAccountClipsFolderResult>,
+  invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args)
+})
+
+const createUnavailableBridge = (): PossiblyUnavailableBridge => {
+  const unavailableBridge: PossiblyUnavailableBridge = {
+    listAccountClips: async (accountId: string | null) => {
+      const refreshedBridge = ensureClipLibraryBridge(true)
+      if (refreshedBridge && !isUnavailableBridge(refreshedBridge)) {
+        return refreshedBridge.listAccountClips(accountId)
+      }
+      console.warn('Clip library bridge is unavailable in this environment.')
+      return []
+    },
+    openAccountClipsFolder: async (accountId: string) => {
+      const refreshedBridge = ensureClipLibraryBridge(true)
+      if (refreshedBridge && !isUnavailableBridge(refreshedBridge)) {
+        return refreshedBridge.openAccountClipsFolder(accountId)
+      }
+      console.warn('openAccountClipsFolder bridge is unavailable in this environment.')
+      return {
+        success: false,
+        accountDir: null,
+        error: 'Opening the clips folder is only available in the desktop app.'
+      }
+    },
+    invoke: async (channel: string, ...args: unknown[]) => {
+      const refreshedBridge = ensureClipLibraryBridge(true)
+      if (refreshedBridge && !isUnavailableBridge(refreshedBridge) && refreshedBridge.invoke) {
+        return refreshedBridge.invoke(channel, ...args)
+      }
+      throw new Error('Clip library bridge is unavailable in this environment and cannot invoke channels.')
+    }
+  }
+
+  unavailableBridge[UNAVAILABLE_BRIDGE_MARKER] = true
+
+  return unavailableBridge
+}
+
+const ensureClipLibraryBridge = (forceRefresh = false): PossiblyUnavailableBridge | null => {
   if (typeof window === 'undefined') {
     return null
   }
 
-  const existingBridge = window.api as Partial<ClipLibraryBridge> | undefined
-  if (existingBridge?.listAccountClips && existingBridge?.openAccountClipsFolder) {
-    return existingBridge as ClipLibraryBridge
+  if (!forceRefresh && cachedBridge && !isUnavailableBridge(cachedBridge)) {
+    return cachedBridge
   }
 
-  const ipcRenderer = window.electron?.ipcRenderer
-  if (!ipcRenderer?.invoke) {
-    return null
+  const existingBridge = window.api as PossiblyUnavailableBridge | undefined
+  if (!forceRefresh && existingBridge?.listAccountClips && existingBridge?.openAccountClipsFolder) {
+    if (!isUnavailableBridge(existingBridge)) {
+      return assignBridge(existingBridge)
+    }
   }
 
-  const fallbackBridge: ClipLibraryBridge = {
-    listAccountClips: async (accountId: string | null) => {
-      const result = await ipcRenderer.invoke('clips:list', accountId)
-      return Array.isArray(result) ? (result as Clip[]) : []
-    },
-    openAccountClipsFolder: (accountId: string) =>
-      ipcRenderer.invoke('clips:open-folder', accountId) as Promise<OpenAccountClipsFolderResult>,
-    invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args)
+  const ipcRenderer = getIpcRenderer()
+  if (!ipcRenderer) {
+    if (!cachedBridge || !isUnavailableBridge(cachedBridge)) {
+      return assignBridge(createUnavailableBridge())
+    }
+    return cachedBridge
   }
 
-  ;(window as typeof window & { api: ClipLibraryBridge }).api = fallbackBridge
+  return assignBridge(createBridgeFromIpcRenderer(ipcRenderer))
+}
 
-  return fallbackBridge
+if (typeof window !== 'undefined') {
+  ensureClipLibraryBridge()
 }
 
 const isClipArray = (value: unknown): value is Clip[] => {
