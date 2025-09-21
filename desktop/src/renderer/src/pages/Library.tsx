@@ -15,6 +15,26 @@ import type { AccountSummary, Clip, SearchBridge } from '../types'
 import useSharedVolume from '../hooks/useSharedVolume'
 
 const ALL_ACCOUNTS_VALUE = 'all'
+const UNKNOWN_ACCOUNT_ID = '__unknown__'
+const UNKNOWN_ACCOUNT_LABEL = 'Unknown account'
+
+type ProjectGroup = {
+  id: string
+  title: string
+  clips: Clip[]
+  latestCreatedAt: string
+}
+
+type AccountGroup = {
+  id: string
+  title: string
+  projects: ProjectGroup[]
+  latestCreatedAt: string
+}
+
+type GroupedClipsResult =
+  | { mode: 'account'; groups: AccountGroup[] }
+  | { mode: 'project'; groups: ProjectGroup[] }
 
 const isAccountAvailable = (account: AccountSummary): boolean =>
   account.active && account.platforms.some((platform) => platform.active)
@@ -39,6 +59,12 @@ const Library: FC<LibraryProps> = ({
   const [clipsError, setClipsError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
+  const [collapsedAccountIds, setCollapsedAccountIds] = useState<Set<string>>(
+    () => new Set<string>()
+  )
+  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(
+    () => new Set<string>()
+  )
   const queryRef = useRef('')
   const loadRequestRef = useRef(0)
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
@@ -301,34 +327,172 @@ const Library: FC<LibraryProps> = ({
   }, [filteredClips, selectedClipId])
 
   const groupedClips = useMemo(() => {
-    const groups = new Map<
-      string,
-      { title: string; clips: Clip[]; latestCreatedAt: string }
-    >()
+    const buildProjectGroups = (items: Clip[]): ProjectGroup[] => {
+      const groups = new Map<
+        string,
+        { title: string; clips: Clip[]; latestCreatedAt: string }
+      >()
 
-    for (const clip of filteredClips) {
-      const key = clip.videoId ?? clip.id
-      const title = clip.videoTitle || clip.sourceTitle || clip.title
-      const existing = groups.get(key)
-      if (!existing) {
-        groups.set(key, { title, clips: [clip], latestCreatedAt: clip.createdAt })
-      } else {
-        existing.clips.push(clip)
-        if (clip.createdAt > existing.latestCreatedAt) {
-          existing.latestCreatedAt = clip.createdAt
+      for (const clip of items) {
+        const key = clip.videoId ?? clip.id
+        const title = clip.videoTitle || clip.sourceTitle || clip.title
+        const existing = groups.get(key)
+        if (!existing) {
+          groups.set(key, {
+            title,
+            clips: [clip],
+            latestCreatedAt: clip.createdAt
+          })
+        } else {
+          existing.clips.push(clip)
+          if (clip.createdAt > existing.latestCreatedAt) {
+            existing.latestCreatedAt = clip.createdAt
+          }
         }
       }
+
+      return Array.from(groups.entries())
+        .map(([id, value]) => ({
+          id,
+          title: value.title,
+          clips: value.clips.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
+          latestCreatedAt: value.latestCreatedAt
+        }))
+        .sort((a, b) => (a.latestCreatedAt < b.latestCreatedAt ? 1 : -1))
     }
 
-    return Array.from(groups.entries())
-      .map(([id, value]) => ({
-        id,
-        title: value.title,
-        clips: value.clips.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
-        latestCreatedAt: value.latestCreatedAt
-      }))
-      .sort((a, b) => (a.latestCreatedAt < b.latestCreatedAt ? 1 : -1))
-  }, [filteredClips])
+    if (accountFilter === ALL_ACCOUNTS_VALUE) {
+      const accountNames = new Map<string, string>()
+      for (const account of availableAccounts) {
+        accountNames.set(account.id, account.displayName)
+      }
+
+      const accountGroups = new Map<
+        string,
+        { title: string; clips: Clip[]; latestCreatedAt: string }
+      >()
+
+      for (const clip of filteredClips) {
+        const accountId = clip.accountId ?? UNKNOWN_ACCOUNT_ID
+        const title = accountNames.get(accountId) ?? UNKNOWN_ACCOUNT_LABEL
+        const existing = accountGroups.get(accountId)
+        if (!existing) {
+          accountGroups.set(accountId, {
+            title,
+            clips: [clip],
+            latestCreatedAt: clip.createdAt
+          })
+        } else {
+          existing.clips.push(clip)
+          if (clip.createdAt > existing.latestCreatedAt) {
+            existing.latestCreatedAt = clip.createdAt
+          }
+        }
+      }
+
+      return {
+        mode: 'account',
+        groups: Array.from(accountGroups.entries())
+          .map(([id, value]) => ({
+            id,
+            title: value.title,
+            projects: buildProjectGroups(value.clips),
+            latestCreatedAt: value.latestCreatedAt
+          }))
+          .sort((a, b) => (a.latestCreatedAt < b.latestCreatedAt ? 1 : -1))
+      } satisfies GroupedClipsResult
+    }
+
+    return {
+      mode: 'project',
+      groups: buildProjectGroups(filteredClips)
+    } satisfies GroupedClipsResult
+  }, [accountFilter, availableAccounts, filteredClips])
+
+  useEffect(() => {
+    setCollapsedAccountIds(new Set<string>())
+    setCollapsedProjectIds(new Set<string>())
+  }, [accountFilter])
+
+  const toggleAccountCollapse = useCallback((id: string) => {
+    setCollapsedAccountIds((previous) => {
+      const next = new Set(previous)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }, [])
+
+  const toggleProjectCollapse = useCallback((id: string) => {
+    setCollapsedProjectIds((previous) => {
+      const next = new Set(previous)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }, [])
+
+  const handleClipSelect = useCallback((clip: Clip) => {
+    setSelectedClipId(clip.id)
+  }, [])
+
+  const renderProjectGroup = useCallback(
+    (group: ProjectGroup, prefix = '') => {
+      const projectGroupId = prefix ? `${prefix}:${group.id}` : group.id
+      const isCollapsed = collapsedProjectIds.has(projectGroupId)
+      const clipCount = group.clips.length
+      const clipCountLabel = `${clipCount} ${clipCount === 1 ? 'clip' : 'clips'}`
+
+      return (
+        <div key={projectGroupId} className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => toggleProjectCollapse(projectGroupId)}
+              className="flex items-center gap-2 text-left text-lg font-semibold text-[var(--fg)] transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+              aria-expanded={!isCollapsed}
+            >
+              <svg
+                viewBox="0 0 20 20"
+                aria-hidden="true"
+                className={`h-4 w-4 transform transition-transform ${
+                  isCollapsed ? '-rotate-90' : 'rotate-0'
+                }`}
+              >
+                <path
+                  fill="currentColor"
+                  d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08Z"
+                />
+              </svg>
+              <span>{group.title}</span>
+            </button>
+            <span className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
+              {clipCountLabel}
+            </span>
+          </div>
+          {!isCollapsed ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {group.clips.map((clip) => (
+                <ClipCard
+                  key={clip.id}
+                  clip={clip}
+                  onClick={() => handleClipSelect(clip)}
+                  isActive={clip.id === selectedClipId}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      )
+    },
+    [collapsedProjectIds, handleClipSelect, selectedClipId, toggleProjectCollapse]
+  )
 
   const selectedClip = useMemo(
     () => filteredClips.find((clip) => clip.id === selectedClipId) ?? null,
@@ -363,10 +527,6 @@ const Library: FC<LibraryProps> = ({
     },
     [onSelectAccount]
   )
-
-  const handleClipSelect = useCallback((clip: Clip) => {
-    setSelectedClipId(clip.id)
-  }, [])
 
   const handleClipOpen = useCallback(
     (clip: Clip) => {
@@ -453,26 +613,57 @@ const Library: FC<LibraryProps> = ({
           {hasAccounts ? (
             filteredClips.length > 0 ? (
               <div className="flex flex-col gap-6">
-                {groupedClips.map((group) => (
-                  <div key={group.id} className="flex flex-col gap-3">
-                    <div className="flex items-baseline justify-between">
-                      <h3 className="text-lg font-semibold text-[var(--fg)]">{group.title}</h3>
-                      <span className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
-                        {group.clips.length} {group.clips.length === 1 ? 'clip' : 'clips'}
-                      </span>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                      {group.clips.map((clip) => (
-                        <ClipCard
-                          key={clip.id}
-                          clip={clip}
-                          onClick={() => handleClipSelect(clip)}
-                          isActive={clip.id === selectedClipId}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                {groupedClips.mode === 'account'
+                  ? groupedClips.groups.map((accountGroup) => {
+                      const accountClipCount = accountGroup.projects.reduce(
+                        (total, project) => total + project.clips.length,
+                        0
+                      )
+                      const isCollapsed = collapsedAccountIds.has(accountGroup.id)
+
+                      return (
+                        <div
+                          key={accountGroup.id}
+                          className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-4"
+                        >
+                          <div className="flex items-center justify-between">
+                            <button
+                              type="button"
+                              onClick={() => toggleAccountCollapse(accountGroup.id)}
+                              className="flex items-center gap-2 text-left text-lg font-semibold text-[var(--fg)] transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+                              aria-expanded={!isCollapsed}
+                            >
+                              <svg
+                                viewBox="0 0 20 20"
+                                aria-hidden="true"
+                                className={`h-4 w-4 transform transition-transform ${
+                                  isCollapsed ? '-rotate-90' : 'rotate-0'
+                                }`}
+                              >
+                                <path
+                                  fill="currentColor"
+                                  d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08Z"
+                                />
+                              </svg>
+                              <span>{accountGroup.title}</span>
+                            </button>
+                            <span className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
+                              {accountClipCount} {accountClipCount === 1 ? 'clip' : 'clips'}
+                            </span>
+                          </div>
+                          {!isCollapsed ? (
+                            <div className="flex flex-col gap-6">
+                              {accountGroup.projects.map((projectGroup) =>
+                                renderProjectGroup(projectGroup, accountGroup.id)
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                      )
+                    })
+                  : groupedClips.groups.map((projectGroup) =>
+                      renderProjectGroup(projectGroup)
+                    )}
               </div>
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-10 text-center text-sm text-[var(--muted)]">
