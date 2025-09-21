@@ -291,6 +291,47 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     [clampWithinWindow, rangeStart]
   )
 
+  const offsetReference = useMemo(() => {
+    if (!clipState) {
+      return {
+        startBase: rangeStart,
+        endBase: rangeEnd,
+        startLabel: 'adjusted start',
+        endLabel: 'adjusted end',
+        startTitle: 'Adjusted start',
+        endTitle: 'Adjusted end'
+      }
+    }
+    if (previewMode === 'original') {
+      return {
+        startBase: clipState.originalStartSeconds,
+        endBase: clipState.originalEndSeconds,
+        startLabel: 'original start',
+        endLabel: 'original end',
+        startTitle: 'Original start',
+        endTitle: 'Original end'
+      }
+    }
+    if (previewMode === 'rendered') {
+      return {
+        startBase: clipState.startSeconds,
+        endBase: clipState.endSeconds,
+        startLabel: 'rendered start',
+        endLabel: 'rendered end',
+        startTitle: 'Rendered start',
+        endTitle: 'Rendered end'
+      }
+    }
+    return {
+      startBase: rangeStart,
+      endBase: rangeEnd,
+      startLabel: 'adjusted start',
+      endLabel: 'adjusted end',
+      startTitle: 'Adjusted start',
+      endTitle: 'Adjusted end'
+    }
+  }, [clipState, previewMode, rangeEnd, rangeStart])
+
   const handleRangeInputChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>, kind: 'start' | 'end') => {
       const raw = event.target.value.trim()
@@ -454,47 +495,6 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     setSaveSuccess(null)
     setSaveSteps(createInitialSaveSteps())
   }, [clipState, minGap])
-
-  const offsetReference = useMemo(() => {
-    if (!clipState) {
-      return {
-        startBase: rangeStart,
-        endBase: rangeEnd,
-        startLabel: 'adjusted start',
-        endLabel: 'adjusted end',
-        startTitle: 'Adjusted start',
-        endTitle: 'Adjusted end'
-      }
-    }
-    if (previewMode === 'original') {
-      return {
-        startBase: clipState.originalStartSeconds,
-        endBase: clipState.originalEndSeconds,
-        startLabel: 'original start',
-        endLabel: 'original end',
-        startTitle: 'Original start',
-        endTitle: 'Original end'
-      }
-    }
-    if (previewMode === 'rendered') {
-      return {
-        startBase: clipState.startSeconds,
-        endBase: clipState.endSeconds,
-        startLabel: 'rendered start',
-        endLabel: 'rendered end',
-        startTitle: 'Rendered start',
-        endTitle: 'Rendered end'
-      }
-    }
-    return {
-      startBase: rangeStart,
-      endBase: rangeEnd,
-      startLabel: 'adjusted start',
-      endLabel: 'adjusted end',
-      startTitle: 'Adjusted start',
-      endTitle: 'Adjusted end'
-    }
-  }, [clipState, previewMode, rangeEnd, rangeStart])
 
   const durationSeconds = Math.max(minGap, rangeEnd - rangeStart)
   const startOffsetSeconds = rangeStart - offsetReference.startBase

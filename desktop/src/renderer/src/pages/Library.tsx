@@ -553,7 +553,7 @@ const Library: FC<LibraryProps> = ({
                       onClick={() => handleAdjustClipBoundaries(selectedClip)}
                       className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                     >
-                      Adjust clip boundaries
+                      Edit adjust clip
                     </button>
                     <a
                       href={selectedClip.sourceUrl}
