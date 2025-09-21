@@ -39,6 +39,65 @@ type GroupedClipsResult =
 const isAccountAvailable = (account: AccountSummary): boolean =>
   account.active && account.platforms.some((platform) => platform.active)
 
+const decodeBase64Url = (value: string): string | null => {
+  if (typeof globalThis.atob !== 'function') {
+    return null
+  }
+
+  try {
+    const padding = value.length % 4 === 0 ? '' : '='.repeat(4 - (value.length % 4))
+    const base64 = value.replace(/-/g, '+').replace(/_/g, '/') + padding
+    return globalThis.atob(base64)
+  } catch (error) {
+    console.warn('Unable to decode base64 clip identifier', error)
+    return null
+  }
+}
+
+const BACKSLASH_PATTERN = /\\/g
+const MULTISLASH_PATTERN = /\/+/g
+const TRIM_SLASH_PATTERN = /^\/+|\/+$/g
+
+const deriveProjectKeyFromClipId = (clipId: string): string | null => {
+  const decoded = decodeBase64Url(clipId)
+  if (!decoded) {
+    return null
+  }
+
+  const normalised = decoded
+    .replace(BACKSLASH_PATTERN, '/')
+    .replace(MULTISLASH_PATTERN, '/')
+    .replace(TRIM_SLASH_PATTERN, '')
+  if (!normalised) {
+    return null
+  }
+
+  const shortsIndex = normalised.lastIndexOf('/shorts/')
+  if (shortsIndex >= 0) {
+    return normalised.slice(0, shortsIndex)
+  }
+
+  const lastSlash = normalised.lastIndexOf('/')
+  if (lastSlash >= 0) {
+    return normalised.slice(0, lastSlash)
+  }
+
+  return normalised
+}
+
+const getProjectGroupKey = (clip: Clip): string => {
+  const fromClipId = deriveProjectKeyFromClipId(clip.id)
+  if (fromClipId) {
+    return fromClipId
+  }
+
+  if (typeof clip.videoId === 'string' && clip.videoId.length > 0) {
+    return clip.videoId
+  }
+
+  return clip.videoTitle || clip.sourceTitle || clip.id
+}
+
 type LibraryProps = {
   registerSearch: (bridge: SearchBridge | null) => void
   accounts: AccountSummary[]
@@ -334,7 +393,7 @@ const Library: FC<LibraryProps> = ({
       >()
 
       for (const clip of items) {
-        const key = clip.videoId ?? clip.id
+        const key = getProjectGroupKey(clip)
         const title = clip.videoTitle || clip.sourceTitle || clip.title
         const existing = groups.get(key)
         if (!existing) {
