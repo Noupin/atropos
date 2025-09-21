@@ -17,6 +17,15 @@ const toSeconds = (value: number): number => Math.max(0, Number.isFinite(value) 
 const MIN_CLIP_GAP = 0.25
 const DEFAULT_EXPAND_SECONDS = 10
 
+const formatRelativeSeconds = (value: number): string => {
+  if (!Number.isFinite(value) || value === 0) {
+    return '0'
+  }
+  const sign = value > 0 ? '+' : '-'
+  const formatted = Math.abs(value).toFixed(2).replace(/\.?0+$/, '')
+  return `${sign}${formatted}`
+}
+
 const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = ({ registerSearch }) => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -202,17 +211,21 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
 
   const handleRangeInputChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>, kind: 'start' | 'end') => {
-      const value = Number.parseFloat(event.target.value)
+      const raw = event.target.value.trim()
+      if (raw === '') {
+        return
+      }
+      const value = Number.parseFloat(raw)
       if (Number.isNaN(value)) {
         return
       }
       if (kind === 'start') {
-        handleStartChange(value)
+        handleStartChange(originalStart + value)
       } else {
-        handleEndChange(value)
+        handleEndChange(originalEnd + value)
       }
     },
-    [handleEndChange, handleStartChange]
+    [handleEndChange, handleStartChange, originalEnd, originalStart]
   )
 
   const updateRangeFromPointer = useCallback(
@@ -353,6 +366,14 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   }, [clipState, minGap])
 
   const durationSeconds = Math.max(minGap, rangeEnd - rangeStart)
+  const startOffsetSeconds = rangeStart - originalStart
+  const endOffsetSeconds = rangeEnd - originalEnd
+  const formattedStartOffset = formatRelativeSeconds(startOffsetSeconds)
+  const formattedEndOffset = formatRelativeSeconds(endOffsetSeconds)
+  const startOffsetDescription =
+    formattedStartOffset === '0' ? 'Original start' : `${formattedStartOffset}s from original start`
+  const endOffsetDescription =
+    formattedEndOffset === '0' ? 'Original end' : `${formattedEndOffset}s from original end`
 
   const playbackSrc = useMemo(() => {
     if (!clipState) {
@@ -468,6 +489,15 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const timelineTotal = Math.max(windowEnd - windowStart, minGap)
   const startPercent = ((rangeStart - windowStart) / timelineTotal) * 100
   const endPercent = ((rangeEnd - windowStart) / timelineTotal) * 100
+  const safeTimelineTotal = timelineTotal <= 0 ? 1 : timelineTotal
+  const clampRatio = (value: number): number => Math.max(0, Math.min(1, value))
+  const originalStartRatio = clampRatio((clipState.originalStartSeconds - windowStart) / safeTimelineTotal)
+  const originalEndRatio = clampRatio((clipState.originalEndSeconds - windowStart) / safeTimelineTotal)
+  const originalOverlayLeftPercent = originalStartRatio * 100
+  const originalOverlayRightPercent =
+    clampRatio((windowEnd - clipState.originalEndSeconds) / safeTimelineTotal) * 100
+  const originalStartMarkerPercent = originalStartRatio * 100
+  const originalEndMarkerPercent = originalEndRatio * 100
 
   return (
     <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-10">
@@ -509,7 +539,22 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 className="relative mt-6 h-2 rounded-full bg-white/10"
               >
                 <div
-                  className="pointer-events-none absolute top-0 bottom-0 rounded-full bg-[var(--ring)]"
+                  className="pointer-events-none absolute inset-y-0 z-10 rounded-full bg-sky-400/40"
+                  style={{ left: `${originalOverlayLeftPercent}%`, right: `${originalOverlayRightPercent}%` }}
+                  aria-hidden="true"
+                />
+                <div
+                  className="pointer-events-none absolute -top-2 z-20 h-3 w-px -translate-x-1/2 rounded bg-sky-300/80"
+                  style={{ left: `${originalStartMarkerPercent}%` }}
+                  aria-hidden="true"
+                />
+                <div
+                  className="pointer-events-none absolute -top-2 z-20 h-3 w-px -translate-x-1/2 rounded bg-sky-300/80"
+                  style={{ left: `${originalEndMarkerPercent}%` }}
+                  aria-hidden="true"
+                />
+                <div
+                  className="pointer-events-none absolute top-0 bottom-0 z-30 rounded-full bg-[var(--ring)]"
                   style={{ left: `${startPercent}%`, right: `${100 - endPercent}%` }}
                 />
                 <button
@@ -519,13 +564,13 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   aria-valuemin={Number(windowStart.toFixed(2))}
                   aria-valuemax={Number((rangeEnd - minGap).toFixed(2))}
                   aria-valuenow={Number(rangeStart.toFixed(2))}
-                  aria-valuetext={formatDuration(rangeStart)}
+                  aria-valuetext={startOffsetDescription}
                   onPointerDown={(event) => handleHandlePointerDown(event, 'start')}
                   onPointerMove={(event) => handleHandlePointerMove(event, 'start')}
                   onPointerUp={handleHandlePointerEnd}
                   onPointerCancel={handleHandlePointerEnd}
                   onKeyDown={(event) => handleHandleKeyDown(event, 'start')}
-                  className="absolute top-1/2 z-20 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--card)] shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  className="absolute top-1/2 z-40 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--card)] shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                   style={{ left: `${startPercent}%` }}
                 >
                   <span className="sr-only">Drag to adjust start</span>
@@ -537,13 +582,13 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   aria-valuemin={Number((rangeStart + minGap).toFixed(2))}
                   aria-valuemax={Number(windowEnd.toFixed(2))}
                   aria-valuenow={Number(rangeEnd.toFixed(2))}
-                  aria-valuetext={formatDuration(rangeEnd)}
+                  aria-valuetext={endOffsetDescription}
                   onPointerDown={(event) => handleHandlePointerDown(event, 'end')}
                   onPointerMove={(event) => handleHandlePointerMove(event, 'end')}
                   onPointerUp={handleHandlePointerEnd}
                   onPointerCancel={handleHandlePointerEnd}
                   onKeyDown={(event) => handleHandleKeyDown(event, 'end')}
-                  className="absolute top-1/2 z-20 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--card)] shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  className="absolute top-1/2 z-40 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--card)] shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                   style={{ left: `${endPercent}%` }}
                 >
                   <span className="sr-only">Drag to adjust end</span>
@@ -556,28 +601,34 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                Start time
+                Start offset (s)
                 <input
-                  type="number"
-                  step="0.1"
-                  min={windowStart}
-                  max={rangeEnd - minGap}
-                  value={rangeStart.toFixed(1)}
+                  type="text"
+                  inputMode="decimal"
+                  pattern="[-+]?\\d*\\.?\\d*"
+                  value={formattedStartOffset}
                   onChange={(event) => handleRangeInputChange(event, 'start')}
+                  title={`Absolute start ${formatDuration(rangeStart)}`}
                   className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                 />
+                <span className="text-[10px] font-normal uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                  Relative to original start
+                </span>
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                End time
+                End offset (s)
                 <input
-                  type="number"
-                  step="0.1"
-                  min={rangeStart + minGap}
-                  max={windowEnd}
-                  value={rangeEnd.toFixed(1)}
+                  type="text"
+                  inputMode="decimal"
+                  pattern="[-+]?\\d*\\.?\\d*"
+                  value={formattedEndOffset}
                   onChange={(event) => handleRangeInputChange(event, 'end')}
+                  title={`Absolute end ${formatDuration(rangeEnd)}`}
                   className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                 />
+                <span className="text-[10px] font-normal uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                  Relative to original end
+                </span>
               </label>
             </div>
             <div className="flex flex-col gap-2 text-sm text-[var(--muted)]">
@@ -646,9 +697,19 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         <span className="font-medium text-[var(--fg)]">Original end</span>
         <span>{formatDuration(originalEnd)}</span>
         <span className="font-medium text-[var(--fg)]">Current start</span>
-        <span>{formatDuration(rangeStart)}</span>
+        <span className="flex flex-col gap-0.5">
+          <span>{formatDuration(rangeStart)}</span>
+          <span className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+            {startOffsetDescription}
+          </span>
+        </span>
         <span className="font-medium text-[var(--fg)]">Current end</span>
-        <span>{formatDuration(rangeEnd)}</span>
+        <span className="flex flex-col gap-0.5">
+          <span>{formatDuration(rangeEnd)}</span>
+          <span className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+            {endOffsetDescription}
+          </span>
+        </span>
         <span className="font-medium text-[var(--fg)]">Clip title</span>
         <span>{clipState.title}</span>
         <span className="font-medium text-[var(--fg)]">Channel</span>
