@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
+import type { OpenAccountClipsFolderResult } from '../renderer/src/types'
 
 function createWindow(): void {
   // Create the browser window.
@@ -62,23 +63,36 @@ app.whenReady().then(() => {
       return []
     }
   })
-  ipcMain.handle('clips:open-folder', async (_event, accountId: string) => {
-    try {
-      const paths = await resolveAccountClipsDirectory(accountId)
-      if (!paths) {
-        return false
+  ipcMain.handle(
+    'clips:open-folder',
+    async (_event, accountId: string): Promise<OpenAccountClipsFolderResult> => {
+      let accountDir: string | null = null
+      try {
+        const paths = await resolveAccountClipsDirectory(accountId)
+        if (!paths) {
+          return {
+            success: false,
+            accountDir: null,
+            error: 'Unable to locate the clips directory for this account.'
+          }
+        }
+
+        accountDir = paths.accountDir
+        console.info('Opening clips folder', { accountId, accountDir })
+        const result = await shell.openPath(accountDir)
+        if (typeof result === 'string' && result.length > 0) {
+          console.error('Unable to open clips folder', result)
+          return { success: false, accountDir, error: result }
+        }
+
+        return { success: true, accountDir }
+      } catch (error) {
+        console.error('Failed to open clips folder', error)
+        const message = error instanceof Error ? error.message : 'Unexpected error opening clips folder.'
+        return { success: false, accountDir, error: message }
       }
-      const result = await shell.openPath(paths.accountDir)
-      if (typeof result === 'string' && result.length > 0) {
-        console.error('Unable to open clips folder', result)
-        return false
-      }
-      return true
-    } catch (error) {
-      console.error('Failed to open clips folder', error)
-      return false
     }
-  })
+  )
 
   createWindow()
 

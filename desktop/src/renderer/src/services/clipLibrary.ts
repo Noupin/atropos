@@ -1,5 +1,5 @@
 import { BACKEND_MODE, buildAccountClipsUrl } from '../config/backend'
-import type { Clip } from '../types'
+import type { Clip, OpenAccountClipsFolderResult } from '../types'
 
 type RawClipPayload = {
   id?: unknown
@@ -26,6 +26,20 @@ type RawClipPayload = {
 
 const isClipArray = (value: unknown): value is Clip[] => {
   return Array.isArray(value) && value.every((item) => typeof item === 'object' && item !== null && 'id' in item)
+}
+
+const isOpenFolderResult = (value: unknown): value is OpenAccountClipsFolderResult => {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const candidate = value as Partial<OpenAccountClipsFolderResult>
+  return (
+    typeof candidate.success === 'boolean' &&
+    ('accountDir' in candidate
+      ? typeof candidate.accountDir === 'string' || candidate.accountDir === null
+      : false) &&
+    (candidate.error === undefined || candidate.error === null || typeof candidate.error === 'string')
+  )
 }
 
 const normaliseClip = (payload: RawClipPayload): Clip | null => {
@@ -150,29 +164,32 @@ export const listAccountClips = async (accountId: string | null): Promise<Clip[]
   }
 }
 
-const isFolderBridgeAvailable = (): boolean => {
-  return typeof window !== 'undefined' && typeof window.api?.openAccountClipsFolder === 'function'
-}
-
-export const canOpenAccountClipsFolder = (): boolean => {
-  return isFolderBridgeAvailable()
-}
-
-export const openAccountClipsFolder = async (accountId: string): Promise<boolean> => {
+export const openAccountClipsFolder = async (
+  accountId: string
+): Promise<OpenAccountClipsFolderResult> => {
   if (!accountId) {
-    return false
+    return { success: false, accountDir: null, error: 'Select an account to open its clips folder.' }
   }
   if (typeof window === 'undefined' || !window.api?.openAccountClipsFolder) {
     console.warn('openAccountClipsFolder bridge is unavailable in this environment.')
-    return false
+    return {
+      success: false,
+      accountDir: null,
+      error: 'Opening the clips folder is only available in the desktop app.'
+    }
   }
 
   try {
-    return await window.api.openAccountClipsFolder(accountId)
+    const result = await window.api.openAccountClipsFolder(accountId)
+    if (isOpenFolderResult(result)) {
+      return result
+    }
   } catch (error) {
     console.error('Unable to open clips folder through bridge', error)
-    return false
+    return { success: false, accountDir: null, error: 'Unable to open the clips folder for this account.' }
   }
+
+  return { success: false, accountDir: null, error: 'Unable to open the clips folder for this account.' }
 }
 
 export default listAccountClips

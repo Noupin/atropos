@@ -23,10 +23,7 @@ import {
 } from '../services/pipelineApi'
 import { parseClipTimestamp } from '../lib/clipMetadata'
 import { timeAgo } from '../lib/format'
-import {
-  canOpenAccountClipsFolder,
-  openAccountClipsFolder
-} from '../services/clipLibrary'
+import { openAccountClipsFolder } from '../services/clipLibrary'
 import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
 
 const SUPPORTED_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv'] as const
@@ -55,7 +52,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   const [folderMessage, setFolderMessage] = useState<string | null>(null)
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
   const [isOpeningFolder, setIsOpeningFolder] = useState(false)
-  const canAttemptToOpenFolder = useMemo(() => canOpenAccountClipsFolder(), [])
 
   useEffect(() => {
     setState(initialState)
@@ -768,12 +764,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   }, [cleanupConnection, clearTimers, updateState])
 
   const handleOpenClipsFolder = useCallback(async () => {
-    if (!canAttemptToOpenFolder) {
-      setFolderErrorMessage('Opening the clips folder is only available in the desktop app.')
-      setFolderMessage(null)
-      return
-    }
-
     if (!selectedAccountId) {
       setFolderErrorMessage('Select an account to open its clips folder.')
       setFolderMessage(null)
@@ -785,18 +775,20 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     setFolderMessage(null)
 
     try {
-      const opened = await openAccountClipsFolder(selectedAccountId)
-      if (opened) {
-        setFolderMessage('Opened the clips folder in your file explorer.')
+      const result = await openAccountClipsFolder(selectedAccountId)
+      const locationDetails = result.accountDir ? ` (${result.accountDir})` : ''
+      if (result.success) {
+        setFolderMessage(`Opened the clips folder in your file explorer${locationDetails}.`)
       } else {
-        setFolderErrorMessage('Unable to open the clips folder for this account.')
+        const errorMessage = result.error ?? 'Unable to open the clips folder for this account.'
+        setFolderErrorMessage(`${errorMessage}${locationDetails}`)
       }
     } catch (error) {
       setFolderErrorMessage('Unable to open the clips folder for this account.')
     } finally {
       setIsOpeningFolder(false)
     }
-  }, [canAttemptToOpenFolder, selectedAccountId])
+  }, [selectedAccountId])
 
   const hasProgress = useMemo(
     () => steps.some((step) => step.status !== 'pending' || step.progress > 0),

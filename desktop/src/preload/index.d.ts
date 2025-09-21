@@ -1,9 +1,9 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { Clip } from '../renderer/src/types'
+import type { Clip, OpenAccountClipsFolderResult } from '../renderer/src/types'
 
 export interface ClipLibraryApi {
   listAccountClips(accountId: string | null): Promise<Clip[]>
-  openAccountClipsFolder(accountId: string): Promise<boolean>
+  openAccountClipsFolder(accountId: string): Promise<OpenAccountClipsFolderResult>
 }
 
 declare global {

@@ -21,6 +21,12 @@ export interface Clip {
   accountId?: string | null
 }
 
+export interface OpenAccountClipsFolderResult {
+  success: boolean
+  accountDir: string | null
+  error?: string
+}
+
 export type SupportedPlatform = 'tiktok' | 'youtube' | 'instagram'
 
 export const PLATFORM_LABELS: Record<SupportedPlatform, string> = {
