@@ -169,6 +169,21 @@ export type ClipAdjustmentPayload = {
   endSeconds: number
 }
 
+export const fetchJobClip = async (jobId: string, clipId: string): Promise<Clip> => {
+  const url = new URL(`/api/jobs/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}`, getApiBaseUrl())
+  const response = await fetch(url.toString())
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`)
+  }
+
+  const payload = (await response.json()) as UnknownRecord
+  const clip = normaliseJobClip(payload)
+  if (!clip) {
+    throw new Error('Received malformed clip data from the server.')
+  }
+  return clip
+}
+
 export const adjustJobClip = async (
   jobId: string,
   clipId: string,

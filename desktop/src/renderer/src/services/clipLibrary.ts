@@ -242,4 +242,20 @@ export const adjustLibraryClip = async (
   return clip
 }
 
+export const fetchLibraryClip = async (accountId: string, clipId: string): Promise<Clip> => {
+  const baseUrl = buildAccountClipsUrl(accountId)
+  const url = `${baseUrl}/${encodeURIComponent(clipId)}`
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`)
+  }
+
+  const payload = (await response.json()) as RawClipPayload
+  const clip = normaliseClip(payload)
+  if (!clip) {
+    throw new Error('Received malformed clip data from the library API.')
+  }
+  return clip
+}
+
 export default listAccountClips

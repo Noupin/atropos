@@ -1128,6 +1128,19 @@ async def list_account_clip_library(account_id: str, request: Request) -> list[L
     return [LibraryClipManifest(**clip.to_payload(request)) for clip in clips]
 
 
+@app.get("/api/accounts/{account_id}/clips/{clip_id}", response_model=LibraryClipManifest)
+async def get_account_clip(account_id: str, clip_id: str, request: Request) -> LibraryClipManifest:
+    """Return metadata for a single clip from the library."""
+
+    account_value = None if account_id == DEFAULT_ACCOUNT_PLACEHOLDER else account_id
+    clips = list_account_clips_sync(account_value)
+    target = next((clip for clip in clips if clip.clip_id == clip_id), None)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+
+    return LibraryClipManifest(**target.to_payload(request))
+
+
 @app.get("/api/accounts/{account_id}/clips/{clip_id}/video")
 async def get_account_clip_video(account_id: str, clip_id: str) -> FileResponse:
     """Stream the archived clip video for ``clip_id``."""

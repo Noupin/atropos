@@ -88,6 +88,26 @@ def test_list_account_clips(monkeypatch, tmp_path):
     assert clip["playback_url"].endswith(f"/api/accounts/{account_id}/clips/{clip['id']}/video")
 
 
+def test_get_account_clip(monkeypatch, tmp_path):
+    out_root = tmp_path / "out"
+    monkeypatch.setenv("OUT_ROOT", str(out_root))
+    account_id, _ = _create_clip_structure(out_root)
+
+    client = TestClient(app)
+    listing = client.get(f"/api/accounts/{account_id}/clips")
+    clip_id = listing.json()[0]["id"]
+
+    detail = client.get(f"/api/accounts/{account_id}/clips/{clip_id}")
+    assert detail.status_code == 200
+    payload = detail.json()
+    assert payload["id"] == clip_id
+    assert payload["title"] == "Amazing Project"
+    assert payload["playback_url"].endswith(f"/api/accounts/{account_id}/clips/{clip_id}/video")
+
+    missing = client.get(f"/api/accounts/{account_id}/clips/unknown")
+    assert missing.status_code == 404
+
+
 def test_get_account_clip_video(monkeypatch, tmp_path):
     out_root = tmp_path / "out"
     monkeypatch.setenv("OUT_ROOT", str(out_root))

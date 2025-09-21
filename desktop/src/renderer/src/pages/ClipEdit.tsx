@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FC, ChangeEvent, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatDuration } from '../lib/format'
-import { adjustJobClip } from '../services/pipelineApi'
-import { adjustLibraryClip } from '../services/clipLibrary'
+import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
+import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
 import type { Clip, SearchBridge } from '../types'
 
 type ClipEditLocationState = {
@@ -24,13 +24,18 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const state = (location.state as ClipEditLocationState | null) ?? null
 
   const sourceClip = state?.clip && (!id || state.clip.id === id) ? state.clip : null
+  const context = state?.context ?? 'job'
 
   useEffect(() => {
     registerSearch(null)
     return () => registerSearch(null)
   }, [registerSearch])
 
+  const minGap = MIN_CLIP_GAP
+
   const [clipState, setClipState] = useState<Clip | null>(sourceClip ?? null)
+  const [isLoadingClip, setIsLoadingClip] = useState(!sourceClip && Boolean(id))
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [rangeStart, setRangeStart] = useState(() => {
     if (sourceClip) {
       return sourceClip.startSeconds
@@ -39,9 +44,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   })
   const [rangeEnd, setRangeEnd] = useState(() => {
     if (sourceClip) {
-      return Math.max(sourceClip.startSeconds + MIN_CLIP_GAP, sourceClip.endSeconds)
+      return Math.max(sourceClip.startSeconds + minGap, sourceClip.endSeconds)
     }
-    return MIN_CLIP_GAP
+    return minGap
   })
   const [windowStart, setWindowStart] = useState(() => {
     if (!sourceClip) {
@@ -51,13 +56,13 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   })
   const [windowEnd, setWindowEnd] = useState(() => {
     if (!sourceClip) {
-      return MIN_CLIP_GAP
+      return minGap
     }
     return Math.max(
       sourceClip.endSeconds,
       sourceClip.originalEndSeconds,
-      sourceClip.startSeconds + MIN_CLIP_GAP,
-      sourceClip.originalStartSeconds + MIN_CLIP_GAP
+      sourceClip.startSeconds + minGap,
+      sourceClip.originalStartSeconds + minGap
     )
   })
   const [expandAmount, setExpandAmount] = useState(DEFAULT_EXPAND_SECONDS)
@@ -70,24 +75,90 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const originalStart = clipState?.originalStartSeconds ?? 0
   const originalEnd = clipState?.originalEndSeconds ?? (originalStart + (clipState?.durationSec ?? 10))
 
-  const applyUpdatedClip = useCallback((updated: Clip) => {
-    setClipState(updated)
-    setRangeStart(updated.startSeconds)
-    setRangeEnd(updated.endSeconds)
-    setWindowStart(Math.max(0, Math.min(updated.startSeconds, updated.originalStartSeconds)))
-    setWindowEnd(Math.max(updated.endSeconds, updated.originalEndSeconds))
-  }, [])
+  const applyUpdatedClip = useCallback(
+    (updated: Clip) => {
+      setClipState(updated)
+      setRangeStart(updated.startSeconds)
+      setRangeEnd(updated.endSeconds)
+      setWindowStart(Math.max(0, Math.min(updated.startSeconds, updated.originalStartSeconds)))
+      setWindowEnd(
+        Math.max(
+          updated.endSeconds,
+          updated.originalEndSeconds,
+          updated.startSeconds + minGap,
+          updated.originalStartSeconds + minGap
+        )
+      )
+    },
+    [minGap]
+  )
 
   useEffect(() => {
-    setClipState(sourceClip ?? null)
-  }, [sourceClip])
+    if (!id) {
+      setClipState(null)
+      setIsLoadingClip(false)
+      setLoadError('Clip information is unavailable. Return to the previous screen and try again.')
+      return
+    }
+
+    if (sourceClip) {
+      setClipState(sourceClip)
+      setIsLoadingClip(false)
+      setLoadError(null)
+      return
+    }
+
+    let cancelled = false
+    const loadClip = async (): Promise<void> => {
+      setIsLoadingClip(true)
+      setLoadError(null)
+      try {
+        let clip: Clip
+        if (context === 'library') {
+          const accountId = state?.accountId
+          if (!accountId) {
+            throw new Error('This clip is no longer associated with a library account.')
+          }
+          clip = await fetchLibraryClip(accountId, id)
+        } else {
+          const jobId = state?.jobId
+          if (!jobId) {
+            throw new Error('The pipeline job for this clip is no longer active.')
+          }
+          clip = await fetchJobClip(jobId, id)
+        }
+        if (!cancelled) {
+          setClipState(clip)
+          setLoadError(null)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'Unable to load clip information. Please try again.'
+          setClipState(null)
+          setLoadError(message)
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingClip(false)
+        }
+      }
+    }
+
+    void loadClip()
+    return () => {
+      cancelled = true
+    }
+  }, [context, id, sourceClip, state?.accountId, state?.jobId])
 
   useEffect(() => {
     if (!clipState) {
       setRangeStart(0)
-      setRangeEnd(MIN_CLIP_GAP)
+      setRangeEnd(minGap)
       setWindowStart(0)
-      setWindowEnd(MIN_CLIP_GAP)
+      setWindowEnd(minGap)
       return
     }
     setRangeStart(clipState.startSeconds)
@@ -102,8 +173,6 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       )
     )
   }, [clipState, minGap])
-
-  const minGap = MIN_CLIP_GAP
 
   const clampWithinWindow = useCallback(
     (value: number, kind: 'start' | 'end'): number => {
@@ -263,9 +332,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const handleReset = useCallback(() => {
     if (!clipState) {
       setRangeStart(0)
-      setRangeEnd(MIN_CLIP_GAP)
+      setRangeEnd(minGap)
       setWindowStart(0)
-      setWindowEnd(MIN_CLIP_GAP)
+      setWindowEnd(minGap)
     } else {
       const baseStart = Math.max(0, Math.min(clipState.originalStartSeconds, clipState.startSeconds))
       const baseEnd = Math.max(
@@ -284,7 +353,32 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   }, [clipState, minGap])
 
   const durationSeconds = Math.max(minGap, rangeEnd - rangeStart)
-  const context = state?.context ?? 'job'
+
+  const playbackSrc = useMemo(() => {
+    if (!clipState) {
+      return ''
+    }
+    const cacheKey = `${clipState.createdAt}-${clipState.startSeconds}-${clipState.endSeconds}`
+    try {
+      const absolute = clipState.playbackUrl.startsWith('http')
+        ? new URL(clipState.playbackUrl)
+        : typeof window !== 'undefined'
+        ? new URL(clipState.playbackUrl, window.location.origin)
+        : null
+      if (absolute) {
+        absolute.searchParams.set('_', cacheKey)
+        return absolute.toString()
+      }
+    } catch (error) {
+      // fall back to manual cache-busting below
+    }
+    const separator = clipState.playbackUrl.includes('?') ? '&' : '?'
+    return `${clipState.playbackUrl}${separator}_=${encodeURIComponent(cacheKey)}`
+  }, [clipState])
+
+  const handleBack = useCallback(() => {
+    navigate(-1)
+  }, [navigate])
 
   const handleSave = useCallback(async () => {
     if (!clipState) {
@@ -341,21 +435,31 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     state?.jobId
   ])
 
-  if (!clipState || !id) {
+  if (!clipState) {
     return (
       <section className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-10">
         <button
           type="button"
-          onClick={() => navigate(-1)}
+          onClick={handleBack}
           className="self-start rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
         >
           Back
         </button>
         <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-10 text-center">
-          <h2 className="text-xl font-semibold text-[var(--fg)]">Clip information unavailable</h2>
-          <p className="mt-2 max-w-md text-sm text-[var(--muted)]">
-            We couldn’t find the clip details needed for editing. Return to the previous page and try opening the editor again.
-          </p>
+          {isLoadingClip ? (
+            <div className="flex flex-col items-center gap-4 text-[var(--muted)]">
+              <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-[var(--ring)]" aria-hidden />
+              <p className="text-sm">Loading clip details…</p>
+            </div>
+          ) : (
+            <>
+              <h2 className="text-xl font-semibold text-[var(--fg)]">Clip information unavailable</h2>
+              <p className="mt-2 max-w-md text-sm text-[var(--muted)]">
+                {loadError ??
+                  'We couldn’t find the clip details needed for editing. Return to the previous page and try opening the editor again.'}
+              </p>
+            </>
+          )}
         </div>
       </section>
     )
@@ -369,7 +473,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-10">
       <button
         type="button"
-        onClick={() => navigate(-1)}
+        onClick={handleBack}
         className="self-start rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
       >
         Back
@@ -377,8 +481,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="flex-1 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
           <video
-            key={`${clipState.id}-${clipState.playbackUrl}`}
-            src={clipState.playbackUrl}
+            key={`${clipState.id}-${playbackSrc}`}
+            src={playbackSrc}
             poster={clipState.thumbnail ?? undefined}
             controls
             playsInline
@@ -519,7 +623,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
             <button
               type="button"
               onClick={handleSave}
-              disabled={isSaving}
+              disabled={isSaving || isLoadingClip}
               className="rounded-lg border border-transparent bg-[var(--ring)] px-3 py-2 text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSaving ? 'Saving…' : 'Save adjustments'}
