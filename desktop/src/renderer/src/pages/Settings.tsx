@@ -1,11 +1,4 @@
-import {
-  ChangeEvent,
-  FormEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState
-} from 'react'
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import type { FC } from 'react'
 import type { SearchBridge } from '../types'
 import { fetchConfigEntries, updateConfigEntries, type ConfigEntry } from '../services/configApi'
@@ -212,9 +205,7 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
         } catch (error) {
           if (!parseError) {
             parseError =
-              error instanceof Error
-                ? error.message
-                : `Invalid value provided for ${entry.name}.`
+              error instanceof Error ? error.message : `Invalid value provided for ${entry.name}.`
           }
         }
       })
@@ -264,8 +255,9 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
           'w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm text-[var(--fg)] shadow-sm ' +
           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
         value,
-        onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-          handleValueChange(entry.name, event.target.value)
+        onChange: (
+          event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+        ) => handleValueChange(entry.name, event.target.value)
       }
 
       if (entry.type === 'boolean') {
@@ -377,7 +369,7 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
                 <div className="mt-3">{renderInput(entry)}</div>
               </div>
             )
-          })
+          })}
         </form>
       )}
     </div>
