@@ -569,14 +569,17 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
               <span className="text-sm font-semibold text-[var(--fg)]">{step.title}</span>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-2 text-right">
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              {multiStepBadge}
-              <div className="flex flex-col items-end text-xs text-[var(--muted)]">
-                <span>{statusLabels[step.status]}</span>
-                {headerProgressLabel ? (
-                  <span className="font-semibold text-[var(--fg)]">{headerProgressLabel}</span>
-                ) : null}
+          <div className="flex flex-col items-end text-right">
+            <div className="flex items-center justify-end gap-3">
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                {clipBadge ? <div className="flex-shrink-0">{clipBadge}</div> : null}
+                {multiStepBadge}
+                <div className="flex flex-col items-end text-xs text-[var(--muted)]">
+                  <span>{statusLabels[step.status]}</span>
+                  {headerProgressLabel ? (
+                    <span className="font-semibold text-[var(--fg)]">{headerProgressLabel}</span>
+                  ) : null}
+                </div>
               </div>
               <span
                 className={`text-lg leading-none transition-transform ${showDetails ? 'rotate-180' : ''}`}
@@ -585,7 +588,6 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
                 ⌃
               </span>
             </div>
-            {clipBadge ? <div className="flex w-full justify-end">{clipBadge}</div> : null}
           </div>
         </button>
         {showDetails ? (
@@ -643,12 +645,14 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
           <div className="flex items-center gap-2 text-[9px] uppercase tracking-[0.16em] text-[var(--muted)]">
             <span className={`h-2 w-2 rounded-full ${indicatorClasses[step.status]}`} aria-hidden="true" />
             <span className="font-semibold">Step {index + 1}</span>
-            <span className="ml-auto">{statusLabels[step.status]}</span>
+            <span className="ml-auto flex items-center gap-1">
+              {multiStepBadge ? <span className="flex-shrink-0">{multiStepBadge}</span> : null}
+              <span>{statusLabels[step.status]}</span>
+            </span>
           </div>
-          <div className="flex items-center gap-2 text-[11px]">
+          <div className="flex items-start gap-2 text-[11px]">
             <span className="truncate font-semibold text-[var(--fg)]">{step.title}</span>
-            {multiStepBadge}
-            {clipBadge}
+            {clipBadge ? <span className="ml-auto flex-shrink-0">{clipBadge}</span> : null}
           </div>
           <div className="flex items-center justify-between text-[10px] text-[var(--muted)]">
             <span className="font-semibold text-[var(--fg)]">{percent}%</span>
