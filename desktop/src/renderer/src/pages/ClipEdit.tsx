@@ -116,6 +116,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   })
   const [expandAmount, setExpandAmount] = useState(DEFAULT_EXPAND_SECONDS)
   const [activeHandle, setActiveHandle] = useState<'start' | 'end' | null>(null)
+  const [engagedHandle, setEngagedHandle] = useState<'start' | 'end' | null>(null)
   const timelineRef = useRef<HTMLDivElement | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -296,41 +297,27 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       return {
         startBase: rangeStart,
         endBase: rangeEnd,
-        startLabel: 'adjusted start',
-        endLabel: 'adjusted end',
-        startTitle: 'Adjusted start',
-        endTitle: 'Adjusted end'
+        startLabel: 'current start',
+        endLabel: 'current end',
+        startTitle: 'Current start',
+        endTitle: 'Current end'
       }
     }
-    if (previewMode === 'original') {
-      return {
-        startBase: clipState.originalStartSeconds,
-        endBase: clipState.originalEndSeconds,
-        startLabel: 'original start',
-        endLabel: 'original end',
-        startTitle: 'Original start',
-        endTitle: 'Original end'
-      }
-    }
-    if (previewMode === 'rendered') {
-      return {
-        startBase: clipState.startSeconds,
-        endBase: clipState.endSeconds,
-        startLabel: 'rendered start',
-        endLabel: 'rendered end',
-        startTitle: 'Rendered start',
-        endTitle: 'Rendered end'
-      }
-    }
+    const startBase = Number.isFinite(clipState.originalStartSeconds)
+      ? clipState.originalStartSeconds
+      : clipState.startSeconds
+    const endBase = Number.isFinite(clipState.originalEndSeconds)
+      ? clipState.originalEndSeconds
+      : clipState.endSeconds
     return {
-      startBase: rangeStart,
-      endBase: rangeEnd,
-      startLabel: 'adjusted start',
-      endLabel: 'adjusted end',
-      startTitle: 'Adjusted start',
-      endTitle: 'Adjusted end'
+      startBase,
+      endBase,
+      startLabel: 'original start',
+      endLabel: 'original end',
+      startTitle: 'Original start',
+      endTitle: 'Original end'
     }
-  }, [clipState, previewMode, rangeEnd, rangeStart])
+  }, [clipState, rangeEnd, rangeStart])
 
   const handleRangeInputChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>, kind: 'start' | 'end') => {
@@ -376,6 +363,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     (event: ReactPointerEvent<HTMLButtonElement>, kind: 'start' | 'end') => {
       event.preventDefault()
       setActiveHandle(kind)
+      setEngagedHandle(kind)
       try {
         event.currentTarget.setPointerCapture(event.pointerId)
       } catch (error) {
@@ -404,12 +392,18 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       // ignore release errors
     }
     setActiveHandle(null)
+    setEngagedHandle(null)
+  }, [])
+
+  const handleHandleBlur = useCallback(() => {
+    setEngagedHandle(null)
   }, [])
 
   const handleHandleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLButtonElement>, kind: 'start' | 'end') => {
       const { key } = event
       const step = event.shiftKey ? 1 : 0.1
+      setEngagedHandle(kind)
       if (key === 'ArrowLeft' || key === 'ArrowDown') {
         event.preventDefault()
         if (kind === 'start') {
@@ -503,12 +497,23 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const formattedEndOffset = formatRelativeSeconds(endOffsetSeconds)
   const startOffsetDescription =
     formattedStartOffset === '0'
-      ? `Matches the ${offsetReference.startLabel}`
-      : `${formattedStartOffset}s from the ${offsetReference.startLabel}`
+      ? 'Matches the original start'
+      : `${formattedStartOffset}s from the original start`
   const endOffsetDescription =
     formattedEndOffset === '0'
-      ? `Matches the ${offsetReference.endLabel}`
-      : `${formattedEndOffset}s from the ${offsetReference.endLabel}`
+      ? 'Matches the original end'
+      : `${formattedEndOffset}s from the original end`
+  const startOffsetTooltip = formattedStartOffset === '0' ? '0s' : `${formattedStartOffset}s`
+  const endOffsetTooltip = formattedEndOffset === '0' ? '0s' : `${formattedEndOffset}s`
+
+  const renderedOutOfSync = useMemo(() => {
+    if (!clipState) {
+      return false
+    }
+    const startDelta = Math.abs(rangeStart - clipState.startSeconds)
+    const endDelta = Math.abs(rangeEnd - clipState.endSeconds)
+    return startDelta > 0.005 || endDelta > 0.005
+  }, [clipState, rangeEnd, rangeStart])
 
   const shouldShowSaveSteps =
     isSaving || Boolean(saveError) || Boolean(saveSuccess) || saveSteps.some((step) => step.status !== 'pending')
@@ -822,6 +827,15 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     clampRatio((windowEnd - clipState.originalEndSeconds) / safeTimelineTotal) * 100
   const originalStartMarkerPercent = originalStartRatio * 100
   const originalEndMarkerPercent = originalEndRatio * 100
+  const renderedStartRatio = clampRatio((clipState.startSeconds - windowStart) / safeTimelineTotal)
+  const renderedEndRatio = clampRatio((clipState.endSeconds - windowStart) / safeTimelineTotal)
+  const renderedOverlayLeftPercent = renderedStartRatio * 100
+  const renderedOverlayRightPercent =
+    clampRatio((windowEnd - clipState.endSeconds) / safeTimelineTotal) * 100
+  const renderedStartMarkerPercent = renderedStartRatio * 100
+  const renderedEndMarkerPercent = renderedEndRatio * 100
+  const showStartTooltip = engagedHandle === 'start'
+  const showEndTooltip = engagedHandle === 'end'
 
   return (
     <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-10">
@@ -921,11 +935,19 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 {!supportsSourcePreview
                   ? 'Showing the exported clip because a direct source preview is unavailable on this device.'
                   : previewMode === 'rendered'
-                    ? 'Review the exported vertical clip with captions and layout applied.'
+                    ? renderedOutOfSync
+                      ? 'Viewing the last saved render. The exported clip will update after you save these adjustments.'
+                      : 'Review the exported vertical clip with captions and layout applied.'
                     : previewMode === 'original'
                       ? 'Viewing the untouched source range from the original footage.'
                       : 'Previewing the adjusted range directly from the source video without captions or layout.'}
               </p>
+              {renderedOutOfSync ? (
+                <p className="text-xs font-medium text-amber-200/90">
+                  The rendered output does not yet reflect these boundaries. Save the clip to rerun step 7 and refresh the
+                  export.
+                </p>
+              ) : null}
             </div>
           </div>
         </div>
@@ -946,24 +968,55 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 className="relative mt-6 h-2 rounded-full bg-white/10"
               >
                 <div
-                  className="pointer-events-none absolute inset-y-0 z-10 rounded-full bg-sky-400/40"
+                  className="pointer-events-none absolute inset-y-0 z-10 rounded-full bg-sky-400/35"
                   style={{ left: `${originalOverlayLeftPercent}%`, right: `${originalOverlayRightPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute -top-2 z-20 h-3 w-px -translate-x-1/2 rounded bg-sky-300/80"
+                  className="pointer-events-none absolute inset-y-0 z-20 rounded-full bg-emerald-400/35"
+                  style={{ left: `${renderedOverlayLeftPercent}%`, right: `${renderedOverlayRightPercent}%` }}
+                  aria-hidden="true"
+                />
+                <div
+                  className="pointer-events-none absolute -top-2 z-30 h-3 w-px -translate-x-1/2 rounded bg-sky-300/80"
                   style={{ left: `${originalStartMarkerPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute -top-2 z-20 h-3 w-px -translate-x-1/2 rounded bg-sky-300/80"
+                  className="pointer-events-none absolute -top-2 z-30 h-3 w-px -translate-x-1/2 rounded bg-sky-300/80"
                   style={{ left: `${originalEndMarkerPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute top-0 bottom-0 z-30 rounded-full bg-[var(--ring)]"
+                  className="pointer-events-none absolute -bottom-2 z-30 h-3 w-px -translate-x-1/2 rounded bg-emerald-300/80"
+                  style={{ left: `${renderedStartMarkerPercent}%` }}
+                  aria-hidden="true"
+                />
+                <div
+                  className="pointer-events-none absolute -bottom-2 z-30 h-3 w-px -translate-x-1/2 rounded bg-emerald-300/80"
+                  style={{ left: `${renderedEndMarkerPercent}%` }}
+                  aria-hidden="true"
+                />
+                <div
+                  className="pointer-events-none absolute top-0 bottom-0 z-40 rounded-full bg-[color:color-mix(in_srgb,var(--ring)_80%,transparent)]"
                   style={{ left: `${startPercent}%`, right: `${100 - endPercent}%` }}
                 />
+                {showStartTooltip ? (
+                  <div
+                    className="pointer-events-none absolute -top-7 z-50 -translate-x-1/2 rounded-md bg-black/85 px-2 py-0.5 text-[10px] font-semibold text-white shadow-lg"
+                    style={{ left: `${startPercent}%` }}
+                  >
+                    {startOffsetTooltip}
+                  </div>
+                ) : null}
+                {showEndTooltip ? (
+                  <div
+                    className="pointer-events-none absolute -top-7 z-50 -translate-x-1/2 rounded-md bg-black/85 px-2 py-0.5 text-[10px] font-semibold text-white shadow-lg"
+                    style={{ left: `${endPercent}%` }}
+                  >
+                    {endOffsetTooltip}
+                  </div>
+                ) : null}
                 <button
                   type="button"
                   role="slider"
@@ -977,6 +1030,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   onPointerUp={handleHandlePointerEnd}
                   onPointerCancel={handleHandlePointerEnd}
                   onKeyDown={(event) => handleHandleKeyDown(event, 'start')}
+                  onBlur={handleHandleBlur}
                   className="absolute top-1/2 z-40 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--card)] shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                   style={{ left: `${startPercent}%` }}
                 >
@@ -995,11 +1049,26 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   onPointerUp={handleHandlePointerEnd}
                   onPointerCancel={handleHandlePointerEnd}
                   onKeyDown={(event) => handleHandleKeyDown(event, 'end')}
+                  onBlur={handleHandleBlur}
                   className="absolute top-1/2 z-40 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--card)] shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                   style={{ left: `${endPercent}%` }}
                 >
                   <span className="sr-only">Drag to adjust end</span>
                 </button>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                <span className="flex items-center gap-2">
+                  <span className="h-2 w-6 rounded-full bg-sky-400/60" aria-hidden="true" />
+                  Original range
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="h-2 w-6 rounded-full bg-emerald-400/60" aria-hidden="true" />
+                  Rendered output
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="h-2 w-6 rounded-full bg-[color:color-mix(in_srgb,var(--ring)_80%,transparent)]" aria-hidden="true" />
+                  Current window
+                </span>
               </div>
               <div className="flex justify-between text-xs text-[var(--muted)]">
                 <span>{formatDuration(windowStart)}</span>
@@ -1019,7 +1088,10 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                 />
                 <span className="text-[10px] font-normal uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                  Relative to the {offsetReference.startLabel}
+                  Relative to the original start
+                </span>
+                <span className="text-[10px] font-normal text-[color:color-mix(in_srgb,var(--muted)_60%,transparent)]">
+                  Original {formatDuration(offsetReference.startBase)} → Current {formatDuration(rangeStart)}
                 </span>
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
@@ -1034,7 +1106,10 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                 />
                 <span className="text-[10px] font-normal uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                  Relative to the {offsetReference.endLabel}
+                  Relative to the original end
+                </span>
+                <span className="text-[10px] font-normal text-[color:color-mix(in_srgb,var(--muted)_60%,transparent)]">
+                  Original {formatDuration(offsetReference.endBase)} → Current {formatDuration(rangeEnd)}
                 </span>
               </label>
             </div>
