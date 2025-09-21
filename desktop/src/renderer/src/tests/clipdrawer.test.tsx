@@ -34,7 +34,7 @@ describe('ClipDrawer', () => {
       <ClipDrawer clips={sampleClips} selectedClipId={sampleClips[0].id} onSelect={onSelect} onRemove={onRemove} />
     )
 
-    expect(screen.getByRole('button', { name: /clip library/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /clips from source/i })).toBeInTheDocument()
     expect(screen.getByText(/first highlight/i)).toBeInTheDocument()
 
     fireEvent.click(screen.getByText(/second highlight/i))
@@ -43,7 +43,7 @@ describe('ClipDrawer', () => {
     fireEvent.click(screen.getByLabelText(/remove first highlight/i))
     expect(onRemove).toHaveBeenCalledWith('clip-1')
 
-    fireEvent.click(screen.getByRole('button', { name: /clip library/i }))
+    fireEvent.click(screen.getByRole('button', { name: /clips from source/i }))
     expect(screen.getByText(/drawer collapsed/i)).toBeInTheDocument()
   })
 })
