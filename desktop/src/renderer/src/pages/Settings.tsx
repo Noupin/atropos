@@ -290,7 +290,7 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
   )
 
   return (
-    <div className="w-full max-w-5xl px-4 py-8">
+    <div className="w-full px-6 py-8 lg:px-8">
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-4">
           <div>

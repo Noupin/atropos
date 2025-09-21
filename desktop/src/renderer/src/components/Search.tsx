@@ -76,7 +76,7 @@ const Search = forwardRef<HTMLInputElement, SearchProps>(
     const iconClass = disabled ? 'text-[var(--muted)] opacity-60' : 'text-[var(--muted)]'
 
     return (
-      <label className="relative flex w-full max-w-xl items-center">
+      <label className="relative flex w-full items-center">
         <span className="sr-only">Search clips</span>
         <svg
           aria-hidden="true"
