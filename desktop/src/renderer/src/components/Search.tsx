@@ -96,9 +96,9 @@ const Search = forwardRef<HTMLInputElement, SearchProps>(
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
-          className="w-full rounded-lg border border-white/10 bg-[var(--card)] px-9 py-2 text-sm text-[var(--fg)] shadow-sm placeholder:text-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:var(--panel)] px-9 py-2 text-sm text-[var(--fg)] shadow-[0_14px_32px_rgba(43,42,40,0.12)] placeholder:text-[var(--muted)] backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)] disabled:cursor-not-allowed disabled:opacity-60"
         />
-        <kbd className="pointer-events-none absolute right-3 hidden rounded border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--muted)] sm:block">
+        <kbd className="pointer-events-none absolute right-3 hidden rounded border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--muted)] shadow-[0_6px_16px_rgba(43,42,40,0.12)] sm:block">
           /
         </kbd>
       </label>
