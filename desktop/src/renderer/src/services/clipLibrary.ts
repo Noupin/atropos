@@ -155,9 +155,6 @@ const isFolderBridgeAvailable = (): boolean => {
 }
 
 export const canOpenAccountClipsFolder = (): boolean => {
-  if (BACKEND_MODE === 'api') {
-    return false
-  }
   return isFolderBridgeAvailable()
 }
 
@@ -165,8 +162,8 @@ export const openAccountClipsFolder = async (accountId: string): Promise<boolean
   if (!accountId) {
     return false
   }
-  if (BACKEND_MODE === 'api' || typeof window === 'undefined' || !window.api?.openAccountClipsFolder) {
-    console.warn('openAccountClipsFolder bridge is unavailable in API mode.')
+  if (typeof window === 'undefined' || !window.api?.openAccountClipsFolder) {
+    console.warn('openAccountClipsFolder bridge is unavailable in this environment.')
     return false
   }
 
