@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -297,6 +298,10 @@ def test_adjust_job_clip_rebuilds_assets(monkeypatch, tmp_path: Path) -> None:
         rating=9.0,
         quote="Amazing",
         reason="High energy",
+        start_seconds=5.0,
+        end_seconds=15.0,
+        original_start_seconds=5.0,
+        original_end_seconds=15.0,
     )
     state.clips[clip_id] = clip
 
@@ -314,10 +319,27 @@ def test_adjust_job_clip_rebuilds_assets(monkeypatch, tmp_path: Path) -> None:
     body = response.json()
     assert body["duration_seconds"] == pytest.approx(11.0)
     assert "t=7" in body["description"].lower()
+    assert body["start_seconds"] == pytest.approx(7.0)
+    assert body["end_seconds"] == pytest.approx(18.0)
+    assert body["original_start_seconds"] == pytest.approx(5.0)
+    assert body["original_end_seconds"] == pytest.approx(15.0)
+    assert body["has_adjustments"] is True
 
     updated_clip = server.app._get_job(job_id).clips[clip_id]
     assert updated_clip.duration_seconds == pytest.approx(11.0)
     assert updated_clip.description == body["description"]
+    assert updated_clip.start_seconds == pytest.approx(7.0)
+    assert updated_clip.end_seconds == pytest.approx(18.0)
+    assert updated_clip.original_start_seconds == pytest.approx(5.0)
+    assert updated_clip.original_end_seconds == pytest.approx(15.0)
+
+    metadata_path = vertical_path.with_suffix(".adjust.json")
+    assert metadata_path.exists()
+    metadata = json.loads(metadata_path.read_text())
+    assert metadata["start_seconds"] == pytest.approx(7.0)
+    assert metadata["end_seconds"] == pytest.approx(18.0)
+    assert metadata["original_start_seconds"] == pytest.approx(5.0)
+    assert metadata["original_end_seconds"] == pytest.approx(15.0)
 
     loop.close()
     with server.app._jobs_lock:
@@ -381,9 +403,22 @@ def test_adjust_library_clip_updates_files(monkeypatch, tmp_path: Path) -> None:
     payload = response.json()
     assert payload["duration_seconds"] == pytest.approx(14.0)
     assert "t=6" in payload["description"].lower()
+    assert payload["start_seconds"] == pytest.approx(6.0)
+    assert payload["end_seconds"] == pytest.approx(20.0)
+    assert payload["original_start_seconds"] == pytest.approx(5.0)
+    assert payload["original_end_seconds"] == pytest.approx(15.0)
+    assert payload["has_adjustments"] is True
 
     refreshed_description = description_path.read_text(encoding="utf-8")
     assert "t=6" in refreshed_description.lower()
+
+    metadata_path = vertical_path.with_suffix(".adjust.json")
+    assert metadata_path.exists()
+    metadata = json.loads(metadata_path.read_text())
+    assert metadata["start_seconds"] == pytest.approx(6.0)
+    assert metadata["end_seconds"] == pytest.approx(20.0)
+    assert metadata["original_start_seconds"] == pytest.approx(5.0)
+    assert metadata["original_end_seconds"] == pytest.approx(15.0)
 
 
 def test_config_endpoint_lists_and_updates_values() -> None:

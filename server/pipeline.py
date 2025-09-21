@@ -1116,6 +1116,10 @@ def process_video(
                         "quote": candidate.quote,
                         "reason": candidate.reason,
                         "rating": candidate.rating,
+                        "start_seconds": float(candidate.start),
+                        "end_seconds": float(candidate.end),
+                        "original_start_seconds": float(candidate.start),
+                        "original_end_seconds": float(candidate.end),
                     },
                 )
             )

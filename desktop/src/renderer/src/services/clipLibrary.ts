@@ -23,6 +23,11 @@ type RawClipPayload = {
   timestamp_url?: unknown
   timestamp_seconds?: unknown
   thumbnail_url?: unknown
+  start_seconds?: unknown
+  end_seconds?: unknown
+  original_start_seconds?: unknown
+  original_end_seconds?: unknown
+  has_adjustments?: unknown
 }
 
 const isClipArray = (value: unknown): value is Clip[] => {
@@ -50,7 +55,12 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
     account,
     timestamp_url: timestampUrl,
     timestamp_seconds: timestampSeconds,
-    thumbnail_url: thumbnailUrl
+    thumbnail_url: thumbnailUrl,
+    start_seconds: startSecondsRaw,
+    end_seconds: endSecondsRaw,
+    original_start_seconds: originalStartSecondsRaw,
+    original_end_seconds: originalEndSecondsRaw,
+    has_adjustments: hasAdjustmentsRaw
   } = payload
 
   if (typeof id !== 'string' || id.length === 0) {
@@ -81,6 +91,24 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
   const videoTitleValue =
     typeof videoTitle === 'string' && videoTitle.length > 0 ? videoTitle : sourceTitle
 
+  const startSeconds =
+    typeof startSecondsRaw === 'number' && Number.isFinite(startSecondsRaw)
+      ? Math.max(0, startSecondsRaw)
+      : 0
+  const endSeconds =
+    typeof endSecondsRaw === 'number' && Number.isFinite(endSecondsRaw)
+      ? Math.max(startSeconds, endSecondsRaw)
+      : startSeconds + Math.max(0, durationSeconds)
+  const originalStartSeconds =
+    typeof originalStartSecondsRaw === 'number' && Number.isFinite(originalStartSecondsRaw)
+      ? Math.max(0, originalStartSecondsRaw)
+      : startSeconds
+  const originalEndSeconds =
+    typeof originalEndSecondsRaw === 'number' && Number.isFinite(originalEndSecondsRaw)
+      ? Math.max(originalStartSeconds, originalEndSecondsRaw)
+      : endSeconds
+  const hasAdjustments = hasAdjustmentsRaw === true
+
   const clip: Clip = {
     id,
     title,
@@ -106,7 +134,12 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
         : timestampSeconds === null
         ? null
         : undefined,
-    accountId: typeof account === 'string' ? account : account === null ? null : undefined
+    accountId: typeof account === 'string' ? account : account === null ? null : undefined,
+    startSeconds,
+    endSeconds,
+    originalStartSeconds,
+    originalEndSeconds,
+    hasAdjustments
   }
 
   return clip

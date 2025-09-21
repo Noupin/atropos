@@ -275,6 +275,41 @@ const encodeClipId = (baseDir: string, filePath: string): string | null => {
   return toBase64Url(normalised)
 }
 
+const ADJUSTMENT_METADATA_SUFFIX = '.adjust.json'
+
+type AdjustmentMetadata = {
+  startSeconds: number
+  endSeconds: number
+  originalStartSeconds: number | null
+  originalEndSeconds: number | null
+}
+
+const loadAdjustmentMetadata = async (filePath: string): Promise<AdjustmentMetadata | null> => {
+  const stem = path.basename(filePath, path.extname(filePath))
+  const metadataPath = path.join(path.dirname(filePath), `${stem}${ADJUSTMENT_METADATA_SUFFIX}`)
+  try {
+    const raw = await fs.readFile(metadataPath, 'utf-8')
+    const data = JSON.parse(raw) as Record<string, unknown>
+    const start = data.start_seconds
+    const end = data.end_seconds
+    if (typeof start !== 'number' || !Number.isFinite(start) || typeof end !== 'number' || !Number.isFinite(end)) {
+      return null
+    }
+    const originalStart = data.original_start_seconds
+    const originalEnd = data.original_end_seconds
+    return {
+      startSeconds: start,
+      endSeconds: end,
+      originalStartSeconds:
+        typeof originalStart === 'number' && Number.isFinite(originalStart) ? originalStart : null,
+      originalEndSeconds:
+        typeof originalEnd === 'number' && Number.isFinite(originalEnd) ? originalEnd : null
+    }
+  } catch (error) {
+    return null
+  }
+}
+
 const tryReadDescription = async (candidates: string[]): Promise<string> => {
   for (const candidate of candidates) {
     try {
@@ -316,8 +351,6 @@ const buildClip = async (
 
   const descriptionMetadata = parseDescriptionMetadata(descriptionText)
   const stats = await fs.stat(filePath)
-  const duration = start !== null && end !== null ? Math.max(0, end - start) : 0
-
   let title = candidate?.quote ?? ''
   if (!title) {
     title = projectInfo.title ? `${projectInfo.title}` : stem
@@ -326,10 +359,47 @@ const buildClip = async (
   const playbackUrl = pathToFileURL(filePath).toString()
 
   let timestampUrl = descriptionMetadata.timestampUrl
-  if (!timestampUrl && descriptionMetadata.sourceUrl && start !== null && Number.isFinite(start)) {
+  const adjustments = await loadAdjustmentMetadata(filePath)
+
+  let originalStartSeconds = start ?? null
+  let originalEndSeconds = end ?? null
+  let startSeconds = start ?? null
+  let endSeconds = end ?? null
+
+  if (adjustments) {
+    startSeconds = adjustments.startSeconds
+    endSeconds = adjustments.endSeconds
+    if (adjustments.originalStartSeconds !== null) {
+      originalStartSeconds = adjustments.originalStartSeconds
+    }
+    if (adjustments.originalEndSeconds !== null) {
+      originalEndSeconds = adjustments.originalEndSeconds
+    }
+  }
+
+  if (startSeconds === null || !Number.isFinite(startSeconds)) {
+    startSeconds = originalStartSeconds ?? 0
+  }
+  if (endSeconds === null || !Number.isFinite(endSeconds)) {
+    const fallbackOriginal =
+      originalEndSeconds !== null && Number.isFinite(originalEndSeconds)
+        ? originalEndSeconds
+        : startSeconds
+    endSeconds = fallbackOriginal > startSeconds ? fallbackOriginal : startSeconds
+  }
+  if (originalStartSeconds === null || !Number.isFinite(originalStartSeconds)) {
+    originalStartSeconds = startSeconds
+  }
+  if (originalEndSeconds === null || !Number.isFinite(originalEndSeconds)) {
+    originalEndSeconds = endSeconds
+  }
+
+  const duration = Math.max(0, endSeconds - startSeconds)
+
+  if (!timestampUrl && descriptionMetadata.sourceUrl && Number.isFinite(startSeconds)) {
     try {
       const url = new URL(descriptionMetadata.sourceUrl)
-      url.searchParams.set('t', Math.round(start).toString())
+      url.searchParams.set('t', Math.round(startSeconds).toString())
       timestampUrl = url.toString()
     } catch (error) {
       timestampUrl = null
@@ -343,6 +413,9 @@ const buildClip = async (
 
   const projectId = encodeClipId(baseDir, projectDir)
   const projectTitle = projectInfo.title || path.basename(projectDir)
+
+  const hasAdjustments =
+    Math.abs(startSeconds - originalStartSeconds) > 1e-3 || Math.abs(endSeconds - originalEndSeconds) > 1e-3
 
   const clip: Clip = {
     id: clipId,
@@ -364,8 +437,13 @@ const buildClip = async (
     reason: candidate?.reason ?? null,
     timestampUrl,
     timestampSeconds:
-      descriptionMetadata.timestampSeconds ?? (start !== null && Number.isFinite(start) ? start : null),
-    accountId
+      descriptionMetadata.timestampSeconds ?? (Number.isFinite(startSeconds) ? startSeconds : null),
+    accountId,
+    startSeconds,
+    endSeconds,
+    originalStartSeconds,
+    originalEndSeconds,
+    hasAdjustments
   }
 
   return clip

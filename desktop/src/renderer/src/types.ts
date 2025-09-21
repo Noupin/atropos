@@ -19,6 +19,11 @@ export interface Clip {
   timestampUrl?: string | null
   timestampSeconds?: number | null
   accountId?: string | null
+  startSeconds: number
+  endSeconds: number
+  originalStartSeconds: number
+  originalEndSeconds: number
+  hasAdjustments: boolean
 }
 
 export type SupportedPlatform = 'tiktok' | 'youtube' | 'instagram'

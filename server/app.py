@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import re
 import threading
 import uuid
@@ -33,6 +34,7 @@ from library import (
     list_account_clips,
     list_account_clips_sync,
     resolve_clip_video_path,
+    write_adjustment_metadata,
 )
 from steps.cut import save_clip
 from steps.subtitle import build_srt_for_range
@@ -91,6 +93,24 @@ for dataclass_name in _CONFIG_DATACLASS_NAMES:
         constant_name = field_info.name.upper()
         if hasattr(pipeline_config, constant_name):
             _CONFIG_DATACLASS_FIELD_MAP[constant_name] = (dataclass_name, field_info.name)
+
+
+_CLIP_ID_PATTERN = re.compile(r"clip_(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)", re.IGNORECASE)
+
+
+def _parse_clip_bounds_from_id(clip_id: str) -> tuple[float, float] | None:
+    match = _CLIP_ID_PATTERN.search(clip_id)
+    if not match:
+        return None
+    start_raw, end_raw = match.groups()
+    try:
+        start_value = float(start_raw)
+        end_value = float(end_raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(start_value) or not math.isfinite(end_value) or end_value <= start_value:
+        return None
+    return start_value, end_value
 
 
 class RunRequest(BaseModel):
@@ -372,6 +392,10 @@ class ClipArtifact:
     rating: float | None = None
     quote: str | None = None
     reason: str | None = None
+    start_seconds: float = 0.0
+    end_seconds: float = 0.0
+    original_start_seconds: float = 0.0
+    original_end_seconds: float = 0.0
 
 
 class ClipManifest(BaseModel):
@@ -392,6 +416,11 @@ class ClipManifest(BaseModel):
     quote: str | None = None
     reason: str | None = None
     account: str | None = None
+    start_seconds: float = Field(..., ge=0)
+    end_seconds: float = Field(..., ge=0)
+    original_start_seconds: float = Field(..., ge=0)
+    original_end_seconds: float = Field(..., ge=0)
+    has_adjustments: bool = False
 
 
 class LibraryClipManifest(ClipManifest):
@@ -404,6 +433,11 @@ class LibraryClipManifest(ClipManifest):
 
 def _clip_to_payload(clip: ClipArtifact, request: Request, job_id: str) -> Dict[str, Any]:
     """Return a serialisable payload for ``clip``."""
+
+    has_adjustments = not (
+        math.isclose(clip.start_seconds, clip.original_start_seconds, abs_tol=1e-3)
+        and math.isclose(clip.end_seconds, clip.original_end_seconds, abs_tol=1e-3)
+    )
 
     return {
         "id": clip.clip_id,
@@ -423,6 +457,11 @@ def _clip_to_payload(clip: ClipArtifact, request: Request, job_id: str) -> Dict[
         "quote": clip.quote,
         "reason": clip.reason,
         "account": clip.account,
+        "start_seconds": clip.start_seconds,
+        "end_seconds": clip.end_seconds,
+        "original_start_seconds": clip.original_start_seconds,
+        "original_end_seconds": clip.original_end_seconds,
+        "has_adjustments": has_adjustments,
     }
 
 
@@ -494,6 +533,32 @@ class JobState:
         if duration_value is None:
             duration_value = 0.0
 
+        raw_start = data.get("start_seconds")
+        raw_end = data.get("end_seconds")
+        fallback_bounds = _parse_clip_bounds_from_id(clip_id)
+
+        start_value = _safe_float(raw_start)
+        if start_value is None or not math.isfinite(start_value):
+            start_value = fallback_bounds[0] if fallback_bounds else 0.0
+        end_value = _safe_float(raw_end)
+        if end_value is None or not math.isfinite(end_value):
+            if fallback_bounds is not None:
+                end_value = fallback_bounds[1]
+            else:
+                end_value = start_value + max(0.0, duration_value)
+        original_start_value = _safe_float(data.get("original_start_seconds"))
+        if original_start_value is None or not math.isfinite(original_start_value):
+            if fallback_bounds is not None:
+                original_start_value = fallback_bounds[0]
+            else:
+                original_start_value = start_value
+        original_end_value = _safe_float(data.get("original_end_seconds"))
+        if original_end_value is None or not math.isfinite(original_end_value):
+            if fallback_bounds is not None:
+                original_end_value = fallback_bounds[1]
+            else:
+                original_end_value = end_value
+
         views_value = _safe_int(data.get("views"))
         rating_value = _safe_float(data.get("rating"))
         quote_value = _ensure_str(data.get("quote"))
@@ -515,6 +580,10 @@ class JobState:
             rating=rating_value,
             quote=quote_value,
             reason=reason_value,
+            start_seconds=max(0.0, start_value),
+            end_seconds=max(0.0, end_value),
+            original_start_seconds=max(0.0, original_start_value),
+            original_end_seconds=max(0.0, original_end_value),
         )
 
         self.project_dir = base
@@ -668,6 +737,8 @@ def _apply_clip_adjustment(
     source_url: str,
     source_title: str,
     quote: str | None,
+    original_start_seconds: float,
+    original_end_seconds: float,
 ) -> tuple[float, str]:
     """Rebuild clip assets for the provided ``stem`` using the new range."""
 
@@ -752,6 +823,13 @@ def _apply_clip_adjustment(
     )
 
     duration = max(0.0, end_seconds - start_seconds)
+    write_adjustment_metadata(
+        vertical_path,
+        start_seconds=start_seconds,
+        end_seconds=end_seconds,
+        original_start_seconds=original_start_seconds,
+        original_end_seconds=original_end_seconds,
+    )
     return duration, description_text
 
 
@@ -920,16 +998,21 @@ async def adjust_job_clip(
     if clip is None or project_dir is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
 
+    start_seconds = float(payload.start_seconds)
+    end_seconds = float(payload.end_seconds)
+
     duration, description_text = _apply_clip_adjustment(
         project_dir=project_dir,
         stem=clip.video_path.stem,
-        start_seconds=float(payload.start_seconds),
-        end_seconds=float(payload.end_seconds),
+        start_seconds=start_seconds,
+        end_seconds=end_seconds,
         title=clip.title,
         channel=clip.channel,
         source_url=clip.source_url,
         source_title=clip.source_title,
         quote=clip.quote,
+        original_start_seconds=clip.original_start_seconds,
+        original_end_seconds=clip.original_end_seconds,
     )
 
     updated = ClipArtifact(
@@ -948,6 +1031,10 @@ async def adjust_job_clip(
         rating=clip.rating,
         quote=clip.quote,
         reason=clip.reason,
+        start_seconds=max(0.0, start_seconds),
+        end_seconds=max(0.0, end_seconds),
+        original_start_seconds=clip.original_start_seconds,
+        original_end_seconds=clip.original_end_seconds,
     )
 
     with state.lock:
@@ -1079,6 +1166,8 @@ async def adjust_library_clip(
         source_url=target.source_url,
         source_title=target.source_title,
         quote=target.quote,
+        original_start_seconds=target.original_start_seconds,
+        original_end_seconds=target.original_end_seconds,
     )
 
     refreshed = list_account_clips_sync(account_value)

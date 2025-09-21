@@ -1,5 +1,4 @@
 """Clip library discovery and metadata utilities."""
-
 from __future__ import annotations
 
 import asyncio
@@ -20,6 +19,7 @@ from schedule_upload import get_out_root
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_ACCOUNT_PLACEHOLDER = "__default__"
+ADJUSTMENT_METADATA_SUFFIX = ".adjust.json"
 
 CLIP_FILENAME_PATTERN = re.compile(r"^clip_(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)(?:_r(\d+(?:\.\d+)?))?$")
 FULL_VIDEO_PATTERN = re.compile(r"^full video:\s*(https?://\S+)", re.IGNORECASE)
@@ -59,6 +59,14 @@ class ProjectMetadata:
 
 
 @dataclass
+class AdjustmentMetadata:
+    start_seconds: float
+    end_seconds: float
+    original_start_seconds: Optional[float]
+    original_end_seconds: Optional[float]
+
+
+@dataclass
 class LibraryClip:
     clip_id: str
     title: str
@@ -79,6 +87,11 @@ class LibraryClip:
     timestamp_seconds: Optional[float]
     thumbnail_url: Optional[str]
     playback_path: Path
+    start_seconds: float
+    end_seconds: float
+    original_start_seconds: float
+    original_end_seconds: float
+    has_adjustments: bool
 
     def to_payload(self, request) -> Dict[str, object]:  # type: ignore[override]
         from fastapi import Request  # local import to avoid circular for typing
@@ -113,6 +126,11 @@ class LibraryClip:
             "timestamp_url": self.timestamp_url,
             "timestamp_seconds": self.timestamp_seconds,
             "thumbnail_url": self.thumbnail_url,
+            "start_seconds": self.start_seconds,
+            "end_seconds": self.end_seconds,
+            "original_start_seconds": self.original_start_seconds,
+            "original_end_seconds": self.original_end_seconds,
+            "has_adjustments": self.has_adjustments,
         }
 
 
@@ -122,6 +140,59 @@ def _round_two(value: float) -> float:
 
 def _format_candidate_key(start: float, end: float) -> str:
     return f"{_round_two(start):.2f}-{_round_two(end):.2f}"
+
+
+def load_adjustment_metadata(clip_path: Path) -> Optional[AdjustmentMetadata]:
+    meta_path = clip_path.with_suffix(ADJUSTMENT_METADATA_SUFFIX)
+    if not meta_path.exists() or not meta_path.is_file():
+        return None
+    try:
+        raw = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    start = raw.get("start_seconds")
+    end = raw.get("end_seconds")
+    if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+        return None
+    original_start = raw.get("original_start_seconds")
+    original_end = raw.get("original_end_seconds")
+    start_value = float(start)
+    end_value = float(end)
+    original_start_value = (
+        float(original_start)
+        if isinstance(original_start, (int, float)) and math.isfinite(float(original_start))
+        else None
+    )
+    original_end_value = (
+        float(original_end)
+        if isinstance(original_end, (int, float)) and math.isfinite(float(original_end))
+        else None
+    )
+    return AdjustmentMetadata(
+        start_seconds=start_value,
+        end_seconds=end_value,
+        original_start_seconds=original_start_value,
+        original_end_seconds=original_end_value,
+    )
+
+
+def write_adjustment_metadata(
+    clip_path: Path,
+    *,
+    start_seconds: float,
+    end_seconds: float,
+    original_start_seconds: float,
+    original_end_seconds: float,
+) -> None:
+    meta_path = clip_path.with_suffix(ADJUSTMENT_METADATA_SUFFIX)
+    payload = {
+        "start_seconds": float(start_seconds),
+        "end_seconds": float(end_seconds),
+        "original_start_seconds": float(original_start_seconds),
+        "original_end_seconds": float(original_end_seconds),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    meta_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _parse_clip_filename(stem: str) -> Optional[tuple[float, float, Optional[float]]]:
@@ -374,13 +445,28 @@ def _build_clip(
     end: Optional[float]
     rating: Optional[float]
     candidate: Optional[CandidateMetadata]
+    original_start: Optional[float]
+    original_end: Optional[float]
     if parsed:
         start, end, rating = parsed
         key = _format_candidate_key(start, end)
         candidate = candidate_map.get(key)
+        original_start = start
+        original_end = end
     else:
         start = end = rating = None
         candidate = None
+        original_start = None
+        original_end = None
+
+    adjustments = load_adjustment_metadata(clip_path)
+    if adjustments:
+        start = adjustments.start_seconds
+        end = adjustments.end_seconds
+        if adjustments.original_start_seconds is not None:
+            original_start = adjustments.original_start_seconds
+        if adjustments.original_end_seconds is not None:
+            original_end = adjustments.original_end_seconds
     description_text = _read_description_file(
         [
             clip_path.with_suffix(".txt"),
@@ -395,6 +481,26 @@ def _build_clip(
     except OSError:
         return None
     duration = max(0.0, end - start) if start is not None and end is not None else 0.0
+    start_value = float(start) if start is not None else 0.0
+    end_value = float(end) if end is not None else max(0.0, duration)
+    if original_start is not None:
+        original_start_value = float(original_start)
+    else:
+        original_start_value = start_value
+    if original_end is not None:
+        original_end_value = float(original_end)
+    else:
+        original_end_value = end_value
+    has_adjustments = (
+        start is not None
+        and end is not None
+        and original_start is not None
+        and original_end is not None
+        and not (
+            math.isclose(start, original_start, abs_tol=1e-3)
+            and math.isclose(end, original_end, abs_tol=1e-3)
+        )
+    )
     project_title = project_info.title or project_dir.name
     title = candidate.quote or project_title or stem
     timestamp_url = description_metadata.timestamp_url
@@ -445,6 +551,11 @@ def _build_clip(
         timestamp_seconds=timestamp_seconds,
         thumbnail_url=None,
         playback_path=clip_path,
+        start_seconds=start_value,
+        end_seconds=end_value,
+        original_start_seconds=original_start_value,
+        original_end_seconds=original_end_value,
+        has_adjustments=has_adjustments,
     )
 
 
@@ -494,7 +605,10 @@ def resolve_clip_video_path(account_id: Optional[str], clip_id: str) -> Path:
 __all__ = [
     "LibraryClip",
     "DEFAULT_ACCOUNT_PLACEHOLDER",
+    "ADJUSTMENT_METADATA_SUFFIX",
     "list_account_clips",
     "list_account_clips_sync",
     "resolve_clip_video_path",
+    "load_adjustment_metadata",
+    "write_adjustment_metadata",
 ]

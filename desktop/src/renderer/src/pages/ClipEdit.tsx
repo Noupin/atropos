@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { FC, ChangeEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { FC, ChangeEvent, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatDuration } from '../lib/format'
 import { adjustJobClip } from '../services/pipelineApi'
@@ -13,21 +13,9 @@ type ClipEditLocationState = {
   context?: 'job' | 'library'
 }
 
-const parseClipBounds = (clipId: string): { start: number; end: number } | null => {
-  const match = clipId.match(/clip_(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)/i)
-  if (!match) {
-    return null
-  }
-  const [, startRaw, endRaw] = match
-  const start = Number.parseFloat(startRaw ?? '')
-  const end = Number.parseFloat(endRaw ?? '')
-  if (Number.isNaN(start) || Number.isNaN(end) || end <= start) {
-    return null
-  }
-  return { start, end }
-}
-
 const toSeconds = (value: number): number => Math.max(0, Number.isFinite(value) ? value : 0)
+const MIN_CLIP_GAP = 0.25
+const DEFAULT_EXPAND_SECONDS = 10
 
 const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = ({ registerSearch }) => {
   const { id } = useParams<{ id: string }>()
@@ -42,52 +30,80 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     return () => registerSearch(null)
   }, [registerSearch])
 
-  const parsedBounds = useMemo(() => (sourceClip ? parseClipBounds(sourceClip.id) : null), [sourceClip])
-  const originalStart = parsedBounds?.start ?? 0
-  const originalEnd = parsedBounds?.end ?? (sourceClip ? originalStart + sourceClip.durationSec : originalStart + 10)
-
-  const [windowPadding, setWindowPadding] = useState(5)
-  const [rangeStart, setRangeStart] = useState(originalStart)
-  const [rangeEnd, setRangeEnd] = useState(originalEnd)
-  const [clipState, setClipState] = useState(sourceClip)
+  const [clipState, setClipState] = useState<Clip | null>(sourceClip ?? null)
+  const [rangeStart, setRangeStart] = useState(() => {
+    if (sourceClip) {
+      return sourceClip.startSeconds
+    }
+    return 0
+  })
+  const [rangeEnd, setRangeEnd] = useState(() => {
+    if (sourceClip) {
+      return Math.max(sourceClip.startSeconds + MIN_CLIP_GAP, sourceClip.endSeconds)
+    }
+    return MIN_CLIP_GAP
+  })
+  const [windowStart, setWindowStart] = useState(() => {
+    if (!sourceClip) {
+      return 0
+    }
+    return Math.max(0, Math.min(sourceClip.startSeconds, sourceClip.originalStartSeconds))
+  })
+  const [windowEnd, setWindowEnd] = useState(() => {
+    if (!sourceClip) {
+      return MIN_CLIP_GAP
+    }
+    return Math.max(
+      sourceClip.endSeconds,
+      sourceClip.originalEndSeconds,
+      sourceClip.startSeconds + MIN_CLIP_GAP,
+      sourceClip.originalStartSeconds + MIN_CLIP_GAP
+    )
+  })
+  const [expandAmount, setExpandAmount] = useState(DEFAULT_EXPAND_SECONDS)
+  const [activeHandle, setActiveHandle] = useState<'start' | 'end' | null>(null)
+  const timelineRef = useRef<HTMLDivElement | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
 
-  const applyUpdatedClip = useCallback(
-    (updated: Clip, fallbackStart: number, fallbackEnd: number) => {
-      setClipState(updated)
-      const bounds = parseClipBounds(updated.id)
-      if (bounds) {
-        setRangeStart(bounds.start)
-        setRangeEnd(bounds.end)
-      } else {
-        setRangeStart(fallbackStart)
-        setRangeEnd(fallbackEnd)
-      }
-    },
-    []
-  )
+  const originalStart = clipState?.originalStartSeconds ?? 0
+  const originalEnd = clipState?.originalEndSeconds ?? (originalStart + (clipState?.durationSec ?? 10))
+
+  const applyUpdatedClip = useCallback((updated: Clip) => {
+    setClipState(updated)
+    setRangeStart(updated.startSeconds)
+    setRangeEnd(updated.endSeconds)
+    setWindowStart(Math.max(0, Math.min(updated.startSeconds, updated.originalStartSeconds)))
+    setWindowEnd(Math.max(updated.endSeconds, updated.originalEndSeconds))
+  }, [])
 
   useEffect(() => {
-    setClipState(sourceClip)
-    if (sourceClip) {
-      const bounds = parseClipBounds(sourceClip.id)
-      if (bounds) {
-        setRangeStart(bounds.start)
-        setRangeEnd(bounds.end)
-      } else {
-        setRangeStart(0)
-        setRangeEnd(sourceClip.durationSec)
-      }
-    }
+    setClipState(sourceClip ?? null)
   }, [sourceClip])
 
-  const windowStartBase = Math.min(originalStart, rangeStart)
-  const windowEndBase = Math.max(originalEnd, rangeEnd)
-  const windowStart = Math.max(0, windowStartBase - windowPadding)
-  const windowEnd = windowEndBase + windowPadding
-  const minGap = 0.25
+  useEffect(() => {
+    if (!clipState) {
+      setRangeStart(0)
+      setRangeEnd(MIN_CLIP_GAP)
+      setWindowStart(0)
+      setWindowEnd(MIN_CLIP_GAP)
+      return
+    }
+    setRangeStart(clipState.startSeconds)
+    setRangeEnd(clipState.endSeconds)
+    setWindowStart(Math.max(0, Math.min(clipState.startSeconds, clipState.originalStartSeconds)))
+    setWindowEnd(
+      Math.max(
+        clipState.endSeconds,
+        clipState.originalEndSeconds,
+        clipState.startSeconds + minGap,
+        clipState.originalStartSeconds + minGap
+      )
+    )
+  }, [clipState, minGap])
+
+  const minGap = MIN_CLIP_GAP
 
   const clampWithinWindow = useCallback(
     (value: number, kind: 'start' | 'end'): number => {
@@ -130,13 +146,142 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     [handleEndChange, handleStartChange]
   )
 
+  const updateRangeFromPointer = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>, kind: 'start' | 'end') => {
+      if (!timelineRef.current) {
+        return
+      }
+      const rect = timelineRef.current.getBoundingClientRect()
+      if (rect.width <= 0) {
+        return
+      }
+      const ratio = (event.clientX - rect.left) / rect.width
+      const clamped = Math.min(1, Math.max(0, ratio))
+      const value = windowStart + clamped * (windowEnd - windowStart)
+      if (kind === 'start') {
+        handleStartChange(value)
+      } else {
+        handleEndChange(value)
+      }
+    },
+    [handleEndChange, handleStartChange, windowEnd, windowStart]
+  )
+
+  const handleHandlePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>, kind: 'start' | 'end') => {
+      event.preventDefault()
+      setActiveHandle(kind)
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId)
+      } catch (error) {
+        // ignore pointer capture errors for unsupported browsers
+      }
+      updateRangeFromPointer(event, kind)
+    },
+    [updateRangeFromPointer]
+  )
+
+  const handleHandlePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>, kind: 'start' | 'end') => {
+      if (activeHandle !== kind) {
+        return
+      }
+      event.preventDefault()
+      updateRangeFromPointer(event, kind)
+    },
+    [activeHandle, updateRangeFromPointer]
+  )
+
+  const handleHandlePointerEnd = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch (error) {
+      // ignore release errors
+    }
+    setActiveHandle(null)
+  }, [])
+
+  const handleHandleKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLButtonElement>, kind: 'start' | 'end') => {
+      const { key } = event
+      const step = event.shiftKey ? 1 : 0.1
+      if (key === 'ArrowLeft' || key === 'ArrowDown') {
+        event.preventDefault()
+        if (kind === 'start') {
+          handleStartChange(rangeStart - step)
+        } else {
+          handleEndChange(rangeEnd - step)
+        }
+      } else if (key === 'ArrowRight' || key === 'ArrowUp') {
+        event.preventDefault()
+        if (kind === 'start') {
+          handleStartChange(rangeStart + step)
+        } else {
+          handleEndChange(rangeEnd + step)
+        }
+      } else if (key === 'Home') {
+        event.preventDefault()
+        if (kind === 'start') {
+          handleStartChange(windowStart)
+        } else {
+          handleEndChange(rangeStart + minGap)
+        }
+      } else if (key === 'End') {
+        event.preventDefault()
+        if (kind === 'start') {
+          handleStartChange(rangeEnd - minGap)
+        } else {
+          handleEndChange(windowEnd)
+        }
+      }
+    },
+    [handleEndChange, handleStartChange, minGap, rangeEnd, rangeStart, windowEnd, windowStart]
+  )
+
+  const handleExpandAmountChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const value = Number.parseFloat(event.target.value)
+    if (Number.isNaN(value)) {
+      return
+    }
+    setExpandAmount(value >= 0 ? value : 0)
+  }, [])
+
+  const handleExpandLeft = useCallback(() => {
+    if (expandAmount <= 0) {
+      return
+    }
+    setWindowStart((prev) => Math.max(0, prev - expandAmount))
+  }, [expandAmount])
+
+  const handleExpandRight = useCallback(() => {
+    if (expandAmount <= 0) {
+      return
+    }
+    setWindowEnd((prev) => prev + expandAmount)
+  }, [expandAmount])
+
   const handleReset = useCallback(() => {
-    setRangeStart(originalStart)
-    setRangeEnd(originalEnd)
-    setWindowPadding(5)
+    if (!clipState) {
+      setRangeStart(0)
+      setRangeEnd(MIN_CLIP_GAP)
+      setWindowStart(0)
+      setWindowEnd(MIN_CLIP_GAP)
+    } else {
+      const baseStart = Math.max(0, Math.min(clipState.originalStartSeconds, clipState.startSeconds))
+      const baseEnd = Math.max(
+        clipState.originalEndSeconds,
+        clipState.endSeconds,
+        clipState.originalStartSeconds + minGap,
+        clipState.startSeconds + minGap
+      )
+      setRangeStart(clipState.originalStartSeconds)
+      setRangeEnd(Math.max(clipState.originalStartSeconds + minGap, clipState.originalEndSeconds))
+      setWindowStart(baseStart)
+      setWindowEnd(baseEnd)
+    }
     setSaveError(null)
     setSaveSuccess(null)
-  }, [originalEnd, originalStart])
+  }, [clipState, minGap])
 
   const durationSeconds = Math.max(minGap, rangeEnd - rangeStart)
   const context = state?.context ?? 'job'
@@ -165,7 +310,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
           startSeconds: adjustedStart,
           endSeconds: adjustedEnd
         })
-        applyUpdatedClip(updated, adjustedStart, adjustedEnd)
+        applyUpdatedClip(updated)
       } else {
         const jobId = state?.jobId
         if (!jobId) {
@@ -175,7 +320,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
           startSeconds: adjustedStart,
           endSeconds: adjustedEnd
         })
-        applyUpdatedClip(updated, adjustedStart, adjustedEnd)
+        applyUpdatedClip(updated)
       }
       setSaveSuccess('Clip boundaries updated successfully.')
     } catch (error) {
@@ -255,31 +400,50 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
               <div className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
                 Clip window
               </div>
-              <div className="relative h-2 rounded-full bg-white/10">
+              <div
+                ref={timelineRef}
+                className="relative mt-6 h-2 rounded-full bg-white/10"
+              >
                 <div
-                  className="absolute h-2 rounded-full bg-[var(--ring)]"
+                  className="pointer-events-none absolute top-0 bottom-0 rounded-full bg-[var(--ring)]"
                   style={{ left: `${startPercent}%`, right: `${100 - endPercent}%` }}
                 />
-              </div>
-              <div className="relative mt-6 flex items-center">
-                <input
-                  type="range"
-                  min={windowStart}
-                  max={windowEnd}
-                  step="0.1"
-                  value={rangeStart}
-                  onChange={(event) => handleRangeInputChange(event, 'start')}
-                  className="pointer-events-auto absolute z-20 h-2 w-full appearance-none bg-transparent"
-                />
-                <input
-                  type="range"
-                  min={windowStart}
-                  max={windowEnd}
-                  step="0.1"
-                  value={rangeEnd}
-                  onChange={(event) => handleRangeInputChange(event, 'end')}
-                  className="pointer-events-auto absolute z-10 h-2 w-full appearance-none bg-transparent"
-                />
+                <button
+                  type="button"
+                  role="slider"
+                  aria-label="Adjust clip start"
+                  aria-valuemin={Number(windowStart.toFixed(2))}
+                  aria-valuemax={Number((rangeEnd - minGap).toFixed(2))}
+                  aria-valuenow={Number(rangeStart.toFixed(2))}
+                  aria-valuetext={formatDuration(rangeStart)}
+                  onPointerDown={(event) => handleHandlePointerDown(event, 'start')}
+                  onPointerMove={(event) => handleHandlePointerMove(event, 'start')}
+                  onPointerUp={handleHandlePointerEnd}
+                  onPointerCancel={handleHandlePointerEnd}
+                  onKeyDown={(event) => handleHandleKeyDown(event, 'start')}
+                  className="absolute top-1/2 z-20 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--card)] shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  style={{ left: `${startPercent}%` }}
+                >
+                  <span className="sr-only">Drag to adjust start</span>
+                </button>
+                <button
+                  type="button"
+                  role="slider"
+                  aria-label="Adjust clip end"
+                  aria-valuemin={Number((rangeStart + minGap).toFixed(2))}
+                  aria-valuemax={Number(windowEnd.toFixed(2))}
+                  aria-valuenow={Number(rangeEnd.toFixed(2))}
+                  aria-valuetext={formatDuration(rangeEnd)}
+                  onPointerDown={(event) => handleHandlePointerDown(event, 'end')}
+                  onPointerMove={(event) => handleHandlePointerMove(event, 'end')}
+                  onPointerUp={handleHandlePointerEnd}
+                  onPointerCancel={handleHandlePointerEnd}
+                  onKeyDown={(event) => handleHandleKeyDown(event, 'end')}
+                  className="absolute top-1/2 z-20 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--card)] shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  style={{ left: `${endPercent}%` }}
+                >
+                  <span className="sr-only">Drag to adjust end</span>
+                </button>
               </div>
               <div className="flex justify-between text-xs text-[var(--muted)]">
                 <span>{formatDuration(windowStart)}</span>
@@ -317,20 +481,37 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 <span>Adjusted duration</span>
                 <span className="font-semibold text-[var(--fg)]">{formatDuration(durationSeconds)}</span>
               </div>
-              <label className="flex items-center justify-between text-xs font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                Review window
-                <input
-                  type="range"
-                  min={0}
-                  max={30}
-                  step={1}
-                  value={windowPadding}
-                  onChange={(event) => setWindowPadding(Number.parseFloat(event.target.value) || 0)}
-                  className="ml-4 flex-1"
-                />
-              </label>
+              <div className="flex flex-wrap items-center gap-3 text-xs font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                <label className="flex items-center gap-2">
+                  Expand window (seconds)
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={expandAmount}
+                    onChange={handleExpandAmountChange}
+                    className="w-20 rounded-lg border border-white/10 bg-[var(--card)] px-2 py-1 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  />
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleExpandLeft}
+                    className="rounded-lg border border-white/10 px-2 py-1 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  >
+                    Expand left
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExpandRight}
+                    className="rounded-lg border border-white/10 px-2 py-1 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  >
+                    Expand right
+                  </button>
+                </div>
+              </div>
               <p className="text-xs">
-                Expanding the window gives you more room to pull the clip start earlier or extend the ending for additional context.
+                Expanding the window lets you pull the clip start earlier or extend the ending without moving the saved boundaries.
               </p>
             </div>
           </div>
