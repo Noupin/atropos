@@ -23,23 +23,17 @@ function createWindow(): void {
     mainWindow.show()
   })
 
-  mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'mouseDown') {
-      return
-    }
-
-    if (input.button === 'back') {
+  mainWindow.on('app-command', (_event, command) => {
+    if (command === 'browser-backward') {
       if (mainWindow.webContents.canGoBack()) {
         mainWindow.webContents.goBack()
-        event.preventDefault()
       }
       return
     }
 
-    if (input.button === 'forward') {
+    if (command === 'browser-forward') {
       if (mainWindow.webContents.canGoForward()) {
         mainWindow.webContents.goForward()
-        event.preventDefault()
       }
     }
   })
