@@ -6,9 +6,10 @@ import { formatDuration, formatViews, timeAgo } from '../lib/format'
 type ClipCardProps = {
   clip: Clip
   onClick: () => void
+  isActive?: boolean
 }
 
-const ClipCard: FC<ClipCardProps> = ({ clip, onClick }) => {
+const ClipCard: FC<ClipCardProps> = ({ clip, onClick, isActive = false }) => {
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
@@ -22,7 +23,12 @@ const ClipCard: FC<ClipCardProps> = ({ clip, onClick }) => {
       tabIndex={0}
       onClick={onClick}
       onKeyDown={handleKeyDown}
-      className="group relative flex cursor-pointer flex-col overflow-hidden rounded-xl bg-[var(--card)] shadow-sm transition hover:-translate-y-1 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+      aria-pressed={isActive}
+      className={`group relative flex cursor-pointer flex-col overflow-hidden rounded-xl bg-[var(--card)] shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+        isActive
+          ? 'ring-2 ring-[var(--ring)] ring-offset-2 ring-offset-[var(--card)]'
+          : 'hover:-translate-y-1 hover:shadow-lg'
+      }`}
     >
       <div className="relative aspect-video w-full overflow-hidden">
         {clip.thumbnail ? (

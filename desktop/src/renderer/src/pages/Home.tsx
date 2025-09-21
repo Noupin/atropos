@@ -7,9 +7,8 @@ import {
   useRef,
   useState
 } from 'react'
-import type { FC } from 'react'
-import ClipDescription from '../components/ClipDescription'
-import ClipDrawer from '../components/ClipDrawer'
+import type { FC, ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import PipelineProgress from '../components/PipelineProgress'
 import { BACKEND_MODE, buildJobClipVideoUrl } from '../config/backend'
 import {
@@ -23,28 +22,14 @@ import {
   type PipelineEventMessage
 } from '../services/pipelineApi'
 import { parseClipTimestamp } from '../lib/clipMetadata'
-import { formatDuration, formatViews, timeAgo } from '../lib/format'
+import { timeAgo } from '../lib/format'
 import {
   canOpenAccountClipsFolder,
   openAccountClipsFolder
 } from '../services/clipLibrary'
-import { uploadJobClip, type UploadJobClipRequest } from '../services/uploadApi'
-import type {
-  SupportedPlatform,
-  AccountConnectionStatus,
-  AccountSummary,
-  HomePipelineState,
-  SearchBridge
-} from '../types'
-import { PLATFORM_LABELS } from '../types'
+import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
 
 const SUPPORTED_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv'] as const
-
-const PLATFORM_STATUS_STYLES: Record<AccountConnectionStatus, string> = {
-  active: 'bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/30',
-  disconnected: 'bg-amber-500/10 text-amber-200 ring-1 ring-amber-400/30',
-  disabled: 'bg-rose-500/10 text-rose-200 ring-1 ring-rose-400/30'
-}
 
 const isValidVideoUrl = (value: string): boolean => {
   try {
@@ -70,12 +55,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   const [folderMessage, setFolderMessage] = useState<string | null>(null)
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
   const [isOpeningFolder, setIsOpeningFolder] = useState(false)
-  const selectAllPlatformsRef = useRef<HTMLInputElement | null>(null)
-  const [selectedUploadPlatforms, setSelectedUploadPlatforms] = useState<SupportedPlatform[]>([])
-  const [deleteAfterUpload, setDeleteAfterUpload] = useState(false)
-  const [isUploadingClip, setIsUploadingClip] = useState(false)
-  const [uploadErrorMessage, setUploadErrorMessage] = useState<string | null>(null)
-  const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null)
   const canAttemptToOpenFolder = useMemo(() => canOpenAccountClipsFolder(), [])
 
   useEffect(() => {
@@ -124,51 +103,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     () => availableAccounts.find((account) => account.id === selectedAccountId) ?? null,
     [availableAccounts, selectedAccountId]
   )
-
-  const accountPlatforms = useMemo(
-    () => (selectedAccount ? selectedAccount.platforms : []),
-    [selectedAccount]
-  )
-
-  const activePlatformOptions = useMemo(
-    () =>
-      accountPlatforms.filter(
-        (platform) => platform.active && platform.status === 'active'
-      ),
-    [accountPlatforms]
-  )
-
-  const defaultUploadPlatforms = useMemo(
-    () => activePlatformOptions.map((platform) => platform.platform),
-    [activePlatformOptions]
-  )
-
-  useEffect(() => {
-    setSelectedUploadPlatforms((prev) => {
-      const sortedPrev = [...prev].sort().join('|')
-      const sortedNext = [...defaultUploadPlatforms].sort().join('|')
-      if (sortedPrev !== sortedNext) {
-        return [...defaultUploadPlatforms]
-      }
-      return prev
-    })
-    setDeleteAfterUpload(false)
-    setUploadErrorMessage(null)
-    setUploadSuccessMessage(null)
-  }, [defaultUploadPlatforms, selectedClipId])
-
-  useEffect(() => {
-    if (!selectAllPlatformsRef.current) {
-      return
-    }
-    const total = defaultUploadPlatforms.length
-    const selectedCount = selectedUploadPlatforms.length
-    selectAllPlatformsRef.current.indeterminate = selectedCount > 0 && selectedCount < total
-  }, [defaultUploadPlatforms, selectedUploadPlatforms])
-
-  const hasUploadPlatforms = defaultUploadPlatforms.length > 0
-  const areAllUploadPlatformsSelected =
-    hasUploadPlatforms && selectedUploadPlatforms.length === defaultUploadPlatforms.length
 
   useEffect(() => {
     if (selectedAccountId && !availableAccounts.some((account) => account.id === selectedAccountId)) {
@@ -715,22 +649,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   )
 
   useEffect(() => {
-    if (clips.length === 0) {
-      if (selectedClipId !== null) {
-        updateState((prev) => ({ ...prev, selectedClipId: null }))
-      }
-      return
-    }
-
-    if (!selectedClipId || !clips.some((clip) => clip.id === selectedClipId)) {
-      const nextId = clips[0]?.id ?? null
-      if (nextId !== selectedClipId) {
-        updateState((prev) => ({ ...prev, selectedClipId: nextId }))
-      }
-    }
-  }, [clips, selectedClipId, updateState])
-
-  useEffect(() => {
     activeJobIdRef.current = activeJobId
   }, [activeJobId])
 
@@ -849,13 +767,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     activeJobIdRef.current = null
   }, [cleanupConnection, clearTimers, updateState])
 
-  const handleClipRemove = useCallback((clipId: string) => {
-    updateState((prev) => ({
-      ...prev,
-      clips: prev.clips.filter((clip) => clip.id !== clipId)
-    }))
-  }, [updateState])
-
   const handleToggleAllPlatforms = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       if (event.target.checked) {
@@ -885,14 +796,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     },
     [defaultUploadPlatforms]
   )
-
-  const handleDeleteAfterUploadChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    setDeleteAfterUpload(event.target.checked)
-  }, [])
-
-  const handleClipSelect = useCallback((clipId: string) => {
-    updateState((prev) => ({ ...prev, selectedClipId: clipId }))
-  }, [updateState])
 
   const handleOpenClipsFolder = useCallback(async () => {
     if (!canAttemptToOpenFolder) {
@@ -931,65 +834,18 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   )
 
   const currentStep = useMemo(() => steps.find((step) => step.status === 'running') ?? null, [steps])
-  const selectedClip = useMemo(
-    () => clips.find((clip) => clip.id === selectedClipId) ?? null,
-    [clips, selectedClipId]
+  const clipProductionStep = useMemo(
+    () => steps.find((step) => step.id === 'produce-clips') ?? null,
+    [steps]
   )
 
-  const handleUploadSelectedClip = useCallback(async () => {
-    if (!selectedClip) {
-      setUploadErrorMessage('Select a clip before uploading.')
-      setUploadSuccessMessage(null)
-      return
+  const accountLookup = useMemo(() => {
+    const map = new Map<string, AccountSummary>()
+    for (const account of accounts) {
+      map.set(account.id, account)
     }
-    if (!activeJobId) {
-      setUploadErrorMessage('Upload is unavailable. Start the pipeline to generate clips again.')
-      setUploadSuccessMessage(null)
-      return
-    }
-    if (selectedUploadPlatforms.length === 0) {
-      setUploadErrorMessage('Select at least one platform to upload to.')
-      setUploadSuccessMessage(null)
-      return
-    }
-    if (isUploadingClip) {
-      return
-    }
-
-    setIsUploadingClip(true)
-    setUploadErrorMessage(null)
-    setUploadSuccessMessage(null)
-
-    try {
-      const payload: UploadJobClipRequest = {
-        platforms: selectedUploadPlatforms
-      }
-      if (deleteAfterUpload) {
-        payload.delete_after_upload = true
-      }
-      const result = await uploadJobClip(activeJobId, selectedClip.id, payload)
-      const platformsForMessage =
-        result.platforms.length > 0 ? result.platforms : selectedUploadPlatforms
-      const platformLabels = platformsForMessage.map((platform) => PLATFORM_LABELS[platform]).join(', ')
-      const deletionNote = result.deleted ? ' Clip files were deleted after upload.' : ''
-      setUploadSuccessMessage(`Uploaded to ${platformLabels || 'selected platforms'}.${deletionNote}`)
-      if (result.deleted) {
-        handleClipRemove(selectedClip.id)
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Upload failed. Please try again.'
-      setUploadErrorMessage(message)
-    } finally {
-      setIsUploadingClip(false)
-    }
-  }, [
-    activeJobId,
-    deleteAfterUpload,
-    handleClipRemove,
-    isUploadingClip,
-    selectedClip,
-    selectedUploadPlatforms
-  ])
+    return map
+  }, [accounts])
 
   const readyDateFormatter = useMemo(
     () =>
@@ -1000,129 +856,73 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     []
   )
 
-  const upcomingClips = useMemo(() => {
-    if (selectedAccountId) {
-      return clips.filter(
-        (clip) => clip.accountId === selectedAccountId || clip.accountId === null || clip.accountId === undefined
-      )
-    }
-    return clips
+  const timelineClips = useMemo(() => {
+    const targetClips = selectedAccountId
+      ? clips.filter(
+          (clip) =>
+            clip.accountId === selectedAccountId || clip.accountId === null || clip.accountId === undefined
+        )
+      : clips
+
+    return [...targetClips].sort((a, b) => {
+      const aTime = new Date(a.createdAt).getTime()
+      const bTime = new Date(b.createdAt).getTime()
+      if (Number.isNaN(aTime) && Number.isNaN(bTime)) {
+        return 0
+      }
+      if (Number.isNaN(aTime)) {
+        return 1
+      }
+      if (Number.isNaN(bTime)) {
+        return -1
+      }
+      return aTime - bTime
+    })
   }, [clips, selectedAccountId])
 
-  const pipelineMessage = useMemo(() => {
+  const pipelineMessageContent = useMemo<ReactNode>(() => {
     if (pipelineError) {
       return pipelineError
+    }
+    if (clipProductionStep && (clipProductionStep.status === 'running' || clipProductionStep.status === 'completed')) {
+      return (
+        <>
+          Clips are being generated.{' '}
+          <Link to="/library" className="font-semibold text-[var(--ring)] hover:underline">
+            Open the library
+          </Link>{' '}
+          to review them as they arrive.
+        </>
+      )
     }
     if (currentStep) {
       return `Currently processing: ${currentStep.title}`
     }
     if (clips.length > 0 && !isProcessing) {
-      return 'Processing complete. Review the generated clips below.'
+      return (
+        <>
+          Processing complete.{' '}
+          <Link to="/library" className="font-semibold text-[var(--ring)] hover:underline">
+            View your clips in the library
+          </Link>
+          .
+        </>
+      )
     }
     return 'Paste a supported link to kick off the Atropos pipeline.'
-  }, [clips.length, currentStep, isProcessing, pipelineError])
+  }, [clipProductionStep, clips.length, currentStep, isProcessing, pipelineError])
 
   return (
     <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-8">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="flex flex-col gap-6">
-          <div className="rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]">
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-1">
-                  <h2 className="text-lg font-semibold text-[var(--fg)]">Upcoming posts</h2>
-                  <p className="text-sm text-[var(--muted)]">
-                    {selectedAccount
-                      ? `Clips ready to publish for ${selectedAccount.displayName}.`
-                      : 'Clips ready to publish for your connected accounts.'}
-                  </p>
-                </div>
-                <div className="flex flex-col items-start gap-2 sm:items-end">
-                  <button
-                    type="button"
-                    onClick={handleOpenClipsFolder}
-                    disabled={isOpeningFolder}
-                    className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:text-sm"
-                  >
-                    {isOpeningFolder ? 'Opening…' : 'Open clips folder'}
-                  </button>
-                  <span className="text-[10px] uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                    {selectedAccount ? selectedAccount.displayName : 'No account selected'}
-                  </span>
-                </div>
-              </div>
-              {folderMessage ? (
-                <p className="text-sm text-emerald-300">{folderMessage}</p>
-              ) : null}
-              {folderErrorMessage ? (
-                <p className="text-sm text-rose-400">{folderErrorMessage}</p>
-              ) : null}
-              <p className="rounded-lg border border-dashed border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] px-4 py-3 text-xs text-[var(--muted)]">
-                Do not delete anything other than the clips and descriptions you plan to upload.
-              </p>
-              {upcomingClips.length > 0 ? (
-                <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
-                  <ul className="flex min-w-full gap-4 pb-1">
-                    {upcomingClips.map((clip) => {
-                      const readyDate = new Date(clip.createdAt)
-                      const readyLabel = Number.isNaN(readyDate.getTime())
-                        ? 'Ready soon'
-                        : readyDateFormatter.format(readyDate)
-                      return (
-                        <li
-                          key={clip.id}
-                          className="min-w-[240px] flex-shrink-0 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-4 shadow-[0_14px_28px_-22px_rgba(15,23,42,0.55)]"
-                        >
-                          <div className="flex h-full flex-col gap-3">
-                            <div className="space-y-1">
-                              <span className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                                {clip.accountId && clip.accountId !== selectedAccountId
-                                  ? 'Shared clip'
-                                  : 'Ready to post'}
-                              </span>
-                              <h3 className="text-sm font-semibold leading-snug text-[var(--fg)]">{clip.title}</h3>
-                            </div>
-                            <div className="text-xs text-[var(--muted)]">
-                              <span className="font-medium text-[var(--fg)]">Ready {readyLabel}</span>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              {accountPlatforms.length > 0 ? (
-                                accountPlatforms.map((platform) => (
-                                  <span
-                                    key={`${clip.id}-${platform.platform}`}
-                                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                                      PLATFORM_STATUS_STYLES[platform.status] ?? 'bg-white/10 text-[var(--fg)]'
-                                    }`}
-                                  >
-                                    {platform.label}
-                                  </span>
-                                ))
-                              ) : (
-                                <span className="rounded-full bg-white/5 px-3 py-1 text-[11px] font-medium text-[var(--muted)]">
-                                  No platforms configured
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6 text-sm text-[var(--muted)]">
-                  No upcoming posts. Generate clips to populate this list.
-                </div>
-              )}
-            </div>
-          </div>
           <form
             onSubmit={handleSubmit}
             className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]"
           >
             <div className="flex flex-col gap-1">
               <h2 className="text-lg font-semibold text-[var(--fg)]">Process a new video</h2>
-              <p className="text-sm text-[var(--muted)]">{pipelineMessage}</p>
+              <p className="text-sm text-[var(--muted)]">{pipelineMessageContent}</p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <div className="flex w-full flex-col gap-2 sm:max-w-xs">
@@ -1195,220 +995,103 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
             ) : null}
             {urlError ? <p className="text-xs font-medium text-rose-400">{urlError}</p> : null}
           </form>
-
-          <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 shadow-[0_14px_28px_-22px_rgba(15,23,42,0.55)]">
-            <PipelineProgress steps={steps} />
-          </div>
-
-          <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 shadow-[0_14px_28px_-22px_rgba(15,23,42,0.55)]">
-            <div className="flex flex-col gap-1">
-              <h3 className="text-lg font-semibold text-[var(--fg)]">Selected clip</h3>
-              <p className="text-sm text-[var(--muted)]">
-                {selectedClip
-                  ? 'Preview the highlight before exporting or sharing it.'
-                  : 'Generated clips will appear once the pipeline reaches the candidate stage.'}
-              </p>
+          <div className="rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-lg font-semibold text-[var(--fg)]">Pipeline</h3>
+                <p className="text-sm text-[var(--muted)]">
+                  Track each stage of the Atropos pipeline as your job runs.
+                </p>
+              </div>
+              <PipelineProgress steps={steps} />
             </div>
-            {selectedClip ? (
-              <div className="mt-4 flex flex-col gap-4">
-                <div className="flex w-full justify-center overflow-hidden rounded-xl bg-black/80 p-2">
-                  <video
-                    key={selectedClip.id}
-                    src={selectedClip.playbackUrl}
-                    poster={selectedClip.thumbnail}
-                    controls
-                    playsInline
-                    preload="metadata"
-                    className="h-full w-full max-w-sm object-contain"
-                  >
-                    Your browser does not support the video tag.
-                  </video>
-                </div>
-                <div className="space-y-5 text-sm text-[var(--muted)]">
-                  <div className="space-y-3">
-                    {selectedClip.quote ? (
-                      <p className="text-lg font-semibold text-[var(--fg)] leading-tight">
-                        “{selectedClip.quote}”
-                      </p>
-                    ) : selectedClip.title ? (
-                      <p className="text-lg font-semibold text-[var(--fg)] leading-tight">
-                        {selectedClip.title}
-                      </p>
-                    ) : null}
-                    {selectedClip.reason ? (
-                      <div className="space-y-1">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
-                          Reason
-                        </span>
-                        <p className="rounded-lg border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-3 text-sm leading-relaxed text-[var(--fg)]/80">
-                          {selectedClip.reason}
-                        </p>
-                      </div>
-                    ) : null}
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                      <span className="font-semibold text-[var(--fg)] text-sm">{selectedClip.channel}</span>
-                      {selectedClip.views !== null ? <span>{formatViews(selectedClip.views)} views</span> : null}
-                      <span>Duration {formatDuration(selectedClip.durationSec)}</span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3 text-xs">
-                      <span>Generated {timeAgo(selectedClip.createdAt)}</span>
-                      {selectedClip.sourcePublishedAt ? (
-                        <span>Source uploaded {timeAgo(selectedClip.sourcePublishedAt)}</span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <dl className="grid gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm text-[var(--muted)] sm:grid-cols-[auto_1fr]">
-                    {selectedClip.rating !== null && selectedClip.rating !== undefined ? (
-                      <>
-                        <dt className="font-medium text-[var(--fg)]">Score</dt>
-                        <dd className="text-[var(--fg)]">
-                          {selectedClip.rating.toFixed(1).replace(/\.0$/, '')}
-                        </dd>
-                      </>
-                    ) : null}
-                    <dt className="font-medium text-[var(--fg)]">Clip created</dt>
-                    <dd>{new Date(selectedClip.createdAt).toLocaleString()}</dd>
-                    <dt className="font-medium text-[var(--fg)]">Source uploaded</dt>
-                    <dd>{selectedClip.sourcePublishedAt ? new Date(selectedClip.sourcePublishedAt).toLocaleString() : 'Unknown'}</dd>
-                    {selectedClip.timestampSeconds !== null && selectedClip.timestampSeconds !== undefined ? (
-                      <>
-                        <dt className="font-medium text-[var(--fg)]">Starts at</dt>
-                        <dd>{formatDuration(selectedClip.timestampSeconds)}</dd>
-                      </>
-                    ) : null}
-                  </dl>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <a
-                      href={selectedClip.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white"
-                    >
-                      View full video
-                      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
-                        <path
-                          fill="currentColor"
-                          d="M13.5 2h-5a.75.75 0 0 0 0 1.5H11l-6.72 6.72a.75.75 0 0 0 1.06 1.06L12 4.56v2.5a.75.75 0 0 0 1.5 0v-5A.75.75 0 0 0 13.5 2"
-                        />
-                      </svg>
-                    </a>
-                    {selectedClip.timestampUrl ? (
-                      <a
-                        href={selectedClip.timestampUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white"
-                      >
-                        Jump to
-                        <span className="font-semibold text-white">
-                          {selectedClip.timestampSeconds !== null && selectedClip.timestampSeconds !== undefined
-                            ? formatDuration(selectedClip.timestampSeconds)
-                            : 'timestamp'}
-                        </span>
-                      </a>
-                    ) : null}
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold text-[var(--fg)]">Description</h4>
-                    <ClipDescription
-                      text={selectedClip.description}
-                      className="text-sm leading-relaxed text-[var(--muted)]"
-                    />
-                  </div>
-                  <div className="space-y-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <h4 className="text-sm font-semibold text-[var(--fg)]">Upload clip</h4>
-                        <p className="text-xs text-[var(--muted)]">Select platforms and start the upload.</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleUploadSelectedClip}
-                        disabled={
-                          isUploadingClip || !selectedClip || !activeJobId || selectedUploadPlatforms.length === 0
-                        }
-                        className="rounded-lg border border-transparent bg-[var(--ring)] px-3 py-1.5 text-xs font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {isUploadingClip ? 'Uploading…' : 'Upload'}
-                      </button>
-                    </div>
-                    {activeJobId ? (
-                      hasUploadPlatforms ? (
-                        <div className="space-y-3">
-                          <label className="flex items-center gap-2 text-xs text-[var(--fg)]">
-                            <input
-                              ref={selectAllPlatformsRef}
-                              type="checkbox"
-                              checked={areAllUploadPlatformsSelected}
-                              onChange={handleToggleAllPlatforms}
-                              className="h-4 w-4 rounded border-white/20 bg-transparent text-[var(--ring)] focus:ring-[var(--ring)]"
-                            />
-                            <span>Select all platforms</span>
-                          </label>
-                          <div className="flex flex-wrap gap-2">
-                            {activePlatformOptions.map((option) => (
-                              <label
-                                key={option.platform}
-                                className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition ${
-                                  selectedUploadPlatforms.includes(option.platform)
-                                    ? 'border-[var(--ring)] text-white'
-                                    : 'border-white/10 text-[var(--fg)] hover:border-[var(--ring)]'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selectedUploadPlatforms.includes(option.platform)}
-                                  onChange={() => handleTogglePlatform(option.platform)}
-                                  className="h-4 w-4 rounded border-white/20 bg-transparent text-[var(--ring)] focus:ring-[var(--ring)]"
-                                />
-                                <span>{option.label || PLATFORM_LABELS[option.platform]}</span>
-                              </label>
-                            ))}
-                          </div>
-                          <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
-                            <input
-                              type="checkbox"
-                              checked={deleteAfterUpload}
-                              onChange={handleDeleteAfterUploadChange}
-                              className="h-4 w-4 rounded border-white/20 bg-transparent text-[var(--ring)] focus:ring-[var(--ring)]"
-                            />
-                            <span>Delete clip files after upload (overrides config for this upload)</span>
-                          </label>
-                          {uploadErrorMessage ? (
-                            <p className="text-xs font-medium text-rose-400">{uploadErrorMessage}</p>
-                          ) : null}
-                          {uploadSuccessMessage ? (
-                            <p className="text-xs text-emerald-300">{uploadSuccessMessage}</p>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-[var(--muted)]">
-                          Enable at least one active platform for this account to upload directly from here.
-                        </p>
-                      )
-                    ) : (
-                      <p className="text-xs text-[var(--muted)]">
-                        Uploads are available once a pipeline job has started.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-6 rounded-xl border border-dashed border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-8 text-center text-sm text-[var(--muted)]">
-                No clips have been generated yet. Start processing a video to populate the clip drawer.
-              </div>
-            )}
           </div>
         </div>
 
-        <ClipDrawer
-          clips={clips}
-          selectedClipId={selectedClipId}
-          onSelect={handleClipSelect}
-          onRemove={handleClipRemove}
-          className="lg:sticky lg:top-6"
-        />
+        <aside className="flex flex-col gap-6">
+          <div className="rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-1">
+                  <h2 className="text-lg font-semibold text-[var(--fg)]">Upload timeline</h2>
+                  <p className="text-sm text-[var(--muted)]">
+                    {selectedAccount
+                      ? `Clips queued for ${selectedAccount.displayName}.`
+                      : 'Upcoming clips across your connected accounts.'}
+                  </p>
+                </div>
+                <div className="flex flex-col items-start gap-2 sm:items-end">
+                  <Link
+                    to="/library"
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white"
+                  >
+                    Go to library
+                    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
+                      <path
+                        fill="currentColor"
+                        d="M13.5 2h-5a.75.75 0 0 0 0 1.5H11l-6.72 6.72a.75.75 0 0 0 1.06 1.06L12 4.56v2.5a.75.75 0 0 0 1.5 0v-5A.75.75 0 0 0 13.5 2"
+                      />
+                    </svg>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={handleOpenClipsFolder}
+                    disabled={isOpeningFolder}
+                    className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isOpeningFolder ? 'Opening…' : 'Open clips folder'}
+                  </button>
+                </div>
+              </div>
+              {folderMessage ? (
+                <p className="text-sm text-emerald-300">{folderMessage}</p>
+              ) : null}
+              {folderErrorMessage ? (
+                <p className="text-sm text-rose-400">{folderErrorMessage}</p>
+              ) : null}
+              {timelineClips.length > 0 ? (
+                <ol className="relative mt-2 space-y-6 border-l border-white/10 pl-5">
+                  {timelineClips.map((clip) => {
+                    const readyDate = new Date(clip.createdAt)
+                    const readyTime = readyDate.getTime()
+                    const hasValidDate = Number.isFinite(readyTime)
+                    const readyLabel = hasValidDate ? readyDateFormatter.format(readyDate) : 'Schedule pending'
+                    const relativeLabel = hasValidDate ? timeAgo(clip.createdAt) : null
+                    const accountName = clip.accountId
+                      ? accountLookup.get(clip.accountId)?.displayName ?? 'Shared library'
+                      : 'Unassigned account'
+
+                    return (
+                      <li key={clip.id} className="relative pl-4">
+                        <span
+                          className="absolute -left-[0.65rem] top-2 h-3 w-3 rounded-full border-2 border-[var(--ring)] bg-[var(--card)]"
+                          aria-hidden="true"
+                        />
+                        <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-4">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-[11px] font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                              Ready {readyLabel}
+                            </span>
+                            <h3 className="text-sm font-semibold leading-snug text-[var(--fg)]">{clip.title}</h3>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--muted)]">
+                            <span className="font-medium text-[var(--fg)]">{accountName}</span>
+                            {relativeLabel ? <span>{relativeLabel}</span> : null}
+                            {clip.videoTitle ? <span className="truncate text-ellipsis">From {clip.videoTitle}</span> : null}
+                          </div>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ol>
+              ) : (
+                <div className="rounded-xl border border-dashed border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6 text-sm text-[var(--muted)]">
+                  No scheduled clips yet. Start processing a video to populate your upload timeline.
+                </div>
+              )}
+            </div>
+          </div>
+        </aside>
       </div>
     </section>
   )
