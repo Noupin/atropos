@@ -544,6 +544,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
 
     const showDetails = isExpanded || isActive
     const multiStepBadge = step.substeps.length > 0 ? renderMultiStepBadge('default') : null
+    const clipBadge = renderClipBadge(step)
 
     return (
       <li
@@ -568,21 +569,23 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
               <span className="text-sm font-semibold text-[var(--fg)]">{step.title}</span>
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            {multiStepBadge}
-            {renderClipBadge(step)}
-            <div className="flex flex-col items-end text-xs text-[var(--muted)]">
-              <span>{statusLabels[step.status]}</span>
-              {headerProgressLabel ? (
-                <span className="font-semibold text-[var(--fg)]">{headerProgressLabel}</span>
-              ) : null}
+          <div className="flex flex-col items-end gap-2 text-right">
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              {multiStepBadge}
+              <div className="flex flex-col items-end text-xs text-[var(--muted)]">
+                <span>{statusLabels[step.status]}</span>
+                {headerProgressLabel ? (
+                  <span className="font-semibold text-[var(--fg)]">{headerProgressLabel}</span>
+                ) : null}
+              </div>
+              <span
+                className={`text-lg leading-none transition-transform ${showDetails ? 'rotate-180' : ''}`}
+                aria-hidden="true"
+              >
+                ⌃
+              </span>
             </div>
-            <span
-              className={`text-lg leading-none transition-transform ${showDetails ? 'rotate-180' : ''}`}
-              aria-hidden="true"
-            >
-              ⌃
-            </span>
+            {clipBadge ? <div className="flex w-full justify-end">{clipBadge}</div> : null}
           </div>
         </button>
         {showDetails ? (

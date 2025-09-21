@@ -993,7 +993,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                     const hasDate = !Number.isNaN(scheduledDate.getTime())
                     return (
                       <li key={clip.id} className="relative pl-8">
-                        <span className="absolute left-2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--ring)] shadow-[0_0_0_4px_rgba(148,163,184,0.25)]" aria-hidden="true" />
+                        <span className="absolute left-3 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--ring)] shadow-[0_0_0_4px_rgba(148,163,184,0.25)]" aria-hidden="true" />
                         <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_75%,transparent)] p-4">
                           <div className="space-y-1">
                             <h3 className="text-sm font-semibold leading-snug text-[var(--fg)]">
