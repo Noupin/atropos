@@ -23,6 +23,27 @@ function createWindow(): void {
     mainWindow.show()
   })
 
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'mouseDown') {
+      return
+    }
+
+    if (input.button === 'back') {
+      if (mainWindow.webContents.canGoBack()) {
+        mainWindow.webContents.goBack()
+        event.preventDefault()
+      }
+      return
+    }
+
+    if (input.button === 'forward') {
+      if (mainWindow.webContents.canGoForward()) {
+        mainWindow.webContents.goForward()
+        event.preventDefault()
+      }
+    }
+  })
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
