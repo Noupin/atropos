@@ -29,6 +29,14 @@ const indicatorClasses: Record<PipelineStepStatus, string> = {
   failed: 'bg-rose-500'
 }
 
+const multiStepBadgeBaseClasses =
+  'inline-flex items-center justify-center gap-1 rounded-full border border-white/10 bg-white/5 uppercase tracking-[0.16em] text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]'
+
+const multiStepBadgeSizeClasses = {
+  default: 'px-2 py-0.5 text-[10px] font-semibold',
+  compact: 'px-1.5 py-px text-[9px] font-semibold'
+} as const
+
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value))
 
 const buildSubstepKey = (stepId: string, substepId: string): string => `${stepId}:${substepId}`
@@ -284,12 +292,21 @@ const getSubstepLabel = (index: number): string => {
   return label
 }
 
+const renderMultiStepBadge = (variant: 'default' | 'compact') => (
+  <span className={`${multiStepBadgeBaseClasses} ${multiStepBadgeSizeClasses[variant]}`}>
+    <span aria-hidden="true" className="text-[11px] leading-none">
+      ⋯
+    </span>
+    <span>Multi-step</span>
+  </span>
+)
+
 const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'default') => {
   if (!step.clipStage || !step.clipProgress || step.clipProgress.total === 0) {
     return null
   }
   const baseClasses =
-    'inline-flex items-center gap-1 rounded-full border uppercase tracking-wide'
+    'inline-flex items-center justify-center gap-1 rounded-full border uppercase tracking-wide'
   const sizeClasses =
     variant === 'compact'
       ? 'px-1.5 py-px text-[9px] font-semibold'
@@ -526,6 +543,8 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
     )
 
     const showDetails = isExpanded || isActive
+    const multiStepBadge = step.substeps.length > 0 ? renderMultiStepBadge('default') : null
+    const clipBadge = renderClipBadge(step)
 
     return (
       <li
@@ -550,20 +569,25 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
               <span className="text-sm font-semibold text-[var(--fg)]">{step.title}</span>
             </div>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            {renderClipBadge(step)}
-            <div className="flex flex-col items-end text-xs text-[var(--muted)]">
-              <span>{statusLabels[step.status]}</span>
-              {headerProgressLabel ? (
-                <span className="font-semibold text-[var(--fg)]">{headerProgressLabel}</span>
-              ) : null}
+          <div className="flex flex-col items-end text-right">
+            <div className="flex items-center justify-end gap-3">
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                {clipBadge ? <div className="flex-shrink-0">{clipBadge}</div> : null}
+                {multiStepBadge}
+                <div className="flex flex-col items-end text-xs text-[var(--muted)]">
+                  <span>{statusLabels[step.status]}</span>
+                  {headerProgressLabel ? (
+                    <span className="font-semibold text-[var(--fg)]">{headerProgressLabel}</span>
+                  ) : null}
+                </div>
+              </div>
+              <span
+                className={`text-lg leading-none transition-transform ${showDetails ? 'rotate-180' : ''}`}
+                aria-hidden="true"
+              >
+                ⌃
+              </span>
             </div>
-            <span
-              className={`text-lg leading-none transition-transform ${showDetails ? 'rotate-180' : ''}`}
-              aria-hidden="true"
-            >
-              ⌃
-            </span>
           </div>
         </button>
         {showDetails ? (
@@ -603,9 +627,12 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
     const etaLabel =
       step.status === 'running' && step.etaSeconds !== null ? formatEta(step.etaSeconds) : null
     const clipBadge = renderClipBadge(step, 'compact')
+    const hasSubsteps = step.substeps.length > 0
+    const multiStepBadge = hasSubsteps ? renderMultiStepBadge('compact') : null
+    const listItemClasses = hasSubsteps ? 'col-span-2 sm:col-span-2 xl:col-span-2' : ''
 
     return (
-      <li key={step.id}>
+      <li key={step.id} className={listItemClasses}>
         <button
           type="button"
           onClick={() => toggleStep(step.id)}
@@ -618,11 +645,14 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
           <div className="flex items-center gap-2 text-[9px] uppercase tracking-[0.16em] text-[var(--muted)]">
             <span className={`h-2 w-2 rounded-full ${indicatorClasses[step.status]}`} aria-hidden="true" />
             <span className="font-semibold">Step {index + 1}</span>
-            <span className="ml-auto">{statusLabels[step.status]}</span>
+            <span className="ml-auto flex items-center gap-1">
+              {multiStepBadge ? <span className="flex-shrink-0">{multiStepBadge}</span> : null}
+              <span>{statusLabels[step.status]}</span>
+            </span>
           </div>
-          <div className="flex items-center gap-2 text-[11px]">
+          <div className="flex items-start gap-2 text-[11px]">
             <span className="truncate font-semibold text-[var(--fg)]">{step.title}</span>
-            {clipBadge}
+            {clipBadge ? <span className="ml-auto flex-shrink-0">{clipBadge}</span> : null}
           </div>
           <div className="flex items-center justify-between text-[10px] text-[var(--muted)]">
             <span className="font-semibold text-[var(--fg)]">{percent}%</span>

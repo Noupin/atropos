@@ -102,6 +102,7 @@ describe('PipelineProgress', () => {
 
     const produceButton = within(stepList).getByRole('button', { name: /produce final clips/i })
     expect(produceButton).toHaveAttribute('aria-expanded', 'true')
+    expect(within(produceButton).getByText(/multi-step/i)).toBeInTheDocument()
 
     const transcriptButton = within(stepList).getByRole('button', { name: /generate transcript/i })
     expect(within(transcriptButton).getByText(/0%/i)).toBeInTheDocument()

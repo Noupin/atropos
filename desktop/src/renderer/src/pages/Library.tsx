@@ -48,6 +48,64 @@ const Library: FC<LibraryProps> = ({
   )
   const hasMultipleAccounts = availableAccounts.length > 1
   const hasAccounts = availableAccounts.length > 0
+  const [accountFilter, setAccountFilter] = useState(() => {
+    if (!hasAccounts) {
+      return ''
+    }
+    if (selectedAccountId) {
+      return selectedAccountId
+    }
+    return hasMultipleAccounts ? ALL_ACCOUNTS_VALUE : availableAccounts[0]?.id ?? ''
+  })
+
+  useEffect(() => {
+    if (!hasAccounts) {
+      if (accountFilter !== '') {
+        setAccountFilter('')
+      }
+      return
+    }
+
+    if (
+      accountFilter &&
+      accountFilter !== ALL_ACCOUNTS_VALUE &&
+      !availableAccounts.some((account) => account.id === accountFilter)
+    ) {
+      if (selectedAccountId && availableAccounts.some((account) => account.id === selectedAccountId)) {
+        setAccountFilter(selectedAccountId)
+        return
+      }
+      if (hasMultipleAccounts) {
+        setAccountFilter(ALL_ACCOUNTS_VALUE)
+        return
+      }
+      if (availableAccounts[0]) {
+        setAccountFilter(availableAccounts[0].id)
+        return
+      }
+      setAccountFilter('')
+      return
+    }
+
+    if (!selectedAccountId) {
+      if (!hasMultipleAccounts && availableAccounts[0] && accountFilter !== availableAccounts[0].id) {
+        setAccountFilter(availableAccounts[0].id)
+      } else if (hasMultipleAccounts && accountFilter === '') {
+        setAccountFilter(ALL_ACCOUNTS_VALUE)
+      }
+      return
+    }
+
+    if (accountFilter !== ALL_ACCOUNTS_VALUE && accountFilter !== selectedAccountId) {
+      setAccountFilter(selectedAccountId)
+    }
+  }, [
+    accountFilter,
+    availableAccounts,
+    hasAccounts,
+    hasMultipleAccounts,
+    selectedAccountId
+  ])
 
   useEffect(() => {
     if (!hasAccounts) {
@@ -103,6 +161,14 @@ const Library: FC<LibraryProps> = ({
       return []
     }
 
+    if (accountFilter === ALL_ACCOUNTS_VALUE) {
+      return availableAccounts.map((account) => account.id)
+    }
+
+    if (accountFilter && accountFilter !== ALL_ACCOUNTS_VALUE) {
+      return [accountFilter]
+    }
+
     if (selectedAccountId) {
       return [selectedAccountId]
     }
@@ -112,7 +178,13 @@ const Library: FC<LibraryProps> = ({
     }
 
     return availableAccounts[0] ? [availableAccounts[0].id] : []
-  }, [availableAccounts, hasAccounts, hasMultipleAccounts, selectedAccountId])
+  }, [
+    accountFilter,
+    availableAccounts,
+    hasAccounts,
+    hasMultipleAccounts,
+    selectedAccountId
+  ])
 
   const loadClipsForAccounts = useCallback(
     async (accountIds: string[]) => {
@@ -248,11 +320,11 @@ const Library: FC<LibraryProps> = ({
   const handleAccountChange = useCallback(
     (event: ChangeEvent<HTMLSelectElement>) => {
       const { value } = event.target
+      setAccountFilter(value)
       if (value === ALL_ACCOUNTS_VALUE) {
-        onSelectAccount(null)
-      } else {
-        onSelectAccount(value)
+        return
       }
+      onSelectAccount(value)
     },
     [onSelectAccount]
   )
@@ -272,11 +344,14 @@ const Library: FC<LibraryProps> = ({
     if (!hasAccounts) {
       return ''
     }
-    if (selectedAccountId) {
-      return selectedAccountId
+    if (accountFilter) {
+      return accountFilter
     }
-    return hasMultipleAccounts ? ALL_ACCOUNTS_VALUE : availableAccounts[0]?.id ?? ''
-  }, [availableAccounts, hasAccounts, hasMultipleAccounts, selectedAccountId])
+    if (hasMultipleAccounts) {
+      return ALL_ACCOUNTS_VALUE
+    }
+    return availableAccounts[0]?.id ?? ''
+  }, [accountFilter, availableAccounts, hasAccounts, hasMultipleAccounts])
 
   return (
     <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-8">
@@ -329,7 +404,11 @@ const Library: FC<LibraryProps> = ({
               <div className="flex items-center justify-between text-xs text-[var(--muted)]">
                 <span>
                   Showing {filteredClips.length} {filteredClips.length === 1 ? 'clip' : 'clips'}
-                  {selectedAccountId ? ' for the selected account.' : hasMultipleAccounts ? ' from all accounts.' : '.'}
+                  {accountFilter && accountFilter !== ALL_ACCOUNTS_VALUE
+                    ? ' for the selected account.'
+                    : hasMultipleAccounts
+                      ? ' from all accounts.'
+                      : '.'}
                 </span>
                 {isLoadingClips ? <span className="text-[var(--fg)]">Loading clips…</span> : null}
               </div>
