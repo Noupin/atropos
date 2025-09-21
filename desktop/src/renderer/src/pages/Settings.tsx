@@ -2,6 +2,7 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } fro
 import type { FC } from 'react'
 import type { SearchBridge } from '../types'
 import { fetchConfigEntries, updateConfigEntries, type ConfigEntry } from '../services/configApi'
+import MarbleSelect from '../components/MarbleSelect'
 
 const TRUE_VALUES = new Set(['true', '1', 'yes', 'y', 'on'])
 const FALSE_VALUES = new Set(['false', '0', 'no', 'n', 'off'])
@@ -262,10 +263,18 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
 
       if (entry.type === 'boolean') {
         return (
-          <select {...commonProps}>
-            <option value="true">true</option>
-            <option value="false">false</option>
-          </select>
+          <MarbleSelect
+            id={`config-${entry.name}`}
+            name={entry.name}
+            value={value ? value : null}
+            options={[
+              { value: 'true', label: 'true' },
+              { value: 'false', label: 'false' }
+            ]}
+            onChange={(next) => handleValueChange(entry.name, next)}
+            placeholder="Select value"
+            disabled={isSaving}
+          />
         )
       }
 

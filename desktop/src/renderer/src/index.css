@@ -2,20 +2,92 @@
 
 :root {
   color-scheme: light;
-  --bg: #f8fafc;
-  --fg: #0f172a;
-  --muted: #475569;
-  --card: #ffffff;
-  --ring: #6366f1;
+  --bg: #f6f5f3;
+  --bg-muted: #ebe8e2;
+  --bg-vein: #e4e0d9;
+  --depth: #d9d5ce;
+  --fg: #181818;
+  --fg-inverse: #fdfbf7;
+  --fg-inverse-soft: color-mix(in srgb, var(--fg-inverse) 80%, transparent);
+  --muted: #6f6f6f;
+  --card: color-mix(in srgb, #ffffff 80%, transparent);
+  --card-strong: color-mix(in srgb, #ffffff 92%, transparent);
+  --panel: color-mix(in srgb, rgba(255, 255, 255, 0.75) 100%, transparent);
+  --panel-strong: color-mix(in srgb, rgba(255, 255, 255, 0.88) 100%, transparent);
+  --edge: #e9e7e2;
+  --edge-soft: color-mix(in srgb, var(--edge) 75%, transparent);
+  --edge-strong: color-mix(in srgb, var(--edge) 85%, transparent);
+  --accent: #2b2a28;
+  --accent-contrast: #f6f5f3;
+  --ring: color-mix(in srgb, var(--accent) 65%, transparent);
+  --ring-strong: color-mix(in srgb, var(--accent) 80%, transparent);
+  --success: #2f6b3a;
+  --info: #6b5b2f;
+  --error: #7a2b2b;
+  --success-soft: color-mix(in srgb, var(--success) 18%, var(--panel));
+  --success-strong: color-mix(in srgb, var(--success) 70%, var(--fg));
+  --info-soft: color-mix(in srgb, var(--info) 20%, var(--panel));
+  --info-strong: color-mix(in srgb, var(--info) 68%, var(--fg));
+  --error-soft: color-mix(in srgb, var(--error) 20%, var(--panel));
+  --error-strong: color-mix(in srgb, var(--error) 75%, var(--fg));
+  --neutral-soft: color-mix(in srgb, var(--edge) 40%, var(--panel));
+  --neutral-strong: color-mix(in srgb, var(--fg) 88%, var(--muted));
+  --shadow-elevated: 0 28px 60px -32px rgba(43, 42, 40, 0.35);
+  --shadow-soft: 0 16px 32px -24px rgba(43, 42, 40, 0.25);
+  --clip-track: #e9e7e2;
+  --clip-original: #6fd6dd;
+  --clip-original-marker: #3aaeb8;
+  --clip-rendered: #2f7b83;
+  --clip-rendered-marker: #215d63;
+  --clip-current: #4c4a46;
+  --clip-handle: #ffffff;
+  --clip-handle-hover: #ebe8e2;
+  --clip-handle-border: #d9d5ce;
 }
 
 .dark {
   color-scheme: dark;
-  --bg: #0f172a;
-  --fg: #e2e8f0;
-  --muted: #94a3b8;
-  --card: #111827;
-  --ring: #38bdf8;
+  --bg: #1d1c1a;
+  --bg-muted: #242321;
+  --bg-vein: #2c2a28;
+  --depth: #3a3734;
+  --fg: #f3f2f0;
+  --fg-inverse: #171614;
+  --fg-inverse-soft: color-mix(in srgb, var(--fg-inverse) 80%, transparent);
+  --muted: #b3b0aa;
+  --card: color-mix(in srgb, rgba(36, 35, 33, 0.78) 100%, transparent);
+  --card-strong: color-mix(in srgb, rgba(46, 45, 43, 0.92) 100%, transparent);
+  --panel: color-mix(in srgb, rgba(38, 37, 35, 0.8) 100%, transparent);
+  --panel-strong: color-mix(in srgb, rgba(48, 47, 45, 0.92) 100%, transparent);
+  --edge: #35322f;
+  --edge-soft: color-mix(in srgb, var(--edge) 60%, transparent);
+  --edge-strong: color-mix(in srgb, var(--edge) 90%, transparent);
+  --accent: #f0ede5;
+  --accent-contrast: #1d1c1a;
+  --ring: color-mix(in srgb, var(--accent) 45%, transparent);
+  --ring-strong: color-mix(in srgb, var(--accent) 70%, transparent);
+  --success: #60b370;
+  --info: #c9a665;
+  --error: #d27a7a;
+  --success-soft: color-mix(in srgb, var(--success) 22%, var(--panel));
+  --success-strong: color-mix(in srgb, var(--success) 68%, var(--fg));
+  --info-soft: color-mix(in srgb, var(--info) 24%, var(--panel));
+  --info-strong: color-mix(in srgb, var(--info) 72%, var(--fg));
+  --error-soft: color-mix(in srgb, var(--error) 26%, var(--panel));
+  --error-strong: color-mix(in srgb, var(--error) 80%, var(--fg));
+  --neutral-soft: color-mix(in srgb, var(--edge) 42%, var(--panel));
+  --neutral-strong: color-mix(in srgb, var(--fg) 82%, var(--muted));
+  --shadow-elevated: 0 28px 60px -32px rgba(0, 0, 0, 0.6);
+  --shadow-soft: 0 16px 32px -24px rgba(0, 0, 0, 0.5);
+  --clip-track: #2c2a28;
+  --clip-original: #6edee6;
+  --clip-original-marker: #2fb7c3;
+  --clip-rendered: #45a6b0;
+  --clip-rendered-marker: #2f7c84;
+  --clip-current: #f0ede5;
+  --clip-handle: #3a3734;
+  --clip-handle-hover: #4b4742;
+  --clip-handle-border: #5a5651;
 }
 
 *,
@@ -36,17 +108,535 @@ html {
 
 body {
   margin: 0;
-  background-color: var(--bg);
+  background:
+    radial-gradient(circle at 12% 18%, color-mix(in srgb, var(--bg-muted) 70%, transparent) 0%, transparent 55%),
+    radial-gradient(circle at 82% 12%, color-mix(in srgb, var(--bg-vein) 60%, transparent) 0%, transparent 48%),
+    radial-gradient(circle at 20% 72%, color-mix(in srgb, var(--depth) 40%, transparent) 0%, transparent 50%),
+    linear-gradient(135deg, color-mix(in srgb, var(--bg) 90%, transparent), color-mix(in srgb, var(--bg-vein) 55%, transparent));
   color: var(--fg);
   font-family: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
     "Helvetica Neue", sans-serif;
-  line-height: 1.5;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
 
 #root {
   display: flex;
   flex-direction: column;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.border-white\/10,
+.hover\:border-white\/10:hover,
+.focus-visible\:border-white\/10:focus-visible {
+  border-color: var(--edge-soft) !important;
+}
+
+.border-white\/15,
+.hover\:border-white\/15:hover,
+.focus-visible\:border-white\/15:focus-visible {
+  border-color: color-mix(in srgb, var(--edge) 60%, transparent) !important;
+}
+
+.border-white\/20,
+.hover\:border-white\/20:hover,
+.focus-visible\:border-white\/20:focus-visible {
+  border-color: color-mix(in srgb, var(--edge) 45%, transparent) !important;
+}
+
+.border-white\/40,
+.hover\:border-white\/40:hover,
+.focus-visible\:border-white\/40:focus-visible {
+  border-color: color-mix(in srgb, var(--edge) 30%, transparent) !important;
+}
+
+.border-white\/5,
+.hover\:border-white\/5:hover,
+.focus-visible\:border-white\/5:focus-visible {
+  border-color: color-mix(in srgb, var(--edge) 35%, transparent) !important;
+}
+
+.bg-white\/5,
+.hover\:bg-white\/5:hover {
+  background-color: color-mix(in srgb, var(--panel) 40%, transparent) !important;
+}
+
+.bg-white\/10,
+.hover\:bg-white\/10:hover,
+.focus-visible\:bg-white\/10:focus-visible {
+  background-color: color-mix(in srgb, var(--panel-strong) 55%, transparent) !important;
+}
+
+.bg-white\/20,
+.hover\:bg-white\/20:hover {
+  background-color: color-mix(in srgb, var(--panel-strong) 65%, transparent) !important;
+}
+
+.bg-white\/30,
+.hover\:bg-white\/30:hover {
+  background-color: color-mix(in srgb, var(--panel-strong) 70%, transparent) !important;
+}
+
+.bg-black\/10,
+.hover\:bg-black\/10:hover {
+  background-color: color-mix(in srgb, var(--depth) 28%, transparent) !important;
+}
+
+.bg-black\/20,
+.hover\:bg-black\/20:hover {
+  background-color: color-mix(in srgb, var(--depth) 45%, transparent) !important;
+}
+
+.bg-black\/30,
+.hover\:bg-black\/30:hover {
+  background-color: color-mix(in srgb, var(--depth) 58%, transparent) !important;
+}
+
+.bg-black {
+  background-color: color-mix(in srgb, var(--depth) 75%, transparent) !important;
+}
+
+.bg-white\/40 {
+  background-color: color-mix(in srgb, var(--panel-strong) 78%, transparent) !important;
+}
+
+.text-white {
+  color: var(--accent-contrast) !important;
+}
+
+.hover\:text-white:hover,
+.focus-visible\:text-white:focus-visible {
+  color: var(--fg) !important;
+}
+
+.text-white\/80 {
+  color: var(--fg-inverse-soft) !important;
+}
+
+.text-amber-50 {
+  color: color-mix(in srgb, var(--accent-contrast) 90%, transparent) !important;
+}
+
+.border-dashed {
+  border-color: color-mix(in srgb, var(--edge) 50%, transparent);
+}
+
+.shadow-\[0_20px_40px_-24px_rgba\(15,23,42,0\.6\)\] {
+  box-shadow: var(--shadow-elevated) !important;
+}
+
+.shadow-\[0_10px_30px_-12px_rgba\(15,23,42,0\.45\)\] {
+  box-shadow: var(--shadow-soft) !important;
+}
+
+.rounded-lg {
+  border-radius: 14px !important;
+}
+
+.rounded-xl {
+  border-radius: 18px !important;
+}
+
+.rounded-2xl {
+  border-radius: 24px !important;
+}
+
+.marble-button {
+  position: relative;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--edge) 70%, transparent);
+  background: color-mix(in srgb, var(--panel-strong) 80%, transparent);
+  color: var(--fg);
+  box-shadow: 0 18px 46px -30px rgba(43, 42, 40, 0.45);
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    border-color 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.marble-button:hover {
+  transform: translateY(-2px) scale(1.01);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--edge));
+  background: color-mix(in srgb, var(--panel-strong) 96%, transparent);
+  box-shadow: 0 22px 48px -28px rgba(43, 42, 40, 0.5);
+}
+
+.marble-button:active {
+  transform: translateY(0) scale(0.995);
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--depth) 24%, transparent);
+  background: color-mix(in srgb, var(--panel-strong) 88%, transparent);
+}
+
+.marble-button:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-contrast) 60%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--ring-strong) 50%, transparent);
+}
+
+.marble-button:disabled,
+.marble-button[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: none;
+  transform: none;
+}
+
+.marble-button--primary {
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--accent) 92%, transparent),
+    color-mix(in srgb, var(--accent) 72%, var(--depth) 28%)
+  );
+  color: var(--accent-contrast);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--edge));
+  box-shadow: 0 26px 54px -32px rgba(43, 42, 40, 0.55);
+  text-shadow: 0 1px 1px color-mix(in srgb, var(--accent) 38%, transparent);
+}
+
+.marble-button--primary:hover {
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--accent) 100%, transparent),
+    color-mix(in srgb, var(--accent) 78%, var(--depth) 22%)
+  );
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--edge));
+  box-shadow: 0 30px 60px -30px rgba(43, 42, 40, 0.58);
+  text-shadow: 0 1px 2px color-mix(in srgb, var(--accent) 48%, transparent);
+}
+
+.marble-button--primary:active {
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--accent) 86%, var(--depth) 14%),
+    color-mix(in srgb, var(--accent) 72%, var(--depth) 28%)
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 24%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--accent) 18%, transparent),
+    0 18px 40px -30px rgba(43, 42, 40, 0.5);
+}
+
+.marble-button--outline {
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  border-color: color-mix(in srgb, var(--edge) 82%, transparent);
+  color: var(--fg);
+}
+
+.marble-button--outline:hover {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--edge));
+  color: color-mix(in srgb, var(--accent) 38%, var(--fg));
+}
+
+.marble-button--outline:active {
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+}
+
+.marble-button--danger {
+  background: color-mix(in srgb, var(--error) 22%, var(--panel-strong));
+  border-color: color-mix(in srgb, var(--error) 40%, var(--edge));
+  color: color-mix(in srgb, var(--error) 82%, var(--accent-contrast));
+}
+
+.marble-button--danger:hover {
+  border-color: color-mix(in srgb, var(--error) 55%, var(--edge));
+  background: color-mix(in srgb, var(--error) 28%, var(--panel-strong));
+  color: color-mix(in srgb, var(--error) 92%, var(--accent-contrast));
+}
+
+.marble-button--danger:active {
+  background: color-mix(in srgb, var(--error) 34%, var(--panel-strong));
+}
+
+.marble-select {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+}
+
+.marble-select::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 18px;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+  border-right: 2px solid color-mix(in srgb, var(--fg) 72%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--fg) 72%, transparent);
+  transform: translateY(-50%) rotate(45deg);
+  transition:
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+
+.marble-select[data-open='true']::after {
+  transform: translateY(-50%) rotate(225deg);
+}
+
+.marble-select[data-disabled='true']::after {
+  opacity: 0.45;
+}
+
+.marble-select__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--edge) 86%, transparent);
+  padding: 0.65rem 2.75rem 0.65rem 1rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--fg);
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--panel-strong) 92%, transparent),
+      color-mix(in srgb, var(--panel) 74%, transparent)
+    );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 8%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--edge) 52%, transparent),
+    0 16px 36px -28px rgba(43, 42, 40, 0.5);
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+  cursor: pointer;
+  text-align: left;
+}
+
+.marble-select:not([data-disabled='true']) .marble-select__trigger:hover {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--edge));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--edge) 58%, transparent),
+    0 20px 44px -26px rgba(43, 42, 40, 0.55);
+  transform: translateY(-1px);
+}
+
+.marble-select:not([data-disabled='true']) .marble-select__trigger:active {
+  transform: translateY(0);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 12%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--edge) 60%, transparent),
+    0 12px 30px -26px rgba(43, 42, 40, 0.48);
+}
+
+.marble-select__trigger:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--edge));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 12%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--edge) 60%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--ring-strong) 50%, transparent);
+}
+
+.marble-select[data-open='true'] .marble-select__trigger {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--edge));
+}
+
+.marble-select[data-disabled='true'] .marble-select__trigger,
+.marble-select__trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: color-mix(in srgb, var(--panel) 84%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 6%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--edge) 45%, transparent);
+  transform: none;
+}
+
+.marble-select__value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marble-select__value--placeholder {
+  color: color-mix(in srgb, var(--muted) 92%, transparent);
+}
+
+.marble-select__panel-wrapper {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  width: 100%;
+  z-index: 40;
+}
+
+.marble-select__panel {
+  margin: 0;
+  padding: 0.5rem;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 16rem;
+  overflow-y: auto;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--edge) 84%, transparent);
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--panel-strong) 96%, transparent),
+      color-mix(in srgb, var(--panel) 78%, transparent)
+    );
+  box-shadow:
+    0 24px 48px -28px rgba(43, 42, 40, 0.55),
+    inset 0 1px 0 color-mix(in srgb, white 4%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.marble-select__option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 12px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--fg) 86%, transparent);
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.marble-select__option:not([data-disabled='true']):hover,
+.marble-select__option[data-active='true'] {
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  color: var(--fg);
+  transform: translateX(2px);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.marble-select__option[data-selected='true'] {
+  background: color-mix(in srgb, var(--accent) 42%, transparent);
+  color: var(--accent-contrast);
+  box-shadow: 0 8px 18px -12px rgba(43, 42, 40, 0.45);
+}
+
+.marble-select__option[data-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+  box-shadow: none;
+}
+
+.marble-select[data-invalid='true'] .marble-select__trigger {
+  border-color: color-mix(in srgb, var(--error) 65%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--error) 22%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--error) 45%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--error) 40%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--error) 28%, transparent);
+}
+
+.marble-select[data-invalid='true']::after {
+  border-color: color-mix(in srgb, var(--error-strong) 80%, transparent);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--edge) 75%, transparent);
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  color: var(--fg);
+}
+
+.status-pill--success {
+  background: var(--success-soft);
+  border-color: color-mix(in srgb, var(--success) 40%, var(--edge));
+  color: var(--success-strong);
+}
+
+.status-pill--warning {
+  background: var(--info-soft);
+  border-color: color-mix(in srgb, var(--info) 42%, var(--edge));
+  color: var(--info-strong);
+}
+
+.status-pill--error {
+  background: var(--error-soft);
+  border-color: color-mix(in srgb, var(--error) 45%, var(--edge));
+  color: var(--error-strong);
+}
+
+.status-pill--neutral {
+  background: var(--neutral-soft);
+  border-color: color-mix(in srgb, var(--edge) 85%, transparent);
+  color: var(--neutral-strong);
+}
+
+.status-pill__dot {
+  display: inline-flex;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg) 80%, var(--depth));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--edge) 65%, transparent);
+}
+
+.status-pill__dot--success {
+  background: color-mix(in srgb, var(--success) 80%, var(--accent-contrast));
+}
+
+.status-pill__dot--warning {
+  background: color-mix(in srgb, var(--info) 78%, var(--accent-contrast));
+}
+
+.status-pill__dot--error {
+  background: color-mix(in srgb, var(--error) 82%, var(--accent-contrast));
+}
+
+.status-pill__dot--muted {
+  background: color-mix(in srgb, var(--muted) 72%, var(--accent-contrast));
+}
+
+button,
+[role='button'],
+input[type='button'],
+input[type='submit'],
+input[type='reset'] {
+  cursor: pointer;
+}
+
+button:disabled,
+[role='button'][aria-disabled='true'],
+input[type='button']:disabled,
+input[type='submit']:disabled,
+input[type='reset']:disabled {
+  cursor: not-allowed;
 }
 
 button,

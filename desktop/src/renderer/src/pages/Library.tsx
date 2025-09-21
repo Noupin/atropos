@@ -5,10 +5,11 @@ import {
   useRef,
   useState
 } from 'react'
-import type { ChangeEvent, FC } from 'react'
+import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ClipCard from '../components/ClipCard'
 import ClipDescription from '../components/ClipDescription'
+import MarbleSelect from '../components/MarbleSelect'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import { listAccountClips } from '../services/clipLibrary'
 import type { AccountSummary, Clip, SearchBridge } from '../types'
@@ -514,7 +515,7 @@ const Library: FC<LibraryProps> = ({
             <button
               type="button"
               onClick={() => toggleProjectCollapse(projectGroupId)}
-              className="flex items-center gap-2 text-left text-lg font-semibold text-[var(--fg)] transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+              className="flex items-center gap-2 text-left text-lg font-semibold text-[var(--fg)] transition hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
               aria-expanded={!isCollapsed}
             >
               <svg
@@ -576,13 +577,12 @@ const Library: FC<LibraryProps> = ({
   }, [setSharedVolume])
 
   const handleAccountChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
-      const { value } = event.target
-      setAccountFilter(value)
-      if (value === ALL_ACCOUNTS_VALUE) {
+    (nextValue: string) => {
+      setAccountFilter(nextValue)
+      if (nextValue === ALL_ACCOUNTS_VALUE) {
         return
       }
-      onSelectAccount(value)
+      onSelectAccount(nextValue)
     },
     [onSelectAccount]
   )
@@ -607,6 +607,19 @@ const Library: FC<LibraryProps> = ({
     return availableAccounts[0]?.id ?? ''
   }, [accountFilter, availableAccounts, hasAccounts, hasMultipleAccounts])
 
+  const accountOptions = useMemo(() => {
+    if (!hasAccounts) {
+      return []
+    }
+    const baseOptions = hasMultipleAccounts
+      ? [{ value: ALL_ACCOUNTS_VALUE, label: 'All accounts' }]
+      : []
+    return [
+      ...baseOptions,
+      ...availableAccounts.map((account) => ({ value: account.id, label: account.displayName }))
+    ]
+  }, [availableAccounts, hasAccounts, hasMultipleAccounts])
+
   return (
     <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-8">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)] xl:grid-cols-[minmax(0,1.8fr)_400px]">
@@ -623,25 +636,15 @@ const Library: FC<LibraryProps> = ({
                 <label htmlFor="library-account" className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
                   Account
                 </label>
-                <select
+                <MarbleSelect
                   id="library-account"
-                  value={dropdownValue}
-                  onChange={handleAccountChange}
+                  name="library-account"
+                  value={dropdownValue || null}
+                  options={accountOptions}
+                  onChange={(value) => handleAccountChange(value)}
+                  placeholder={hasAccounts ? 'Select an account' : 'No available accounts'}
                   disabled={!hasAccounts || isLoadingAccounts}
-                  className="w-full rounded-lg border border-white/10 bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {!hasAccounts ? (
-                    <option value="">No available accounts</option>
-                  ) : null}
-                  {hasMultipleAccounts ? (
-                    <option value={ALL_ACCOUNTS_VALUE}>All accounts</option>
-                  ) : null}
-                  {availableAccounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.displayName}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
             </div>
             {clipsError ? (
@@ -683,13 +686,13 @@ const Library: FC<LibraryProps> = ({
                       return (
                         <div
                           key={accountGroup.id}
-                          className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-4"
+                          className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:var(--card-strong)] p-4"
                         >
                           <div className="flex items-center justify-between">
                             <button
                               type="button"
                               onClick={() => toggleAccountCollapse(accountGroup.id)}
-                              className="flex items-center gap-2 text-left text-lg font-semibold text-[var(--fg)] transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+                              className="flex items-center gap-2 text-left text-lg font-semibold text-[var(--fg)] transition hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
                               aria-expanded={!isCollapsed}
                             >
                               <svg
@@ -770,16 +773,16 @@ const Library: FC<LibraryProps> = ({
                     ) : (
                       <p className="text-lg font-semibold text-[var(--fg)] leading-tight">{selectedClip.title}</p>
                     )}
-                    {selectedClip.reason ? (
-                      <div className="space-y-1">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
-                          Reason
-                        </span>
-                        <p className="rounded-lg border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-3 text-sm leading-relaxed text-[var(--fg)]/80">
-                          {selectedClip.reason}
-                        </p>
-                      </div>
-                    ) : null}
+                      {selectedClip.reason ? (
+                        <div className="space-y-1">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
+                            Reason
+                          </span>
+                          <p className="rounded-lg border border-white/10 bg-[color:var(--card-strong)] p-3 text-sm leading-relaxed text-[color:color-mix(in_srgb,var(--fg)_82%,transparent)]">
+                            {selectedClip.reason}
+                          </p>
+                        </div>
+                      ) : null}
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                       <span className="font-semibold text-[var(--fg)]">{selectedClip.channel}</span>
                       {selectedClip.views !== null ? <span>{formatViews(selectedClip.views)} views</span> : null}
@@ -792,7 +795,7 @@ const Library: FC<LibraryProps> = ({
                       ) : null}
                     </div>
                   </div>
-                  <dl className="grid gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_75%,transparent)] p-4 text-xs text-[var(--muted)] sm:grid-cols-[auto_1fr]">
+                  <dl className="grid gap-3 rounded-xl border border-white/10 bg-[color:var(--card-strong)] p-4 text-xs text-[var(--muted)] sm:grid-cols-[auto_1fr]">
                     {selectedClip.rating !== null && selectedClip.rating !== undefined ? (
                       <>
                         <dt className="font-medium text-[var(--fg)]">Score</dt>
@@ -816,14 +819,14 @@ const Library: FC<LibraryProps> = ({
                     <button
                       type="button"
                       onClick={() => handleClipOpen(selectedClip)}
-                      className="rounded-lg border border-transparent bg-[var(--ring)] px-3 py-1.5 text-xs font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+                      className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
                     >
                       Open clip details
                     </button>
                     <button
                       type="button"
                       onClick={() => handleAdjustClipBoundaries(selectedClip)}
-                      className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                      className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
                     >
                       Edit adjust clip
                     </button>
@@ -831,7 +834,7 @@ const Library: FC<LibraryProps> = ({
                       href={selectedClip.sourceUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white"
+                      className="marble-button marble-button--outline inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold"
                     >
                       View full video
                       <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
@@ -846,10 +849,18 @@ const Library: FC<LibraryProps> = ({
                         href={selectedClip.timestampUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white"
+                        aria-label={`Jump to ${
+                          selectedClip.timestampSeconds !== null && selectedClip.timestampSeconds !== undefined
+                            ? formatDuration(selectedClip.timestampSeconds)
+                            : 'timestamp'
+                        }`}
+                        className="marble-button marble-button--outline inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold"
                       >
-                        Jump to{' '}
-                        <span className="font-semibold text-white">
+                        <span>Jump to</span>
+                        <span
+                          aria-hidden="true"
+                          className="status-pill status-pill--neutral text-[0.68rem]"
+                        >
                           {selectedClip.timestampSeconds !== null && selectedClip.timestampSeconds !== undefined
                             ? formatDuration(selectedClip.timestampSeconds)
                             : 'timestamp'}

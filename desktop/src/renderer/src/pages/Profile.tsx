@@ -10,6 +10,7 @@ import {
   type SupportedPlatform
 } from '../types'
 import { timeAgo } from '../lib/format'
+import MarbleSelect from '../components/MarbleSelect'
 
 const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
   tiktok: 'tiktok.json',
@@ -68,16 +69,34 @@ type AccountCardProps = {
   onDeletePlatform: ProfileProps['onDeletePlatform']
 }
 
-const statusColors: Record<string, string> = {
-  ok: 'bg-emerald-400/20 text-emerald-200 border-emerald-400/60',
-  degraded: 'bg-amber-400/20 text-amber-100 border-amber-400/60',
-  disabled: 'bg-slate-500/20 text-slate-200 border-slate-500/60'
+const authStatusStyles: Record<string, { pill: string; dot: string }> = {
+  ok: {
+    pill: 'status-pill status-pill--success',
+    dot: 'status-pill__dot status-pill__dot--success'
+  },
+  degraded: {
+    pill: 'status-pill status-pill--warning',
+    dot: 'status-pill__dot status-pill__dot--warning'
+  },
+  disabled: {
+    pill: 'status-pill status-pill--neutral',
+    dot: 'status-pill__dot status-pill__dot--muted'
+  }
 }
 
-const platformStatusStyles: Record<string, string> = {
-  active: 'bg-emerald-400/10 text-emerald-200 border-emerald-400/40',
-  disconnected: 'bg-rose-500/10 text-rose-100 border-rose-500/40',
-  disabled: 'bg-slate-500/10 text-slate-200 border-slate-500/40'
+const platformStatusStyles: Record<string, { pill: string; dot: string }> = {
+  active: {
+    pill: 'status-pill status-pill--success',
+    dot: 'status-pill__dot status-pill__dot--success'
+  },
+  disconnected: {
+    pill: 'status-pill status-pill--error',
+    dot: 'status-pill__dot status-pill__dot--error'
+  },
+  disabled: {
+    pill: 'status-pill status-pill--neutral',
+    dot: 'status-pill__dot status-pill__dot--muted'
+  }
 }
 
 const AccountCard: FC<AccountCardProps> = ({
@@ -121,6 +140,11 @@ const AccountCard: FC<AccountCardProps> = ({
     [account.platforms]
   )
 
+  const platformOptions = useMemo(
+    () => availablePlatforms.map((platform) => ({ value: platform, label: PLATFORM_LABELS[platform] })),
+    [availablePlatforms]
+  )
+
   useEffect(() => {
     setSuccess(null)
     setError(null)
@@ -134,6 +158,16 @@ const AccountCard: FC<AccountCardProps> = ({
     setTiktokClientKey('')
     setTiktokClientSecret('')
   }, [])
+
+  const handlePlatformChange = useCallback(
+    (nextValue: string) => {
+      setSelectedPlatform((nextValue as SupportedPlatform) || '')
+      setError(null)
+      setSuccess(null)
+      resetCredentialFields()
+    },
+    [resetCredentialFields, setError, setSuccess]
+  )
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -337,17 +371,14 @@ const AccountCard: FC<AccountCardProps> = ({
       : platform.connected
         ? 'Authenticated'
         : 'Needs attention'
-    const style = platformStatusStyles[platform.status] ?? platformStatusStyles.disconnected
-    const indicatorClass = !isPlatformActive
-      ? 'bg-slate-400'
+    const variant = !isPlatformActive
+      ? platformStatusStyles.disabled
       : platform.connected
-        ? 'bg-emerald-400'
-        : 'bg-rose-400'
+        ? platformStatusStyles.active
+        : platformStatusStyles.disconnected
     return (
-      <span
-        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${style}`}
-      >
-        <span className={`h-2 w-2 rounded-full ${indicatorClass}`} />
+      <span className={`${variant.pill} text-xs`}> 
+        <span className={variant.dot} aria-hidden="true" />
         {labelText}
       </span>
     )
@@ -438,11 +469,11 @@ const AccountCard: FC<AccountCardProps> = ({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-[var(--muted)]">
+              <span className="status-pill status-pill--neutral text-xs">
                 {account.platforms.length} platform{account.platforms.length === 1 ? '' : 's'}
               </span>
               {!isAccountActive ? (
-                <span className="rounded-full border border-amber-400/60 bg-amber-400/10 px-3 py-1 text-xs font-medium text-amber-100">
+                <span className="status-pill status-pill--warning text-xs font-semibold">
                   Disabled
                 </span>
               ) : null}
@@ -464,7 +495,7 @@ const AccountCard: FC<AccountCardProps> = ({
             }}
             aria-expanded={!isCollapsed}
             aria-controls={detailsId}
-            className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            className="marble-button marble-button--outline px-3 py-1 text-xs font-semibold"
           >
             {isCollapsed ? 'Expand' : 'Collapse'}
           </button>
@@ -474,7 +505,9 @@ const AccountCard: FC<AccountCardProps> = ({
       {isCollapsed ? (
         <div id={detailsId} className="flex flex-col gap-3">
           {!isAccountActive ? (
-            <p className="text-xs text-amber-100">Enable this account to resume authentication.</p>
+            <p className="text-xs text-[color:var(--info-strong)]">
+              Enable this account to resume authentication.
+            </p>
           ) : null}
           {account.platforms.length > 0 ? (
             <ul className="flex flex-wrap gap-2">
@@ -508,7 +541,7 @@ const AccountCard: FC<AccountCardProps> = ({
                 void handleToggleAccountActive()
               }}
               disabled={isTogglingAccount || isDeletingAccount}
-              className="rounded-lg border border-white/15 px-3 py-1 text-xs font-medium text-[var(--fg)] transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              className="marble-button marble-button--outline px-3 py-1 text-xs font-semibold"
             >
               {isTogglingAccount
                 ? account.active
@@ -524,14 +557,14 @@ const AccountCard: FC<AccountCardProps> = ({
                 void handleDeleteAccount()
               }}
               disabled={isDeletingAccount || isTogglingAccount}
-              className="rounded-lg border border-rose-500/60 px-3 py-1 text-xs font-medium text-rose-200 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+              className="marble-button marble-button--danger px-3 py-1 text-xs font-semibold"
             >
               {isDeletingAccount ? 'Removing…' : 'Remove account'}
             </button>
           </div>
 
           {!isAccountActive ? (
-            <p className="rounded-lg border border-dashed border-amber-400/60 bg-amber-400/10 p-3 text-xs text-amber-100">
+            <p className="rounded-lg border border-dashed border-[color:color-mix(in_srgb,var(--info)_35%,var(--edge))] bg-[color:var(--info-soft)] p-3 text-xs text-[color:var(--info-strong)]">
               This account is disabled. Enable it to resume authentication and publishing.
             </p>
           ) : null}
@@ -571,7 +604,7 @@ const AccountCard: FC<AccountCardProps> = ({
                             void handleTogglePlatformActive(platform.platform, !platform.active)
                           }}
                           disabled={isPlatformUpdating || isPlatformRemoving}
-                          className="rounded-lg border border-white/15 px-3 py-1 text-xs font-medium text-[var(--fg)] transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="marble-button marble-button--outline px-3 py-1 text-xs font-semibold"
                         >
                           {isPlatformUpdating
                             ? platform.active
@@ -587,7 +620,7 @@ const AccountCard: FC<AccountCardProps> = ({
                             void handleRemovePlatform(platform.platform)
                           }}
                           disabled={isPlatformRemoving || isPlatformUpdating}
-                          className="rounded-lg border border-rose-500/60 px-3 py-1 text-xs font-medium text-rose-200 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="marble-button marble-button--danger px-3 py-1 text-xs font-semibold"
                         >
                           {isPlatformRemoving ? 'Removing…' : 'Remove'}
                         </button>
@@ -611,32 +644,22 @@ const AccountCard: FC<AccountCardProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h4 className="text-sm font-semibold text-[var(--fg)]">Add a platform</h4>
                 {selectedPlatform ? (
-                  <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-[var(--muted)]">
+                  <span className="status-pill status-pill--neutral text-xs">
                     Authenticating {PLATFORM_LABELS[selectedPlatform]}
                   </span>
                 ) : null}
               </div>
               <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
                 Platform
-                <select
-                  value={selectedPlatform}
-                  onChange={(event) => {
-                    const { value } = event.target
-                    setSelectedPlatform((value as SupportedPlatform) || '')
-                    setError(null)
-                    setSuccess(null)
-                    resetCredentialFields()
-                  }}
+                <MarbleSelect
+                  id={`platform-${account.id}`}
+                  name="platform"
+                  value={selectedPlatform || null}
+                  options={platformOptions}
+                  onChange={handlePlatformChange}
+                  placeholder="Select a platform"
                   disabled={!isAccountActive || isSubmitting}
-                  className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <option value="">Select a platform</option>
-                  {availablePlatforms.map((platform) => (
-                    <option key={platform} value={platform}>
-                      {PLATFORM_LABELS[platform]}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
                 Label (optional)
@@ -650,17 +673,21 @@ const AccountCard: FC<AccountCardProps> = ({
               </label>
               {renderPlatformFields()}
               {!isAccountActive ? (
-                <p className="text-xs text-amber-100">
+                <p className="text-xs text-[color:var(--info-strong)]">
                   Enable this account to connect new platforms.
                 </p>
               ) : null}
-              {error ? <p className="text-xs font-medium text-rose-400">{error}</p> : null}
-              {success ? <p className="text-xs font-medium text-emerald-300">{success}</p> : null}
+              {error ? (
+                <p className="text-xs font-medium text-[color:var(--error-strong)]">{error}</p>
+              ) : null}
+              {success ? (
+                <p className="text-xs font-medium text-[color:var(--success-strong)]">{success}</p>
+              ) : null}
               <div className="flex items-center justify-end gap-2">
                 <button
                   type="submit"
                   disabled={isSubmitting || !isAccountActive}
-                  className="rounded-lg border border-transparent bg-[var(--ring)] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
                 >
                   {isSubmitting ? 'Connecting…' : 'Connect platform'}
                 </button>
@@ -740,6 +767,17 @@ const Profile: FC<ProfileProps> = ({
     accounts.reduce((total, account) => total + account.platforms.length, 0)
   const totalAccounts = authStatus?.accounts ?? accounts.length
   const accountLabel = totalAccounts === 1 ? 'account' : 'accounts'
+  const authStatusVariant = authStatus
+    ? authStatusStyles[authStatus.status] ?? authStatusStyles.degraded
+    : null
+  const authStatusPill = [
+    authStatusVariant?.pill ?? 'status-pill status-pill--neutral',
+    'text-xs',
+    !authStatus ? 'text-[color:var(--muted)]' : ''
+  ]
+    .filter(Boolean)
+    .join(' ')
+  const authStatusDot = authStatusVariant?.dot ?? 'status-pill__dot status-pill__dot--muted'
 
   return (
     <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-10">
@@ -756,18 +794,8 @@ const Profile: FC<ProfileProps> = ({
           <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <span
-                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${
-                    authStatus
-                      ? (statusColors[authStatus.status] ?? statusColors.degraded)
-                      : 'border-white/10 bg-white/5 text-[var(--muted)]'
-                  }`}
-                >
-                  <span
-                    className={`h-2 w-2 rounded-full ${
-                      authStatus?.status === 'ok' ? 'bg-emerald-400' : 'bg-amber-400'
-                    }`}
-                  />
+                <span className={authStatusPill}>
+                  <span className={authStatusDot} aria-hidden="true" />
                   {authStatus
                     ? authStatus.message
                     : (authError ?? 'Checking authentication status…')}
@@ -778,7 +806,7 @@ const Profile: FC<ProfileProps> = ({
                 onClick={() => {
                   void onRefreshAccounts()
                 }}
-                className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
               >
                 Refresh
               </button>
@@ -788,10 +816,10 @@ const Profile: FC<ProfileProps> = ({
               {totalPlatforms}
             </div>
             {authError && !authStatus ? (
-              <p className="text-xs font-medium text-rose-400">{authError}</p>
+              <p className="text-xs font-medium text-[color:var(--error-strong)]">{authError}</p>
             ) : null}
             {accountsError ? (
-              <p className="text-xs font-medium text-rose-400">{accountsError}</p>
+              <p className="text-xs font-medium text-[color:var(--error-strong)]">{accountsError}</p>
             ) : null}
           </div>
 
@@ -827,16 +855,16 @@ const Profile: FC<ProfileProps> = ({
               />
             </label>
             {newAccountError ? (
-              <p className="text-xs font-medium text-rose-400">{newAccountError}</p>
+              <p className="text-xs font-medium text-[color:var(--error-strong)]">{newAccountError}</p>
             ) : null}
             {newAccountSuccess ? (
-              <p className="text-xs font-medium text-emerald-300">{newAccountSuccess}</p>
+              <p className="text-xs font-medium text-[color:var(--success-strong)]">{newAccountSuccess}</p>
             ) : null}
             <div className="flex items-center justify-end">
               <button
                 type="submit"
                 disabled={isCreatingAccount}
-                className="rounded-lg border border-transparent bg-[var(--ring)] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
               >
                 {isCreatingAccount ? 'Creating…' : 'Create account'}
               </button>

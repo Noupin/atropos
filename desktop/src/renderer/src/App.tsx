@@ -33,6 +33,8 @@ type PlatformPayload = {
   credentials?: Record<string, unknown>
 }
 
+const THEME_STORAGE_KEY = 'atropos:theme'
+
 const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
 
@@ -43,8 +45,8 @@ const NavItemLabel: FC<{ label: string; isActive: boolean }> = ({ label, isActiv
       aria-hidden
       className={`h-0.5 w-8 rounded-full transition ${
         isActive
-          ? 'bg-[var(--fg)] opacity-100'
-          : 'bg-white/70 opacity-0 group-hover:opacity-60'
+          ? 'bg-[color:var(--accent)] opacity-100'
+          : 'bg-[color:var(--edge-soft)] opacity-0 group-hover:opacity-60'
       }`}
     />
   </span>
@@ -76,12 +78,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true)
   const [authStatus, setAuthStatus] = useState<AuthPingSummary | null>(null)
   const [authError, setAuthError] = useState<string | null>(null)
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof document === 'undefined') {
-      return true
-    }
-    return document.documentElement.classList.contains('dark')
-  })
+  const [isDark, setIsDark] = useState(false)
   const availableAccounts = useMemo(
     () =>
       accounts.filter(
@@ -94,12 +91,41 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     if (typeof document === 'undefined') {
       return
     }
+
     const root = document.documentElement
-    if (!root.classList.contains('dark')) {
-      root.classList.add('dark')
+    let storedTheme: string | null = null
+    try {
+      storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
+    } catch (error) {
+      console.warn('Unable to read saved theme preference.', error)
     }
-    setIsDark(root.classList.contains('dark'))
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    const shouldUseDark = storedTheme ? storedTheme === 'dark' : prefersDark
+
+    root.classList.toggle('dark', shouldUseDark)
+    root.style.setProperty('color-scheme', shouldUseDark ? 'dark' : 'light')
+    setIsDark(shouldUseDark)
     document.title = 'Atropos'
+
+    const handleSystemThemeChange = (event: MediaQueryListEvent): void => {
+      try {
+        if (window.localStorage.getItem(THEME_STORAGE_KEY)) {
+          return
+        }
+      } catch (error) {
+        console.warn('Unable to access saved theme preference.', error)
+        return
+      }
+      const nextIsDark = event.matches
+      root.classList.toggle('dark', nextIsDark)
+      root.style.setProperty('color-scheme', nextIsDark ? 'dark' : 'light')
+      setIsDark(nextIsDark)
+    }
+
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    media.addEventListener('change', handleSystemThemeChange)
+
+    return () => media.removeEventListener('change', handleSystemThemeChange)
   }, [])
 
   const refreshAuthStatus = useCallback(async () => {
@@ -311,35 +337,37 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       return
     }
     const root = document.documentElement
-    if (root.classList.contains('dark')) {
-      root.classList.remove('dark')
-      setIsDark(false)
-    } else {
-      root.classList.add('dark')
-      setIsDark(true)
+    const nextIsDark = !root.classList.contains('dark')
+    root.classList.toggle('dark', nextIsDark)
+    root.style.setProperty('color-scheme', nextIsDark ? 'dark' : 'light')
+    setIsDark(nextIsDark)
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, nextIsDark ? 'dark' : 'light')
+    } catch (error) {
+      console.warn('Unable to persist theme preference.', error)
     }
   }, [])
 
   const navLinkClassName = useCallback(
     ({ isActive }: { isActive: boolean }) =>
-      `group relative rounded-lg px-3 py-1.5 text-sm transition ${
+      `group relative rounded-[14px] px-3 py-1.5 text-sm transition ${
         isActive
-          ? 'bg-[color:color-mix(in_srgb,var(--card)_80%,transparent)] text-[var(--fg)] shadow-sm'
-          : 'text-[var(--muted)] hover:bg-white/10 hover:text-[var(--fg)]'
+          ? 'bg-[color:color-mix(in_srgb,var(--panel-strong)_70%,transparent)] text-[var(--fg)] shadow-[0_10px_24px_rgba(43,42,40,0.12)]'
+          : 'text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_55%,transparent)] hover:text-[var(--fg)]'
       }`,
     []
   )
 
   return (
     <div className="flex min-h-full flex-col bg-[var(--bg)] text-[var(--fg)]">
-      <header className="border-b border-white/10 bg-[color:color-mix(in_srgb,var(--card)_40%,transparent)]">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <header className="border-b border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] backdrop-blur-md">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-5 py-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-semibold tracking-tight text-[var(--fg)]">Atropos</h1>
+              <h1 className="text-3xl font-semibold tracking-tight text-[var(--fg)]">Atropos</h1>
               <nav
                 aria-label="Primary navigation"
-                className="flex items-center gap-2 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-1"
+                className="flex items-center gap-2 rounded-[18px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] p-1 shadow-[0_18px_34px_rgba(43,42,40,0.16)] backdrop-blur"
               >
                 <NavLink to="/" end className={navLinkClassName}>
                   {({ isActive }) => <NavItemLabel label="Home" isActive={isActive} />}
@@ -358,7 +386,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
             <button
               type="button"
               onClick={toggleTheme}
-              className="self-start rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] md:self-auto"
+              className="self-start rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] px-4 py-2 text-sm font-semibold uppercase tracking-wide text-[var(--fg)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_75%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)] md:self-auto"
               aria-label="Toggle theme"
             >
               {isDark ? 'Switch to light' : 'Switch to dark'}

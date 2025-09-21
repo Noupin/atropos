@@ -10,6 +10,7 @@ import {
 import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PipelineProgress from '../components/PipelineProgress'
+import MarbleSelect from '../components/MarbleSelect'
 import { BACKEND_MODE, buildJobClipVideoUrl } from '../config/backend'
 import {
   createInitialPipelineSteps,
@@ -685,11 +686,10 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   )
 
   const handleAccountChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
-      const value = event.target.value
+    (nextValue: string) => {
       updateState((prev) => ({
         ...prev,
-        selectedAccountId: value.length > 0 ? value : null,
+        selectedAccountId: nextValue.length > 0 ? nextValue : null,
         accountError: prev.accountError ? null : prev.accountError,
         clips: [],
         selectedClipId: null
@@ -941,24 +941,17 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                 <label className="sr-only" htmlFor="processing-account">
                   Account
                 </label>
-                <select
+                <MarbleSelect
                   id="processing-account"
-                  value={selectedAccountId ?? ''}
-                  onChange={handleAccountChange}
-                  aria-invalid={accountError ? 'true' : 'false'}
-                  aria-describedby={accountError ? 'account-error' : undefined}
+                  name="processing-account"
+                  value={selectedAccountId}
+                  options={accountOptions}
+                  onChange={(value) => handleAccountChange(value)}
+                  placeholder="Select an account"
                   disabled={accountOptions.length === 0}
-                  className={`w-full rounded-lg border bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] ${accountError ? 'border-rose-400 focus-visible:ring-rose-400' : 'border-white/10 focus-visible:ring-[var(--ring)]'}`}
-                >
-                  <option value="" disabled>
-                    Select an account
-                  </option>
-                  {accountOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  error={Boolean(accountError)}
+                  aria-describedby={accountError ? 'account-error' : undefined}
+                />
                 {accountOptions.length === 0 && !accountError ? (
                   <p className="text-xs text-amber-300">
                     Enable an account with an active platform from your profile before starting the pipeline.
@@ -976,23 +969,23 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                 placeholder="https://www.youtube.com/watch?v=..."
                 className="flex-1 rounded-lg border border-white/10 bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm placeholder:text-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               />
-              <div className="flex items-center gap-2">
-                <button
-                  type="submit"
-                  disabled={!videoUrl.trim() || isProcessing}
-                  className="rounded-lg border border-transparent bg-[var(--ring)] px-3 py-2 text-xs font-semibold leading-tight text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:text-sm whitespace-nowrap"
-                >
-                  {isProcessing ? 'Processing…' : 'Start processing'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  disabled={!hasProgress && clips.length === 0 && !pipelineError}
-                  className="rounded-lg border border-white/10 px-3 py-2 text-xs font-medium leading-tight text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:text-sm whitespace-nowrap"
-                >
-                  Reset
-                </button>
-              </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="submit"
+                    disabled={!videoUrl.trim() || isProcessing}
+                    className="marble-button marble-button--primary whitespace-nowrap px-5 py-2.5 text-sm font-semibold sm:px-6 sm:py-2.5 sm:text-base"
+                  >
+                    {isProcessing ? 'Processing…' : 'Start processing'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    disabled={!hasProgress && clips.length === 0 && !pipelineError}
+                    className="marble-button marble-button--outline whitespace-nowrap px-4 py-2.5 text-sm font-semibold sm:px-5"
+                  >
+                    Reset
+                  </button>
+                </div>
             </div>
             <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
               <input
@@ -1077,7 +1070,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                         <button
                           type="button"
                           onClick={() => handleReviewClip(clip.id)}
-                          className="inline-flex items-center justify-center rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                          className="inline-flex items-center justify-center rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                         >
                           Review clip window
                         </button>
@@ -1114,7 +1107,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                 type="button"
                 onClick={handleOpenClipsFolder}
                 disabled={isOpeningFolder}
-                className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:text-sm"
+                className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:text-sm"
               >
                 {isOpeningFolder ? 'Opening…' : 'Open clips folder'}
               </button>

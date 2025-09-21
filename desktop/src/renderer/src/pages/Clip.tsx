@@ -52,7 +52,7 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
         >
           Back
         </button>
-        <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-10 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-[color:var(--card-strong)] p-10 text-center">
           <h2 className="text-xl font-semibold text-[var(--fg)]">Clip not found</h2>
           <p className="mt-2 max-w-md text-sm text-[var(--muted)]">
             We couldn’t find the clip you were looking for. Try returning to the library to browse other highlights.
@@ -72,7 +72,7 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
         Back
       </button>
       <div className="flex flex-col gap-6 lg:flex-row">
-        <div className="flex-1 overflow-hidden rounded-2xl bg-black/50">
+        <div className="flex-1 overflow-hidden rounded-2xl bg-[color:var(--depth)]">
           <video
             key={clip.id}
             src={clip.playbackUrl}
@@ -103,7 +103,7 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
                 <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
                   Reason
                 </span>
-                <p className="rounded-lg border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-3 text-sm leading-relaxed text-[var(--fg)]/80">
+                <p className="rounded-lg border border-white/10 bg-[color:var(--card-strong)] p-3 text-sm leading-relaxed text-[color:color-mix(in_srgb,var(--fg)_82%,transparent)]">
                   {clip.reason}
                 </p>
               </div>
@@ -114,7 +114,7 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
               {clip.sourcePublishedAt ? <span>• {timeAgo(clip.sourcePublishedAt)}</span> : null}
             </div>
           </div>
-          <dl className="grid gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm text-[var(--muted)] sm:grid-cols-[auto_1fr]">
+          <dl className="grid gap-3 rounded-xl border border-white/10 bg-[color:var(--card-strong)] p-4 text-sm text-[var(--muted)] sm:grid-cols-[auto_1fr]">
             <dt className="font-medium text-[var(--fg)]">Duration</dt>
             <dd>{formatDuration(clip.durationSec)}</dd>
             {clip.rating !== null && clip.rating !== undefined ? (
@@ -157,7 +157,7 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
               href={clip.sourceUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex w-fit items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white"
+              className="marble-button marble-button--outline inline-flex w-fit items-center gap-2 px-3 py-1.5 text-sm font-medium"
             >
               View full video
             </a>
@@ -166,10 +166,18 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
                 href={clip.timestampUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex w-fit items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white"
+                aria-label={`Jump to ${
+                  clip.timestampSeconds !== null && clip.timestampSeconds !== undefined
+                    ? formatDuration(clip.timestampSeconds)
+                    : 'timestamp'
+                }`}
+                className="marble-button marble-button--outline inline-flex w-fit items-center gap-2 px-3 py-1.5 text-sm font-medium"
               >
-                Jump to
-                <span className="font-semibold text-white">
+                <span>Jump to</span>
+                <span
+                  aria-hidden="true"
+                  className="status-pill status-pill--neutral text-[0.7rem] font-semibold"
+                >
                   {clip.timestampSeconds !== null && clip.timestampSeconds !== undefined
                     ? formatDuration(clip.timestampSeconds)
                     : 'timestamp'}
@@ -184,7 +192,7 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
               className="text-sm leading-relaxed text-[var(--muted)]"
             />
           </div>
-          <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm text-[var(--muted)]">
+          <div className="rounded-xl border border-white/10 bg-[color:var(--card-strong)] p-4 text-sm text-[var(--muted)]">
             Bookmark this clip to revisit the key moment or share it with your team for quick inspiration.
           </div>
         </div>
