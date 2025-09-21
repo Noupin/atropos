@@ -157,7 +157,7 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
               href={clip.sourceUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex w-fit items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-[color:var(--accent)]"
+              className="marble-button marble-button--outline inline-flex w-fit items-center gap-2 px-3 py-1.5 text-sm font-medium"
             >
               View full video
             </a>
@@ -166,10 +166,18 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
                 href={clip.timestampUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex w-fit items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-[color:var(--accent)]"
+                aria-label={`Jump to ${
+                  clip.timestampSeconds !== null && clip.timestampSeconds !== undefined
+                    ? formatDuration(clip.timestampSeconds)
+                    : 'timestamp'
+                }`}
+                className="marble-button marble-button--outline inline-flex w-fit items-center gap-2 px-3 py-1.5 text-sm font-medium"
               >
-                Jump to
-                <span className="font-semibold text-[color:var(--fg-inverse)]">
+                <span>Jump to</span>
+                <span
+                  aria-hidden="true"
+                  className="status-pill status-pill--neutral text-[0.7rem] font-semibold"
+                >
                   {clip.timestampSeconds !== null && clip.timestampSeconds !== undefined
                     ? formatDuration(clip.timestampSeconds)
                     : 'timestamp'}

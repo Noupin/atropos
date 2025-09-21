@@ -816,14 +816,14 @@ const Library: FC<LibraryProps> = ({
                     <button
                       type="button"
                       onClick={() => handleClipOpen(selectedClip)}
-                      className="rounded-lg border border-transparent bg-[var(--ring)] px-3 py-1.5 text-xs font-semibold text-[color:var(--accent-contrast)] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+                      className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
                     >
                       Open clip details
                     </button>
                     <button
                       type="button"
                       onClick={() => handleAdjustClipBoundaries(selectedClip)}
-                      className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                      className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
                     >
                       Edit adjust clip
                     </button>
@@ -831,7 +831,7 @@ const Library: FC<LibraryProps> = ({
                       href={selectedClip.sourceUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-[color:var(--accent)]"
+                      className="marble-button marble-button--outline inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold"
                     >
                       View full video
                       <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
@@ -846,10 +846,18 @@ const Library: FC<LibraryProps> = ({
                         href={selectedClip.timestampUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-[color:var(--accent)]"
+                        aria-label={`Jump to ${
+                          selectedClip.timestampSeconds !== null && selectedClip.timestampSeconds !== undefined
+                            ? formatDuration(selectedClip.timestampSeconds)
+                            : 'timestamp'
+                        }`}
+                        className="marble-button marble-button--outline inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold"
                       >
-                        Jump to{' '}
-                        <span className="font-semibold text-[color:var(--fg-inverse)]">
+                        <span>Jump to</span>
+                        <span
+                          aria-hidden="true"
+                          className="status-pill status-pill--neutral text-[0.68rem]"
+                        >
                           {selectedClip.timestampSeconds !== null && selectedClip.timestampSeconds !== undefined
                             ? formatDuration(selectedClip.timestampSeconds)
                             : 'timestamp'}
