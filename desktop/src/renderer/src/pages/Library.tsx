@@ -623,25 +623,30 @@ const Library: FC<LibraryProps> = ({
                 <label htmlFor="library-account" className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
                   Account
                 </label>
-                <select
-                  id="library-account"
-                  value={dropdownValue}
-                  onChange={handleAccountChange}
-                  disabled={!hasAccounts || isLoadingAccounts}
-                  className="w-full rounded-lg border border-white/10 bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+                <div
+                  className="marble-select"
+                  data-disabled={!hasAccounts || isLoadingAccounts}
                 >
-                  {!hasAccounts ? (
-                    <option value="">No available accounts</option>
-                  ) : null}
-                  {hasMultipleAccounts ? (
-                    <option value={ALL_ACCOUNTS_VALUE}>All accounts</option>
-                  ) : null}
-                  {availableAccounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.displayName}
-                    </option>
-                  ))}
-                </select>
+                  <select
+                    id="library-account"
+                    value={dropdownValue}
+                    onChange={handleAccountChange}
+                    disabled={!hasAccounts || isLoadingAccounts}
+                    className="marble-select__field text-sm font-medium"
+                  >
+                    {!hasAccounts ? (
+                      <option value="">No available accounts</option>
+                    ) : null}
+                    {hasMultipleAccounts ? (
+                      <option value={ALL_ACCOUNTS_VALUE}>All accounts</option>
+                    ) : null}
+                    {availableAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
             {clipsError ? (

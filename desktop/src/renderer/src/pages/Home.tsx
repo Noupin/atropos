@@ -941,24 +941,29 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                 <label className="sr-only" htmlFor="processing-account">
                   Account
                 </label>
-                <select
-                  id="processing-account"
-                  value={selectedAccountId ?? ''}
-                  onChange={handleAccountChange}
-                  aria-invalid={accountError ? 'true' : 'false'}
-                  aria-describedby={accountError ? 'account-error' : undefined}
-                  disabled={accountOptions.length === 0}
-                  className={`w-full rounded-lg border bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] ${accountError ? 'border-rose-400 focus-visible:ring-rose-400' : 'border-white/10 focus-visible:ring-[var(--ring)]'}`}
+                <div
+                  className={`marble-select${accountError ? ' marble-select--error' : ''}`}
+                  data-disabled={accountOptions.length === 0}
                 >
-                  <option value="" disabled>
-                    Select an account
-                  </option>
-                  {accountOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
+                  <select
+                    id="processing-account"
+                    value={selectedAccountId ?? ''}
+                    onChange={handleAccountChange}
+                    aria-invalid={accountError ? 'true' : 'false'}
+                    aria-describedby={accountError ? 'account-error' : undefined}
+                    disabled={accountOptions.length === 0}
+                    className="marble-select__field text-sm font-medium"
+                  >
+                    <option value="" disabled>
+                      Select an account
                     </option>
-                  ))}
-                </select>
+                    {accountOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 {accountOptions.length === 0 && !accountError ? (
                   <p className="text-xs text-amber-300">
                     Enable an account with an active platform from your profile before starting the pipeline.
@@ -976,23 +981,23 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                 placeholder="https://www.youtube.com/watch?v=..."
                 className="flex-1 rounded-lg border border-white/10 bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm placeholder:text-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
               />
-              <div className="flex items-center gap-2">
-                <button
-                  type="submit"
-                  disabled={!videoUrl.trim() || isProcessing}
-                  className="rounded-lg border border-transparent bg-[var(--ring)] px-3 py-2 text-xs font-semibold leading-tight text-[color:var(--accent-contrast)] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:text-sm whitespace-nowrap"
-                >
-                  {isProcessing ? 'Processing…' : 'Start processing'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  disabled={!hasProgress && clips.length === 0 && !pipelineError}
-                  className="rounded-lg border border-white/10 px-3 py-2 text-xs font-medium leading-tight text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:text-sm whitespace-nowrap"
-                >
-                  Reset
-                </button>
-              </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="submit"
+                    disabled={!videoUrl.trim() || isProcessing}
+                    className="marble-button marble-button--primary whitespace-nowrap px-5 py-2.5 text-sm font-semibold sm:px-6 sm:py-3 sm:text-base"
+                  >
+                    {isProcessing ? 'Processing…' : 'Start processing'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    disabled={!hasProgress && clips.length === 0 && !pipelineError}
+                    className="marble-button marble-button--outline whitespace-nowrap px-4 py-2 text-sm font-semibold sm:px-5"
+                  >
+                    Reset
+                  </button>
+                </div>
             </div>
             <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
               <input

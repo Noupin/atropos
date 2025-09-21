@@ -313,6 +313,8 @@ body {
     color-mix(in srgb, var(--accent) 78%, var(--depth) 22%)
   );
   border-color: color-mix(in srgb, var(--accent) 65%, var(--edge));
+  box-shadow: 0 30px 60px -30px rgba(43, 42, 40, 0.58);
+  text-shadow: 0 1px 2px color-mix(in srgb, var(--accent) 48%, transparent);
 }
 
 .marble-button--primary:active {
@@ -321,6 +323,10 @@ body {
     color-mix(in srgb, var(--accent) 86%, var(--depth) 14%),
     color-mix(in srgb, var(--accent) 72%, var(--depth) 28%)
   );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 24%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--accent) 18%, transparent),
+    0 18px 40px -30px rgba(43, 42, 40, 0.5);
 }
 
 .marble-button--outline {
@@ -352,6 +358,110 @@ body {
 
 .marble-button--danger:active {
   background: color-mix(in srgb, var(--error) 34%, var(--panel-strong));
+}
+
+.marble-select {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+}
+
+.marble-select::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 18px;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+  border-right: 2px solid color-mix(in srgb, var(--fg) 75%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--fg) 75%, transparent);
+  transform: translateY(-50%) rotate(45deg);
+  transition: border-color 150ms ease;
+}
+
+.marble-select[data-disabled='true']::after {
+  opacity: 0.45;
+}
+
+.marble-select__field {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--edge) 86%, transparent);
+  padding: 0.65rem 2.75rem 0.65rem 1rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--fg);
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--panel-strong) 92%, transparent),
+      color-mix(in srgb, var(--panel) 74%, transparent)
+    );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 8%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--edge) 52%, transparent),
+    0 16px 36px -28px rgba(43, 42, 40, 0.5);
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.marble-select__field::-ms-expand {
+  display: none;
+}
+
+.marble-select__field:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--edge));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--edge) 58%, transparent),
+    0 20px 44px -26px rgba(43, 42, 40, 0.55);
+}
+
+.marble-select__field:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--edge));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 12%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--edge) 60%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--ring-strong) 50%, transparent);
+}
+
+.marble-select:focus-within::after {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--edge));
+}
+
+.marble-select__field:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: color-mix(in srgb, var(--panel) 84%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 6%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--edge) 45%, transparent);
+}
+
+.marble-select--error .marble-select__field {
+  border-color: color-mix(in srgb, var(--error) 65%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--error) 22%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--error) 45%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--error) 40%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--error) 28%, transparent);
+}
+
+.marble-select--error:focus-within .marble-select__field {
+  border-color: color-mix(in srgb, var(--error) 70%, transparent);
+}
+
+.marble-select--error::after {
+  border-color: color-mix(in srgb, var(--error-strong) 82%, transparent);
 }
 
 .status-pill {

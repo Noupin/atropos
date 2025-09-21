@@ -635,25 +635,30 @@ const AccountCard: FC<AccountCardProps> = ({
               </div>
               <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
                 Platform
-                <select
-                  value={selectedPlatform}
-                  onChange={(event) => {
-                    const { value } = event.target
-                    setSelectedPlatform((value as SupportedPlatform) || '')
-                    setError(null)
-                    setSuccess(null)
-                    resetCredentialFields()
-                  }}
-                  disabled={!isAccountActive || isSubmitting}
-                  className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+                <div
+                  className="marble-select"
+                  data-disabled={!isAccountActive || isSubmitting}
                 >
-                  <option value="">Select a platform</option>
-                  {availablePlatforms.map((platform) => (
-                    <option key={platform} value={platform}>
-                      {PLATFORM_LABELS[platform]}
-                    </option>
-                  ))}
-                </select>
+                  <select
+                    value={selectedPlatform}
+                    onChange={(event) => {
+                      const { value } = event.target
+                      setSelectedPlatform((value as SupportedPlatform) || '')
+                      setError(null)
+                      setSuccess(null)
+                      resetCredentialFields()
+                    }}
+                    disabled={!isAccountActive || isSubmitting}
+                    className="marble-select__field text-sm font-medium"
+                  >
+                    <option value="">Select a platform</option>
+                    {availablePlatforms.map((platform) => (
+                      <option key={platform} value={platform}>
+                        {PLATFORM_LABELS[platform]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
                 Label (optional)

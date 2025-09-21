@@ -262,10 +262,12 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
 
       if (entry.type === 'boolean') {
         return (
-          <select {...commonProps}>
-            <option value="true">true</option>
-            <option value="false">false</option>
-          </select>
+          <div className="marble-select" data-disabled={isSaving}>
+            <select {...commonProps} className="marble-select__field text-sm font-medium">
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          </div>
         )
       }
 
