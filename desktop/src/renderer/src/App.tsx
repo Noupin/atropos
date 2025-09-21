@@ -3,6 +3,7 @@ import type { FC, RefObject } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
 import Search from './components/Search'
 import ClipPage from './pages/Clip'
+import ClipEdit from './pages/ClipEdit'
 import Home from './pages/Home'
 import Library from './pages/Library'
 import Profile from './pages/Profile'
@@ -66,7 +67,9 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     selectedClipId: null,
     selectedAccountId: null,
     accountError: null,
-    activeJobId: null
+    activeJobId: null,
+    reviewMode: false,
+    awaitingReview: false
   }))
   const [accounts, setAccounts] = useState<AccountSummary[]>([])
   const [accountsError, setAccountsError] = useState<string | null>(null)
@@ -395,6 +398,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
             }
           />
           <Route path="/clip/:id" element={<ClipPage registerSearch={registerSearch} />} />
+          <Route path="/clip/:id/edit" element={<ClipEdit registerSearch={registerSearch} />} />
           <Route path="/settings" element={<Settings registerSearch={registerSearch} />} />
           <Route
             path="/profile"

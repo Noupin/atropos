@@ -13,12 +13,18 @@ const mockClip: Clip = {
   durationSec: 75,
   thumbnail: 'https://images.unsplash.com/photo-1517430816045-df4b7de11d1d?auto=format&fit=crop&w=800&q=80',
   playbackUrl: 'file:///videos/test-clip.mp4',
+  previewUrl: 'file:///videos/test-clip-source.mp4',
   description: 'Full video: https://example.com/watch?v=clip\nCredit: UI Lab',
   sourceUrl: 'https://example.com/watch?v=clip',
   sourceTitle: 'Testing React Components the Easy Way',
   sourcePublishedAt: null,
   videoId: 'video-test',
-  videoTitle: 'Testing React Components the Easy Way'
+  videoTitle: 'Testing React Components the Easy Way',
+  startSeconds: 5,
+  endSeconds: 80,
+  originalStartSeconds: 5,
+  originalEndSeconds: 80,
+  hasAdjustments: false
 }
 
 describe('ClipCard', () => {
@@ -45,5 +51,17 @@ describe('ClipCard', () => {
     const video = container.querySelector('video')
     expect(video).not.toBeNull()
     expect(video?.getAttribute('src')).toBe(clipWithoutThumbnail.playbackUrl)
+  })
+
+  it('shows an adjusted badge when the clip has been modified', () => {
+    const adjusted: Clip = {
+      ...mockClip,
+      id: 'adjusted-clip',
+      hasAdjustments: true
+    }
+
+    render(<ClipCard clip={adjusted} onClick={() => {}} />)
+
+    expect(screen.getByText('Adjusted')).toBeInTheDocument()
   })
 })

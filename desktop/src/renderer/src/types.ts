@@ -7,6 +7,7 @@ export interface Clip {
   durationSec: number
   thumbnail: string | null
   playbackUrl: string
+  previewUrl: string
   description: string
   sourceUrl: string
   sourceTitle: string
@@ -19,6 +20,11 @@ export interface Clip {
   timestampUrl?: string | null
   timestampSeconds?: number | null
   accountId?: string | null
+  startSeconds: number
+  endSeconds: number
+  originalStartSeconds: number
+  originalEndSeconds: number
+  hasAdjustments: boolean
 }
 
 export type SupportedPlatform = 'tiktok' | 'youtube' | 'instagram'
@@ -118,6 +124,8 @@ export interface HomePipelineState {
   selectedAccountId: string | null
   accountError: string | null
   activeJobId: string | null
+  reviewMode: boolean
+  awaitingReview: boolean
 }
 
 export type PipelineEventType =

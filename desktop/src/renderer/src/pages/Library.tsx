@@ -12,6 +12,7 @@ import ClipDescription from '../components/ClipDescription'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import { listAccountClips } from '../services/clipLibrary'
 import type { AccountSummary, Clip, SearchBridge } from '../types'
+import useSharedVolume from '../hooks/useSharedVolume'
 
 const ALL_ACCOUNTS_VALUE = 'all'
 
@@ -40,6 +41,8 @@ const Library: FC<LibraryProps> = ({
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
   const queryRef = useRef('')
   const loadRequestRef = useRef(0)
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null)
+  const [sharedVolume, setSharedVolume] = useSharedVolume()
   const navigate = useNavigate()
 
   const availableAccounts = useMemo(
@@ -155,6 +158,21 @@ const Library: FC<LibraryProps> = ({
     registerSearch(bridge)
     return () => registerSearch(null)
   }, [handleQueryChange, handleQueryClear, registerSearch])
+
+  const handleAdjustClipBoundaries = useCallback(
+    (clip: Clip) => {
+      navigate(`/clip/${encodeURIComponent(clip.id)}/edit`, {
+        state: {
+          clip,
+          jobId: null,
+          accountId:
+            clip.accountId ?? (accountFilter === ALL_ACCOUNTS_VALUE ? selectedAccountId : accountFilter),
+          context: 'library'
+        }
+      })
+    },
+    [accountFilter, navigate, selectedAccountId]
+  )
 
   const targetAccountIds = useMemo(() => {
     if (!hasAccounts) {
@@ -317,6 +335,23 @@ const Library: FC<LibraryProps> = ({
     [filteredClips, selectedClipId]
   )
 
+  useEffect(() => {
+    const element = previewVideoRef.current
+    if (!element) {
+      return
+    }
+    element.volume = sharedVolume.volume
+    element.muted = sharedVolume.muted
+  }, [selectedClip?.id, sharedVolume])
+
+  const handlePreviewVolumeChange = useCallback(() => {
+    const element = previewVideoRef.current
+    if (!element) {
+      return
+    }
+    setSharedVolume({ volume: element.volume, muted: element.muted })
+  }, [setSharedVolume])
+
   const handleAccountChange = useCallback(
     (event: ChangeEvent<HTMLSelectElement>) => {
       const { value } = event.target
@@ -471,6 +506,8 @@ const Library: FC<LibraryProps> = ({
                     controls
                     playsInline
                     preload="metadata"
+                    ref={previewVideoRef}
+                    onVolumeChange={handlePreviewVolumeChange}
                     className="h-full w-full max-w-sm object-contain"
                   >
                     Your browser does not support the video tag.
@@ -532,6 +569,13 @@ const Library: FC<LibraryProps> = ({
                       className="rounded-lg border border-transparent bg-[var(--ring)] px-3 py-1.5 text-xs font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
                     >
                       Open clip details
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAdjustClipBoundaries(selectedClip)}
+                      className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    >
+                      Edit adjust clip
                     </button>
                     <a
                       href={selectedClip.sourceUrl}

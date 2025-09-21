@@ -1,5 +1,6 @@
-import { advanceApiBaseUrl, buildJobUrl, buildWebSocketUrl } from '../config/backend'
-import type { PipelineEventType } from '../types'
+import { advanceApiBaseUrl, buildJobUrl, buildWebSocketUrl, getApiBaseUrl } from '../config/backend'
+import { parseClipTimestamp } from '../lib/clipMetadata'
+import type { Clip, PipelineEventType } from '../types'
 
 type UnknownRecord = Record<string, unknown>
 
@@ -7,6 +8,7 @@ export type PipelineJobRequest = {
   url: string
   account?: string | null
   tone?: string | null
+  reviewMode?: boolean
 }
 
 export type PipelineJobResponse = {
@@ -45,7 +47,8 @@ export const startPipelineJob = async (request: PipelineJobRequest): Promise<Pip
         body: JSON.stringify({
           url: request.url,
           account: request.account ?? null,
-          tone: request.tone ?? null
+          tone: request.tone ?? null,
+          review_mode: request.reviewMode ?? false
         })
       })
       break
@@ -82,6 +85,149 @@ export const startPipelineJob = async (request: PipelineJobRequest): Promise<Pip
   }
 
   return { jobId }
+}
+
+export const normaliseJobClip = (payload: UnknownRecord): Clip | null => {
+  const rawId = payload.id ?? payload.clip_id
+  const id = typeof rawId === 'string' && rawId.length > 0 ? rawId : null
+  const title = typeof payload.title === 'string' && payload.title.length > 0 ? payload.title : id
+  const channel =
+    typeof payload.channel === 'string' && payload.channel.length > 0 ? payload.channel : 'Unknown channel'
+  const createdAt = typeof payload.created_at === 'string' ? payload.created_at : null
+  const durationSeconds = typeof payload.duration_seconds === 'number' ? payload.duration_seconds : null
+  const description = typeof payload.description === 'string' ? payload.description : null
+  const playbackUrl = typeof payload.playback_url === 'string' ? payload.playback_url : null
+  const previewUrlRaw = payload.preview_url
+  const previewUrl =
+    typeof previewUrlRaw === 'string' && previewUrlRaw.length > 0
+      ? previewUrlRaw
+      : playbackUrl
+  const sourceUrl = typeof payload.source_url === 'string' ? payload.source_url : null
+  const sourceTitle = typeof payload.source_title === 'string' ? payload.source_title : title
+  if (!id || !title || !createdAt || durationSeconds === null || !description || !playbackUrl || !previewUrl || !sourceUrl) {
+    return null
+  }
+
+  const sourcePublishedAt =
+    typeof payload.source_published_at === 'string' ? payload.source_published_at : null
+  const views = typeof payload.views === 'number' ? payload.views : null
+  const rating = typeof payload.rating === 'number' ? payload.rating : null
+  const quote = typeof payload.quote === 'string' ? payload.quote : null
+  const reason = typeof payload.reason === 'string' ? payload.reason : null
+  const accountId = typeof payload.account === 'string' ? payload.account : null
+  const videoId = typeof payload.video_id === 'string' ? payload.video_id : id
+  const videoTitle = typeof payload.video_title === 'string' ? payload.video_title : sourceTitle
+
+  const { timestampUrl, timestampSeconds } = parseClipTimestamp(description)
+
+  const startSeconds =
+    typeof payload.start_seconds === 'number' && Number.isFinite(payload.start_seconds)
+      ? Math.max(0, payload.start_seconds)
+      : 0
+  const endSeconds =
+    typeof payload.end_seconds === 'number' && Number.isFinite(payload.end_seconds)
+      ? Math.max(startSeconds, payload.end_seconds)
+      : startSeconds + Math.max(0, durationSeconds)
+  const originalStartSeconds =
+    typeof payload.original_start_seconds === 'number' && Number.isFinite(payload.original_start_seconds)
+      ? Math.max(0, payload.original_start_seconds)
+      : startSeconds
+  const originalEndSeconds =
+    typeof payload.original_end_seconds === 'number' && Number.isFinite(payload.original_end_seconds)
+      ? Math.max(originalStartSeconds, payload.original_end_seconds)
+      : endSeconds
+  const hasAdjustments = payload.has_adjustments === true
+
+  const clip: Clip = {
+    id,
+    title,
+    channel,
+    views,
+    createdAt,
+    durationSec: durationSeconds,
+    thumbnail: null,
+    playbackUrl,
+    previewUrl,
+    description,
+    sourceUrl,
+    sourceTitle,
+    sourcePublishedAt,
+    videoId,
+    videoTitle,
+    rating,
+    quote,
+    reason,
+    timestampUrl,
+    timestampSeconds,
+    accountId,
+    startSeconds,
+    endSeconds,
+    originalStartSeconds,
+    originalEndSeconds,
+    hasAdjustments
+  }
+
+  return clip
+}
+
+export type ClipAdjustmentPayload = {
+  startSeconds: number
+  endSeconds: number
+}
+
+export const fetchJobClip = async (jobId: string, clipId: string): Promise<Clip> => {
+  const url = new URL(`/api/jobs/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}`, getApiBaseUrl())
+  const response = await fetch(url.toString())
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`)
+  }
+
+  const payload = (await response.json()) as UnknownRecord
+  const clip = normaliseJobClip(payload)
+  if (!clip) {
+    throw new Error('Received malformed clip data from the server.')
+  }
+  return clip
+}
+
+export const adjustJobClip = async (
+  jobId: string,
+  clipId: string,
+  adjustment: ClipAdjustmentPayload
+): Promise<Clip> => {
+  const url = new URL(
+    `/api/jobs/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/adjust`,
+    getApiBaseUrl()
+  )
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      start_seconds: adjustment.startSeconds,
+      end_seconds: adjustment.endSeconds
+    })
+  })
+
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`)
+  }
+
+  const payload = (await response.json()) as UnknownRecord
+  const clip = normaliseJobClip(payload)
+  if (!clip) {
+    throw new Error('Received malformed clip data from the server.')
+  }
+  return clip
+}
+
+export const resumePipelineJob = async (jobId: string): Promise<void> => {
+  const url = new URL(`/api/jobs/${encodeURIComponent(jobId)}/resume`, getApiBaseUrl())
+  const response = await fetch(url.toString(), { method: 'POST' })
+  if (!response.ok) {
+    throw new Error(`Unable to resume pipeline job (status ${response.status}).`)
+  }
 }
 
 export const subscribeToPipelineEvents = (
