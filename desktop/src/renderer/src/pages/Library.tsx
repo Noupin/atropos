@@ -5,10 +5,11 @@ import {
   useRef,
   useState
 } from 'react'
-import type { ChangeEvent, FC } from 'react'
+import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ClipCard from '../components/ClipCard'
 import ClipDescription from '../components/ClipDescription'
+import MarbleSelect from '../components/MarbleSelect'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import { listAccountClips } from '../services/clipLibrary'
 import type { AccountSummary, Clip, SearchBridge } from '../types'
@@ -576,13 +577,12 @@ const Library: FC<LibraryProps> = ({
   }, [setSharedVolume])
 
   const handleAccountChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
-      const { value } = event.target
-      setAccountFilter(value)
-      if (value === ALL_ACCOUNTS_VALUE) {
+    (nextValue: string) => {
+      setAccountFilter(nextValue)
+      if (nextValue === ALL_ACCOUNTS_VALUE) {
         return
       }
-      onSelectAccount(value)
+      onSelectAccount(nextValue)
     },
     [onSelectAccount]
   )
@@ -607,6 +607,19 @@ const Library: FC<LibraryProps> = ({
     return availableAccounts[0]?.id ?? ''
   }, [accountFilter, availableAccounts, hasAccounts, hasMultipleAccounts])
 
+  const accountOptions = useMemo(() => {
+    if (!hasAccounts) {
+      return []
+    }
+    const baseOptions = hasMultipleAccounts
+      ? [{ value: ALL_ACCOUNTS_VALUE, label: 'All accounts' }]
+      : []
+    return [
+      ...baseOptions,
+      ...availableAccounts.map((account) => ({ value: account.id, label: account.displayName }))
+    ]
+  }, [availableAccounts, hasAccounts, hasMultipleAccounts])
+
   return (
     <section className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-8">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)] xl:grid-cols-[minmax(0,1.8fr)_400px]">
@@ -623,30 +636,15 @@ const Library: FC<LibraryProps> = ({
                 <label htmlFor="library-account" className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
                   Account
                 </label>
-                <div
-                  className="marble-select"
-                  data-disabled={!hasAccounts || isLoadingAccounts}
-                >
-                  <select
-                    id="library-account"
-                    value={dropdownValue}
-                    onChange={handleAccountChange}
-                    disabled={!hasAccounts || isLoadingAccounts}
-                    className="marble-select__field text-sm font-medium"
-                  >
-                    {!hasAccounts ? (
-                      <option value="">No available accounts</option>
-                    ) : null}
-                    {hasMultipleAccounts ? (
-                      <option value={ALL_ACCOUNTS_VALUE}>All accounts</option>
-                    ) : null}
-                    {availableAccounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.displayName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <MarbleSelect
+                  id="library-account"
+                  name="library-account"
+                  value={dropdownValue || null}
+                  options={accountOptions}
+                  onChange={(value) => handleAccountChange(value)}
+                  placeholder={hasAccounts ? 'Select an account' : 'No available accounts'}
+                  disabled={!hasAccounts || isLoadingAccounts}
+                />
               </div>
             </div>
             {clipsError ? (

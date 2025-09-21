@@ -10,6 +10,7 @@ import {
 import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PipelineProgress from '../components/PipelineProgress'
+import MarbleSelect from '../components/MarbleSelect'
 import { BACKEND_MODE, buildJobClipVideoUrl } from '../config/backend'
 import {
   createInitialPipelineSteps,
@@ -685,11 +686,10 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   )
 
   const handleAccountChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
-      const value = event.target.value
+    (nextValue: string) => {
       updateState((prev) => ({
         ...prev,
-        selectedAccountId: value.length > 0 ? value : null,
+        selectedAccountId: nextValue.length > 0 ? nextValue : null,
         accountError: prev.accountError ? null : prev.accountError,
         clips: [],
         selectedClipId: null
@@ -941,29 +941,17 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                 <label className="sr-only" htmlFor="processing-account">
                   Account
                 </label>
-                <div
-                  className={`marble-select${accountError ? ' marble-select--error' : ''}`}
-                  data-disabled={accountOptions.length === 0}
-                >
-                  <select
-                    id="processing-account"
-                    value={selectedAccountId ?? ''}
-                    onChange={handleAccountChange}
-                    aria-invalid={accountError ? 'true' : 'false'}
-                    aria-describedby={accountError ? 'account-error' : undefined}
-                    disabled={accountOptions.length === 0}
-                    className="marble-select__field text-sm font-medium"
-                  >
-                    <option value="" disabled>
-                      Select an account
-                    </option>
-                    {accountOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <MarbleSelect
+                  id="processing-account"
+                  name="processing-account"
+                  value={selectedAccountId}
+                  options={accountOptions}
+                  onChange={(value) => handleAccountChange(value)}
+                  placeholder="Select an account"
+                  disabled={accountOptions.length === 0}
+                  error={Boolean(accountError)}
+                  aria-describedby={accountError ? 'account-error' : undefined}
+                />
                 {accountOptions.length === 0 && !accountError ? (
                   <p className="text-xs text-amber-300">
                     Enable an account with an active platform from your profile before starting the pipeline.
@@ -985,7 +973,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                   <button
                     type="submit"
                     disabled={!videoUrl.trim() || isProcessing}
-                    className="marble-button marble-button--primary whitespace-nowrap px-5 py-2.5 text-sm font-semibold sm:px-6 sm:py-3 sm:text-base"
+                    className="marble-button marble-button--primary whitespace-nowrap px-5 py-2.5 text-sm font-semibold sm:px-6 sm:py-2.5 sm:text-base"
                   >
                     {isProcessing ? 'Processing…' : 'Start processing'}
                   </button>
@@ -993,7 +981,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                     type="button"
                     onClick={handleReset}
                     disabled={!hasProgress && clips.length === 0 && !pipelineError}
-                    className="marble-button marble-button--outline whitespace-nowrap px-4 py-2 text-sm font-semibold sm:px-5"
+                    className="marble-button marble-button--outline whitespace-nowrap px-4 py-2.5 text-sm font-semibold sm:px-5"
                   >
                     Reset
                   </button>

@@ -267,14 +267,14 @@ body {
 }
 
 .marble-button:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px) scale(1.01);
   border-color: color-mix(in srgb, var(--accent) 35%, var(--edge));
   background: color-mix(in srgb, var(--panel-strong) 96%, transparent);
   box-shadow: 0 22px 48px -28px rgba(43, 42, 40, 0.5);
 }
 
 .marble-button:active {
-  transform: translateY(0);
+  transform: translateY(0) scale(0.995);
   box-shadow: inset 0 1px 2px color-mix(in srgb, var(--depth) 24%, transparent);
   background: color-mix(in srgb, var(--panel-strong) 88%, transparent);
 }
@@ -374,26 +374,34 @@ body {
   width: 10px;
   height: 10px;
   pointer-events: none;
-  border-right: 2px solid color-mix(in srgb, var(--fg) 75%, transparent);
-  border-bottom: 2px solid color-mix(in srgb, var(--fg) 75%, transparent);
+  border-right: 2px solid color-mix(in srgb, var(--fg) 72%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--fg) 72%, transparent);
   transform: translateY(-50%) rotate(45deg);
-  transition: border-color 150ms ease;
+  transition:
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+
+.marble-select[data-open='true']::after {
+  transform: translateY(-50%) rotate(225deg);
 }
 
 .marble-select[data-disabled='true']::after {
   opacity: 0.45;
 }
 
-.marble-select__field {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
+.marble-select__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
   width: 100%;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--edge) 86%, transparent);
   padding: 0.65rem 2.75rem 0.65rem 1rem;
   font-size: 0.95rem;
   line-height: 1.5;
+  font-weight: 600;
   color: var(--fg);
   background:
     linear-gradient(
@@ -409,22 +417,30 @@ body {
     border-color 150ms ease,
     box-shadow 150ms ease,
     background-color 150ms ease,
-    color 150ms ease;
+    color 150ms ease,
+    transform 150ms ease;
+  cursor: pointer;
+  text-align: left;
 }
 
-.marble-select__field::-ms-expand {
-  display: none;
-}
-
-.marble-select__field:hover:not(:disabled) {
+.marble-select:not([data-disabled='true']) .marble-select__trigger:hover {
   border-color: color-mix(in srgb, var(--accent) 36%, var(--edge));
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--fg) 10%, transparent),
     inset 0 -1px 0 color-mix(in srgb, var(--edge) 58%, transparent),
     0 20px 44px -26px rgba(43, 42, 40, 0.55);
+  transform: translateY(-1px);
 }
 
-.marble-select__field:focus-visible {
+.marble-select:not([data-disabled='true']) .marble-select__trigger:active {
+  transform: translateY(0);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--fg) 12%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--edge) 60%, transparent),
+    0 12px 30px -26px rgba(43, 42, 40, 0.48);
+}
+
+.marble-select__trigger:focus-visible {
   outline: none;
   border-color: color-mix(in srgb, var(--accent) 48%, var(--edge));
   box-shadow:
@@ -434,20 +450,103 @@ body {
     0 0 0 4px color-mix(in srgb, var(--ring-strong) 50%, transparent);
 }
 
-.marble-select:focus-within::after {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--edge));
+.marble-select[data-open='true'] .marble-select__trigger {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--edge));
 }
 
-.marble-select__field:disabled {
+.marble-select[data-disabled='true'] .marble-select__trigger,
+.marble-select__trigger:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   background: color-mix(in srgb, var(--panel) 84%, transparent);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--fg) 6%, transparent),
     inset 0 -1px 0 color-mix(in srgb, var(--edge) 45%, transparent);
+  transform: none;
 }
 
-.marble-select--error .marble-select__field {
+.marble-select__value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marble-select__value--placeholder {
+  color: color-mix(in srgb, var(--muted) 92%, transparent);
+}
+
+.marble-select__panel-wrapper {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  width: 100%;
+  z-index: 40;
+}
+
+.marble-select__panel {
+  margin: 0;
+  padding: 0.5rem;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 16rem;
+  overflow-y: auto;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--edge) 84%, transparent);
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--panel-strong) 96%, transparent),
+      color-mix(in srgb, var(--panel) 78%, transparent)
+    );
+  box-shadow:
+    0 24px 48px -28px rgba(43, 42, 40, 0.55),
+    inset 0 1px 0 color-mix(in srgb, white 4%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.marble-select__option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 12px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--fg) 86%, transparent);
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.marble-select__option:not([data-disabled='true']):hover,
+.marble-select__option[data-active='true'] {
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  color: var(--fg);
+  transform: translateX(2px);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.marble-select__option[data-selected='true'] {
+  background: color-mix(in srgb, var(--accent) 42%, transparent);
+  color: var(--accent-contrast);
+  box-shadow: 0 8px 18px -12px rgba(43, 42, 40, 0.45);
+}
+
+.marble-select__option[data-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+  box-shadow: none;
+}
+
+.marble-select[data-invalid='true'] .marble-select__trigger {
   border-color: color-mix(in srgb, var(--error) 65%, transparent);
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--error) 22%, transparent),
@@ -456,12 +555,8 @@ body {
     0 0 0 4px color-mix(in srgb, var(--error) 28%, transparent);
 }
 
-.marble-select--error:focus-within .marble-select__field {
-  border-color: color-mix(in srgb, var(--error) 70%, transparent);
-}
-
-.marble-select--error::after {
-  border-color: color-mix(in srgb, var(--error-strong) 82%, transparent);
+.marble-select[data-invalid='true']::after {
+  border-color: color-mix(in srgb, var(--error-strong) 80%, transparent);
 }
 
 .status-pill {

@@ -10,6 +10,7 @@ import {
   type SupportedPlatform
 } from '../types'
 import { timeAgo } from '../lib/format'
+import MarbleSelect from '../components/MarbleSelect'
 
 const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
   tiktok: 'tiktok.json',
@@ -139,6 +140,11 @@ const AccountCard: FC<AccountCardProps> = ({
     [account.platforms]
   )
 
+  const platformOptions = useMemo(
+    () => availablePlatforms.map((platform) => ({ value: platform, label: PLATFORM_LABELS[platform] })),
+    [availablePlatforms]
+  )
+
   useEffect(() => {
     setSuccess(null)
     setError(null)
@@ -152,6 +158,16 @@ const AccountCard: FC<AccountCardProps> = ({
     setTiktokClientKey('')
     setTiktokClientSecret('')
   }, [])
+
+  const handlePlatformChange = useCallback(
+    (nextValue: string) => {
+      setSelectedPlatform((nextValue as SupportedPlatform) || '')
+      setError(null)
+      setSuccess(null)
+      resetCredentialFields()
+    },
+    [resetCredentialFields, setError, setSuccess]
+  )
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -635,30 +651,15 @@ const AccountCard: FC<AccountCardProps> = ({
               </div>
               <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
                 Platform
-                <div
-                  className="marble-select"
-                  data-disabled={!isAccountActive || isSubmitting}
-                >
-                  <select
-                    value={selectedPlatform}
-                    onChange={(event) => {
-                      const { value } = event.target
-                      setSelectedPlatform((value as SupportedPlatform) || '')
-                      setError(null)
-                      setSuccess(null)
-                      resetCredentialFields()
-                    }}
-                    disabled={!isAccountActive || isSubmitting}
-                    className="marble-select__field text-sm font-medium"
-                  >
-                    <option value="">Select a platform</option>
-                    {availablePlatforms.map((platform) => (
-                      <option key={platform} value={platform}>
-                        {PLATFORM_LABELS[platform]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <MarbleSelect
+                  id={`platform-${account.id}`}
+                  name="platform"
+                  value={selectedPlatform || null}
+                  options={platformOptions}
+                  onChange={handlePlatformChange}
+                  placeholder="Select a platform"
+                  disabled={!isAccountActive || isSubmitting}
+                />
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
                 Label (optional)
