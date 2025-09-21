@@ -6,9 +6,10 @@ import { formatDuration, formatViews, timeAgo } from '../lib/format'
 type ClipCardProps = {
   clip: Clip
   onClick: () => void
+  isActive?: boolean
 }
 
-const ClipCard: FC<ClipCardProps> = ({ clip, onClick }) => {
+const ClipCard: FC<ClipCardProps> = ({ clip, onClick, isActive = false }) => {
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
@@ -16,13 +17,18 @@ const ClipCard: FC<ClipCardProps> = ({ clip, onClick }) => {
     }
   }
 
+  const cardClassName = `group relative flex cursor-pointer flex-col overflow-hidden rounded-xl border bg-[var(--card)] shadow-sm transition hover:-translate-y-1 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+    isActive ? 'border-[var(--ring)] shadow-[0_0_0_1px_var(--ring)]' : 'border-white/10 hover:border-[var(--ring)]'
+  }`
+
   return (
     <article
       role="button"
       tabIndex={0}
       onClick={onClick}
       onKeyDown={handleKeyDown}
-      className="group relative flex cursor-pointer flex-col overflow-hidden rounded-xl bg-[var(--card)] shadow-sm transition hover:-translate-y-1 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+      aria-pressed={isActive}
+      className={cardClassName}
     >
       <div className="relative aspect-video w-full overflow-hidden">
         {clip.thumbnail ? (
@@ -51,7 +57,11 @@ const ClipCard: FC<ClipCardProps> = ({ clip, onClick }) => {
         </h3>
         <p className="text-xs font-medium text-[var(--muted)]">{clip.channel}</p>
         <p className="text-xs text-[var(--muted)]">
-          {formatViews(clip.views)} views · {timeAgo(clip.createdAt)}
+          {clip.views !== null && clip.views !== undefined
+            ? `${formatViews(clip.views)} views`
+            : 'Freshly generated'}
+          {' · '}
+          {timeAgo(clip.createdAt)}
         </p>
       </div>
     </article>

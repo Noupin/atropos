@@ -91,7 +91,7 @@ describe('Profile page', () => {
     renderProfile()
 
     expect(screen.getByText('Profile')).toBeInTheDocument()
-    expect(screen.getByText(/Connected platforms:/i)).toHaveTextContent('1/1')
+    expect(screen.getByText(/Connected platforms across/i)).toHaveTextContent('1/1')
 
     const creatorCard = screen.getAllByTestId('account-card-account-1')[0]
     const scope = within(creatorCard)

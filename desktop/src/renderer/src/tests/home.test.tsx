@@ -231,9 +231,11 @@ describe('Home pipeline events', () => {
       } as any)
     })
 
-    expect(screen.getAllByText(/space wonders/i)[0]).toBeInTheDocument()
-    expect(screen.getAllByText(/mind-blowing fact/i)[0]).toBeInTheDocument()
-    expect(screen.getByText(/#space/i)).toBeInTheDocument()
+    const timelineItem = screen.getAllByText(/space wonders/i)[0].closest('li')
+    expect(timelineItem).not.toBeNull()
+    const timelineScope = within(timelineItem as HTMLElement)
+    expect(timelineScope.getByText(/creator hub/i)).toBeInTheDocument()
+    expect(timelineScope.getByText(/duration 0:32/i)).toBeInTheDocument()
   })
 
   it('surfaces clip batch progress updates for multi-clip steps', async () => {
