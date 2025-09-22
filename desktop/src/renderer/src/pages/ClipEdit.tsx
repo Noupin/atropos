@@ -271,23 +271,6 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     setSaveSteps(createInitialSaveSteps())
   }, [clipState, minGap])
 
-  useEffect(() => {
-    if (!clipState || previewMode !== 'adjusted') {
-      return
-    }
-    if (typeof window === 'undefined') {
-      setPreviewTarget({ start: rangeStart, end: rangeEnd })
-      return
-    }
-    const delayMs = activeHandle ? 200 : 80
-    const handle = window.setTimeout(() => {
-      setPreviewTarget({ start: rangeStart, end: rangeEnd })
-    }, delayMs)
-    return () => {
-      window.clearTimeout(handle)
-    }
-  }, [activeHandle, clipState, previewMode, rangeEnd, rangeStart])
-
   const clampWithinWindow = useCallback(
     (value: number, kind: 'start' | 'end'): number => {
       if (kind === 'start') {
@@ -313,6 +296,30 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     },
     [clampWithinWindow, rangeStart]
   )
+
+  const syncPreviewToRange = useCallback(
+    (startValue: number, endValue: number) => {
+      const nextStart = Math.max(0, Number.isFinite(startValue) ? startValue : 0)
+      const rawEnd = Number.isFinite(endValue) ? endValue : nextStart
+      const nextEnd =
+        rawEnd > nextStart + MIN_PREVIEW_DURATION ? rawEnd : nextStart + MIN_PREVIEW_DURATION
+
+      setPreviewTarget((prev) => {
+        if (
+          Math.abs(prev.start - nextStart) < 0.0005 &&
+          Math.abs(prev.end - nextEnd) < 0.0005
+        ) {
+          return prev
+        }
+        return { start: nextStart, end: nextEnd }
+      })
+    },
+    []
+  )
+
+  const commitPreviewTarget = useCallback(() => {
+    syncPreviewToRange(rangeStart, rangeEnd)
+  }, [rangeEnd, rangeStart, syncPreviewToRange])
 
   const snapRangeToValues = useCallback(
     (startValue: number, endValue: number) => {
@@ -344,11 +351,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       setStartInteractionOrigin(null)
       setEndInteractionOrigin(null)
 
-      if (previewMode === 'adjusted') {
-        setPreviewTarget({ start: baseStart, end: baseEnd })
-      }
+      syncPreviewToRange(baseStart, baseEnd)
     },
-    [minGap, previewMode, setPreviewTarget, windowEnd, windowStart]
+    [minGap, syncPreviewToRange, windowEnd, windowStart]
   )
 
   const handleSnapToOriginal = useCallback(() => {
@@ -417,6 +422,20 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     [handleEndChange, handleStartChange, offsetReference.endBase, offsetReference.startBase]
   )
 
+  const handleRangeInputKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        commitPreviewTarget()
+      }
+    },
+    [commitPreviewTarget]
+  )
+
+  const handleRangeInputBlur = useCallback(() => {
+    commitPreviewTarget()
+  }, [commitPreviewTarget])
+
   const updateRangeFromPointer = useCallback(
     (event: ReactPointerEvent<HTMLButtonElement>, kind: 'start' | 'end') => {
       if (!timelineRef.current) {
@@ -469,23 +488,28 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     [activeHandle, updateRangeFromPointer]
   )
 
-  const handleHandlePointerEnd = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    try {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    } catch (error) {
-      // ignore release errors
-    }
-    setActiveHandle(null)
-    setEngagedHandle(null)
-    setStartInteractionOrigin(null)
-    setEndInteractionOrigin(null)
-  }, [])
+  const handleHandlePointerEnd = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      } catch (error) {
+        // ignore release errors
+      }
+      setActiveHandle(null)
+      setEngagedHandle(null)
+      setStartInteractionOrigin(null)
+      setEndInteractionOrigin(null)
+      commitPreviewTarget()
+    },
+    [commitPreviewTarget]
+  )
 
   const handleHandleBlur = useCallback(() => {
     setEngagedHandle(null)
     setStartInteractionOrigin(null)
     setEndInteractionOrigin(null)
-  }, [])
+    commitPreviewTarget()
+  }, [commitPreviewTarget])
 
   const handleHandleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLButtonElement>, kind: 'start' | 'end') => {
@@ -518,6 +542,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         } else {
           handleEndChange(rangeStart + minGap)
         }
+      } else if (key === 'Enter') {
+        commitPreviewTarget()
       } else if (key === 'End') {
         event.preventDefault()
         if (kind === 'start') {
@@ -527,7 +553,16 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         }
       }
     },
-    [handleEndChange, handleStartChange, minGap, rangeEnd, rangeStart, windowEnd, windowStart]
+    [
+      commitPreviewTarget,
+      handleEndChange,
+      handleStartChange,
+      minGap,
+      rangeEnd,
+      rangeStart,
+      windowEnd,
+      windowStart
+    ]
   )
 
   const handleExpandAmountChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
@@ -1296,6 +1331,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   pattern="[-+]?\\d*\\.?\\d*"
                   value={formattedStartOffset}
                   onChange={(event) => handleRangeInputChange(event, 'start')}
+                  onKeyDown={handleRangeInputKeyDown}
+                  onBlur={handleRangeInputBlur}
                   title={`Absolute start ${formatDuration(rangeStart)}`}
                   className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                 />
@@ -1315,6 +1352,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   pattern="[-+]?\\d*\\.?\\d*"
                   value={formattedEndOffset}
                   onChange={(event) => handleRangeInputChange(event, 'end')}
+                  onKeyDown={handleRangeInputKeyDown}
+                  onBlur={handleRangeInputBlur}
                   title={`Absolute end ${formatDuration(rangeEnd)}`}
                   className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                 />
