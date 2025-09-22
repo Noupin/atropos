@@ -522,7 +522,7 @@ const AccountCard: FC<AccountCardProps> = ({
     )
   }
 
-  const toneControls = (
+  const renderToneControls = () => (
     <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-black/20 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-sm font-semibold text-[var(--fg)]">Account tone</h4>
@@ -615,6 +615,7 @@ const AccountCard: FC<AccountCardProps> = ({
               Enable this account to resume authentication.
             </p>
           ) : null}
+          {renderToneControls()}
           {account.platforms.length > 0 ? (
             <ul className="flex flex-wrap gap-2">
               {account.platforms.map((platform) => (
@@ -640,7 +641,7 @@ const AccountCard: FC<AccountCardProps> = ({
         </div>
       ) : (
         <div id={detailsId} className="flex flex-col gap-4">
-          {toneControls}
+          {renderToneControls()}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"

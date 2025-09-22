@@ -8,7 +8,7 @@ import ClipEdit from './pages/ClipEdit'
 import Home from './pages/Home'
 import Library from './pages/Library'
 import Profile from './pages/Profile'
-import Settings from './pages/Settings'
+import Settings, { type SettingsHeaderAction } from './pages/Settings'
 import { createInitialPipelineSteps } from './data/pipeline'
 import useNavigationHistory from './hooks/useNavigationHistory'
 import type {
@@ -81,6 +81,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [authStatus, setAuthStatus] = useState<AuthPingSummary | null>(null)
   const [authError, setAuthError] = useState<string | null>(null)
   const [isDark, setIsDark] = useState(false)
+  const [settingsHeaderAction, setSettingsHeaderAction] = useState<SettingsHeaderAction | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -368,6 +369,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   )
 
   const isLibraryRoute = location.pathname.startsWith('/library')
+  const isSettingsRoute = location.pathname.startsWith('/settings')
   const showBackButton = location.pathname.startsWith('/clip/')
 
   const accountSelectOptions = useMemo(() => {
@@ -433,11 +435,11 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 <NavLink to="/library" className={navLinkClassName}>
                   {({ isActive }) => <NavItemLabel label="Library" isActive={isActive} />}
                 </NavLink>
-                <NavLink to="/settings" className={navLinkClassName}>
-                  {({ isActive }) => <NavItemLabel label="Settings" isActive={isActive} />}
-                </NavLink>
                 <NavLink to="/profile" className={navLinkClassName}>
                   {({ isActive }) => <NavItemLabel label="Profile" isActive={isActive} />}
+                </NavLink>
+                <NavLink to="/settings" className={navLinkClassName}>
+                  {({ isActive }) => <NavItemLabel label="Settings" isActive={isActive} />}
                 </NavLink>
               </nav>
             </div>
@@ -453,6 +455,20 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 </div>
               ) : null}
               <div className="flex flex-wrap items-center gap-3">
+                {isSettingsRoute && settingsHeaderAction ? (
+                  <button
+                    type="button"
+                    onClick={settingsHeaderAction.onSave}
+                    className="inline-flex items-center justify-center rounded-[14px] bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-[color:var(--accent-contrast)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] transition hover:-translate-y-0.5 hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)] disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={settingsHeaderAction.isSaving || settingsHeaderAction.dirtyCount === 0}
+                  >
+                    {settingsHeaderAction.isSaving
+                      ? 'Saving…'
+                      : settingsHeaderAction.dirtyCount > 0
+                        ? `Save changes (${settingsHeaderAction.dirtyCount})`
+                        : 'Save changes'}
+                  </button>
+                ) : null}
                 <div className="min-w-[200px] sm:min-w-[220px]">
                   <MarbleSelect
                     aria-label="Account selection"
@@ -509,7 +525,13 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
           <Route path="/clip/:id/edit" element={<ClipEdit registerSearch={registerSearch} />} />
           <Route
             path="/settings"
-            element={<Settings registerSearch={registerSearch} accounts={accounts} />}
+            element={
+              <Settings
+                registerSearch={registerSearch}
+                accounts={accounts}
+                onRegisterHeaderAction={setSettingsHeaderAction}
+              />
+            }
           />
           <Route
             path="/profile"

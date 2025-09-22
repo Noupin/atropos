@@ -424,9 +424,16 @@ const parseConfigInput = (raw: string, entry: ConfigEntry): unknown => {
   }
 }
 
+export type SettingsHeaderAction = {
+  dirtyCount: number
+  isSaving: boolean
+  onSave: () => void
+}
+
 type SettingsProps = {
   registerSearch: (bridge: SearchBridge | null) => void
   accounts: AccountSummary[]
+  onRegisterHeaderAction?: (action: SettingsHeaderAction | null) => void
 }
 
 const clampNumber = (value: number, min: number, max: number): number => {
@@ -460,7 +467,7 @@ const normaliseBooleanString = (value: string): boolean => {
   return TRUE_VALUES.has(value.toLowerCase())
 }
 
-const Settings: FC<SettingsProps> = ({ registerSearch, accounts }) => {
+const Settings: FC<SettingsProps> = ({ registerSearch, accounts, onRegisterHeaderAction }) => {
   const [entries, setEntries] = useState<ConfigEntry[]>([])
   const [values, setValues] = useState<Record<string, string>>({})
   const [dirty, setDirty] = useState<Record<string, boolean>>({})
@@ -631,57 +638,82 @@ const Settings: FC<SettingsProps> = ({ registerSearch, accounts }) => {
 
   const dirtyCount = useMemo(() => Object.keys(dirty).length, [dirty])
 
+  const persistChanges = useCallback(async () => {
+    if (isSaving) {
+      return
+    }
+
+    const updates: Record<string, unknown> = {}
+    let parseError: string | null = null
+
+    entries.forEach((entry) => {
+      if (!dirty[entry.name]) {
+        return
+      }
+      try {
+        updates[entry.name] = parseConfigInput(values[entry.name] ?? '', entry)
+      } catch (error) {
+        if (!parseError) {
+          parseError = error instanceof Error ? error.message : `Invalid value provided for ${entry.name}.`
+        }
+      }
+    })
+
+    if (parseError) {
+      setError(parseError)
+      setSuccess(null)
+      return
+    }
+
+    if (Object.keys(updates).length === 0) {
+      setSuccess('No changes to save.')
+      setError(null)
+      return
+    }
+
+    setIsSaving(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      const updated = await updateConfigEntries(updates)
+      initialiseFromEntries(updated)
+      setSuccess('Configuration updated successfully.')
+    } catch (saveError) {
+      const message = saveError instanceof Error ? saveError.message : 'Failed to update configuration.'
+      setError(message)
+    } finally {
+      setIsSaving(false)
+    }
+  }, [dirty, entries, initialiseFromEntries, isSaving, values])
+
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
-      if (isSaving) {
-        return
-      }
-
-      const updates: Record<string, unknown> = {}
-      let parseError: string | null = null
-
-      entries.forEach((entry) => {
-        if (!dirty[entry.name]) {
-          return
-        }
-        try {
-          updates[entry.name] = parseConfigInput(values[entry.name] ?? '', entry)
-        } catch (error) {
-          if (!parseError) {
-            parseError = error instanceof Error ? error.message : `Invalid value provided for ${entry.name}.`
-          }
-        }
-      })
-
-      if (parseError) {
-        setError(parseError)
-        setSuccess(null)
-        return
-      }
-
-      if (Object.keys(updates).length === 0) {
-        setSuccess('No changes to save.')
-        setError(null)
-        return
-      }
-
-      setIsSaving(true)
-      setError(null)
-      setSuccess(null)
-      try {
-        const updated = await updateConfigEntries(updates)
-        initialiseFromEntries(updated)
-        setSuccess('Configuration updated successfully.')
-      } catch (saveError) {
-        const message = saveError instanceof Error ? saveError.message : 'Failed to update configuration.'
-        setError(message)
-      } finally {
-        setIsSaving(false)
-      }
+      await persistChanges()
     },
-    [dirty, entries, initialiseFromEntries, isSaving, values]
+    [persistChanges]
   )
+
+  const handleHeaderSave = useCallback(() => {
+    void persistChanges()
+  }, [persistChanges])
+
+  useEffect(() => {
+    if (!onRegisterHeaderAction) {
+      return
+    }
+    onRegisterHeaderAction({
+      dirtyCount,
+      isSaving,
+      onSave: handleHeaderSave
+    })
+  }, [dirtyCount, handleHeaderSave, isSaving, onRegisterHeaderAction])
+
+  useEffect(() => {
+    return () => {
+      onRegisterHeaderAction?.(null)
+    }
+  }, [onRegisterHeaderAction])
 
   const handleReload = useCallback(() => {
     void loadConfig()
@@ -936,14 +968,6 @@ const Settings: FC<SettingsProps> = ({ registerSearch, accounts }) => {
               disabled={!hasDefaults || isSaving || entries.length === 0}
             >
               Reset all to defaults
-            </button>
-            <button
-              type="submit"
-              form="settings-form"
-              className="ml-auto rounded-md bg-[var(--accent)] px-4 py-1.5 text-sm font-medium text-black transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)] focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isSaving || dirtyCount === 0}
-            >
-              {isSaving ? 'Saving…' : dirtyCount > 0 ? `Save changes (${dirtyCount})` : 'Save changes'}
             </button>
           </div>
         </div>
