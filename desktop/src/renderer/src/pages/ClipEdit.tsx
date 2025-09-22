@@ -897,6 +897,11 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     clampRatio((windowEnd - clipState.endSeconds) / safeTimelineTotal) * 100
   const renderedStartMarkerPercent = renderedStartRatio * 100
   const renderedEndMarkerPercent = renderedEndRatio * 100
+  const originalDuration = Math.max(0, clipState.originalEndSeconds - clipState.originalStartSeconds)
+  const renderedDuration = Math.max(0, clipState.endSeconds - clipState.startSeconds)
+  const renderedExtendsOriginal = renderedDuration >= originalDuration
+  const originalOverlayLayer = renderedExtendsOriginal ? 'z-20' : 'z-10'
+  const renderedOverlayLayer = renderedExtendsOriginal ? 'z-10' : 'z-20'
   const showStartTooltip = engagedHandle === 'start'
   const showEndTooltip = engagedHandle === 'end'
   const startTooltipChange = showStartTooltip && formattedStartChange ? formattedStartChange : null
@@ -1032,12 +1037,12 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 className="relative mt-6 h-2 rounded-full bg-[color:var(--clip-track)] shadow-inner"
               >
                 <div
-                  className="pointer-events-none absolute -top-1 -bottom-1 z-10 rounded-full bg-[color:var(--clip-original)]"
+                  className={`pointer-events-none absolute -top-1 -bottom-1 ${originalOverlayLayer} rounded-full bg-[color:var(--clip-original)]`}
                   style={{ left: `${originalOverlayLeftPercent}%`, right: `${originalOverlayRightPercent}%` }}
                   aria-hidden="true"
                 />
                 <div
-                  className="pointer-events-none absolute -top-1 -bottom-1 z-20 rounded-full bg-[color:var(--clip-rendered)]"
+                  className={`pointer-events-none absolute -top-1 -bottom-1 ${renderedOverlayLayer} rounded-full bg-[color:var(--clip-rendered)]`}
                   style={{ left: `${renderedOverlayLeftPercent}%`, right: `${renderedOverlayRightPercent}%` }}
                   aria-hidden="true"
                 />
@@ -1242,7 +1247,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   const isRunning = step.status === 'running'
                   const isFailed = step.status === 'failed'
                   const indicatorClasses = isCompleted
-                    ? 'bg-emerald-500/10 text-emerald-200 border border-emerald-500/40'
+                    ? 'border-[color:color-mix(in_srgb,var(--success-strong)_45%,var(--edge))] bg-[color:var(--success-soft)] text-[color:color-mix(in_srgb,var(--success-strong)_85%,var(--accent-contrast))]'
                     : isFailed
                     ? 'bg-rose-500/10 text-rose-200 border border-rose-500/40'
                     : isRunning
