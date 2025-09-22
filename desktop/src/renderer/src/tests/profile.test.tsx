@@ -247,7 +247,10 @@ describe('Profile page', () => {
     const brandCard = screen.getAllByTestId('account-card-account-2')[0]
     const scope = within(brandCard)
 
-    fireEvent.change(scope.getByLabelText(/^Tone$/i), { target: { value: 'science' } })
+    fireEvent.click(scope.getByRole('button', { name: /Expand|Collapse/i }))
+
+    const toneSelect = await scope.findByLabelText(/^Tone$/i)
+    fireEvent.change(toneSelect, { target: { value: 'science' } })
 
     await waitFor(() => expect(updateAccountMock).toHaveBeenCalledTimes(1))
     expect(updateAccountMock).toHaveBeenCalledWith('account-2', { tone: 'science' })
