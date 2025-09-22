@@ -24,6 +24,7 @@ const toSeconds = (value: number): number => Math.max(0, Number.isFinite(value) 
 const MIN_CLIP_GAP = 0.25
 const MIN_PREVIEW_DURATION = 0.05
 const DEFAULT_EXPAND_SECONDS = 10
+const SOURCE_DURATION_EPSILON = 0.0005
 
 type DurationGuardrails = {
   minDuration: number
@@ -89,6 +90,11 @@ const formatTooltipLabel = (offset: string, change: string | null): string => {
   }
   const changeValue = change === '0' ? 'Δ 0s' : `Δ ${change}s`
   return `${offsetValue} • ${changeValue}`
+}
+
+const computeClipSourceEndBound = (clip: Clip, minGap: number): number => {
+  const derivedFromDuration = clip.originalStartSeconds + Math.max(clip.durationSec, minGap)
+  return Math.max(minGap, clip.originalEndSeconds, clip.endSeconds, derivedFromDuration)
 }
 
 type SaveStepId = 'cut' | 'subtitles' | 'render'
@@ -196,6 +202,10 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     end: sourceClip ? Math.max(sourceClip.startSeconds + minGap, sourceClip.endSeconds) : minGap
   }))
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
+  const [sourceDuration, setSourceDuration] = useState<number | null>(() =>
+    sourceClip ? computeClipSourceEndBound(sourceClip, minGap) : null
+  )
+  const lastClipIdRef = useRef<string | null>(sourceClip?.id ?? null)
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const [isVideoBuffering, setIsVideoBuffering] = useState(false)
   const [saveSteps, setSaveSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
@@ -250,15 +260,38 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     if (!clipState) {
       return minGap
     }
-    const derivedFromDuration = clipState.originalStartSeconds + Math.max(clipState.durationSec, minGap)
-    return Math.max(minGap, clipState.originalEndSeconds, clipState.endSeconds, derivedFromDuration)
-  }, [clipState, minGap])
+    const baseline = computeClipSourceEndBound(clipState, minGap)
+    if (sourceDuration == null || !Number.isFinite(sourceDuration)) {
+      return baseline
+    }
+    return Math.max(baseline, sourceDuration)
+  }, [clipState, minGap, sourceDuration])
 
   useEffect(() => {
     if (!supportsSourcePreview && previewMode !== 'rendered') {
       setPreviewMode('rendered')
     }
   }, [previewMode, supportsSourcePreview])
+
+  useEffect(() => {
+    if (!clipState) {
+      lastClipIdRef.current = null
+      setSourceDuration(null)
+      return
+    }
+    const baseline = computeClipSourceEndBound(clipState, minGap)
+    if (lastClipIdRef.current !== clipState.id) {
+      lastClipIdRef.current = clipState.id
+      setSourceDuration(baseline)
+      return
+    }
+    setSourceDuration((prev) => {
+      if (prev == null || baseline > prev + SOURCE_DURATION_EPSILON) {
+        return baseline
+      }
+      return prev
+    })
+  }, [clipState, minGap])
 
   const applyUpdatedClip = useCallback(
     (updated: Clip) => {
@@ -1023,10 +1056,21 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     if (!element) {
       return
     }
+    const duration = Number.isFinite(element.duration) ? element.duration : null
+    if (duration && duration > 0) {
+      const baseline = computeClipSourceEndBound(clipState, minGap)
+      const candidate = Math.max(duration, baseline)
+      setSourceDuration((prev) => {
+        if (prev == null || candidate > prev + SOURCE_DURATION_EPSILON) {
+          return candidate
+        }
+        return prev
+      })
+    }
     if (Math.abs(element.currentTime - previewStart) > 0.05) {
       element.currentTime = previewStart
     }
-  }, [clipState, previewMode, previewSourceIsFile, previewStart])
+  }, [clipState, minGap, previewMode, previewSourceIsFile, previewStart])
 
   const handleVideoPlay = useCallback(() => {
     if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
