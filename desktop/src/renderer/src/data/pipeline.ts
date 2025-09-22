@@ -134,10 +134,22 @@ export const resolvePipelineLocation = (rawStep: string | null | undefined): Pip
   let clipIndex: number | null = null
   let normalised = rawStep.trim().toLowerCase()
 
-  const clipMatch = normalised.match(/^(.*?)(?:_(\d+))?$/)
+  const clipMatch = normalised.match(/^(.*?)(?:[_-]clip)?[_-]?(\d+)$/)
   if (clipMatch) {
     normalised = clipMatch[1]
-    clipIndex = clipMatch[2] ? Number.parseInt(clipMatch[2], 10) : null
+    clipIndex = Number.parseInt(clipMatch[2], 10)
+  } else {
+    const fallbackMatch = normalised.match(/^(.*?)[_-](\d+)$/)
+    if (fallbackMatch) {
+      normalised = fallbackMatch[1]
+      clipIndex = Number.parseInt(fallbackMatch[2], 10)
+    }
+  }
+
+  normalised = normalised.replace(/(?:[_-]clip|[_-]clips)+$/, '')
+
+  if (clipIndex !== null && Number.isNaN(clipIndex)) {
+    clipIndex = null
   }
 
   const substepMatch = SUBSTEP_PATTERNS.find(({ pattern }) => pattern.test(normalised))

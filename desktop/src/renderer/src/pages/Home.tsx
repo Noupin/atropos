@@ -403,45 +403,70 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
               return step
             }
 
+            const clipPosition =
+              location.kind === 'substep' && location.clipIndex !== null
+                ? Math.max(1, location.clipIndex)
+                : null
+
             const updatedSubsteps = step.substeps.map((substep) => {
-              if (substep.id !== location.substepId) {
-                return substep
-              }
-              if (event.type === 'step_started') {
-                const nextActiveClip =
-                  location.clipIndex ?? substep.activeClipIndex ?? substep.completedClips + 1
-                return {
-                  ...substep,
-                  status: 'running',
-                  progress: 0,
-                  etaSeconds: null,
-                  activeClipIndex: nextActiveClip
+              if (substep.id === location.substepId) {
+                if (event.type === 'step_started') {
+                  const nextActiveClip =
+                    clipPosition ?? substep.activeClipIndex ?? Math.max(1, substep.completedClips + 1)
+                  return {
+                    ...substep,
+                    status: 'running',
+                    progress: 0,
+                    etaSeconds: null,
+                    activeClipIndex: nextActiveClip
+                  }
                 }
-              }
-              if (event.type === 'step_completed') {
-                const completedClips =
-                  location.clipIndex !== null
-                    ? Math.max(substep.completedClips, location.clipIndex)
-                    : substep.completedClips
-                const allDone = substep.totalClips > 0 && completedClips >= substep.totalClips
+                if (event.type === 'step_completed') {
+                  const targetClipIndex = clipPosition ?? location.clipIndex
+                  const boundedTotal = Math.max(0, substep.totalClips)
+                  const rawCompleted =
+                    targetClipIndex !== null
+                      ? Math.max(substep.completedClips, targetClipIndex)
+                      : substep.completedClips
+                  const completedClips =
+                    boundedTotal > 0 ? Math.min(boundedTotal, rawCompleted) : rawCompleted
+                  const allDone = boundedTotal > 0 && completedClips >= boundedTotal
+                  return {
+                    ...substep,
+                    status: allDone ? 'completed' : 'running',
+                    progress: 1,
+                    etaSeconds: null,
+                    completedClips,
+                    activeClipIndex: allDone ? null : clipPosition ?? substep.activeClipIndex
+                  }
+                }
                 return {
                   ...substep,
-                  status: allDone ? 'completed' : 'running',
+                  status: 'failed',
+                  etaSeconds: null,
                   progress: 1,
-                  etaSeconds: null,
-                  completedClips,
-                  activeClipIndex: allDone
-                    ? null
-                    : location.clipIndex ?? substep.activeClipIndex
+                  activeClipIndex: clipPosition ?? substep.activeClipIndex
                 }
               }
-              return {
-                ...substep,
-                status: 'failed',
-                etaSeconds: null,
-                progress: 1,
-                activeClipIndex: location.clipIndex ?? substep.activeClipIndex
+
+              if (event.type === 'step_started' && clipPosition !== null) {
+                const boundedTotal = Math.max(0, substep.totalClips)
+                const completedClips = Math.max(0, substep.completedClips)
+                const allDone = boundedTotal > 0 && completedClips >= boundedTotal
+                if (!allDone && completedClips < clipPosition) {
+                  const nextActiveClip =
+                    boundedTotal > 0 ? Math.min(boundedTotal, clipPosition) : clipPosition
+                  return {
+                    ...substep,
+                    status: 'pending',
+                    progress: 0,
+                    etaSeconds: null,
+                    activeClipIndex: nextActiveClip
+                  }
+                }
               }
+
+              return substep
             })
 
             const allCompleted = updatedSubsteps.length > 0 &&
