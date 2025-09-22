@@ -50,21 +50,11 @@ const ClipCard: FC<ClipCardProps> = ({ clip, onClick, isActive = false }) => {
         <span
           className={`absolute left-2 top-2 rounded-md px-2 py-0.5 text-xs font-semibold ${
             clip.hasAdjustments
-              ? 'bg-[var(--ring)] text-[color:var(--accent-contrast)] shadow-[0_4px_12px_rgba(15,23,42,0.45)]'
-              : 'bg-black/75 text-white shadow-[0_4px_12px_rgba(15,23,42,0.35)]'
+              ? 'bg-[color:var(--success-soft)] text-[color:var(--success-strong)] shadow-[0_6px_18px_rgba(15,23,42,0.4)]'
+              : 'bg-[color:var(--clip-original-badge-bg)] text-[color:var(--clip-original-badge-text)] shadow-[0_4px_12px_rgba(15,23,42,0.35)]'
           }`}
         >
-          <span className="flex items-center gap-1.5">
-            <span
-              className={`h-2 w-2 rounded-full ${
-                clip.hasAdjustments
-                  ? 'bg-[color:var(--success-strong)] shadow-[0_0_0_2px_rgba(15,23,42,0.25)]'
-                  : 'bg-white/80 shadow-[0_0_0_2px_rgba(0,0,0,0.12)]'
-              }`}
-              aria-hidden="true"
-            />
-            {clip.hasAdjustments ? 'Adjusted' : 'Original'}
-          </span>
+          {clip.hasAdjustments ? 'Adjusted' : 'Original'}
         </span>
         <span className="absolute bottom-2 right-2 rounded-md bg-black/80 px-2 py-0.5 text-xs font-medium text-white shadow-[0_4px_12px_rgba(15,23,42,0.35)]">
           {formatDuration(clip.durationSec)}
