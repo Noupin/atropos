@@ -120,7 +120,7 @@ const AccountCard: FC<AccountCardProps> = ({
   const [isDeletingAccount, setIsDeletingAccount] = useState(false)
   const [updatingPlatform, setUpdatingPlatform] = useState<SupportedPlatform | null>(null)
   const [removingPlatform, setRemovingPlatform] = useState<SupportedPlatform | null>(null)
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(true)
   const isMounted = useRef(true)
 
   useEffect(() => {

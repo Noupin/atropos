@@ -21,24 +21,27 @@
   --accent-contrast: #f6f5f3;
   --ring: color-mix(in srgb, var(--accent) 65%, transparent);
   --ring-strong: color-mix(in srgb, var(--accent) 80%, transparent);
-  --success: #2f6b3a;
-  --info: #6b5b2f;
-  --error: #7a2b2b;
+  --success: #0b6f3c;
+  --info: #0b5fa4;
+  --warning: #f5b301;
+  --error: #c43d2a;
   --success-soft: color-mix(in srgb, var(--success) 18%, var(--panel));
-  --success-strong: color-mix(in srgb, var(--success) 70%, var(--fg));
-  --info-soft: color-mix(in srgb, var(--info) 20%, var(--panel));
-  --info-strong: color-mix(in srgb, var(--info) 68%, var(--fg));
-  --error-soft: color-mix(in srgb, var(--error) 20%, var(--panel));
-  --error-strong: color-mix(in srgb, var(--error) 75%, var(--fg));
+  --success-strong: var(--success);
+  --info-soft: color-mix(in srgb, var(--info) 22%, var(--panel));
+  --info-strong: var(--info);
+  --warning-soft: color-mix(in srgb, var(--warning) 28%, var(--panel));
+  --warning-strong: var(--warning);
+  --error-soft: color-mix(in srgb, var(--error) 22%, var(--panel));
+  --error-strong: var(--error);
   --neutral-soft: color-mix(in srgb, var(--edge) 40%, var(--panel));
   --neutral-strong: color-mix(in srgb, var(--fg) 88%, var(--muted));
   --shadow-elevated: 0 28px 60px -32px rgba(43, 42, 40, 0.35);
   --shadow-soft: 0 16px 32px -24px rgba(43, 42, 40, 0.25);
   --clip-track: #e9e7e2;
-  --clip-original: #6fd6dd;
-  --clip-original-marker: #3aaeb8;
-  --clip-rendered: #2f7b83;
-  --clip-rendered-marker: #215d63;
+  --clip-original: #0b6bc7;
+  --clip-original-marker: #084d8f;
+  --clip-rendered: #0c7a45;
+  --clip-rendered-marker: #07552f;
   --clip-current: #4c4a46;
   --clip-handle: #ffffff;
   --clip-handle-hover: #ebe8e2;
@@ -66,24 +69,27 @@
   --accent-contrast: #1d1c1a;
   --ring: color-mix(in srgb, var(--accent) 45%, transparent);
   --ring-strong: color-mix(in srgb, var(--accent) 70%, transparent);
-  --success: #60b370;
-  --info: #c9a665;
-  --error: #d27a7a;
-  --success-soft: color-mix(in srgb, var(--success) 22%, var(--panel));
-  --success-strong: color-mix(in srgb, var(--success) 68%, var(--fg));
-  --info-soft: color-mix(in srgb, var(--info) 24%, var(--panel));
-  --info-strong: color-mix(in srgb, var(--info) 72%, var(--fg));
-  --error-soft: color-mix(in srgb, var(--error) 26%, var(--panel));
-  --error-strong: color-mix(in srgb, var(--error) 80%, var(--fg));
+  --success: #2fd17a;
+  --info: #3a9dff;
+  --warning: #ffd24a;
+  --error: #ff6a4a;
+  --success-soft: color-mix(in srgb, var(--success) 32%, var(--panel));
+  --success-strong: var(--success);
+  --info-soft: color-mix(in srgb, var(--info) 30%, var(--panel));
+  --info-strong: var(--info);
+  --warning-soft: color-mix(in srgb, var(--warning) 35%, var(--panel));
+  --warning-strong: var(--warning);
+  --error-soft: color-mix(in srgb, var(--error) 34%, var(--panel));
+  --error-strong: var(--error);
   --neutral-soft: color-mix(in srgb, var(--edge) 42%, var(--panel));
   --neutral-strong: color-mix(in srgb, var(--fg) 82%, var(--muted));
   --shadow-elevated: 0 28px 60px -32px rgba(0, 0, 0, 0.6);
   --shadow-soft: 0 16px 32px -24px rgba(0, 0, 0, 0.5);
   --clip-track: #2c2a28;
-  --clip-original: #6edee6;
-  --clip-original-marker: #2fb7c3;
-  --clip-rendered: #45a6b0;
-  --clip-rendered-marker: #2f7c84;
+  --clip-original: #1f8fff;
+  --clip-original-marker: #1670cc;
+  --clip-rendered: #2dd17f;
+  --clip-rendered-marker: #1ca463;
   --clip-current: #f0ede5;
   --clip-handle: #3a3734;
   --clip-handle-hover: #4b4742;
@@ -576,19 +582,19 @@ body {
 
 .status-pill--success {
   background: var(--success-soft);
-  border-color: color-mix(in srgb, var(--success) 40%, var(--edge));
+  border-color: var(--success-strong);
   color: var(--success-strong);
 }
 
 .status-pill--warning {
-  background: var(--info-soft);
-  border-color: color-mix(in srgb, var(--info) 42%, var(--edge));
-  color: var(--info-strong);
+  background: var(--warning-soft);
+  border-color: var(--warning-strong);
+  color: var(--warning-strong);
 }
 
 .status-pill--error {
   background: var(--error-soft);
-  border-color: color-mix(in srgb, var(--error) 45%, var(--edge));
+  border-color: var(--error-strong);
   color: var(--error-strong);
 }
 
@@ -608,15 +614,15 @@ body {
 }
 
 .status-pill__dot--success {
-  background: color-mix(in srgb, var(--success) 80%, var(--accent-contrast));
+  background: var(--success-strong);
 }
 
 .status-pill__dot--warning {
-  background: color-mix(in srgb, var(--info) 78%, var(--accent-contrast));
+  background: var(--warning-strong);
 }
 
 .status-pill__dot--error {
-  background: color-mix(in srgb, var(--error) 82%, var(--accent-contrast));
+  background: var(--error-strong);
 }
 
 .status-pill__dot--muted {
