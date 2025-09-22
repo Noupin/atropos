@@ -9,6 +9,7 @@ import {
   type SearchBridge,
   type SupportedPlatform
 } from '../types'
+import { TONE_LABELS, TONE_OPTIONS } from '../constants/tone'
 import { timeAgo } from '../lib/format'
 import MarbleSelect from '../components/MarbleSelect'
 
@@ -49,7 +50,10 @@ type ProfileProps = {
       credentials?: Record<string, unknown>
     }
   ) => Promise<AccountSummary>
-  onUpdateAccount: (accountId: string, payload: { active?: boolean }) => Promise<AccountSummary>
+  onUpdateAccount: (
+    accountId: string,
+    payload: { active?: boolean; tone?: string | null }
+  ) => Promise<AccountSummary>
   onDeleteAccount: (accountId: string) => Promise<void>
   onUpdatePlatform: (
     accountId: string,
@@ -118,6 +122,7 @@ const AccountCard: FC<AccountCardProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isTogglingAccount, setIsTogglingAccount] = useState(false)
   const [isDeletingAccount, setIsDeletingAccount] = useState(false)
+  const [isUpdatingTone, setIsUpdatingTone] = useState(false)
   const [updatingPlatform, setUpdatingPlatform] = useState<SupportedPlatform | null>(null)
   const [removingPlatform, setRemovingPlatform] = useState<SupportedPlatform | null>(null)
   const [isCollapsed, setIsCollapsed] = useState(true)
@@ -131,6 +136,23 @@ const AccountCard: FC<AccountCardProps> = ({
   }, [])
 
   const isAccountActive = account.active
+
+  const toneSelectOptions = useMemo(
+    () => [
+      { value: '', label: 'Use default tone' },
+      ...TONE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))
+    ],
+    []
+  )
+
+  const toneSelectValue = account.tone ?? ''
+  const effectiveToneLabel = account.effectiveTone
+    ? TONE_LABELS[account.effectiveTone] ?? account.effectiveTone
+    : 'Default'
+  const overrideToneLabel = account.tone ? TONE_LABELS[account.tone] ?? account.tone : null
+  const toneBadgeTitle = account.tone
+    ? 'Account-specific tone override'
+    : 'Using the global clip tone'
 
   const availablePlatforms = useMemo(
     () =>
@@ -148,7 +170,7 @@ const AccountCard: FC<AccountCardProps> = ({
   useEffect(() => {
     setSuccess(null)
     setError(null)
-  }, [account.platforms.length, account.active])
+  }, [account.platforms.length, account.active, account.tone])
 
   const detailsId = `account-${account.id}-details`
 
@@ -295,6 +317,46 @@ const AccountCard: FC<AccountCardProps> = ({
       }
     }
   }, [account.displayName, account.id, onDeleteAccount])
+
+  const handleToneChange = useCallback(
+    async (nextValue: string) => {
+      const normalised = nextValue === '' ? null : nextValue
+      const current = account.tone ?? null
+      if (normalised === current) {
+        return
+      }
+
+      setError(null)
+      setSuccess(null)
+      setIsUpdatingTone(true)
+      try {
+        const updated = await onUpdateAccount(account.id, { tone: normalised })
+        if (isMounted.current) {
+          const updatedLabel = updated.tone
+            ? TONE_LABELS[updated.tone] ?? updated.tone
+            : null
+          setSuccess(
+            updatedLabel
+              ? `Tone set to ${updatedLabel}.`
+              : 'Tone override cleared. Using the default setting.'
+          )
+        }
+      } catch (toneError) {
+        const message =
+          toneError instanceof Error
+            ? toneError.message
+            : 'Unable to update the tone. Please try again.'
+        if (isMounted.current) {
+          setError(message)
+        }
+      } finally {
+        if (isMounted.current) {
+          setIsUpdatingTone(false)
+        }
+      }
+    },
+    [account.id, account.tone, onUpdateAccount]
+  )
 
   const handleTogglePlatformActive = useCallback(
     async (platformId: SupportedPlatform, nextActive: boolean) => {
@@ -460,6 +522,43 @@ const AccountCard: FC<AccountCardProps> = ({
     )
   }
 
+  const renderToneControls = () => (
+    <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-black/20 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-sm font-semibold text-[var(--fg)]">Account tone</h4>
+        <span className="text-xs text-[var(--muted)]">
+          {overrideToneLabel ? `Override: ${overrideToneLabel}` : `Using default: ${effectiveToneLabel}`}
+        </span>
+      </div>
+      <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
+        Tone
+        <MarbleSelect
+          id={`tone-${account.id}`}
+          name="tone"
+          value={toneSelectValue}
+          options={toneSelectOptions}
+          onChange={handleToneChange}
+          placeholder="Select a tone"
+          disabled={isUpdatingTone}
+        />
+      </label>
+      <p className="text-xs text-[var(--muted)]">
+        Selecting a tone here overrides the global clip tone for this account. Choose 'Use default tone' to inherit the Settings value.
+      </p>
+    </div>
+  )
+
+  const feedbackMessage = success || error ? (
+    <div className="flex flex-col gap-2">
+      {success ? (
+        <p className="text-xs font-medium text-[color:var(--success-strong)]">{success}</p>
+      ) : null}
+      {error ? (
+        <p className="text-xs font-medium text-[color:var(--error-strong)]">{error}</p>
+      ) : null}
+    </div>
+  ) : null
+
   return (
     <div
       data-testid={`account-card-${account.id}`}
@@ -472,6 +571,11 @@ const AccountCard: FC<AccountCardProps> = ({
               <span className="status-pill status-pill--neutral text-xs">
                 {account.platforms.length} platform{account.platforms.length === 1 ? '' : 's'}
               </span>
+              {account.effectiveTone || account.tone ? (
+                <span className="status-pill status-pill--neutral text-xs" title={toneBadgeTitle}>
+                  Tone: {effectiveToneLabel}
+                </span>
+              ) : null}
               {!isAccountActive ? (
                 <span className="status-pill status-pill--warning text-xs font-semibold">
                   Disabled
@@ -502,6 +606,8 @@ const AccountCard: FC<AccountCardProps> = ({
         </div>
       </div>
 
+      {feedbackMessage}
+
       {isCollapsed ? (
         <div id={detailsId} className="flex flex-col gap-3">
           {!isAccountActive ? (
@@ -509,6 +615,7 @@ const AccountCard: FC<AccountCardProps> = ({
               Enable this account to resume authentication.
             </p>
           ) : null}
+          {renderToneControls()}
           {account.platforms.length > 0 ? (
             <ul className="flex flex-wrap gap-2">
               {account.platforms.map((platform) => (
@@ -534,6 +641,7 @@ const AccountCard: FC<AccountCardProps> = ({
         </div>
       ) : (
         <div id={detailsId} className="flex flex-col gap-4">
+          {renderToneControls()}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -635,70 +743,64 @@ const AccountCard: FC<AccountCardProps> = ({
               No platforms are connected yet. Use the form below to authenticate a platform.
             </p>
           )}
-
-          {availablePlatforms.length > 0 ? (
-            <form
-              onSubmit={handleSubmit}
-              className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 p-4"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h4 className="text-sm font-semibold text-[var(--fg)]">Add a platform</h4>
-                {selectedPlatform ? (
-                  <span className="status-pill status-pill--neutral text-xs">
-                    Authenticating {PLATFORM_LABELS[selectedPlatform]}
-                  </span>
-                ) : null}
-              </div>
-              <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
-                Platform
-                <MarbleSelect
-                  id={`platform-${account.id}`}
-                  name="platform"
-                  value={selectedPlatform || null}
-                  options={platformOptions}
-                  onChange={handlePlatformChange}
-                  placeholder="Select a platform"
-                  disabled={!isAccountActive || isSubmitting}
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
-                Label (optional)
-                <input
-                  value={label}
-                  onChange={(event) => setLabel(event.target.value)}
-                  placeholder="e.g. Brand TikTok"
-                  disabled={!isAccountActive || isSubmitting}
-                  className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
-                />
-              </label>
-              {renderPlatformFields()}
-              {!isAccountActive ? (
-                <p className="text-xs text-[color:var(--info-strong)]">
-                  Enable this account to connect new platforms.
-                </p>
-              ) : null}
-              {error ? (
-                <p className="text-xs font-medium text-[color:var(--error-strong)]">{error}</p>
-              ) : null}
-              {success ? (
-                <p className="text-xs font-medium text-[color:var(--success-strong)]">{success}</p>
-              ) : null}
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !isAccountActive}
-                  className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
-                >
-                  {isSubmitting ? 'Connecting…' : 'Connect platform'}
-                </button>
-              </div>
-            </form>
-          ) : (
-            <p className="text-xs text-[var(--muted)]">
-              All supported platforms are connected for this account.
-            </p>
-          )}
         </div>
+      )}
+
+      {availablePlatforms.length > 0 ? (
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 p-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-sm font-semibold text-[var(--fg)]">Add a platform</h4>
+            {selectedPlatform ? (
+              <span className="status-pill status-pill--neutral text-xs">
+                Authenticating {PLATFORM_LABELS[selectedPlatform]}
+              </span>
+            ) : null}
+          </div>
+          <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
+            Platform
+            <MarbleSelect
+              id={`platform-${account.id}`}
+              name="platform"
+              value={selectedPlatform || null}
+              options={platformOptions}
+              onChange={handlePlatformChange}
+              placeholder="Select a platform"
+              disabled={!isAccountActive || isSubmitting}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
+            Label (optional)
+            <input
+              value={label}
+              onChange={(event) => setLabel(event.target.value)}
+              placeholder="e.g. Brand TikTok"
+              disabled={!isAccountActive || isSubmitting}
+              className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </label>
+          {renderPlatformFields()}
+          {!isAccountActive ? (
+            <p className="text-xs text-[color:var(--info-strong)]">
+              Enable this account to connect new platforms.
+            </p>
+          ) : null}
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="submit"
+              disabled={isSubmitting || !isAccountActive}
+              className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
+            >
+              {isSubmitting ? 'Connecting…' : 'Connect platform'}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <p className="text-xs text-[var(--muted)]">
+          All supported platforms are connected for this account.
+        </p>
       )}
     </div>
   )

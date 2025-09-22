@@ -1,6 +1,6 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import type { FC } from 'react'
-import type { SearchBridge } from '../types'
+import type { AccountSummary, SearchBridge } from '../types'
 import { fetchConfigEntries, updateConfigEntries, type ConfigEntry } from '../services/configApi'
 import MarbleSelect from '../components/MarbleSelect'
 import {
@@ -10,6 +10,7 @@ import {
   type SettingMetadata
 } from './settingsMetadata'
 import { formatConfigValue, formatNumberForStep } from '../utils/configFormatting'
+import { TONE_LABELS } from '../constants/tone'
 import {
   bgrToRgb,
   formatBgrString,
@@ -423,8 +424,16 @@ const parseConfigInput = (raw: string, entry: ConfigEntry): unknown => {
   }
 }
 
+export type SettingsHeaderAction = {
+  dirtyCount: number
+  isSaving: boolean
+  onSave: () => void
+}
+
 type SettingsProps = {
   registerSearch: (bridge: SearchBridge | null) => void
+  accounts: AccountSummary[]
+  onRegisterHeaderAction?: (action: SettingsHeaderAction | null) => void
 }
 
 const clampNumber = (value: number, min: number, max: number): number => {
@@ -458,7 +467,7 @@ const normaliseBooleanString = (value: string): boolean => {
   return TRUE_VALUES.has(value.toLowerCase())
 }
 
-const Settings: FC<SettingsProps> = ({ registerSearch }) => {
+const Settings: FC<SettingsProps> = ({ registerSearch, accounts, onRegisterHeaderAction }) => {
   const [entries, setEntries] = useState<ConfigEntry[]>([])
   const [values, setValues] = useState<Record<string, string>>({})
   const [dirty, setDirty] = useState<Record<string, boolean>>({})
@@ -466,6 +475,23 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  const toneOverrides = useMemo(
+    () => accounts.filter((account) => account.tone),
+    [accounts]
+  )
+
+  const toneOverrideDescriptions = useMemo(
+    () =>
+      toneOverrides.map((account) => {
+        if (!account.tone) {
+          return account.displayName
+        }
+        const label = TONE_LABELS[account.tone] ?? account.tone
+        return `${account.displayName} (${label})`
+      }),
+    [toneOverrides]
+  )
 
   useEffect(() => {
     registerSearch(null)
@@ -612,57 +638,82 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
 
   const dirtyCount = useMemo(() => Object.keys(dirty).length, [dirty])
 
+  const persistChanges = useCallback(async () => {
+    if (isSaving) {
+      return
+    }
+
+    const updates: Record<string, unknown> = {}
+    let parseError: string | null = null
+
+    entries.forEach((entry) => {
+      if (!dirty[entry.name]) {
+        return
+      }
+      try {
+        updates[entry.name] = parseConfigInput(values[entry.name] ?? '', entry)
+      } catch (error) {
+        if (!parseError) {
+          parseError = error instanceof Error ? error.message : `Invalid value provided for ${entry.name}.`
+        }
+      }
+    })
+
+    if (parseError) {
+      setError(parseError)
+      setSuccess(null)
+      return
+    }
+
+    if (Object.keys(updates).length === 0) {
+      setSuccess('No changes to save.')
+      setError(null)
+      return
+    }
+
+    setIsSaving(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      const updated = await updateConfigEntries(updates)
+      initialiseFromEntries(updated)
+      setSuccess('Configuration updated successfully.')
+    } catch (saveError) {
+      const message = saveError instanceof Error ? saveError.message : 'Failed to update configuration.'
+      setError(message)
+    } finally {
+      setIsSaving(false)
+    }
+  }, [dirty, entries, initialiseFromEntries, isSaving, values])
+
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
-      if (isSaving) {
-        return
-      }
-
-      const updates: Record<string, unknown> = {}
-      let parseError: string | null = null
-
-      entries.forEach((entry) => {
-        if (!dirty[entry.name]) {
-          return
-        }
-        try {
-          updates[entry.name] = parseConfigInput(values[entry.name] ?? '', entry)
-        } catch (error) {
-          if (!parseError) {
-            parseError = error instanceof Error ? error.message : `Invalid value provided for ${entry.name}.`
-          }
-        }
-      })
-
-      if (parseError) {
-        setError(parseError)
-        setSuccess(null)
-        return
-      }
-
-      if (Object.keys(updates).length === 0) {
-        setSuccess('No changes to save.')
-        setError(null)
-        return
-      }
-
-      setIsSaving(true)
-      setError(null)
-      setSuccess(null)
-      try {
-        const updated = await updateConfigEntries(updates)
-        initialiseFromEntries(updated)
-        setSuccess('Configuration updated successfully.')
-      } catch (saveError) {
-        const message = saveError instanceof Error ? saveError.message : 'Failed to update configuration.'
-        setError(message)
-      } finally {
-        setIsSaving(false)
-      }
+      await persistChanges()
     },
-    [dirty, entries, initialiseFromEntries, isSaving, values]
+    [persistChanges]
   )
+
+  const handleHeaderSave = useCallback(() => {
+    void persistChanges()
+  }, [persistChanges])
+
+  useEffect(() => {
+    if (!onRegisterHeaderAction) {
+      return
+    }
+    onRegisterHeaderAction({
+      dirtyCount,
+      isSaving,
+      onSave: handleHeaderSave
+    })
+  }, [dirtyCount, handleHeaderSave, isSaving, onRegisterHeaderAction])
+
+  useEffect(() => {
+    return () => {
+      onRegisterHeaderAction?.(null)
+    }
+  }, [onRegisterHeaderAction])
 
   const handleReload = useCallback(() => {
     void loadConfig()
@@ -918,14 +969,6 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
             >
               Reset all to defaults
             </button>
-            <button
-              type="submit"
-              form="settings-form"
-              className="ml-auto rounded-md bg-[var(--accent)] px-4 py-1.5 text-sm font-medium text-black transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)] focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isSaving || dirtyCount === 0}
-            >
-              {isSaving ? 'Saving…' : dirtyCount > 0 ? `Save changes (${dirtyCount})` : 'Save changes'}
-            </button>
           </div>
         </div>
         {error && (
@@ -1031,6 +1074,12 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
                           </div>
                           <div className="mt-4 space-y-2">
                             {renderInput(entry, metadata)}
+                            {entry.name === 'CLIP_TYPE' && toneOverrideDescriptions.length > 0 ? (
+                              <p className="rounded-lg border border-dashed border-[color:color-mix(in_srgb,var(--info)_35%,var(--edge))] bg-[color:var(--info-soft)] px-3 py-2 text-xs text-[color:var(--info-strong)]">
+                                Account tone overrides are active for {toneOverrideDescriptions.join(', ')}.
+                                Update account-specific tones from the Profile tab.
+                              </p>
+                            ) : null}
                             {recommendedValue && (
                               <p className="text-xs text-[color:var(--muted)]">
                                 Recommended:{' '}

@@ -1,9 +1,42 @@
 import '@testing-library/jest-dom/vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Profile from '../pages/Profile'
 import type { AccountPlatformConnection, AccountSummary, AuthPingSummary } from '../types'
+
+vi.mock('../components/MarbleSelect', () => {
+  return {
+    default: ({
+      options,
+      value,
+      onChange,
+      id,
+      name
+    }: {
+      options: Array<{ value: string; label: string }>
+      value: string | null
+      onChange: (value: string) => void
+      id?: string
+      name?: string
+    }) => (
+      <select
+        data-testid={id ?? name ?? 'marble-select'}
+        value={value ?? ''}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <option value="" disabled>
+          Select option
+        </option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    )
+  }
+})
 
 const createPlatform = (
   overrides: Partial<AccountPlatformConnection> = {}
@@ -26,7 +59,9 @@ const sampleAccounts: AccountSummary[] = [
     description: 'Primary publishing account',
     createdAt: '2025-05-01T12:00:00Z',
     platforms: [createPlatform()],
-    active: true
+    active: true,
+    tone: null,
+    effectiveTone: 'funny'
   },
   {
     id: 'account-2',
@@ -34,7 +69,9 @@ const sampleAccounts: AccountSummary[] = [
     description: null,
     createdAt: '2025-05-01T12:00:00Z',
     platforms: [],
-    active: true
+    active: true,
+    tone: 'tech',
+    effectiveTone: 'tech'
   }
 ]
 
@@ -55,6 +92,10 @@ describe('Profile page', () => {
   const deleteAccountMock = vi.fn()
   const updatePlatformMock = vi.fn()
   const deletePlatformMock = vi.fn()
+
+  afterEach(() => {
+    cleanup()
+  })
 
   beforeEach(() => {
     createAccountMock.mockReset()
@@ -97,6 +138,7 @@ describe('Profile page', () => {
     const scope = within(creatorCard)
     expect(scope.getByText('YouTube Channel')).toBeVisible()
     expect(scope.getByText(/Authenticated/i)).toBeVisible()
+    expect(scope.getByText('Tone: Funny')).toBeVisible()
   })
 
   it('submits a new account with trimmed values', async () => {
@@ -132,7 +174,8 @@ describe('Profile page', () => {
 
     const brandCard = screen.getAllByTestId('account-card-account-2')[0]
     const scope = within(brandCard)
-    fireEvent.change(scope.getByLabelText(/Platform/i), { target: { value: 'instagram' } })
+    const [platformSelect] = scope.getAllByLabelText(/Platform/i)
+    fireEvent.change(platformSelect, { target: { value: 'instagram' } })
     fireEvent.change(scope.getByLabelText(/Label \(optional\)/i), {
       target: { value: 'Brand Instagram' }
     })
@@ -155,7 +198,8 @@ describe('Profile page', () => {
 
     const brandCard = screen.getAllByTestId('account-card-account-2')[0]
     const scope = within(brandCard)
-    fireEvent.change(scope.getByLabelText(/Platform/i), { target: { value: 'instagram' } })
+    const [platformSelect] = scope.getAllByLabelText(/Platform/i)
+    fireEvent.change(platformSelect, { target: { value: 'instagram' } })
 
     const connectButton = scope.getByRole('button', { name: /Connect platform/i })
     fireEvent.click(connectButton)
@@ -181,12 +225,34 @@ describe('Profile page', () => {
 
     const creatorCard = screen.getAllByTestId('account-card-account-1')[0]
     const scope = within(creatorCard)
+    fireEvent.click(scope.getByRole('button', { name: /Expand|Collapse/i }))
     const toggleButton = scope.getByRole('button', { name: /Disable account/i })
     fireEvent.click(toggleButton)
 
     await waitFor(() => expect(updateAccountMock).toHaveBeenCalledTimes(1))
     expect(updateAccountMock).toHaveBeenCalledWith('account-1', { active: false })
     expect(await scope.findByText(/Account disabled successfully/i)).toBeInTheDocument()
+  })
+
+  it('updates the account tone override', async () => {
+    const updatedAccount: AccountSummary = {
+      ...sampleAccounts[1],
+      tone: 'science',
+      effectiveTone: 'science'
+    }
+    updateAccountMock.mockResolvedValueOnce(updatedAccount)
+
+    renderProfile()
+
+    const brandCard = screen.getAllByTestId('account-card-account-2')[0]
+    const scope = within(brandCard)
+
+    const toneSelect = scope.getByLabelText(/^Tone$/i)
+    fireEvent.change(toneSelect, { target: { value: 'science' } })
+
+    await waitFor(() => expect(updateAccountMock).toHaveBeenCalledTimes(1))
+    expect(updateAccountMock).toHaveBeenCalledWith('account-2', { tone: 'science' })
+    expect(await scope.findByText(/Tone set to Science/i)).toBeInTheDocument()
   })
 
   it('disables and removes a platform connection', async () => {
@@ -214,14 +280,16 @@ describe('Profile page', () => {
       const creatorCard = screen.getAllByTestId('account-card-account-1')[0]
       const scope = within(creatorCard)
 
-      const disableButton = scope.getByRole('button', { name: /^Disable$/i })
+      fireEvent.click(scope.getByRole('button', { name: /Expand|Collapse/i }))
+
+      const disableButton = await scope.findByRole('button', { name: /^Disable$/i })
       fireEvent.click(disableButton)
 
       await waitFor(() => expect(updatePlatformMock).toHaveBeenCalledTimes(1))
       expect(updatePlatformMock).toHaveBeenCalledWith('account-1', 'youtube', { active: false })
       expect(await scope.findByText(/YouTube disabled successfully/i)).toBeInTheDocument()
 
-      const removeButton = scope.getByRole('button', { name: /^Remove$/i })
+      const removeButton = await scope.findByRole('button', { name: /^Remove$/i })
       fireEvent.click(removeButton)
 
       await waitFor(() => expect(deletePlatformMock).toHaveBeenCalledTimes(1))

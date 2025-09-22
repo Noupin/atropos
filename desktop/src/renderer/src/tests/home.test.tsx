@@ -1,6 +1,8 @@
 import '@testing-library/jest-dom/vitest'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ComponentProps } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import Home from '../pages/Home'
 import { createInitialPipelineSteps } from '../data/pipeline'
 import type {
@@ -46,7 +48,9 @@ const AVAILABLE_ACCOUNT: AccountSummary = {
   description: null,
   createdAt: new Date().toISOString(),
   platforms: [createPlatform()],
-  active: true
+  active: true,
+  tone: null,
+  effectiveTone: 'funny'
 }
 
 const INACTIVE_ACCOUNT: AccountSummary = {
@@ -55,7 +59,9 @@ const INACTIVE_ACCOUNT: AccountSummary = {
   description: null,
   createdAt: new Date().toISOString(),
   platforms: [createPlatform()],
-  active: false
+  active: false,
+  tone: null,
+  effectiveTone: 'funny'
 }
 
 const ACCOUNT_WITHOUT_PLATFORMS: AccountSummary = {
@@ -64,7 +70,9 @@ const ACCOUNT_WITHOUT_PLATFORMS: AccountSummary = {
   description: null,
   createdAt: new Date().toISOString(),
   platforms: [],
-  active: true
+  active: true,
+  tone: null,
+  effectiveTone: 'funny'
 }
 
 const ACCOUNT_WITH_DISABLED_PLATFORM: AccountSummary = {
@@ -73,7 +81,9 @@ const ACCOUNT_WITH_DISABLED_PLATFORM: AccountSummary = {
   description: null,
   createdAt: new Date().toISOString(),
   platforms: [createPlatform({ active: false })],
-  active: true
+  active: true,
+  tone: null,
+  effectiveTone: 'funny'
 }
 
 const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePipelineState => ({
@@ -90,6 +100,17 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
   ...overrides
 })
 
+const renderHome = (props: ComponentProps<typeof Home>) =>
+  render(
+    <MemoryRouter>
+      <Home {...props} />
+    </MemoryRouter>
+  )
+
+afterEach(() => {
+  cleanup()
+})
+
 describe('Home account selection', () => {
   beforeEach(() => {
     startPipelineJobMock.mockReset()
@@ -99,19 +120,18 @@ describe('Home account selection', () => {
   })
 
   it('requires an account selection before starting processing', () => {
-    render(
-      <Home
-        registerSearch={() => {}}
-        initialState={createInitialState()}
-        onStateChange={() => {}}
-        accounts={[AVAILABLE_ACCOUNT, ACCOUNT_WITHOUT_PLATFORMS]}
-      />
-    )
+    renderHome({
+      registerSearch: () => {},
+      initialState: createInitialState(),
+      onStateChange: () => {},
+      accounts: [AVAILABLE_ACCOUNT, ACCOUNT_WITHOUT_PLATFORMS]
+    })
 
-    fireEvent.change(screen.getByLabelText(/video url/i), {
+    const videoUrlInput = screen.getByLabelText(/video url/i)
+    fireEvent.change(videoUrlInput, {
       target: { value: 'https://www.youtube.com/watch?v=example' }
     })
-    const form = screen.getByText(/process a new video/i).closest('form')
+    const form = videoUrlInput.closest('form')
     expect(form).not.toBeNull()
     fireEvent.submit(form as HTMLFormElement)
 
@@ -122,40 +142,54 @@ describe('Home account selection', () => {
   })
 
   it('passes the selected account when starting the pipeline job', async () => {
-    render(
-      <Home
-        registerSearch={() => {}}
-        initialState={createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })}
-        onStateChange={() => {}}
-        accounts={[AVAILABLE_ACCOUNT]}
-      />
+    const baseProps = {
+      registerSearch: () => {},
+      onStateChange: () => {},
+      accounts: [AVAILABLE_ACCOUNT]
+    }
+    const { rerender } = render(
+      <MemoryRouter>
+        <Home {...baseProps} initialState={createInitialState()} />
+      </MemoryRouter>
+    )
+
+    rerender(
+      <MemoryRouter>
+        <Home
+          {...baseProps}
+          initialState={createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })}
+        />
+      </MemoryRouter>
     )
 
     const videoUrl = 'https://www.youtube.com/watch?v=another'
     const accountId = AVAILABLE_ACCOUNT.id
 
-    fireEvent.change(screen.getByLabelText(/video url/i), { target: { value: videoUrl } })
-    const form = screen.getByText(/process a new video/i).closest('form')
+    const videoUrlInput = screen.getByLabelText(/video url/i)
+    const form = videoUrlInput.closest('form')
     expect(form).not.toBeNull()
+    await waitFor(() => {
+      const statusRegion = within(form as HTMLFormElement).getByText((content, element) => {
+        return element?.getAttribute('aria-live') === 'polite'
+      })
+      expect(statusRegion).toHaveTextContent(/Processing as Creator Hub\./i)
+    })
+    fireEvent.change(videoUrlInput, { target: { value: videoUrl } })
     fireEvent.submit(form as HTMLFormElement)
 
-  await waitFor(() => expect(startPipelineJobMock).toHaveBeenCalledTimes(1))
-  expect(startPipelineJobMock).toHaveBeenCalledWith({ account: accountId, url: videoUrl })
+    await waitFor(() => expect(startPipelineJobMock).toHaveBeenCalledTimes(1))
+    expect(startPipelineJobMock).toHaveBeenCalledWith(
+      expect.objectContaining({ account: accountId, url: videoUrl, tone: null })
+    )
   })
 
   it('surfaces guidance when no active accounts are available', () => {
-    render(
-      <Home
-        registerSearch={() => {}}
-        initialState={createInitialState()}
-        onStateChange={() => {}}
-        accounts={[
-          INACTIVE_ACCOUNT,
-          ACCOUNT_WITHOUT_PLATFORMS,
-          ACCOUNT_WITH_DISABLED_PLATFORM
-        ]}
-      />
-    )
+    renderHome({
+      registerSearch: () => {},
+      initialState: createInitialState(),
+      onStateChange: () => {},
+      accounts: [INACTIVE_ACCOUNT, ACCOUNT_WITHOUT_PLATFORMS, ACCOUNT_WITH_DISABLED_PLATFORM]
+    })
 
     expect(screen.getByText(/no active accounts available/i)).toBeInTheDocument()
     expect(
@@ -180,20 +214,38 @@ describe('Home pipeline events', () => {
       return unsubscribeMock
     })
 
-    render(
-      <Home
-        registerSearch={() => {}}
-        initialState={createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })}
-        onStateChange={() => {}}
-        accounts={[AVAILABLE_ACCOUNT]}
-      />
+    const baseProps = {
+      registerSearch: () => {},
+      onStateChange: () => {},
+      accounts: [AVAILABLE_ACCOUNT]
+    }
+    const { rerender } = render(
+      <MemoryRouter>
+        <Home {...baseProps} initialState={createInitialState()} />
+      </MemoryRouter>
     )
 
-    fireEvent.change(screen.getByLabelText(/video url/i), {
+    rerender(
+      <MemoryRouter>
+        <Home
+          {...baseProps}
+          initialState={createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })}
+        />
+      </MemoryRouter>
+    )
+
+    const videoUrlInput = screen.getByLabelText(/video url/i)
+    const form = videoUrlInput.closest('form')
+    expect(form).not.toBeNull()
+    await waitFor(() => {
+      const statusRegion = within(form as HTMLFormElement).getByText((content, element) => {
+        return element?.getAttribute('aria-live') === 'polite'
+      })
+      expect(statusRegion).toHaveTextContent(/Processing as Creator Hub\./i)
+    })
+    fireEvent.change(videoUrlInput, {
       target: { value: 'https://www.youtube.com/watch?v=example' }
     })
-    const form = screen.getByText(/process a new video/i).closest('form')
-    expect(form).not.toBeNull()
     fireEvent.submit(form as HTMLFormElement)
 
     await waitFor(() => expect(startPipelineJobMock).toHaveBeenCalledTimes(1))
@@ -231,8 +283,9 @@ describe('Home pipeline events', () => {
     const timelineItem = screen.getAllByText(/space wonders/i)[0].closest('li')
     expect(timelineItem).not.toBeNull()
     const timelineScope = within(timelineItem as HTMLElement)
-    expect(timelineScope.getByText(/creator hub/i)).toBeInTheDocument()
-    expect(timelineScope.getByText(/duration 0:32/i)).toBeInTheDocument()
+    const metadata = timelineScope.getByText(/creator hub/i)
+    expect(metadata).toBeInTheDocument()
+    expect(metadata).toHaveTextContent(/0:32/)
   })
 
   it('surfaces clip batch progress updates for multi-clip steps', async () => {
@@ -244,21 +297,40 @@ describe('Home pipeline events', () => {
       return unsubscribeMock
     })
 
-    render(
-      <Home
-        registerSearch={() => {}}
-        initialState={createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })}
-        onStateChange={() => {}}
-        accounts={[AVAILABLE_ACCOUNT]}
-      />
+    const baseProps = {
+      registerSearch: () => {},
+      onStateChange: () => {},
+      accounts: [AVAILABLE_ACCOUNT]
+    }
+    const { rerender } = render(
+      <MemoryRouter>
+        <Home {...baseProps} initialState={createInitialState()} />
+      </MemoryRouter>
     )
 
-    fireEvent.change(screen.getByLabelText(/video url/i), {
+    rerender(
+      <MemoryRouter>
+        <Home
+          {...baseProps}
+          initialState={createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })}
+        />
+      </MemoryRouter>
+    )
+
+    const videoUrlInput = screen.getByLabelText(/video url/i)
+    const form = videoUrlInput.closest('form')
+    expect(form).not.toBeNull()
+    await waitFor(() => {
+      const statusRegion = within(form as HTMLFormElement).getByText((content, element) => {
+        return element?.getAttribute('aria-live') === 'polite'
+      })
+      expect(statusRegion).toHaveTextContent(/Processing as Creator Hub\./i)
+    })
+
+    fireEvent.change(videoUrlInput, {
       target: { value: 'https://www.youtube.com/watch?v=example' }
     })
 
-    const form = screen.getByText(/process a new video/i).closest('form')
-    expect(form).not.toBeNull()
     fireEvent.submit(form as HTMLFormElement)
 
     await waitFor(() => expect(startPipelineJobMock).toHaveBeenCalledTimes(1))

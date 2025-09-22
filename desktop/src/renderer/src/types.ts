@@ -57,6 +57,8 @@ export interface AccountSummary {
   createdAt: string
   platforms: AccountPlatformConnection[]
   active: boolean
+  tone: string | null
+  effectiveTone: string | null
 }
 
 export interface AuthPingSummary {
