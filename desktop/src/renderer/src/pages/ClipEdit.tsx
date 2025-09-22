@@ -10,6 +10,7 @@ import { formatDuration } from '../lib/format'
 import useSharedVolume from '../hooks/useSharedVolume'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
+import { fetchConfigEntries } from '../services/configApi'
 import type { Clip, SearchBridge } from '../types'
 
 type ClipEditLocationState = {
@@ -23,11 +24,49 @@ const toSeconds = (value: number): number => Math.max(0, Number.isFinite(value) 
 const MIN_CLIP_GAP = 0.25
 const MIN_PREVIEW_DURATION = 0.05
 const DEFAULT_EXPAND_SECONDS = 10
+
+type DurationGuardrails = {
+  minDuration: number
+  maxDuration: number
+  sweetSpotMin: number
+  sweetSpotMax: number
+}
+
 // Keep duration guardrails aligned with the backend defaults in server/config.py.
-const MIN_CLIP_DURATION_SECONDS = 10
-const MAX_CLIP_DURATION_SECONDS = 85
-const SWEET_SPOT_MIN_SECONDS = 25
-const SWEET_SPOT_MAX_SECONDS = 60
+const DEFAULT_DURATION_GUARDRAILS: DurationGuardrails = {
+  minDuration: 10,
+  maxDuration: 85,
+  sweetSpotMin: 25,
+  sweetSpotMax: 60
+}
+
+const parseGuardrailValue = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value)
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+  return null
+}
+
+const resolveGuardrailKey = (name: string): keyof DurationGuardrails | null => {
+  switch (name) {
+    case 'MIN_DURATION_SECONDS':
+      return 'minDuration'
+    case 'MAX_DURATION_SECONDS':
+      return 'maxDuration'
+    case 'SWEET_SPOT_MIN_SECONDS':
+      return 'sweetSpotMin'
+    case 'SWEET_SPOT_MAX_SECONDS':
+      return 'sweetSpotMax'
+    default:
+      return null
+  }
+}
 
 const getDefaultPreviewMode = (clip: Clip | null): 'adjusted' | 'rendered' =>
   clip && clip.previewUrl === clip.playbackUrl ? 'rendered' : 'adjusted'
@@ -105,6 +144,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
 
   const minGap = MIN_CLIP_GAP
 
+  const [guardrails, setGuardrails] = useState<DurationGuardrails>(() => ({
+    ...DEFAULT_DURATION_GUARDRAILS
+  }))
   const [clipState, setClipState] = useState<Clip | null>(sourceClip ?? null)
   const [isLoadingClip, setIsLoadingClip] = useState(!sourceClip && Boolean(id))
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -157,6 +199,46 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const [isVideoBuffering, setIsVideoBuffering] = useState(false)
   const [saveSteps, setSaveSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
+
+  useEffect(() => {
+    let isActive = true
+
+    const loadGuardrails = async (): Promise<void> => {
+      try {
+        const entries = await fetchConfigEntries()
+        if (!isActive) {
+          return
+        }
+        setGuardrails((prev) => {
+          let changed = false
+          const next = { ...prev }
+          for (const entry of entries) {
+            const key = resolveGuardrailKey(entry.name)
+            if (!key) {
+              continue
+            }
+            const numeric = parseGuardrailValue(entry.value)
+            if (numeric == null) {
+              continue
+            }
+            if (next[key] !== numeric) {
+              next[key] = numeric
+              changed = true
+            }
+          }
+          return changed ? next : prev
+        })
+      } catch (error) {
+        console.error('Unable to load clip duration guardrails', error)
+      }
+    }
+
+    void loadGuardrails()
+
+    return () => {
+      isActive = false
+    }
+  }, [])
 
   const originalStart = clipState?.originalStartSeconds ?? 0
   const originalEnd =
@@ -635,14 +717,19 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     setSaveSteps(createInitialSaveSteps())
   }, [clipState, minGap])
 
+  const minClipDurationSeconds = guardrails.minDuration
+  const maxClipDurationSeconds = guardrails.maxDuration
+  const sweetSpotMinSeconds = guardrails.sweetSpotMin
+  const sweetSpotMaxSeconds = guardrails.sweetSpotMax
+
   const durationSeconds = Math.max(minGap, rangeEnd - rangeStart)
   const durationEpsilon = 0.0005
-  const durationBelowMin = durationSeconds < MIN_CLIP_DURATION_SECONDS - durationEpsilon
-  const durationAboveMax = durationSeconds > MAX_CLIP_DURATION_SECONDS + durationEpsilon
+  const durationBelowMin = durationSeconds < minClipDurationSeconds - durationEpsilon
+  const durationAboveMax = durationSeconds > maxClipDurationSeconds + durationEpsilon
   const durationWithinLimits = !durationBelowMin && !durationAboveMax
   const durationWithinSweetSpot =
-    durationSeconds >= SWEET_SPOT_MIN_SECONDS - durationEpsilon &&
-    durationSeconds <= SWEET_SPOT_MAX_SECONDS + durationEpsilon
+    durationSeconds >= sweetSpotMinSeconds - durationEpsilon &&
+    durationSeconds <= sweetSpotMaxSeconds + durationEpsilon
   const startOffsetSeconds = rangeStart - offsetReference.startBase
   const endOffsetSeconds = rangeEnd - offsetReference.endBase
   const formattedStartOffset = formatRelativeSeconds(startOffsetSeconds)
@@ -1400,9 +1487,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   <div className="space-y-1">
                     <p className="font-semibold uppercase tracking-wide">Outside clip limits</p>
                     <p>
-                      Clips must stay between {MIN_CLIP_DURATION_SECONDS.toFixed(0)}s and{' '}
-                      {MAX_CLIP_DURATION_SECONDS.toFixed(0)}s. Adjust the boundaries to bring
-                      this clip back in range. Current duration: {formatDuration(durationSeconds)}.
+                      Clips must stay between {minClipDurationSeconds.toFixed(0)}s and{' '}
+                      {maxClipDurationSeconds.toFixed(0)}s. Adjust the boundaries to bring this
+                      clip back in range. Current duration: {formatDuration(durationSeconds)}.
                     </p>
                   </div>
                 </div>
@@ -1416,9 +1503,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   <div className="space-y-1">
                     <p className="font-semibold uppercase tracking-wide">Outside sweet spot</p>
                     <p>
-                      The recommended sweet spot is {SWEET_SPOT_MIN_SECONDS.toFixed(0)}–
-                      {SWEET_SPOT_MAX_SECONDS.toFixed(0)} seconds. Tweaking the boundaries can help
-                      this clip land inside the preferred window. Current duration:{' '}
+                      The recommended sweet spot is {sweetSpotMinSeconds.toFixed(0)}–
+                      {sweetSpotMaxSeconds.toFixed(0)} seconds. Tweaking the boundaries can help this
+                      clip land inside the preferred window. Current duration:{' '}
                       {formatDuration(durationSeconds)}.
                     </p>
                   </div>
