@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FC, ChangeEvent, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
+import type {
+  FC,
+  ChangeEvent,
+  PointerEvent as ReactPointerEvent,
+  KeyboardEvent as ReactKeyboardEvent
+} from 'react'
 import { useLocation, useParams } from 'react-router-dom'
 import { formatDuration } from '../lib/format'
 import useSharedVolume from '../hooks/useSharedVolume'
@@ -27,7 +32,9 @@ const formatRelativeSeconds = (value: number): string => {
     return '0'
   }
   const sign = value > 0 ? '+' : '-'
-  const formatted = Math.abs(value).toFixed(2).replace(/\.?0+$/, '')
+  const formatted = Math.abs(value)
+    .toFixed(2)
+    .replace(/\.?0+$/, '')
   return `${sign}${formatted}`
 }
 
@@ -76,7 +83,9 @@ const delay = (ms: number): Promise<void> =>
     setTimeout(resolve, ms)
   })
 
-const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = ({ registerSearch }) => {
+const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = ({
+  registerSearch
+}) => {
   const { id } = useParams<{ id: string }>()
   const location = useLocation()
   const state = (location.state as ClipEditLocationState | null) ?? null
@@ -145,7 +154,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const [saveSteps, setSaveSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
 
   const originalStart = clipState?.originalStartSeconds ?? 0
-  const originalEnd = clipState?.originalEndSeconds ?? (originalStart + (clipState?.durationSec ?? 10))
+  const originalEnd =
+    clipState?.originalEndSeconds ?? originalStart + (clipState?.durationSec ?? 10)
   const supportsSourcePreview = clipState ? clipState.previewUrl !== clipState.playbackUrl : false
 
   useEffect(() => {
@@ -426,9 +436,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       const step = event.shiftKey ? 1 : 0.1
       setEngagedHandle(kind)
       if (kind === 'start') {
-        setStartInteractionOrigin((prev) => (prev ?? rangeStart))
+        setStartInteractionOrigin((prev) => prev ?? rangeStart)
       } else {
-        setEndInteractionOrigin((prev) => (prev ?? rangeEnd))
+        setEndInteractionOrigin((prev) => prev ?? rangeEnd)
       }
       if (key === 'ArrowLeft' || key === 'ArrowDown') {
         event.preventDefault()
@@ -460,15 +470,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         }
       }
     },
-    [
-      handleEndChange,
-      handleStartChange,
-      minGap,
-      rangeEnd,
-      rangeStart,
-      windowEnd,
-      windowStart
-    ]
+    [handleEndChange, handleStartChange, minGap, rangeEnd, rangeStart, windowEnd, windowStart]
   )
 
   const handleExpandAmountChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
@@ -502,7 +504,10 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       setPreviewTarget({ start: 0, end: minGap })
       setPreviewMode('adjusted')
     } else {
-      const baseStart = Math.max(0, Math.min(clipState.originalStartSeconds, clipState.startSeconds))
+      const baseStart = Math.max(
+        0,
+        Math.min(clipState.originalStartSeconds, clipState.startSeconds)
+      )
       const baseEnd = Math.max(
         clipState.originalEndSeconds,
         clipState.endSeconds,
@@ -515,7 +520,10 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       setWindowEnd(baseEnd)
       setPreviewTarget({
         start: clipState.originalStartSeconds,
-        end: Math.max(clipState.originalStartSeconds + MIN_PREVIEW_DURATION, clipState.originalEndSeconds)
+        end: Math.max(
+          clipState.originalStartSeconds + MIN_PREVIEW_DURATION,
+          clipState.originalEndSeconds
+        )
       })
       setPreviewMode(getDefaultPreviewMode(clipState) === 'adjusted' ? 'original' : 'rendered')
     }
@@ -531,9 +539,12 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const formattedEndOffset = formatRelativeSeconds(endOffsetSeconds)
   const startInteractionChangeSeconds =
     startInteractionOrigin == null ? null : rangeStart - startInteractionOrigin
-  const endInteractionChangeSeconds = endInteractionOrigin == null ? null : rangeEnd - endInteractionOrigin
+  const endInteractionChangeSeconds =
+    endInteractionOrigin == null ? null : rangeEnd - endInteractionOrigin
   const formattedStartChange =
-    startInteractionChangeSeconds == null ? null : formatRelativeSeconds(startInteractionChangeSeconds)
+    startInteractionChangeSeconds == null
+      ? null
+      : formatRelativeSeconds(startInteractionChangeSeconds)
   const formattedEndChange =
     endInteractionChangeSeconds == null ? null : formatRelativeSeconds(endInteractionChangeSeconds)
   const startOffsetDescription =
@@ -573,7 +584,10 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   }, [clipState, rangeEnd, rangeStart])
 
   const shouldShowSaveSteps =
-    isSaving || Boolean(saveError) || Boolean(saveSuccess) || saveSteps.some((step) => step.status !== 'pending')
+    isSaving ||
+    Boolean(saveError) ||
+    Boolean(saveSuccess) ||
+    saveSteps.some((step) => step.status !== 'pending')
 
   const renderedSrc = useMemo(() => {
     if (!clipState) {
@@ -587,8 +601,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         clipState.playbackUrl.startsWith('file://')
           ? new URL(clipState.playbackUrl)
           : typeof window !== 'undefined'
-          ? new URL(clipState.playbackUrl, window.location.origin)
-          : null
+            ? new URL(clipState.playbackUrl, window.location.origin)
+            : null
       if (absolute) {
         absolute.searchParams.set('_', cacheKey)
         return absolute.toString()
@@ -607,7 +621,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       }
       const safeStart = Math.max(0, Number.isFinite(range.start) ? range.start : 0)
       const rawEnd = Number.isFinite(range.end) ? range.end : safeStart
-      const safeEnd = rawEnd > safeStart + MIN_PREVIEW_DURATION ? rawEnd : safeStart + MIN_PREVIEW_DURATION
+      const safeEnd =
+        rawEnd > safeStart + MIN_PREVIEW_DURATION ? rawEnd : safeStart + MIN_PREVIEW_DURATION
       const cacheToken = `${clipState.id}-${variant}-${safeStart.toFixed(3)}-${safeEnd.toFixed(3)}`
       const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
       try {
@@ -623,8 +638,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         return absolute.toString()
       } catch (error) {
         const separator = clipState.previewUrl.includes('?') ? '&' : '?'
-        return `${clipState.previewUrl}${separator}start=${safeStart.toFixed(3)}&end=${safeEnd
-          .toFixed(3)}&_=${encodeURIComponent(cacheToken)}`
+        return `${clipState.previewUrl}${separator}start=${safeStart.toFixed(3)}&end=${safeEnd.toFixed(
+          3
+        )}&_=${encodeURIComponent(cacheToken)}`
       }
     },
     [clipState]
@@ -643,7 +659,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     }
     const originalStart = Math.max(0, clipState.originalStartSeconds)
     const rawEnd = clipState.originalEndSeconds
-    const safeEnd = rawEnd > originalStart + MIN_PREVIEW_DURATION ? rawEnd : originalStart + MIN_PREVIEW_DURATION
+    const safeEnd =
+      rawEnd > originalStart + MIN_PREVIEW_DURATION ? rawEnd : originalStart + MIN_PREVIEW_DURATION
     return { start: originalStart, end: safeEnd }
   }, [clipState, minGap])
 
@@ -670,7 +687,10 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   }, [clipState, originalPreviewRange, previewMode, previewTarget])
 
   const sanitisedPreviewRange = useMemo(() => {
-    const start = Math.max(0, Number.isFinite(currentPreviewRange.start) ? currentPreviewRange.start : 0)
+    const start = Math.max(
+      0,
+      Number.isFinite(currentPreviewRange.start) ? currentPreviewRange.start : 0
+    )
     const rawEnd = Number.isFinite(currentPreviewRange.end) ? currentPreviewRange.end : start
     const end = rawEnd > start + MIN_PREVIEW_DURATION ? rawEnd : start + MIN_PREVIEW_DURATION
     return { start, end }
@@ -683,11 +703,13 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     previewMode === 'rendered'
       ? renderedSrc
       : previewMode === 'original'
-      ? originalPreviewSrc
-      : adjustedPreviewSrc
+        ? originalPreviewSrc
+        : adjustedPreviewSrc
 
-  const activePoster = previewMode === 'rendered' ? clipState?.thumbnail ?? undefined : undefined
-  const videoKey = clipState ? `${clipState.id}-${previewMode}-${activeVideoSrc}` : `${previewMode}-${activeVideoSrc}`
+  const activePoster = previewMode === 'rendered' ? (clipState?.thumbnail ?? undefined) : undefined
+  const videoKey = clipState
+    ? `${clipState.id}-${previewMode}-${activeVideoSrc}`
+    : `${previewMode}-${activeVideoSrc}`
 
   useEffect(() => {
     setIsVideoBuffering(false)
@@ -836,7 +858,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       setSaveSuccess('Clip boundaries updated successfully.')
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Unable to update the clip boundaries. Please try again.'
+        error instanceof Error
+          ? error.message
+          : 'Unable to update the clip boundaries. Please try again.'
       setSaveError(message)
       setSaveSteps((prev) =>
         prev.map((step) => (step.status === 'running' ? { ...step, status: 'failed' } : step))
@@ -861,12 +885,17 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-10 text-center">
           {isLoadingClip ? (
             <div className="flex flex-col items-center gap-4 text-[var(--muted)]">
-              <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-[var(--ring)]" aria-hidden />
+              <div
+                className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-[var(--ring)]"
+                aria-hidden
+              />
               <p className="text-sm">Loading clip details…</p>
             </div>
           ) : (
             <>
-              <h2 className="text-xl font-semibold text-[var(--fg)]">Clip information unavailable</h2>
+              <h2 className="text-xl font-semibold text-[var(--fg)]">
+                Clip information unavailable
+              </h2>
               <p className="mt-2 max-w-md text-sm text-[var(--muted)]">
                 {loadError ??
                   'We couldn’t find the clip details needed for editing. Return to the previous page and try opening the editor again.'}
@@ -883,8 +912,12 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const endPercent = ((rangeEnd - windowStart) / timelineTotal) * 100
   const safeTimelineTotal = timelineTotal <= 0 ? 1 : timelineTotal
   const clampRatio = (value: number): number => Math.max(0, Math.min(1, value))
-  const originalStartRatio = clampRatio((clipState.originalStartSeconds - windowStart) / safeTimelineTotal)
-  const originalEndRatio = clampRatio((clipState.originalEndSeconds - windowStart) / safeTimelineTotal)
+  const originalStartRatio = clampRatio(
+    (clipState.originalStartSeconds - windowStart) / safeTimelineTotal
+  )
+  const originalEndRatio = clampRatio(
+    (clipState.originalEndSeconds - windowStart) / safeTimelineTotal
+  )
   const originalOverlayLeftPercent = originalStartRatio * 100
   const originalOverlayRightPercent =
     clampRatio((windowEnd - clipState.originalEndSeconds) / safeTimelineTotal) * 100
@@ -897,7 +930,10 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     clampRatio((windowEnd - clipState.endSeconds) / safeTimelineTotal) * 100
   const renderedStartMarkerPercent = renderedStartRatio * 100
   const renderedEndMarkerPercent = renderedEndRatio * 100
-  const originalDuration = Math.max(0, clipState.originalEndSeconds - clipState.originalStartSeconds)
+  const originalDuration = Math.max(
+    0,
+    clipState.originalEndSeconds - clipState.originalStartSeconds
+  )
   const renderedDuration = Math.max(0, clipState.endSeconds - clipState.startSeconds)
   const renderedExtendsOriginal = renderedDuration >= originalDuration
   const originalOverlayLayer = renderedExtendsOriginal ? 'z-20' : 'z-10'
@@ -912,7 +948,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
       <div className="flex flex-col gap-6 lg:flex-row">
-        <div className="flex-1 rounded-2xl border border-white/10 bg-[color:var(--card-strong)] p-4">
+        <div className="flex-1 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
           <div className="flex h-full flex-col gap-4">
             <div
               className="relative flex w-full items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black"
@@ -959,9 +995,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                     onClick={() => supportsSourcePreview && setPreviewMode('adjusted')}
                     className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                       previewMode === 'adjusted'
-                        ? 'bg-[color:var(--card-strong)] text-[var(--fg)]'
+                        ? 'bg-[color:color-mix(in_srgb,var(--muted)_50%,transparent)] text-[var(--fg)]'
                         : supportsSourcePreview
-                          ? 'text-[var(--fg)] hover:bg-white/10'
+                          ? 'text-[var(--fg)] hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)]'
                           : 'cursor-not-allowed text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]'
                     }`}
                     aria-pressed={previewMode === 'adjusted'}
@@ -975,9 +1011,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                     onClick={() => supportsSourcePreview && setPreviewMode('original')}
                     className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                       previewMode === 'original'
-                        ? 'bg-[color:var(--card-strong)] text-[var(--fg)]'
+                        ? 'bg-[color:color-mix(in_srgb,var(--muted)_50%,transparent)] text-[var(--fg)]'
                         : supportsSourcePreview
-                          ? 'text-[var(--fg)] hover:bg-white/10'
+                          ? 'text-[var(--fg)] hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)]'
                           : 'cursor-not-allowed text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]'
                     }`}
                     aria-pressed={previewMode === 'original'}
@@ -991,8 +1027,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                     onClick={() => setPreviewMode('rendered')}
                     className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                       previewMode === 'rendered'
-                        ? 'bg-[color:var(--card-strong)] text-[var(--fg)]'
-                        : 'text-[var(--fg)] hover:bg-white/10'
+                        ? 'bg-[color:color-mix(in_srgb,var(--muted)_50%,transparent)] text-[var(--fg)]'
+                        : 'text-[var(--fg)] hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)]'
                     }`}
                     aria-pressed={previewMode === 'rendered'}
                   >
@@ -1013,8 +1049,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
               </p>
               {renderedOutOfSync ? (
                 <p className="text-xs font-medium text-amber-200/90">
-                  The rendered output does not yet reflect these boundaries. Save the clip to rerun step 7 and refresh the
-                  export.
+                  The rendered output does not yet reflect these boundaries. Save the clip to rerun
+                  step 7 and refresh the export.
                 </p>
               ) : null}
             </div>
@@ -1024,7 +1060,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold text-[var(--fg)]">Refine clip boundaries</h1>
             <p className="text-sm text-[var(--muted)]">
-              Drag the handles or enter precise timestamps to trim the clip before regenerating subtitles and renders.
+              Drag the handles or enter precise timestamps to trim the clip before regenerating
+              subtitles and renders.
             </p>
           </div>
           <div className="space-y-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
@@ -1038,12 +1075,18 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
               >
                 <div
                   className={`pointer-events-none absolute -top-1 -bottom-1 ${originalOverlayLayer} rounded-full bg-[color:var(--clip-original)]`}
-                  style={{ left: `${originalOverlayLeftPercent}%`, right: `${originalOverlayRightPercent}%` }}
+                  style={{
+                    left: `${originalOverlayLeftPercent}%`,
+                    right: `${originalOverlayRightPercent}%`
+                  }}
                   aria-hidden="true"
                 />
                 <div
                   className={`pointer-events-none absolute -top-1 -bottom-1 ${renderedOverlayLayer} rounded-full bg-[color:var(--clip-rendered)]`}
-                  style={{ left: `${renderedOverlayLeftPercent}%`, right: `${renderedOverlayRightPercent}%` }}
+                  style={{
+                    left: `${renderedOverlayLeftPercent}%`,
+                    right: `${renderedOverlayRightPercent}%`
+                  }}
                   aria-hidden="true"
                 />
                 <div
@@ -1127,15 +1170,24 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
                 <span className="flex items-center gap-2">
-                  <span className="h-2 w-6 rounded-full bg-[color:var(--clip-original)]" aria-hidden="true" />
+                  <span
+                    className="h-2 w-6 rounded-full bg-[color:var(--clip-original)]"
+                    aria-hidden="true"
+                  />
                   Original range
                 </span>
                 <span className="flex items-center gap-2">
-                  <span className="h-2 w-6 rounded-full bg-[color:var(--clip-rendered)]" aria-hidden="true" />
+                  <span
+                    className="h-2 w-6 rounded-full bg-[color:var(--clip-rendered)]"
+                    aria-hidden="true"
+                  />
                   Rendered output
                 </span>
                 <span className="flex items-center gap-2">
-                  <span className="h-2 w-6 rounded-full bg-[color:var(--clip-current)]" aria-hidden="true" />
+                  <span
+                    className="h-2 w-6 rounded-full bg-[color:var(--clip-current)]"
+                    aria-hidden="true"
+                  />
                   Current window
                 </span>
               </div>
@@ -1160,7 +1212,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   Relative to the original start
                 </span>
                 <span className="text-[10px] font-normal text-[color:color-mix(in_srgb,var(--muted)_60%,transparent)]">
-                  Original {formatDuration(offsetReference.startBase)} → Current {formatDuration(rangeStart)}
+                  Original {formatDuration(offsetReference.startBase)} → Current{' '}
+                  {formatDuration(rangeStart)}
                 </span>
               </label>
               <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
@@ -1178,14 +1231,17 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   Relative to the original end
                 </span>
                 <span className="text-[10px] font-normal text-[color:color-mix(in_srgb,var(--muted)_60%,transparent)]">
-                  Original {formatDuration(offsetReference.endBase)} → Current {formatDuration(rangeEnd)}
+                  Original {formatDuration(offsetReference.endBase)} → Current{' '}
+                  {formatDuration(rangeEnd)}
                 </span>
               </label>
             </div>
             <div className="flex flex-col gap-2 text-sm text-[var(--muted)]">
               <div className="flex items-center justify-between">
                 <span>Adjusted duration</span>
-                <span className="font-semibold text-[var(--fg)]">{formatDuration(durationSeconds)}</span>
+                <span className="font-semibold text-[var(--fg)]">
+                  {formatDuration(durationSeconds)}
+                </span>
               </div>
               <div className="flex flex-wrap items-center gap-3 text-xs font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
                 <label className="flex items-center gap-2">
@@ -1217,7 +1273,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 </div>
               </div>
               <p className="text-xs">
-                Expanding the window lets you pull the clip start earlier or extend the ending without moving the saved boundaries.
+                Expanding the window lets you pull the clip start earlier or extend the ending
+                without moving the saved boundaries.
               </p>
             </div>
           </div>
@@ -1249,10 +1306,10 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   const indicatorClasses = isCompleted
                     ? 'border-[color:color-mix(in_srgb,var(--success-strong)_45%,var(--edge))] bg-[color:var(--success-soft)] text-[color:color-mix(in_srgb,var(--success-strong)_85%,var(--accent-contrast))]'
                     : isFailed
-                    ? 'bg-rose-500/10 text-rose-200 border border-rose-500/40'
-                    : isRunning
-                    ? 'border-[var(--ring)] text-[var(--ring)]'
-                    : 'border-white/15 text-[var(--muted)]'
+                      ? 'bg-rose-500/10 text-rose-200 border border-rose-500/40'
+                      : isRunning
+                        ? 'border-[var(--ring)] text-[var(--ring)]'
+                        : 'border-white/15 text-[var(--muted)]'
                   return (
                     <li key={step.id} className="flex items-start gap-3">
                       <span
