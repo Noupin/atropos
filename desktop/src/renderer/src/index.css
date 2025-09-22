@@ -29,8 +29,9 @@
   --success-strong: var(--success);
   --info-soft: color-mix(in srgb, var(--info) 22%, var(--panel));
   --info-strong: var(--info);
-  --warning-soft: color-mix(in srgb, var(--warning) 28%, var(--panel));
+  --warning-soft: color-mix(in srgb, var(--warning) 40%, var(--panel));
   --warning-strong: var(--warning);
+  --warning-contrast: color-mix(in srgb, #3c2a00 85%, var(--fg));
   --error-soft: color-mix(in srgb, var(--error) 22%, var(--panel));
   --error-strong: var(--error);
   --neutral-soft: color-mix(in srgb, var(--edge) 40%, var(--panel));
@@ -77,8 +78,9 @@
   --success-strong: var(--success);
   --info-soft: color-mix(in srgb, var(--info) 30%, var(--panel));
   --info-strong: var(--info);
-  --warning-soft: color-mix(in srgb, var(--warning) 35%, var(--panel));
+  --warning-soft: color-mix(in srgb, var(--warning) 40%, var(--panel));
   --warning-strong: var(--warning);
+  --warning-contrast: color-mix(in srgb, var(--warning) 82%, var(--bg));
   --error-soft: color-mix(in srgb, var(--error) 34%, var(--panel));
   --error-strong: var(--error);
   --neutral-soft: color-mix(in srgb, var(--edge) 42%, var(--panel));
@@ -229,6 +231,34 @@ body {
 
 .text-amber-50 {
   color: color-mix(in srgb, var(--accent-contrast) 90%, transparent) !important;
+}
+
+.text-amber-100 {
+  color: color-mix(in srgb, var(--warning) 46%, var(--fg)) !important;
+}
+
+.text-amber-200\/90 {
+  color: color-mix(in srgb, var(--warning) 58%, var(--fg)) !important;
+}
+
+.text-amber-300 {
+  color: color-mix(in srgb, var(--warning) 62%, var(--fg)) !important;
+}
+
+.bg-amber-500\/10,
+.hover\:bg-amber-500\/10:hover {
+  background-color: color-mix(in srgb, var(--warning) 26%, var(--panel)) !important;
+}
+
+.bg-amber-500\/20,
+.hover\:bg-amber-500\/20:hover {
+  background-color: color-mix(in srgb, var(--warning) 38%, var(--panel)) !important;
+}
+
+.border-amber-400\/40,
+.hover\:border-amber-400\/40:hover,
+.focus-visible\:border-amber-400\/40:focus-visible {
+  border-color: color-mix(in srgb, var(--warning) 48%, var(--edge)) !important;
 }
 
 .border-dashed {
@@ -592,7 +622,7 @@ body {
 .status-pill--warning {
   background: var(--warning-soft);
   border-color: var(--warning-strong);
-  color: var(--warning-strong);
+  color: var(--warning-contrast);
 }
 
 .status-pill--error {

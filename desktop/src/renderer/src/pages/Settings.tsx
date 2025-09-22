@@ -10,9 +10,353 @@ import {
   type SettingMetadata
 } from './settingsMetadata'
 import { formatConfigValue, formatNumberForStep } from '../utils/configFormatting'
+import {
+  bgrToRgb,
+  formatBgrString,
+  hexToRgb,
+  hslToRgb,
+  hsvToRgb,
+  parseBgrString,
+  rgbToBgr,
+  rgbToHex,
+  rgbToHsl,
+  rgbToHsv
+} from '../utils/colorSpaces'
 
 const TRUE_VALUES = new Set(['true', '1', 'yes', 'y', 'on'])
 const FALSE_VALUES = new Set(['false', '0', 'no', 'n', 'off'])
+
+const COMMON_INPUT_CLASS =
+  'w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm text-[var(--fg)] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]'
+
+type ColorSpace = 'hex' | 'rgb' | 'bgr' | 'hsv' | 'hsl'
+
+const COLOR_SPACE_OPTIONS: { value: ColorSpace; label: string }[] = [
+  { value: 'hex', label: 'Hex' },
+  { value: 'rgb', label: 'RGB' },
+  { value: 'bgr', label: 'BGR' },
+  { value: 'hsv', label: 'HSV' },
+  { value: 'hsl', label: 'HSL' }
+]
+
+const isColorSpace = (value: string): value is ColorSpace => {
+  return COLOR_SPACE_OPTIONS.some((option) => option.value === value)
+}
+
+type ColorControlProps = {
+  id: string
+  name: string
+  label: string
+  value: string
+  disabled: boolean
+  onChange: (value: string) => void
+}
+
+const ColorControl: FC<ColorControlProps> = ({ id, name, label, value, disabled, onChange }) => {
+  const [space, setSpace] = useState<ColorSpace>('hex')
+
+  const bgr = useMemo(() => parseBgrString(value) ?? [255, 255, 255], [value])
+  const rgb = useMemo(() => bgrToRgb(bgr), [bgr])
+  const hsv = useMemo(() => rgbToHsv(rgb), [rgb])
+  const hsl = useMemo(() => rgbToHsl(rgb), [rgb])
+  const hex = useMemo(() => rgbToHex(rgb), [rgb])
+  const displayBgr = useMemo(() => formatBgrString(bgr), [bgr])
+
+  const updateFromRgb = useCallback(
+    (next: { r: number; g: number; b: number }) => {
+      const nextBgr = rgbToBgr(next)
+      onChange(formatBgrString(nextBgr))
+    },
+    [onChange]
+  )
+
+  const handleHexInput = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const next = event.target.value
+      const parsed = hexToRgb(next)
+      if (parsed) {
+        updateFromRgb(parsed)
+      }
+    },
+    [updateFromRgb]
+  )
+
+  const handleColorPicker = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const parsed = hexToRgb(event.target.value)
+      if (parsed) {
+        updateFromRgb(parsed)
+      }
+    },
+    [updateFromRgb]
+  )
+
+  const handleRgbChange = useCallback(
+    (channel: keyof typeof rgb, event: ChangeEvent<HTMLInputElement>) => {
+      const numeric = Number.parseInt(event.target.value, 10)
+      if (Number.isNaN(numeric)) {
+        return
+      }
+      const next = { ...rgb, [channel]: Math.min(Math.max(numeric, 0), 255) }
+      updateFromRgb(next)
+    },
+    [rgb, updateFromRgb]
+  )
+
+  const handleBgrChange = useCallback(
+    (index: 0 | 1 | 2, event: ChangeEvent<HTMLInputElement>) => {
+      const numeric = Number.parseInt(event.target.value, 10)
+      if (Number.isNaN(numeric)) {
+        return
+      }
+      const next = [...bgr] as typeof bgr
+      next[index] = Math.min(Math.max(numeric, 0), 255)
+      onChange(formatBgrString(next))
+    },
+    [bgr, onChange]
+  )
+
+  const handleHsvChange = useCallback(
+    (key: keyof typeof hsv, event: ChangeEvent<HTMLInputElement>) => {
+      const numeric = Number.parseFloat(event.target.value)
+      if (Number.isNaN(numeric)) {
+        return
+      }
+      const next = { ...hsv, [key]: numeric }
+      updateFromRgb(hsvToRgb(next))
+    },
+    [hsv, updateFromRgb]
+  )
+
+  const handleHslChange = useCallback(
+    (key: keyof typeof hsl, event: ChangeEvent<HTMLInputElement>) => {
+      const numeric = Number.parseFloat(event.target.value)
+      if (Number.isNaN(numeric)) {
+        return
+      }
+      const next = { ...hsl, [key]: numeric }
+      updateFromRgb(hslToRgb(next))
+    },
+    [hsl, updateFromRgb]
+  )
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          id={id}
+          name={name}
+          type="color"
+          className="h-10 w-16 cursor-pointer rounded-md border border-white/10 bg-transparent"
+          value={hex}
+          onChange={handleColorPicker}
+          disabled={disabled}
+          aria-label={`${label} colour`}
+        />
+        <code className="rounded-md bg-white/5 px-2 py-1 text-xs text-[color:var(--muted)]">{displayBgr}</code>
+        <div className="min-w-[140px] flex-1 sm:min-w-[180px] md:max-w-[220px]">
+          <MarbleSelect
+            id={`${id}-color-space`}
+            name={`${name}-color-space`}
+            value={space}
+            options={COLOR_SPACE_OPTIONS.map((option) => ({ label: option.label, value: option.value }))}
+            onChange={(next) => {
+              if (isColorSpace(next)) {
+                setSpace(next)
+              }
+            }}
+            disabled={disabled}
+            aria-label="Colour space"
+          />
+        </div>
+      </div>
+      {space === 'hex' && (
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-medium text-[color:var(--muted)]" htmlFor={`${id}-hex`}>
+            Hex value
+          </label>
+          <input
+            id={`${id}-hex`}
+            type="text"
+            inputMode="text"
+            className={`${COMMON_INPUT_CLASS} max-w-[240px]`}
+            value={hex}
+            onChange={handleHexInput}
+            disabled={disabled}
+            placeholder="#000000"
+          />
+        </div>
+      )}
+      {space === 'rgb' && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          {(['r', 'g', 'b'] as const).map((channel) => (
+            <div key={channel} className="flex flex-col gap-1">
+              <label className="text-xs font-medium uppercase tracking-wide text-[color:var(--muted)]" htmlFor={`${id}-rgb-${channel}`}>
+                {channel}
+              </label>
+              <input
+                id={`${id}-rgb-${channel}`}
+                type="number"
+                min={0}
+                max={255}
+                step={1}
+                className={COMMON_INPUT_CLASS}
+                value={rgb[channel]}
+                onChange={(event) => handleRgbChange(channel, event)}
+                disabled={disabled}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+      {space === 'bgr' && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          {(['b', 'g', 'r'] as const).map((channel, index) => (
+            <div key={channel} className="flex flex-col gap-1">
+              <label className="text-xs font-medium uppercase tracking-wide text-[color:var(--muted)]" htmlFor={`${id}-bgr-${channel}`}>
+                {channel}
+              </label>
+              <input
+                id={`${id}-bgr-${channel}`}
+                type="number"
+                min={0}
+                max={255}
+                step={1}
+                className={COMMON_INPUT_CLASS}
+                value={bgr[index]}
+                onChange={(event) => handleBgrChange(index as 0 | 1 | 2, event)}
+                disabled={disabled}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+      {space === 'hsv' && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium uppercase tracking-wide text-[color:var(--muted)]" htmlFor={`${id}-hsv-h`}>
+              Hue
+            </label>
+            <input
+              id={`${id}-hsv-h`}
+              type="number"
+              min={0}
+              max={360}
+              step={1}
+              className={COMMON_INPUT_CLASS}
+              value={hsv.h}
+              onChange={(event) => handleHsvChange('h', event)}
+              disabled={disabled}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium uppercase tracking-wide text-[color:var(--muted)]" htmlFor={`${id}-hsv-s`}>
+              Saturation (%)
+            </label>
+            <input
+              id={`${id}-hsv-s`}
+              type="number"
+              min={0}
+              max={100}
+              step={0.1}
+              className={COMMON_INPUT_CLASS}
+              value={hsv.s}
+              onChange={(event) => handleHsvChange('s', event)}
+              disabled={disabled}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium uppercase tracking-wide text-[color:var(--muted)]" htmlFor={`${id}-hsv-v`}>
+              Value (%)
+            </label>
+            <input
+              id={`${id}-hsv-v`}
+              type="number"
+              min={0}
+              max={100}
+              step={0.1}
+              className={COMMON_INPUT_CLASS}
+              value={hsv.v}
+              onChange={(event) => handleHsvChange('v', event)}
+              disabled={disabled}
+            />
+          </div>
+        </div>
+      )}
+      {space === 'hsl' && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium uppercase tracking-wide text-[color:var(--muted)]" htmlFor={`${id}-hsl-h`}>
+              Hue
+            </label>
+            <input
+              id={`${id}-hsl-h`}
+              type="number"
+              min={0}
+              max={360}
+              step={1}
+              className={COMMON_INPUT_CLASS}
+              value={hsl.h}
+              onChange={(event) => handleHslChange('h', event)}
+              disabled={disabled}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium uppercase tracking-wide text-[color:var(--muted)]" htmlFor={`${id}-hsl-s`}>
+              Saturation (%)
+            </label>
+            <input
+              id={`${id}-hsl-s`}
+              type="number"
+              min={0}
+              max={100}
+              step={0.1}
+              className={COMMON_INPUT_CLASS}
+              value={hsl.s}
+              onChange={(event) => handleHslChange('s', event)}
+              disabled={disabled}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium uppercase tracking-wide text-[color:var(--muted)]" htmlFor={`${id}-hsl-l`}>
+              Lightness (%)
+            </label>
+            <input
+              id={`${id}-hsl-l`}
+              type="number"
+              min={0}
+              max={100}
+              step={0.1}
+              className={COMMON_INPUT_CLASS}
+              value={hsl.l}
+              onChange={(event) => handleHslChange('l', event)}
+              disabled={disabled}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+type TooltipIconProps = {
+  content: string
+}
+
+const TooltipIcon: FC<TooltipIconProps> = ({ content }) => {
+  return (
+    <button
+      type="button"
+      className="group relative inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/20 bg-transparent text-[11px] font-semibold text-[color:var(--muted)] transition hover:border-[var(--ring)] hover:text-[color:var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+      aria-label="Show setting description"
+    >
+      ?
+      <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-64 -translate-x-1/2 scale-95 rounded-lg border border-[color:color-mix(in_srgb,var(--edge)60%,transparent)] bg-[color:var(--card-strong)] px-3 py-2 text-left text-xs text-[color:var(--muted)] opacity-0 shadow-lg transition duration-150 ease-out group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100">
+        {content}
+      </span>
+    </button>
+  )
+}
 
 const parseConfigInput = (raw: string, entry: ConfigEntry): unknown => {
   const trimmed = raw.trim()
@@ -112,35 +456,6 @@ const deriveStep = (entry: ConfigEntry, metadata: SettingMetadata | undefined, r
 
 const normaliseBooleanString = (value: string): boolean => {
   return TRUE_VALUES.has(value.toLowerCase())
-}
-
-const toHexFromBgr = (raw: string): string => {
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (Array.isArray(parsed) && parsed.length === 3) {
-      const [b, g, r] = parsed
-      if ([b, g, r].every((component) => Number.isFinite(Number(component)))) {
-        const toHex = (component: number) => {
-          const safe = clampNumber(Number(component), 0, 255)
-          return safe.toString(16).padStart(2, '0')
-        }
-        return `#${toHex(r)}${toHex(g)}${toHex(b)}`
-      }
-    }
-  } catch (error) {
-    // fall through to default colour
-  }
-  return '#ffffff'
-}
-
-const fromHexToBgr = (hex: string): string => {
-  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
-    return ''
-  }
-  const r = Number.parseInt(hex.slice(1, 3), 16)
-  const g = Number.parseInt(hex.slice(3, 5), 16)
-  const b = Number.parseInt(hex.slice(5, 7), 16)
-  return JSON.stringify([b, g, r])
 }
 
 const Settings: FC<SettingsProps> = ({ registerSearch }) => {
@@ -403,10 +718,6 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
         return 'text'
       })()
 
-      const commonInputClass =
-        'w-full rounded-md border border-white/10 bg-transparent px-3 py-2 text-sm text-[var(--fg)] shadow-sm ' +
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]'
-
       if (control === 'checkbox') {
         const isChecked = normaliseBooleanString(value)
         return (
@@ -442,29 +753,15 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
       }
 
       if (control === 'color') {
-        const hexValue = toHexFromBgr(value)
-        const handleHexChange = (event: ChangeEvent<HTMLInputElement>) => {
-          const next = fromHexToBgr(event.target.value)
-          if (next) {
-            handleValueChange(entry.name, next)
-          }
-        }
         return (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-3">
-              <input
-                id={`config-${entry.name}`}
-                name={entry.name}
-                type="color"
-                className="h-10 w-16 cursor-pointer rounded-md border border-white/10 bg-transparent"
-                value={hexValue}
-                onChange={handleHexChange}
-                disabled={isSaving}
-                aria-label={`${metadata?.label ?? entry.name} colour`}
-              />
-              <code className="rounded-md bg-white/5 px-2 py-1 text-xs text-[var(--muted)]">{value || '[255, 255, 255]'}</code>
-            </div>
-          </div>
+          <ColorControl
+            id={`config-${entry.name}`}
+            name={entry.name}
+            label={metadata?.label ?? entry.name}
+            value={value}
+            onChange={(next) => handleValueChange(entry.name, next)}
+            disabled={isSaving}
+          />
         )
       }
 
@@ -473,7 +770,7 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
           <textarea
             id={`config-${entry.name}`}
             name={entry.name}
-            className={`${commonInputClass} min-h-[120px]`}
+            className={`${COMMON_INPUT_CLASS} min-h-[120px]`}
             value={value}
             onChange={(event: ChangeEvent<HTMLTextAreaElement>) => handleValueChange(entry.name, event.target.value)}
             disabled={isSaving}
@@ -538,7 +835,7 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
               </button>
               <input
                 type="number"
-                className={`${commonInputClass} max-w-[120px]`}
+                className={`${COMMON_INPUT_CLASS} max-w-[120px]`}
                 value={value}
                 min={min}
                 max={max}
@@ -574,7 +871,7 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
           id={`config-${entry.name}`}
           name={entry.name}
           type={inputType}
-          className={commonInputClass}
+          className={COMMON_INPUT_CLASS}
           value={value}
           onChange={(event: ChangeEvent<HTMLInputElement>) => handleValueChange(entry.name, event.target.value)}
           disabled={isSaving}
@@ -677,6 +974,11 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
                       const defaultValue = SETTINGS_DEFAULTS[entry.name]
                       const currentValue = values[entry.name] ?? ''
                       const isDefaultActive = defaultValue !== undefined && defaultValue === currentValue
+                      const recommendedValue = metadata?.recommendedValue
+                      const shouldShowChangeWarning = Boolean(
+                        metadata?.changeWarning &&
+                          (recommendedValue ? currentValue !== recommendedValue : isModified)
+                      )
                       const cardSpanClass = metadata?.control === 'textarea' ? 'md:col-span-2' : ''
                       return (
                         <div
@@ -685,20 +987,15 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
                         >
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div className="space-y-2">
-                              <label
-                                className="flex items-center gap-2 text-sm font-semibold text-[var(--fg)]"
-                                htmlFor={`config-${entry.name}`}
-                              >
-                                {metadata?.label ?? entry.name}
-                                {metadata?.description && (
-                                  <span
-                                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-white/20 text-[11px] text-[var(--muted)]"
-                                    title={metadata.description}
-                                  >
-                                    ?
-                                  </span>
-                                )}
-                              </label>
+                              <div className="flex items-center gap-2">
+                                <label
+                                  className="text-sm font-semibold text-[var(--fg)]"
+                                  htmlFor={`config-${entry.name}`}
+                                >
+                                  {metadata?.label ?? entry.name}
+                                </label>
+                                {metadata?.description && <TooltipIcon content={metadata.description} />}
+                              </div>
                               <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
                                 <span className="rounded-full bg-white/5 px-2 py-0.5 uppercase tracking-wide">{entry.type}</span>
                                 {metadata?.unit && <span>{metadata.unit}</span>}
@@ -706,7 +1003,7 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
                             </div>
                             <div className="flex flex-col items-end gap-2 text-xs sm:flex-row sm:items-center">
                               {isModified && (
-                                <span className="rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 font-medium text-amber-100">
+                                <span className="rounded-full border border-[color:color-mix(in_srgb,var(--warning)50%,var(--edge))] bg-[color:var(--warning-soft)] px-2 py-0.5 font-medium text-[color:var(--warning-contrast)]">
                                   Modified
                                 </span>
                               )}
@@ -734,6 +1031,24 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
                           </div>
                           <div className="mt-4 space-y-2">
                             {renderInput(entry, metadata)}
+                            {recommendedValue && (
+                              <p className="text-xs text-[color:var(--muted)]">
+                                Recommended:{' '}
+                                <code className="rounded bg-white/5 px-1.5 py-0.5 text-[color:var(--fg)]">
+                                  {recommendedValue}
+                                </code>
+                              </p>
+                            )}
+                            {shouldShowChangeWarning && metadata?.changeWarning && (
+                              <div
+                                className="flex items-start gap-2 rounded-md border border-[color:color-mix(in_srgb,var(--warning)45%,var(--edge))] bg-[color:var(--warning-soft)] px-3 py-2 text-xs text-[color:var(--warning-contrast)]"
+                              >
+                                <span className="mt-0.5 text-sm font-semibold">!</span>
+                                <span>
+                                  {metadata.changeWarning}
+                                </span>
+                              </div>
+                            )}
                             {metadata?.helpText && (
                               <p className="text-xs text-[var(--muted)]">{metadata.helpText}</p>
                             )}

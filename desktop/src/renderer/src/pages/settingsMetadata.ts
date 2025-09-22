@@ -21,6 +21,8 @@ export type SettingMetadata = {
   unit?: string
   order?: number
   helpText?: string
+  recommendedValue?: string
+  changeWarning?: string
 }
 
 export type SettingsGroup = {
@@ -36,19 +38,9 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     description: 'Control how captions are styled and how final clips are rendered.'
   },
   {
-    id: 'snapping',
-    title: 'Clip Snapping & Detection',
-    description: 'Fine-tune how clips align with silence, dialog, and sentence boundaries.'
-  },
-  {
-    id: 'transcription',
-    title: 'Transcription',
-    description: 'Choose how transcripts are acquired and which Whisper model to run.'
-  },
-  {
-    id: 'llm',
-    title: 'LLM & Segmentation',
-    description: 'Configure large language model usage for segmentation and chunking.'
+    id: 'upload',
+    title: 'Upload & Publishing',
+    description: 'Set up how rendered clips are exported and shared to platforms.'
   },
   {
     id: 'clipSelection',
@@ -56,14 +48,24 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     description: 'Govern the heuristics that pick the best candidate clips.'
   },
   {
+    id: 'transcription',
+    title: 'Transcription',
+    description: 'Choose how transcripts are acquired and which Whisper model to run.'
+  },
+  {
+    id: 'snapping',
+    title: 'Clip Snapping & Detection',
+    description: 'Fine-tune how clips align with silence, dialog, and sentence boundaries.'
+  },
+  {
     id: 'pipeline',
     title: 'Pipeline Windows & Ratings',
     description: 'Adjust pipeline step behaviour, window sizing, and rating bounds.'
   },
   {
-    id: 'upload',
-    title: 'Upload & Publishing',
-    description: 'Set up how rendered clips are exported and shared to platforms.'
+    id: 'llm',
+    title: 'LLM & Segmentation',
+    description: 'Configure large language model usage for segmentation and chunking.'
   },
   {
     id: 'advanced',
@@ -221,6 +223,9 @@ export const SETTINGS_METADATA: Record<string, SettingMetadata> = {
     control: 'text',
     defaultValue: 'google/gemma-3-4b',
     placeholder: 'provider/model-name',
+    recommendedValue: 'google/gemma-3-4b',
+    changeWarning:
+      'Changing the local LLM model can significantly impact segmentation quality. Use a different model only if you have validated it performs well for your workflow.',
     order: 2
   },
   EXPORT_RAW_CLIPS: {
@@ -284,9 +289,30 @@ export const SETTINGS_METADATA: Record<string, SettingMetadata> = {
     label: 'Whisper model',
     description: 'Specific faster-whisper model to download and run.',
     group: 'transcription',
-    control: 'text',
+    control: 'select',
+    options: [
+      { value: 'tiny', label: 'tiny' },
+      { value: 'tiny.en', label: 'tiny.en' },
+      { value: 'base', label: 'base' },
+      { value: 'base.en', label: 'base.en' },
+      { value: 'small', label: 'small' },
+      { value: 'small.en', label: 'small.en' },
+      { value: 'distil-small.en', label: 'distil-small.en' },
+      { value: 'medium', label: 'medium' },
+      { value: 'medium.en', label: 'medium.en' },
+      { value: 'distil-medium.en', label: 'distil-medium.en' },
+      { value: 'large-v1', label: 'large-v1' },
+      { value: 'large-v2', label: 'large-v2' },
+      { value: 'large-v3', label: 'large-v3' },
+      { value: 'large', label: 'large' },
+      { value: 'distil-large-v2', label: 'distil-large-v2' },
+      { value: 'distil-large-v3', label: 'distil-large-v3' },
+      { value: 'large-v3-turbo', label: 'large-v3-turbo (default)' },
+      { value: 'turbo', label: 'turbo' }
+    ],
     defaultValue: 'large-v3-turbo',
-    placeholder: 'large-v3-turbo',
+    placeholder: 'Select Whisper model',
+    helpText: 'Choose a Faster Whisper model that balances quality and performance for your hardware.',
     order: 2
   },
   CLIP_TYPE: {
