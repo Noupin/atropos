@@ -245,6 +245,15 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     clipState?.originalEndSeconds ?? originalStart + (clipState?.durationSec ?? 10)
   const supportsSourcePreview = clipState ? clipState.previewUrl !== clipState.playbackUrl : false
 
+  const sourceStartBound = 0
+  const sourceEndBound = useMemo(() => {
+    if (!clipState) {
+      return minGap
+    }
+    const derivedFromDuration = clipState.originalStartSeconds + Math.max(clipState.durationSec, minGap)
+    return Math.max(minGap, clipState.originalEndSeconds, clipState.endSeconds, derivedFromDuration)
+  }, [clipState, minGap])
+
   useEffect(() => {
     if (!supportsSourcePreview && previewMode !== 'rendered') {
       setPreviewMode('rendered')
@@ -257,14 +266,19 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       setRangeStart(updated.startSeconds)
       setRangeEnd(updated.endSeconds)
       setWindowStart(Math.max(0, Math.min(updated.startSeconds, updated.originalStartSeconds)))
-      setWindowEnd(
-        Math.max(
-          updated.endSeconds,
-          updated.originalEndSeconds,
-          updated.startSeconds + minGap,
-          updated.originalStartSeconds + minGap
-        )
+      const updatedSourceEnd = Math.max(
+        minGap,
+        updated.originalEndSeconds,
+        updated.endSeconds,
+        updated.originalStartSeconds + Math.max(updated.durationSec, minGap)
       )
+      const desiredWindowEnd = Math.max(
+        updated.endSeconds,
+        updated.originalEndSeconds,
+        updated.startSeconds + minGap,
+        updated.originalStartSeconds + minGap
+      )
+      setWindowEnd(Math.min(updatedSourceEnd, desiredWindowEnd))
       setPreviewTarget({ start: updated.startSeconds, end: updated.endSeconds })
       setPreviewMode(getDefaultPreviewMode(updated))
     },
@@ -346,17 +360,36 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     setRangeEnd(clipState.endSeconds)
     setWindowStart(Math.max(0, Math.min(clipState.startSeconds, clipState.originalStartSeconds)))
     setWindowEnd(
-      Math.max(
-        clipState.endSeconds,
-        clipState.originalEndSeconds,
-        clipState.startSeconds + minGap,
-        clipState.originalStartSeconds + minGap
+      Math.min(
+        sourceEndBound,
+        Math.max(
+          clipState.endSeconds,
+          clipState.originalEndSeconds,
+          clipState.startSeconds + minGap,
+          clipState.originalStartSeconds + minGap
+        )
       )
     )
     setPreviewTarget({ start: clipState.startSeconds, end: clipState.endSeconds })
     setPreviewMode(getDefaultPreviewMode(clipState))
     setSaveSteps(createInitialSaveSteps())
-  }, [clipState, minGap])
+  }, [clipState, minGap, sourceEndBound])
+
+  useEffect(() => {
+    setWindowStart((prevStart) => {
+      const maxStart = sourceEndBound - minGap
+      const clamped = Math.max(sourceStartBound, Math.min(prevStart, maxStart))
+      return clamped === prevStart ? prevStart : clamped
+    })
+  }, [minGap, sourceEndBound, sourceStartBound])
+
+  useEffect(() => {
+    setWindowEnd((prevEnd) => {
+      const lowerBound = windowStart + minGap
+      const clamped = Math.min(sourceEndBound, Math.max(prevEnd, lowerBound))
+      return clamped === prevEnd ? prevEnd : clamped
+    })
+  }, [minGap, sourceEndBound, windowStart])
 
   const clampWithinWindow = useCallback(
     (value: number, kind: 'start' | 'end'): number => {
@@ -417,30 +450,55 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       let nextWindowStart = windowStart
       let nextWindowEnd = windowEnd
 
-      if (baseStart < windowStart) {
-        nextWindowStart = Math.max(0, baseStart)
+      const clampedBaseStart = Math.max(
+        sourceStartBound,
+        Math.min(baseStart, sourceEndBound - minGap)
+      )
+      const clampedBaseEnd = Math.min(
+        sourceEndBound,
+        Math.max(baseEnd, clampedBaseStart + minGap)
+      )
+
+      if (clampedBaseStart < windowStart) {
+        nextWindowStart = clampedBaseStart
       }
-      if (baseEnd > windowEnd) {
-        nextWindowEnd = Math.max(baseEnd, nextWindowStart + minGap)
+      if (clampedBaseEnd > windowEnd) {
+        nextWindowEnd = Math.max(clampedBaseEnd, nextWindowStart + minGap)
       }
 
-      if (nextWindowStart !== windowStart) {
-        setWindowStart(nextWindowStart)
+      const safeWindowStart = Math.max(
+        sourceStartBound,
+        Math.min(nextWindowStart, sourceEndBound - minGap)
+      )
+      const safeWindowEnd = Math.min(
+        sourceEndBound,
+        Math.max(nextWindowEnd, safeWindowStart + minGap)
+      )
+
+      if (safeWindowStart !== windowStart) {
+        setWindowStart(safeWindowStart)
       }
-      if (nextWindowEnd !== windowEnd) {
-        setWindowEnd(nextWindowEnd)
+      if (safeWindowEnd !== windowEnd) {
+        setWindowEnd(safeWindowEnd)
       }
 
-      setRangeStart(baseStart)
-      setRangeEnd(baseEnd)
+      setRangeStart(clampedBaseStart)
+      setRangeEnd(clampedBaseEnd)
       setActiveHandle(null)
       setEngagedHandle(null)
       setStartInteractionOrigin(null)
       setEndInteractionOrigin(null)
 
-      syncPreviewToRange(baseStart, baseEnd)
+      syncPreviewToRange(clampedBaseStart, clampedBaseEnd)
     },
-    [minGap, syncPreviewToRange, windowEnd, windowStart]
+    [
+      minGap,
+      sourceEndBound,
+      sourceStartBound,
+      syncPreviewToRange,
+      windowEnd,
+      windowStart
+    ]
   )
 
   const handleSnapToOriginal = useCallback(() => {
@@ -670,15 +728,23 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     if (expandAmount <= 0) {
       return
     }
-    setWindowStart((prev) => Math.max(0, prev - expandAmount))
-  }, [expandAmount])
+    setWindowStart((prev) => {
+      const next = Math.max(sourceStartBound, prev - expandAmount)
+      const limited = Math.min(next, windowEnd - minGap)
+      return limited === prev ? prev : limited
+    })
+  }, [expandAmount, minGap, sourceStartBound, windowEnd])
 
   const handleExpandRight = useCallback(() => {
     if (expandAmount <= 0) {
       return
     }
-    setWindowEnd((prev) => prev + expandAmount)
-  }, [expandAmount])
+    setWindowEnd((prev) => {
+      const next = Math.min(sourceEndBound, prev + expandAmount)
+      const limited = Math.max(next, windowStart + minGap)
+      return limited === prev ? prev : limited
+    })
+  }, [expandAmount, minGap, sourceEndBound, windowStart])
 
   const handleReset = useCallback(() => {
     if (!clipState) {
@@ -702,7 +768,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       setRangeStart(clipState.originalStartSeconds)
       setRangeEnd(Math.max(clipState.originalStartSeconds + minGap, clipState.originalEndSeconds))
       setWindowStart(baseStart)
-      setWindowEnd(baseEnd)
+      setWindowEnd(Math.min(baseEnd, sourceEndBound))
       setPreviewTarget({
         start: clipState.originalStartSeconds,
         end: Math.max(
@@ -715,7 +781,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     setSaveError(null)
     setSaveSuccess(null)
     setSaveSteps(createInitialSaveSteps())
-  }, [clipState, minGap])
+  }, [clipState, minGap, sourceEndBound])
 
   const minClipDurationSeconds = guardrails.minDuration
   const maxClipDurationSeconds = guardrails.maxDuration
