@@ -14,7 +14,6 @@ import { listAccountClips } from '../services/clipLibrary'
 import type { AccountSummary, Clip, SearchBridge } from '../types'
 import useSharedVolume from '../hooks/useSharedVolume'
 
-const ALL_ACCOUNTS_VALUE = 'all'
 const UNKNOWN_ACCOUNT_ID = '__unknown__'
 const UNKNOWN_ACCOUNT_LABEL = 'Unknown account'
 
@@ -101,16 +100,12 @@ const getProjectGroupKey = (clip: Clip): string => {
 type LibraryProps = {
   registerSearch: (bridge: SearchBridge | null) => void
   accounts: AccountSummary[]
-  selectedAccountId: string | null
-  onSelectAccount: (accountId: string | null) => void
   isLoadingAccounts: boolean
 }
 
 const Library: FC<LibraryProps> = ({
   registerSearch,
   accounts,
-  selectedAccountId,
-  onSelectAccount,
   isLoadingAccounts
 }) => {
   const [clips, setClips] = useState<Clip[]>([])
@@ -134,94 +129,22 @@ const Library: FC<LibraryProps> = ({
     () => accounts.filter((account) => isAccountAvailable(account)),
     [accounts]
   )
-  const hasMultipleAccounts = availableAccounts.length > 1
   const hasAccounts = availableAccounts.length > 0
-  const [accountFilter, setAccountFilter] = useState(() => {
-    if (!hasAccounts) {
-      return ''
-    }
-    if (selectedAccountId) {
-      return selectedAccountId
-    }
-    return hasMultipleAccounts ? ALL_ACCOUNTS_VALUE : availableAccounts[0]?.id ?? ''
-  })
+  const hasMultipleAccounts = availableAccounts.length > 1
+  const activeAccountIds = useMemo(
+    () => availableAccounts.map((account) => account.id),
+    [availableAccounts]
+  )
+  const singleAccountId = useMemo(
+    () => (availableAccounts.length === 1 ? availableAccounts[0].id : null),
+    [availableAccounts]
+  )
 
   useEffect(() => {
-    if (!hasAccounts) {
-      if (accountFilter !== '') {
-        setAccountFilter('')
-      }
-      return
+    if (!hasAccounts && clips.length > 0) {
+      setClips([])
     }
-
-    if (
-      accountFilter &&
-      accountFilter !== ALL_ACCOUNTS_VALUE &&
-      !availableAccounts.some((account) => account.id === accountFilter)
-    ) {
-      if (selectedAccountId && availableAccounts.some((account) => account.id === selectedAccountId)) {
-        setAccountFilter(selectedAccountId)
-        return
-      }
-      if (hasMultipleAccounts) {
-        setAccountFilter(ALL_ACCOUNTS_VALUE)
-        return
-      }
-      if (availableAccounts[0]) {
-        setAccountFilter(availableAccounts[0].id)
-        return
-      }
-      setAccountFilter('')
-      return
-    }
-
-    if (!selectedAccountId) {
-      if (!hasMultipleAccounts && availableAccounts[0] && accountFilter !== availableAccounts[0].id) {
-        setAccountFilter(availableAccounts[0].id)
-      } else if (hasMultipleAccounts && accountFilter === '') {
-        setAccountFilter(ALL_ACCOUNTS_VALUE)
-      }
-      return
-    }
-
-    if (accountFilter !== ALL_ACCOUNTS_VALUE && accountFilter !== selectedAccountId) {
-      setAccountFilter(selectedAccountId)
-    }
-  }, [
-    accountFilter,
-    availableAccounts,
-    hasAccounts,
-    hasMultipleAccounts,
-    selectedAccountId
-  ])
-
-  useEffect(() => {
-    if (!hasAccounts) {
-      if (clips.length > 0) {
-        setClips([])
-      }
-      return
-    }
-
-    if (selectedAccountId) {
-      const exists = availableAccounts.some((account) => account.id === selectedAccountId)
-      if (!exists) {
-        onSelectAccount(hasMultipleAccounts ? null : availableAccounts[0].id)
-      }
-      return
-    }
-
-    if (!hasMultipleAccounts && availableAccounts[0]) {
-      onSelectAccount(availableAccounts[0].id)
-    }
-  }, [
-    availableAccounts,
-    hasAccounts,
-    hasMultipleAccounts,
-    onSelectAccount,
-    selectedAccountId,
-    clips.length
-  ])
+  }, [clips.length, hasAccounts])
 
   const handleQueryChange = useCallback((value: string) => {
     queryRef.current = value
@@ -246,17 +169,17 @@ const Library: FC<LibraryProps> = ({
 
   const handleAdjustClipBoundaries = useCallback(
     (clip: Clip) => {
+      const fallbackAccountId = hasMultipleAccounts ? null : singleAccountId
       navigate(`/clip/${encodeURIComponent(clip.id)}/edit`, {
         state: {
           clip,
           jobId: null,
-          accountId:
-            clip.accountId ?? (accountFilter === ALL_ACCOUNTS_VALUE ? selectedAccountId : accountFilter),
+          accountId: clip.accountId ?? fallbackAccountId ?? null,
           context: 'library'
         }
       })
     },
-    [accountFilter, navigate, selectedAccountId]
+    [hasMultipleAccounts, navigate, singleAccountId]
   )
 
   const targetAccountIds = useMemo(() => {
@@ -264,30 +187,8 @@ const Library: FC<LibraryProps> = ({
       return []
     }
 
-    if (accountFilter === ALL_ACCOUNTS_VALUE) {
-      return availableAccounts.map((account) => account.id)
-    }
-
-    if (accountFilter && accountFilter !== ALL_ACCOUNTS_VALUE) {
-      return [accountFilter]
-    }
-
-    if (selectedAccountId) {
-      return [selectedAccountId]
-    }
-
-    if (hasMultipleAccounts) {
-      return availableAccounts.map((account) => account.id)
-    }
-
-    return availableAccounts[0] ? [availableAccounts[0].id] : []
-  }, [
-    accountFilter,
-    availableAccounts,
-    hasAccounts,
-    hasMultipleAccounts,
-    selectedAccountId
-  ])
+    return activeAccountIds
+  }, [activeAccountIds, hasAccounts])
 
   const loadClipsForAccounts = useCallback(
     async (accountIds: string[]) => {
@@ -420,7 +321,7 @@ const Library: FC<LibraryProps> = ({
         .sort((a, b) => (a.latestCreatedAt < b.latestCreatedAt ? 1 : -1))
     }
 
-    if (accountFilter === ALL_ACCOUNTS_VALUE) {
+    if (hasMultipleAccounts) {
       const accountNames = new Map<string, string>()
       for (const account of availableAccounts) {
         accountNames.set(account.id, account.displayName)
@@ -466,12 +367,12 @@ const Library: FC<LibraryProps> = ({
       mode: 'project',
       groups: buildProjectGroups(filteredClips)
     } satisfies GroupedClipsResult
-  }, [accountFilter, availableAccounts, filteredClips])
+  }, [availableAccounts, filteredClips, hasMultipleAccounts])
 
   useEffect(() => {
     setCollapsedAccountIds(new Set<string>())
     setCollapsedProjectIds(new Set<string>())
-  }, [accountFilter])
+  }, [hasMultipleAccounts])
 
   const toggleAccountCollapse = useCallback((id: string) => {
     setCollapsedAccountIds((previous) => {
@@ -582,21 +483,16 @@ const Library: FC<LibraryProps> = ({
     [navigate]
   )
 
-  const accountFilterLabel = useMemo(() => {
+  const accountScopeLabel = useMemo(() => {
     if (!hasAccounts) {
       return 'No connected accounts are available yet.'
     }
-    if (accountFilter === ALL_ACCOUNTS_VALUE) {
+    if (hasMultipleAccounts) {
       return 'Showing clips from all connected accounts.'
     }
-    if (accountFilter) {
-      const match = availableAccounts.find((account) => account.id === accountFilter)
-      if (match) {
-        return `Showing clips from ${match.displayName}.`
-      }
-    }
-    return 'Select an account from the top navigation to view its clips.'
-  }, [accountFilter, availableAccounts, hasAccounts])
+    const soleAccount = availableAccounts[0]
+    return soleAccount ? `Showing clips from ${soleAccount.displayName}.` : ''
+  }, [availableAccounts, hasAccounts, hasMultipleAccounts])
 
   return (
     <section className="flex w-full flex-1 flex-col gap-6 px-6 py-8 lg:px-8">
@@ -611,7 +507,7 @@ const Library: FC<LibraryProps> = ({
                 </p>
               </div>
               <div className="text-sm text-[var(--muted)] sm:text-right">
-                {isLoadingAccounts ? 'Loading accounts…' : accountFilterLabel}
+                {isLoadingAccounts ? 'Loading accounts…' : accountScopeLabel}
               </div>
             </div>
             {clipsError ? (
@@ -628,10 +524,10 @@ const Library: FC<LibraryProps> = ({
               <div className="flex items-center justify-between text-xs text-[var(--muted)]">
                 <span>
                   Showing {filteredClips.length} {filteredClips.length === 1 ? 'clip' : 'clips'}
-                  {accountFilter && accountFilter !== ALL_ACCOUNTS_VALUE
-                    ? ' for the selected account.'
-                    : hasMultipleAccounts
-                      ? ' from all accounts.'
+                  {hasMultipleAccounts
+                    ? ' from all accounts.'
+                    : availableAccounts[0]
+                      ? ` from ${availableAccounts[0].displayName}.`
                       : '.'}
                 </span>
                 {isLoadingClips ? <span className="text-[var(--fg)]">Loading clips…</span> : null}
@@ -698,7 +594,7 @@ const Library: FC<LibraryProps> = ({
               <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-10 text-center text-sm text-[var(--muted)]">
                 {isLoadingClips
                   ? 'Loading your clips…'
-                  : 'No clips match the current filters. Try selecting a different account or clearing your search.'}
+                  : 'No clips match the current filters. Try clearing your search.'}
               </div>
             )
           ) : null}

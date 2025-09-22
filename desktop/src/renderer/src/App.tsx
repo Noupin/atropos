@@ -501,8 +501,6 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
               <Library
                 registerSearch={registerSearch}
                 accounts={accounts}
-                selectedAccountId={homeState.selectedAccountId}
-                onSelectAccount={handleSelectAccount}
                 isLoadingAccounts={isLoadingAccounts}
               />
             }
