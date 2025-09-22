@@ -417,37 +417,35 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   }, [minGap, sourceEndBound, sourceStartBound])
 
   useEffect(() => {
+    setWindowStart((prevStart) => {
+      const upperBound = Math.min(rangeStart, sourceEndBound - minGap)
+      const clamped = Math.max(sourceStartBound, Math.min(prevStart, upperBound))
+      return clamped === prevStart ? prevStart : clamped
+    })
+  }, [minGap, rangeStart, sourceEndBound, sourceStartBound])
+
+  useEffect(() => {
     setWindowEnd((prevEnd) => {
-      const lowerBound = windowStart + minGap
+      const lowerBound = Math.max(windowStart + minGap, rangeEnd)
       const clamped = Math.min(sourceEndBound, Math.max(prevEnd, lowerBound))
       return clamped === prevEnd ? prevEnd : clamped
     })
-  }, [minGap, sourceEndBound, windowStart])
-
-  const clampWithinWindow = useCallback(
-    (value: number, kind: 'start' | 'end'): number => {
-      if (kind === 'start') {
-        return Math.min(Math.max(windowStart, value), rangeEnd - minGap)
-      }
-      return Math.max(Math.min(windowEnd, value), rangeStart + minGap)
-    },
-    [rangeEnd, rangeStart, windowEnd, windowStart]
-  )
+  }, [minGap, rangeEnd, sourceEndBound, windowStart])
 
   const handleStartChange = useCallback(
     (value: number) => {
-      const next = clampWithinWindow(value, 'start')
-      setRangeStart(Math.min(next, rangeEnd - minGap))
+      const next = Math.max(sourceStartBound, Math.min(value, rangeEnd - minGap))
+      setRangeStart(next)
     },
-    [clampWithinWindow, rangeEnd]
+    [minGap, rangeEnd, sourceStartBound]
   )
 
   const handleEndChange = useCallback(
     (value: number) => {
-      const next = clampWithinWindow(value, 'end')
-      setRangeEnd(Math.max(next, rangeStart + minGap))
+      const next = Math.min(sourceEndBound, Math.max(value, rangeStart + minGap))
+      setRangeEnd(next)
     },
-    [clampWithinWindow, rangeStart]
+    [minGap, rangeStart, sourceEndBound]
   )
 
   const syncPreviewToRange = useCallback(
@@ -629,9 +627,15 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       if (rect.width <= 0) {
         return
       }
-      const ratio = (event.clientX - rect.left) / rect.width
-      const clamped = Math.min(1, Math.max(0, ratio))
-      const value = windowStart + clamped * (windowEnd - windowStart)
+      const rawClientX = Number.isFinite(event.clientX)
+        ? event.clientX
+        : Number.isFinite(event.pageX)
+          ? event.pageX
+          : null
+      const clientX = rawClientX ?? rect.left
+      const ratio = (clientX - rect.left) / rect.width
+      const safeRatio = Number.isFinite(ratio) ? ratio : 0
+      const value = windowStart + safeRatio * (windowEnd - windowStart)
       if (kind === 'start') {
         handleStartChange(value)
       } else {

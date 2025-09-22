@@ -59,6 +59,27 @@ const renderClipEdit = (props?: Partial<ClipEditProps>, clipOverrides: Partial<C
   )
 }
 
+const dispatchPointerEvent = (
+  target: Element,
+  type: string,
+  init: PointerEventInit & { pointerId: number }
+) => {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientX: init.clientX ?? init.pageX ?? 0,
+    pageX: init.pageX ?? init.clientX ?? 0,
+    screenX: init.screenX ?? init.clientX ?? 0,
+    buttons: init.buttons ?? 0
+  })
+  Object.defineProperties(event, {
+    pointerId: { value: init.pointerId, configurable: true },
+    pointerType: { value: init.pointerType ?? 'mouse', configurable: true },
+    pressure: { value: init.pressure ?? 0, configurable: true }
+  })
+  target.dispatchEvent(event)
+}
+
 beforeAll(() => {
   Object.defineProperty(HTMLMediaElement.prototype, 'play', {
     configurable: true,
@@ -112,5 +133,83 @@ describe('ClipEdit source window expansion', () => {
     })
 
     expect(Number(endHandle.getAttribute('aria-valuemax'))).toBeCloseTo(120, 2)
+  })
+
+  it('allows dragging the clip end handle to reach the detected source boundary', async () => {
+    renderClipEdit()
+
+    const endHandle = await screen.findByRole('slider', { name: /adjust clip end/i })
+
+    const video = document.querySelector('video') as HTMLVideoElement | null
+    expect(video).not.toBeNull()
+    if (!video) {
+      throw new Error('Expected preview video element to be rendered')
+    }
+
+    Object.defineProperty(video, 'duration', { value: 120, configurable: true })
+    Object.defineProperty(video, 'currentTime', { value: 0, writable: true })
+
+    await act(async () => {
+      fireEvent.loadedMetadata(video)
+    })
+
+    const timeline = endHandle.parentElement as HTMLDivElement | null
+    expect(timeline).not.toBeNull()
+    if (!timeline) {
+      throw new Error('Expected timeline element to exist')
+    }
+
+    const rectSpy = vi
+      .spyOn(timeline, 'getBoundingClientRect')
+      .mockReturnValue({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: 100,
+        bottom: 0,
+        width: 100,
+        height: 10,
+        toJSON: () => ({})
+      } as DOMRect)
+
+    await act(async () => {
+      dispatchPointerEvent(endHandle, 'pointerdown', {
+        pointerId: 1,
+        pointerType: 'mouse',
+        clientX: 100,
+        buttons: 1
+      })
+    })
+
+    await act(async () => {
+      dispatchPointerEvent(endHandle, 'pointermove', {
+        pointerId: 1,
+        pointerType: 'mouse',
+        clientX: 2000,
+        buttons: 1
+      })
+    })
+
+    await waitFor(() => {
+      const handle = screen.getByRole('slider', { name: /adjust clip end/i })
+      expect(Number(handle.getAttribute('aria-valuenow'))).toBeCloseTo(120, 2)
+    })
+
+    await act(async () => {
+      dispatchPointerEvent(endHandle, 'pointerup', {
+        pointerId: 1,
+        pointerType: 'mouse',
+        clientX: 2000,
+        buttons: 0
+      })
+    })
+
+    rectSpy.mockRestore()
+
+    const updatedHandle = await screen.findByRole('slider', { name: /adjust clip end/i })
+
+    expect(Number(updatedHandle.getAttribute('aria-valuenow'))).toBeCloseTo(120, 2)
+    expect(Number(updatedHandle.getAttribute('aria-valuemax'))).toBeCloseTo(120, 2)
   })
 })
