@@ -41,6 +41,8 @@
   --clip-track: #e9e7e2;
   --clip-original: #0b6bc7;
   --clip-original-marker: #084d8f;
+  --clip-original-badge-bg: rgba(24, 24, 24, 0.75);
+  --clip-original-badge-text: var(--fg-inverse);
   --clip-rendered: #0c7a45;
   --clip-rendered-marker: #07552f;
   --clip-current: #4c4a46;
@@ -90,6 +92,8 @@
   --clip-track: #2c2a28;
   --clip-original: #1f8fff;
   --clip-original-marker: #1670cc;
+  --clip-original-badge-bg: color-mix(in srgb, rgba(22, 21, 20, 0.65) 75%, transparent);
+  --clip-original-badge-text: #ffffff;
   --clip-rendered: #2dd17f;
   --clip-rendered-marker: #1ca463;
   --clip-current: #f0ede5;

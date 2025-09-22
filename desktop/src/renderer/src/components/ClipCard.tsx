@@ -51,7 +51,7 @@ const ClipCard: FC<ClipCardProps> = ({ clip, onClick, isActive = false }) => {
           className={`absolute left-2 top-2 rounded-md px-2 py-0.5 text-xs font-semibold ${
             clip.hasAdjustments
               ? 'bg-[color:var(--success-soft)] text-[color:var(--success-strong)] shadow-[0_6px_18px_rgba(15,23,42,0.4)]'
-              : 'bg-black/75 text-white shadow-[0_4px_12px_rgba(15,23,42,0.35)]'
+              : 'bg-[color:var(--clip-original-badge-bg)] text-[color:var(--clip-original-badge-text)] shadow-[0_4px_12px_rgba(15,23,42,0.35)]'
           }`}
         >
           {clip.hasAdjustments ? 'Adjusted' : 'Original'}
