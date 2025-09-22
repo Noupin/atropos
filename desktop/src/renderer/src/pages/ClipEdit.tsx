@@ -912,7 +912,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
       <div className="flex flex-col gap-6 lg:flex-row">
-        <div className="flex-1 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
+        <div className="flex-1 rounded-2xl border border-white/10 bg-[color:var(--card-strong)] p-4">
           <div className="flex h-full flex-col gap-4">
             <div
               className="relative flex w-full items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black"
@@ -959,7 +959,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                     onClick={() => supportsSourcePreview && setPreviewMode('adjusted')}
                     className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                       previewMode === 'adjusted'
-                        ? 'bg-[color:color-mix(in_srgb,var(--card)_82%,var(--panel))] text-[var(--fg)]'
+                        ? 'bg-[color:var(--card-strong)] text-[var(--fg)]'
                         : supportsSourcePreview
                           ? 'text-[var(--fg)] hover:bg-white/10'
                           : 'cursor-not-allowed text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]'
@@ -975,7 +975,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                     onClick={() => supportsSourcePreview && setPreviewMode('original')}
                     className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                       previewMode === 'original'
-                        ? 'bg-[color:color-mix(in_srgb,var(--card)_82%,var(--panel))] text-[var(--fg)]'
+                        ? 'bg-[color:var(--card-strong)] text-[var(--fg)]'
                         : supportsSourcePreview
                           ? 'text-[var(--fg)] hover:bg-white/10'
                           : 'cursor-not-allowed text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]'
@@ -991,7 +991,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                     onClick={() => setPreviewMode('rendered')}
                     className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                       previewMode === 'rendered'
-                        ? 'bg-[color:color-mix(in_srgb,var(--card)_82%,var(--panel))] text-[var(--fg)]'
+                        ? 'bg-[color:var(--card-strong)] text-[var(--fg)]'
                         : 'text-[var(--fg)] hover:bg-white/10'
                     }`}
                     aria-pressed={previewMode === 'rendered'}
