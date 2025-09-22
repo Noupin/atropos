@@ -25,6 +25,7 @@ export interface Clip {
   originalStartSeconds: number
   originalEndSeconds: number
   hasAdjustments: boolean
+  sourceDurationSec: number | null
 }
 
 export type SupportedPlatform = 'tiktok' | 'youtube' | 'instagram'

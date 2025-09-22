@@ -95,6 +95,10 @@ export const normaliseJobClip = (payload: UnknownRecord): Clip | null => {
     typeof payload.channel === 'string' && payload.channel.length > 0 ? payload.channel : 'Unknown channel'
   const createdAt = typeof payload.created_at === 'string' ? payload.created_at : null
   const durationSeconds = typeof payload.duration_seconds === 'number' ? payload.duration_seconds : null
+  const sourceDurationSeconds =
+    typeof payload.source_duration_seconds === 'number' && Number.isFinite(payload.source_duration_seconds)
+      ? Math.max(0, payload.source_duration_seconds)
+      : null
   const description = typeof payload.description === 'string' ? payload.description : null
   const playbackUrl = typeof payload.playback_url === 'string' ? payload.playback_url : null
   const previewUrlRaw = payload.preview_url
@@ -164,7 +168,8 @@ export const normaliseJobClip = (payload: UnknownRecord): Clip | null => {
     endSeconds,
     originalStartSeconds,
     originalEndSeconds,
-    hasAdjustments
+    hasAdjustments,
+    sourceDurationSec: sourceDurationSeconds
   }
 
   return clip

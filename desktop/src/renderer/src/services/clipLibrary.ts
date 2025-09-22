@@ -115,6 +115,11 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
       ? Math.max(originalStartSeconds, originalEndSecondsRaw)
       : endSeconds
   const hasAdjustments = hasAdjustmentsRaw === true
+  const sourceDurationRaw = payload.source_duration_seconds
+  const sourceDurationSec =
+    typeof sourceDurationRaw === 'number' && Number.isFinite(sourceDurationRaw)
+      ? Math.max(0, sourceDurationRaw)
+      : null
 
   const clip: Clip = {
     id,
@@ -147,7 +152,8 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
     endSeconds,
     originalStartSeconds,
     originalEndSeconds,
-    hasAdjustments
+    hasAdjustments,
+    sourceDurationSec
   }
 
   return clip

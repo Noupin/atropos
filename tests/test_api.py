@@ -222,10 +222,13 @@ def test_clip_endpoints_expose_rendered_clips(
     assert clip_manifest["account"] == "account-1"
     assert clip_manifest["playback_url"].endswith("/clips/clip-1/video")
     assert clip_manifest["preview_url"].endswith("/clips/clip-1/preview")
+    assert "source_duration_seconds" in clip_manifest
+    assert clip_manifest["source_duration_seconds"] is None
 
     detail_response = client.get(f"/api/jobs/{job_id}/clips/clip-1")
     assert detail_response.status_code == 200
     assert detail_response.json()["id"] == "clip-1"
+    assert "source_duration_seconds" in detail_response.json()
 
     video_response = client.get(f"/api/jobs/{job_id}/clips/clip-1/video")
     assert video_response.status_code == 200
@@ -332,6 +335,7 @@ def test_adjust_job_clip_rebuilds_assets(monkeypatch, tmp_path: Path) -> None:
     assert body["original_end_seconds"] == pytest.approx(15.0)
     assert body["has_adjustments"] is True
     assert body["preview_url"].endswith(f"/api/jobs/{job_id}/clips/{clip_id}/preview")
+    assert "source_duration_seconds" in body
 
     preview_path = urlparse(body["preview_url"]).path
     preview_response = client.get(preview_path, params={"start": 7.0, "end": 18.0})
@@ -345,6 +349,7 @@ def test_adjust_job_clip_rebuilds_assets(monkeypatch, tmp_path: Path) -> None:
     assert updated_clip.end_seconds == pytest.approx(18.0)
     assert updated_clip.original_start_seconds == pytest.approx(5.0)
     assert updated_clip.original_end_seconds == pytest.approx(15.0)
+    assert updated_clip.source_duration_seconds is None
 
     metadata_path = vertical_path.with_suffix(".adjust.json")
     assert metadata_path.exists()

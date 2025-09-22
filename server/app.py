@@ -46,6 +46,7 @@ from helpers.description import maybe_append_website_link
 from common.caption_utils import prepare_hashtags
 from helpers.hashtags import generate_hashtag_strings
 from helpers.formatting import youtube_timestamp_url
+from helpers.media import probe_media_duration
 from auth.accounts import (
     AccountCreateRequest,
     AccountResponse,
@@ -398,6 +399,7 @@ class ClipArtifact:
     end_seconds: float = 0.0
     original_start_seconds: float = 0.0
     original_end_seconds: float = 0.0
+    source_duration_seconds: float | None = None
 
 
 class ClipManifest(BaseModel):
@@ -424,6 +426,7 @@ class ClipManifest(BaseModel):
     original_start_seconds: float = Field(..., ge=0)
     original_end_seconds: float = Field(..., ge=0)
     has_adjustments: bool = False
+    source_duration_seconds: float | None = Field(default=None, ge=0)
 
 
 class LibraryClipManifest(ClipManifest):
@@ -458,6 +461,7 @@ def _clip_to_payload(clip: ClipArtifact, request: Request, job_id: str) -> Dict[
         "source_url": clip.source_url,
         "source_title": clip.source_title,
         "source_published_at": clip.source_published_at,
+        "source_duration_seconds": clip.source_duration_seconds,
         "views": clip.views,
         "rating": clip.rating,
         "quote": clip.quote,
@@ -570,6 +574,18 @@ class JobState:
         quote_value = _ensure_str(data.get("quote"))
         reason_value = _ensure_str(data.get("reason"))
 
+        source_duration: float | None = None
+        try:
+            project_dir = video_path.parent.parent
+        except ValueError:
+            project_dir = None
+        if project_dir and project_dir.exists():
+            source_video = project_dir / f"{project_dir.name}.mp4"
+            if source_video.exists():
+                duration_value = probe_media_duration(source_video)
+                if duration_value is not None and math.isfinite(duration_value):
+                    source_duration = max(0.0, duration_value)
+
         artifact = ClipArtifact(
             clip_id=clip_id,
             title=_ensure_str(data.get("title")) or clip_id,
@@ -590,6 +606,7 @@ class JobState:
             end_seconds=max(0.0, end_value),
             original_start_seconds=max(0.0, original_start_value),
             original_end_seconds=max(0.0, original_end_value),
+            source_duration_seconds=source_duration,
         )
 
         self.project_dir = base

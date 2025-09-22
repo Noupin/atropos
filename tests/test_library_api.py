@@ -86,6 +86,7 @@ def test_list_account_clips(monkeypatch, tmp_path):
     assert clip["original_start_seconds"] == 0.0
     assert clip["original_end_seconds"] == 12.5
     assert clip["has_adjustments"] is False
+    assert "source_duration_seconds" in clip
     project_relative = clip_path.parent.parent.relative_to(out_root)
     expected_video_id = base64.urlsafe_b64encode(project_relative.as_posix().encode("utf-8")).decode("ascii").rstrip("=")
     assert clip["video_id"] == expected_video_id
@@ -110,6 +111,7 @@ def test_get_account_clip(monkeypatch, tmp_path):
     assert payload["title"] == "Amazing Project"
     assert payload["playback_url"].endswith(f"/api/accounts/{account_id}/clips/{clip_id}/video")
     assert payload["preview_url"].endswith(f"/api/accounts/{account_id}/clips/{clip_id}/preview")
+    assert "source_duration_seconds" in payload
 
     missing = client.get(f"/api/accounts/{account_id}/clips/unknown")
     assert missing.status_code == 404

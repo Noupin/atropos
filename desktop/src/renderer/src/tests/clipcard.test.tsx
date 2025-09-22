@@ -24,7 +24,8 @@ const mockClip: Clip = {
   endSeconds: 80,
   originalStartSeconds: 5,
   originalEndSeconds: 80,
-  hasAdjustments: false
+  hasAdjustments: false,
+  sourceDurationSec: 80
 }
 
 describe('ClipCard', () => {

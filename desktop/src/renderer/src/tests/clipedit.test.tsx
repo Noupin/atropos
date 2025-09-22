@@ -38,7 +38,8 @@ const BASE_CLIP: Clip = {
   endSeconds: 15,
   originalStartSeconds: 5,
   originalEndSeconds: 15,
-  hasAdjustments: false
+  hasAdjustments: false,
+  sourceDurationSec: null
 }
 
 const renderClipEdit = (props?: Partial<ClipEditProps>, clipOverrides: Partial<Clip> = {}) => {
@@ -133,6 +134,30 @@ describe('ClipEdit source window expansion', () => {
     })
 
     expect(Number(endHandle.getAttribute('aria-valuemax'))).toBeCloseTo(120, 2)
+  })
+
+  it('honours the declared source duration when expanding without waiting for metadata', async () => {
+    renderClipEdit(undefined, { sourceDurationSec: 200 })
+
+    const endHandle = await screen.findByRole('slider', { name: /adjust clip end/i })
+    expect(Number(endHandle.getAttribute('aria-valuemax'))).toBeCloseTo(200, 2)
+
+    const expandInput = screen.getByLabelText(/expand window/i) as HTMLInputElement
+    fireEvent.change(expandInput, { target: { value: '300' } })
+
+    const expandRightButton = screen.getByRole('button', { name: /expand right/i })
+
+    await act(async () => {
+      fireEvent.click(expandRightButton)
+    })
+
+    expect(Number(endHandle.getAttribute('aria-valuemax'))).toBeCloseTo(200, 2)
+
+    await act(async () => {
+      fireEvent.click(expandRightButton)
+    })
+
+    expect(Number(endHandle.getAttribute('aria-valuemax'))).toBeCloseTo(200, 2)
   })
 
   it('allows dragging the clip end handle to reach the detected source boundary', async () => {

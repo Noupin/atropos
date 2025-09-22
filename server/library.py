@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from fastapi import HTTPException, status
 
 from schedule_upload import get_out_root
+from helpers.media import probe_media_duration
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_ACCOUNT_PLACEHOLDER = "__default__"
@@ -92,6 +93,7 @@ class LibraryClip:
     original_start_seconds: float
     original_end_seconds: float
     has_adjustments: bool
+    source_duration_seconds: Optional[float]
 
     def to_payload(self, request) -> Dict[str, object]:  # type: ignore[override]
         from fastapi import Request  # local import to avoid circular for typing
@@ -137,6 +139,7 @@ class LibraryClip:
             "original_start_seconds": self.original_start_seconds,
             "original_end_seconds": self.original_end_seconds,
             "has_adjustments": self.has_adjustments,
+            "source_duration_seconds": self.source_duration_seconds,
         }
 
 
@@ -487,6 +490,12 @@ def _build_clip(
     except OSError:
         return None
     duration = max(0.0, end - start) if start is not None and end is not None else 0.0
+    source_duration_value: Optional[float] = None
+    source_video_path = project_dir / f"{project_dir.name}.mp4"
+    if source_video_path.exists():
+        probed_duration = probe_media_duration(source_video_path)
+        if probed_duration is not None and math.isfinite(probed_duration):
+            source_duration_value = max(0.0, probed_duration)
     start_value = float(start) if start is not None else 0.0
     end_value = float(end) if end is not None else max(0.0, duration)
     if original_start is not None:
@@ -562,6 +571,7 @@ def _build_clip(
         original_start_seconds=original_start_value,
         original_end_seconds=original_end_value,
         has_adjustments=has_adjustments,
+        source_duration_seconds=source_duration_value,
     )
 
 

@@ -94,7 +94,12 @@ const formatTooltipLabel = (offset: string, change: string | null): string => {
 
 const computeClipSourceEndBound = (clip: Clip, minGap: number): number => {
   const derivedFromDuration = clip.originalStartSeconds + Math.max(clip.durationSec, minGap)
-  return Math.max(minGap, clip.originalEndSeconds, clip.endSeconds, derivedFromDuration)
+  const baseline = Math.max(minGap, clip.originalEndSeconds, clip.endSeconds, derivedFromDuration)
+  const sourceDuration = clip.sourceDurationSec
+  if (sourceDuration == null || !Number.isFinite(sourceDuration)) {
+    return baseline
+  }
+  return Math.max(baseline, sourceDuration)
 }
 
 type SaveStepId = 'cut' | 'subtitles' | 'render'
@@ -182,7 +187,10 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       sourceClip.endSeconds,
       sourceClip.originalEndSeconds,
       sourceClip.startSeconds + minGap,
-      sourceClip.originalStartSeconds + minGap
+      sourceClip.originalStartSeconds + minGap,
+      sourceClip.sourceDurationSec != null && Number.isFinite(sourceClip.sourceDurationSec)
+        ? sourceClip.sourceDurationSec
+        : minGap
     )
   })
   const [expandAmount, setExpandAmount] = useState(DEFAULT_EXPAND_SECONDS)
@@ -252,7 +260,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
 
   const originalStart = clipState?.originalStartSeconds ?? 0
   const originalEnd =
-    clipState?.originalEndSeconds ?? originalStart + (clipState?.durationSec ?? 10)
+    clipState?.sourceDurationSec != null && Number.isFinite(clipState.sourceDurationSec)
+      ? clipState.sourceDurationSec
+      : clipState?.originalEndSeconds ?? originalStart + (clipState?.durationSec ?? 10)
   const supportsSourcePreview = clipState ? clipState.previewUrl !== clipState.playbackUrl : false
 
   const sourceStartBound = 0
@@ -299,17 +309,23 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       setRangeStart(updated.startSeconds)
       setRangeEnd(updated.endSeconds)
       setWindowStart(Math.max(0, Math.min(updated.startSeconds, updated.originalStartSeconds)))
+      const measuredSourceEnd =
+        updated.sourceDurationSec != null && Number.isFinite(updated.sourceDurationSec)
+          ? updated.sourceDurationSec
+          : null
       const updatedSourceEnd = Math.max(
         minGap,
         updated.originalEndSeconds,
         updated.endSeconds,
-        updated.originalStartSeconds + Math.max(updated.durationSec, minGap)
+        updated.originalStartSeconds + Math.max(updated.durationSec, minGap),
+        measuredSourceEnd ?? minGap
       )
       const desiredWindowEnd = Math.max(
         updated.endSeconds,
         updated.originalEndSeconds,
         updated.startSeconds + minGap,
-        updated.originalStartSeconds + minGap
+        updated.originalStartSeconds + minGap,
+        measuredSourceEnd ?? minGap
       )
       setWindowEnd(Math.min(updatedSourceEnd, desiredWindowEnd))
       setPreviewTarget({ start: updated.startSeconds, end: updated.endSeconds })
@@ -396,7 +412,10 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       clipState.endSeconds,
       clipState.originalEndSeconds,
       clipState.startSeconds + minGap,
-      clipState.originalStartSeconds + minGap
+      clipState.originalStartSeconds + minGap,
+      clipState.sourceDurationSec != null && Number.isFinite(clipState.sourceDurationSec)
+        ? clipState.sourceDurationSec
+        : minGap
     )
     setWindowEnd((prevEnd) => {
       if (lastClipIdRef.current !== clipState.id) {
@@ -960,7 +979,11 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       return { start: 0, end: minGap }
     }
     const originalStart = Math.max(0, clipState.originalStartSeconds)
-    const rawEnd = clipState.originalEndSeconds
+    const rawEndCandidate =
+      clipState.sourceDurationSec != null && Number.isFinite(clipState.sourceDurationSec)
+        ? Math.max(clipState.originalEndSeconds, clipState.sourceDurationSec)
+        : clipState.originalEndSeconds
+    const rawEnd = Number.isFinite(rawEndCandidate) ? rawEndCandidate : clipState.originalEndSeconds
     const safeEnd =
       rawEnd > originalStart + MIN_PREVIEW_DURATION ? rawEnd : originalStart + MIN_PREVIEW_DURATION
     return { start: originalStart, end: safeEnd }
@@ -1071,7 +1094,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         previewMode,
         duration,
         baseline,
-        candidate
+        candidate,
+        declaredSourceDuration: clipState.sourceDurationSec
       })
       setSourceDuration((prev) => {
         if (prev == null || candidate > prev + SOURCE_DURATION_EPSILON) {
@@ -1748,7 +1772,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       <div className="grid gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm text-[var(--muted)] sm:grid-cols-[auto_1fr]">
         <span className="font-medium text-[var(--fg)]">Original start</span>
         <span>{formatDuration(originalStart)}</span>
-        <span className="font-medium text-[var(--fg)]">Original end</span>
+        <span className="font-medium text-[var(--fg)]">Source end</span>
         <span>{formatDuration(originalEnd)}</span>
         <span className="font-medium text-[var(--fg)]">Current start</span>
         <span className="flex flex-col gap-0.5">
