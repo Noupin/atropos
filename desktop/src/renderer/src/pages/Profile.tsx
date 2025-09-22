@@ -530,20 +530,20 @@ const AccountCard: FC<AccountCardProps> = ({
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="status-pill status-pill--neutral text-xs">
-              {account.platforms.length} platform{account.platforms.length === 1 ? '' : 's'}
-            </span>
-            {account.effectiveTone || account.tone ? (
-              <span className="status-pill status-pill--neutral text-xs" title={toneBadgeTitle}>
-                Tone: {effectiveToneLabel}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="status-pill status-pill--neutral text-xs">
+                {account.platforms.length} platform{account.platforms.length === 1 ? '' : 's'}
               </span>
-            ) : null}
-            {!isAccountActive ? (
-              <span className="status-pill status-pill--warning text-xs font-semibold">
-                Disabled
-              </span>
-            ) : null}
+              {account.effectiveTone || account.tone ? (
+                <span className="status-pill status-pill--neutral text-xs" title={toneBadgeTitle}>
+                  Tone: {effectiveToneLabel}
+                </span>
+              ) : null}
+              {!isAccountActive ? (
+                <span className="status-pill status-pill--warning text-xs font-semibold">
+                  Disabled
+                </span>
+              ) : null}
             </div>
             <div>
               <h3 className="text-xl font-semibold text-[var(--fg)]">{account.displayName}</h3>
@@ -567,6 +567,41 @@ const AccountCard: FC<AccountCardProps> = ({
             {isCollapsed ? 'Expand' : 'Collapse'}
           </button>
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-black/20 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-sm font-semibold text-[var(--fg)]">Account tone</h4>
+            <span className="text-xs text-[var(--muted)]">
+              {overrideToneLabel
+                ? `Override: ${overrideToneLabel}`
+                : `Using default: ${effectiveToneLabel}`}
+            </span>
+          </div>
+          <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
+            Tone
+            <MarbleSelect
+              id={`tone-${account.id}`}
+              name="tone"
+              value={toneSelectValue}
+              options={toneSelectOptions}
+              onChange={handleToneChange}
+              placeholder="Select a tone"
+              disabled={isUpdatingTone}
+            />
+          </label>
+          <p className="text-xs text-[var(--muted)]">
+            Selecting a tone here overrides the global clip tone for this account. Choose 'Use
+            default tone' to inherit the Settings value.
+          </p>
+        </div>
+        {success ? (
+          <p className="text-xs font-medium text-[color:var(--success-strong)]">{success}</p>
+        ) : null}
+        {error ? (
+          <p className="text-xs font-medium text-[color:var(--error-strong)]">{error}</p>
+        ) : null}
       </div>
 
       {isCollapsed ? (
@@ -628,33 +663,6 @@ const AccountCard: FC<AccountCardProps> = ({
             >
               {isDeletingAccount ? 'Removing…' : 'Remove account'}
             </button>
-          </div>
-
-          <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-black/20 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h4 className="text-sm font-semibold text-[var(--fg)]">Account tone</h4>
-              <span className="text-xs text-[var(--muted)]">
-                {overrideToneLabel
-                  ? `Override: ${overrideToneLabel}`
-                  : `Using default: ${effectiveToneLabel}`}
-              </span>
-            </div>
-            <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
-              Tone
-              <MarbleSelect
-                id={`tone-${account.id}`}
-                name="tone"
-                value={toneSelectValue}
-                options={toneSelectOptions}
-                onChange={handleToneChange}
-                placeholder="Select a tone"
-                disabled={isUpdatingTone}
-              />
-            </label>
-            <p className="text-xs text-[var(--muted)]">
-              Selecting a tone here overrides the global clip tone for this account. Choose 'Use
-              default tone' to inherit the Settings value.
-            </p>
           </div>
 
           {!isAccountActive ? (
@@ -772,12 +780,6 @@ const AccountCard: FC<AccountCardProps> = ({
             <p className="text-xs text-[color:var(--info-strong)]">
               Enable this account to connect new platforms.
             </p>
-          ) : null}
-          {error ? (
-            <p className="text-xs font-medium text-[color:var(--error-strong)]">{error}</p>
-          ) : null}
-          {success ? (
-            <p className="text-xs font-medium text-[color:var(--success-strong)]">{success}</p>
           ) : null}
           <div className="flex items-center justify-end gap-2">
             <button

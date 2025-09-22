@@ -247,8 +247,6 @@ describe('Profile page', () => {
     const brandCard = screen.getAllByTestId('account-card-account-2')[0]
     const scope = within(brandCard)
 
-    fireEvent.click(scope.getByRole('button', { name: /Expand/i }))
-
     fireEvent.change(scope.getByLabelText(/^Tone$/i), { target: { value: 'science' } })
 
     await waitFor(() => expect(updateAccountMock).toHaveBeenCalledTimes(1))
