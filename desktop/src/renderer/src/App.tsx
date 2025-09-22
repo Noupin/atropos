@@ -36,7 +36,6 @@ type PlatformPayload = {
 }
 
 const THEME_STORAGE_KEY = 'atropos:theme'
-const ALL_ACCOUNTS_OPTION = '__all__'
 
 const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
@@ -371,29 +370,15 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       return []
     }
 
-    const baseOptions = availableAccounts.map((account) => ({
+    return availableAccounts.map((account) => ({
       value: account.id,
       label: account.displayName
     }))
-
-    if (isLibraryRoute && availableAccounts.length > 1) {
-      return [{ value: ALL_ACCOUNTS_OPTION, label: 'All accounts' }, ...baseOptions]
-    }
-
-    return baseOptions
-  }, [availableAccounts, isLibraryRoute])
+  }, [availableAccounts])
 
   const accountSelectValue = useMemo(() => {
     if (accountSelectOptions.length === 0) {
       return null
-    }
-
-    if (
-      isLibraryRoute &&
-      availableAccounts.length > 1 &&
-      (homeState.selectedAccountId === null || homeState.selectedAccountId === undefined)
-    ) {
-      return ALL_ACCOUNTS_OPTION
     }
 
     const exists = availableAccounts.some((account) => account.id === homeState.selectedAccountId)
@@ -401,16 +386,11 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   }, [
     accountSelectOptions.length,
     availableAccounts,
-    homeState.selectedAccountId,
-    isLibraryRoute
+    homeState.selectedAccountId
   ])
 
   const handleAccountSelectFromHeader = useCallback(
     (value: string) => {
-      if (value === ALL_ACCOUNTS_OPTION) {
-        handleSelectAccount(null)
-        return
-      }
       handleSelectAccount(value)
     },
     [handleSelectAccount]
