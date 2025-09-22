@@ -9,7 +9,7 @@ import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ClipCard from '../components/ClipCard'
 import ClipDescription from '../components/ClipDescription'
-import { formatDuration, formatViews, timeAgo } from '../lib/format'
+import { formatDuration, formatViews } from '../lib/format'
 import { listAccountClips } from '../services/clipLibrary'
 import type { AccountSummary, Clip, SearchBridge } from '../types'
 import useSharedVolume from '../hooks/useSharedVolume'
@@ -476,13 +476,6 @@ const Library: FC<LibraryProps> = ({
     setSharedVolume({ volume: element.volume, muted: element.muted })
   }, [setSharedVolume])
 
-  const handleClipOpen = useCallback(
-    (clip: Clip) => {
-      navigate(`/clip/${clip.id}`, { state: { clip } })
-    },
-    [navigate]
-  )
-
   const accountScopeLabel = useMemo(() => {
     if (!hasAccounts) {
       return 'No connected accounts are available yet.'
@@ -614,123 +607,43 @@ const Library: FC<LibraryProps> = ({
             </div>
             {selectedClip ? (
               <div className="flex flex-col gap-4">
-                <div className="flex w-full justify-center overflow-hidden rounded-xl bg-black/80 p-2">
-                  <video
-                    key={selectedClip.id}
-                    src={selectedClip.playbackUrl}
-                    poster={selectedClip.thumbnail ?? undefined}
-                    controls
-                    playsInline
-                    preload="metadata"
-                    ref={previewVideoRef}
-                    onVolumeChange={handlePreviewVolumeChange}
-                    className="h-full w-full max-w-sm object-contain"
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleAdjustClipBoundaries(selectedClip)}
+                    className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
                   >
-                    Your browser does not support the video tag.
-                  </video>
+                    Edit clip
+                  </button>
+                  <a
+                    href={selectedClip.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="marble-button marble-button--outline inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold"
+                  >
+                    Open video source
+                    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
+                      <path
+                        fill="currentColor"
+                        d="M13.5 2h-5a.75.75 0 0 0 0 1.5H11l-6.72 6.72a.75.75 0 0 0 1.06 1.06L12 4.56v2.5a.75.75 0 0 0 1.5 0v-5A.75.75 0 0 0 13.5 2"
+                      />
+                    </svg>
+                  </a>
                 </div>
-                <div className="space-y-4 text-sm text-[var(--muted)]">
-                  <div className="space-y-3">
-                    {selectedClip.quote ? (
-                      <p className="text-lg font-semibold text-[var(--fg)] leading-tight">“{selectedClip.quote}”</p>
-                    ) : (
-                      <p className="text-lg font-semibold text-[var(--fg)] leading-tight">{selectedClip.title}</p>
-                    )}
-                      {selectedClip.reason ? (
-                        <div className="space-y-1">
-                          <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
-                            Reason
-                          </span>
-                          <p className="rounded-lg border border-white/10 bg-[color:var(--card-strong)] p-3 text-sm leading-relaxed text-[color:color-mix(in_srgb,var(--fg)_82%,transparent)]">
-                            {selectedClip.reason}
-                          </p>
-                        </div>
-                      ) : null}
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                      <span className="font-semibold text-[var(--fg)]">{selectedClip.channel}</span>
-                      {selectedClip.views !== null ? <span>{formatViews(selectedClip.views)} views</span> : null}
-                      <span>Duration {formatDuration(selectedClip.durationSec)}</span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3 text-xs">
-                      <span>Generated {timeAgo(selectedClip.createdAt)}</span>
-                      {selectedClip.sourcePublishedAt ? (
-                        <span>Source uploaded {timeAgo(selectedClip.sourcePublishedAt)}</span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <dl className="grid gap-3 rounded-xl border border-white/10 bg-[color:var(--card-strong)] p-4 text-xs text-[var(--muted)] sm:grid-cols-[auto_1fr]">
-                    {selectedClip.rating !== null && selectedClip.rating !== undefined ? (
-                      <>
-                        <dt className="font-medium text-[var(--fg)]">Score</dt>
-                        <dd className="text-[var(--fg)]">
-                          {selectedClip.rating.toFixed(1).replace(/\.0$/, '')}
-                        </dd>
-                      </>
-                    ) : null}
-                    <dt className="font-medium text-[var(--fg)]">Clip created</dt>
-                    <dd>{new Date(selectedClip.createdAt).toLocaleString()}</dd>
-                    <dt className="font-medium text-[var(--fg)]">Source uploaded</dt>
-                    <dd>{selectedClip.sourcePublishedAt ? new Date(selectedClip.sourcePublishedAt).toLocaleString() : 'Unknown'}</dd>
-                    {selectedClip.timestampSeconds !== null && selectedClip.timestampSeconds !== undefined ? (
-                      <>
-                        <dt className="font-medium text-[var(--fg)]">Starts at</dt>
-                        <dd>{formatDuration(selectedClip.timestampSeconds)}</dd>
-                      </>
-                    ) : null}
-                  </dl>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleClipOpen(selectedClip)}
-                      className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
-                    >
-                      Open clip details
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleAdjustClipBoundaries(selectedClip)}
-                      className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
-                    >
-                      Edit adjust clip
-                    </button>
-                    <a
-                      href={selectedClip.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="marble-button marble-button--outline inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold"
-                    >
-                      View full video
-                      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" aria-hidden="true">
-                        <path
-                          fill="currentColor"
-                          d="M13.5 2h-5a.75.75 0 0 0 0 1.5H11l-6.72 6.72a.75.75 0 0 0 1.06 1.06L12 4.56v2.5a.75.75 0 0 0 1.5 0v-5A.75.75 0 0 0 13.5 2"
-                        />
-                      </svg>
-                    </a>
-                    {selectedClip.timestampUrl ? (
-                      <a
-                        href={selectedClip.timestampUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label={`Jump to ${
-                          selectedClip.timestampSeconds !== null && selectedClip.timestampSeconds !== undefined
-                            ? formatDuration(selectedClip.timestampSeconds)
-                            : 'timestamp'
-                        }`}
-                        className="marble-button marble-button--outline inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold"
-                      >
-                        <span>Jump to</span>
-                        <span
-                          aria-hidden="true"
-                          className="status-pill status-pill--neutral text-[0.68rem]"
-                        >
-                          {selectedClip.timestampSeconds !== null && selectedClip.timestampSeconds !== undefined
-                            ? formatDuration(selectedClip.timestampSeconds)
-                            : 'timestamp'}
-                        </span>
-                      </a>
-                    ) : null}
-                  </div>
+                <video
+                  key={selectedClip.id}
+                  src={selectedClip.playbackUrl}
+                  poster={selectedClip.thumbnail ?? undefined}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  ref={previewVideoRef}
+                  onVolumeChange={handlePreviewVolumeChange}
+                  className="w-full rounded-xl bg-black object-contain"
+                >
+                  Your browser does not support the video tag.
+                </video>
+                {selectedClip.description ? (
                   <div className="space-y-2">
                     <h4 className="text-sm font-semibold text-[var(--fg)]">Description</h4>
                     <ClipDescription
@@ -738,6 +651,62 @@ const Library: FC<LibraryProps> = ({
                       className="text-sm leading-relaxed text-[var(--muted)]"
                     />
                   </div>
+                ) : null}
+                <dl className="grid gap-3 rounded-xl border border-white/10 bg-[color:var(--card-strong)] p-4 text-xs text-[var(--muted)] sm:grid-cols-[auto_1fr]">
+                  {selectedClip.rating !== null && selectedClip.rating !== undefined ? (
+                    <>
+                      <dt className="font-medium text-[var(--fg)]">Score</dt>
+                      <dd className="text-[var(--fg)]">
+                        {selectedClip.rating.toFixed(1).replace(/\.0$/, '')}
+                      </dd>
+                    </>
+                  ) : null}
+                  <dt className="font-medium text-[var(--fg)]">Clip created</dt>
+                  <dd>{new Date(selectedClip.createdAt).toLocaleString()}</dd>
+                  <dt className="font-medium text-[var(--fg)]">Source uploaded</dt>
+                  <dd>{selectedClip.sourcePublishedAt ? new Date(selectedClip.sourcePublishedAt).toLocaleString() : 'Unknown'}</dd>
+                  {selectedClip.timestampSeconds !== null && selectedClip.timestampSeconds !== undefined ? (
+                    <>
+                      <dt className="font-medium text-[var(--fg)]">Starts at</dt>
+                      <dd>{formatDuration(selectedClip.timestampSeconds)}</dd>
+                    </>
+                  ) : null}
+                  {selectedClip.channel ? (
+                    <>
+                      <dt className="font-medium text-[var(--fg)]">Channel source</dt>
+                      <dd className="text-[var(--fg)]">{selectedClip.channel}</dd>
+                    </>
+                  ) : null}
+                  {selectedClip.durationSec !== null && selectedClip.durationSec !== undefined ? (
+                    <>
+                      <dt className="font-medium text-[var(--fg)]">Duration</dt>
+                      <dd className="text-[var(--fg)]">{formatDuration(selectedClip.durationSec)}</dd>
+                    </>
+                  ) : null}
+                  {selectedClip.views !== null ? (
+                    <>
+                      <dt className="font-medium text-[var(--fg)]">Views</dt>
+                      <dd>{formatViews(selectedClip.views)}</dd>
+                    </>
+                  ) : null}
+                </dl>
+                {selectedClip.reason ? (
+                  <div className="space-y-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
+                      Reason
+                    </span>
+                    <p className="rounded-lg border border-white/10 bg-[color:var(--card-strong)] p-3 text-sm leading-relaxed text-[color:color-mix(in_srgb,var(--fg)_82%,transparent)]">
+                      {selectedClip.reason}
+                    </p>
+                  </div>
+                ) : null}
+                <div className="space-y-1">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
+                    Quote
+                  </span>
+                  <p className="rounded-lg border border-white/10 bg-[color:var(--card-strong)] p-3 text-sm leading-relaxed text-[color:color-mix(in_srgb,var(--fg)_82%,transparent)]">
+                    {selectedClip.quote ? `“${selectedClip.quote}”` : selectedClip.title}
+                  </p>
                 </div>
               </div>
             ) : (
