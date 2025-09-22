@@ -111,12 +111,13 @@ describe('Home account selection', () => {
     fireEvent.change(screen.getByLabelText(/video url/i), {
       target: { value: 'https://www.youtube.com/watch?v=example' }
     })
-    const form = screen.getByLabelText(/account/i).closest('form')
+    const form = screen.getByText(/process a new video/i).closest('form')
     expect(form).not.toBeNull()
     fireEvent.submit(form as HTMLFormElement)
 
-    expect(screen.getByText(/select an account to start processing/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/account/i)).toHaveAttribute('aria-invalid', 'true')
+    expect(
+      screen.getByText(/select an account from the top navigation to start processing/i)
+    ).toBeInTheDocument()
     expect(startPipelineJobMock).not.toHaveBeenCalled()
   })
 
@@ -124,7 +125,7 @@ describe('Home account selection', () => {
     render(
       <Home
         registerSearch={() => {}}
-        initialState={createInitialState()}
+        initialState={createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })}
         onStateChange={() => {}}
         accounts={[AVAILABLE_ACCOUNT]}
       />
@@ -133,9 +134,8 @@ describe('Home account selection', () => {
     const videoUrl = 'https://www.youtube.com/watch?v=another'
     const accountId = AVAILABLE_ACCOUNT.id
 
-    fireEvent.change(screen.getByLabelText(/account/i), { target: { value: accountId } })
     fireEvent.change(screen.getByLabelText(/video url/i), { target: { value: videoUrl } })
-    const form = screen.getByLabelText(/account/i).closest('form')
+    const form = screen.getByText(/process a new video/i).closest('form')
     expect(form).not.toBeNull()
     fireEvent.submit(form as HTMLFormElement)
 
@@ -143,14 +143,13 @@ describe('Home account selection', () => {
   expect(startPipelineJobMock).toHaveBeenCalledWith({ account: accountId, url: videoUrl })
   })
 
-  it('filters the account dropdown to active accounts with active platforms', () => {
+  it('surfaces guidance when no active accounts are available', () => {
     render(
       <Home
         registerSearch={() => {}}
         initialState={createInitialState()}
         onStateChange={() => {}}
         accounts={[
-          AVAILABLE_ACCOUNT,
           INACTIVE_ACCOUNT,
           ACCOUNT_WITHOUT_PLATFORMS,
           ACCOUNT_WITH_DISABLED_PLATFORM
@@ -158,10 +157,10 @@ describe('Home account selection', () => {
       />
     )
 
-    const select = screen.getByLabelText(/account/i)
-    const options = within(select).getAllByRole('option')
-    const optionValues = options.map((option) => (option as HTMLOptionElement).value)
-    expect(optionValues).toEqual(['', AVAILABLE_ACCOUNT.id])
+    expect(screen.getByText(/no active accounts available/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/enable an account with an active platform from your profile/i)
+    ).toBeInTheDocument()
   })
 })
 
@@ -184,18 +183,16 @@ describe('Home pipeline events', () => {
     render(
       <Home
         registerSearch={() => {}}
-        initialState={createInitialState()}
+        initialState={createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })}
         onStateChange={() => {}}
         accounts={[AVAILABLE_ACCOUNT]}
       />
     )
 
-    const accountSelect = screen.getByLabelText(/account/i)
-    fireEvent.change(accountSelect, { target: { value: AVAILABLE_ACCOUNT.id } })
     fireEvent.change(screen.getByLabelText(/video url/i), {
       target: { value: 'https://www.youtube.com/watch?v=example' }
     })
-    const form = accountSelect.closest('form')
+    const form = screen.getByText(/process a new video/i).closest('form')
     expect(form).not.toBeNull()
     fireEvent.submit(form as HTMLFormElement)
 
@@ -250,21 +247,17 @@ describe('Home pipeline events', () => {
     render(
       <Home
         registerSearch={() => {}}
-        initialState={createInitialState()}
+        initialState={createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })}
         onStateChange={() => {}}
         accounts={[AVAILABLE_ACCOUNT]}
       />
     )
 
-    const accountSelect = screen.getByLabelText(/account/i)
-    fireEvent.change(accountSelect, {
-      target: { value: AVAILABLE_ACCOUNT.id }
-    })
     fireEvent.change(screen.getByLabelText(/video url/i), {
       target: { value: 'https://www.youtube.com/watch?v=example' }
     })
 
-    const form = accountSelect.closest('form')
+    const form = screen.getByText(/process a new video/i).closest('form')
     expect(form).not.toBeNull()
     fireEvent.submit(form as HTMLFormElement)
 

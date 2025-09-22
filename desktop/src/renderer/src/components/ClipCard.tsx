@@ -51,12 +51,12 @@ const ClipCard: FC<ClipCardProps> = ({ clip, onClick, isActive = false }) => {
           className={`absolute left-2 top-2 rounded-md px-2 py-0.5 text-xs font-semibold ${
             clip.hasAdjustments
               ? 'bg-[var(--ring)] text-[color:var(--accent-contrast)] shadow-[0_4px_12px_rgba(15,23,42,0.45)]'
-              : 'bg-black/70 text-[color:var(--fg-inverse-soft)]'
+              : 'bg-black/75 text-white shadow-[0_4px_12px_rgba(15,23,42,0.35)]'
           }`}
         >
           {clip.hasAdjustments ? 'Adjusted' : 'Original'}
         </span>
-        <span className="absolute bottom-2 right-2 rounded-md bg-black/70 px-2 py-0.5 text-xs font-medium text-[color:var(--fg-inverse)]">
+        <span className="absolute bottom-2 right-2 rounded-md bg-black/80 px-2 py-0.5 text-xs font-medium text-white shadow-[0_4px_12px_rgba(15,23,42,0.35)]">
           {formatDuration(clip.durationSec)}
         </span>
       </div>
