@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FC, RefObject } from 'react'
-import { NavLink, Route, Routes } from 'react-router-dom'
+import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import Search from './components/Search'
+import MarbleSelect from './components/MarbleSelect'
 import ClipPage from './pages/Clip'
 import ClipEdit from './pages/ClipEdit'
 import Home from './pages/Home'
@@ -35,6 +36,7 @@ type PlatformPayload = {
 }
 
 const THEME_STORAGE_KEY = 'atropos:theme'
+const ALL_ACCOUNTS_OPTION = '__all__'
 
 const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
@@ -80,6 +82,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [authStatus, setAuthStatus] = useState<AuthPingSummary | null>(null)
   const [authError, setAuthError] = useState<string | null>(null)
   const [isDark, setIsDark] = useState(false)
+  const location = useLocation()
 
   useNavigationHistory()
   const availableAccounts = useMemo(
@@ -361,11 +364,63 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     []
   )
 
+  const isLibraryRoute = location.pathname.startsWith('/library')
+
+  const accountSelectOptions = useMemo(() => {
+    if (availableAccounts.length === 0) {
+      return []
+    }
+
+    const baseOptions = availableAccounts.map((account) => ({
+      value: account.id,
+      label: account.displayName
+    }))
+
+    if (isLibraryRoute && availableAccounts.length > 1) {
+      return [{ value: ALL_ACCOUNTS_OPTION, label: 'All accounts' }, ...baseOptions]
+    }
+
+    return baseOptions
+  }, [availableAccounts, isLibraryRoute])
+
+  const accountSelectValue = useMemo(() => {
+    if (accountSelectOptions.length === 0) {
+      return null
+    }
+
+    if (
+      isLibraryRoute &&
+      availableAccounts.length > 1 &&
+      (homeState.selectedAccountId === null || homeState.selectedAccountId === undefined)
+    ) {
+      return ALL_ACCOUNTS_OPTION
+    }
+
+    const exists = availableAccounts.some((account) => account.id === homeState.selectedAccountId)
+    return exists ? homeState.selectedAccountId : null
+  }, [
+    accountSelectOptions.length,
+    availableAccounts,
+    homeState.selectedAccountId,
+    isLibraryRoute
+  ])
+
+  const handleAccountSelectFromHeader = useCallback(
+    (value: string) => {
+      if (value === ALL_ACCOUNTS_OPTION) {
+        handleSelectAccount(null)
+        return
+      }
+      handleSelectAccount(value)
+    },
+    [handleSelectAccount]
+  )
+
   return (
     <div className="flex min-h-full flex-col bg-[var(--bg)] text-[var(--fg)]">
-      <header className="border-b border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] backdrop-blur-md">
+      <header className="sticky top-0 z-40 border-b border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] backdrop-blur-md">
         <div className="flex w-full flex-col gap-4 px-6 py-5 lg:px-8">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap items-center gap-4">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-3xl font-semibold tracking-tight text-[var(--fg)]">Atropos</h1>
               <nav
@@ -386,21 +441,45 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 </NavLink>
               </nav>
             </div>
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="self-start rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] px-4 py-2 text-sm font-semibold uppercase tracking-wide text-[var(--fg)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_75%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)] md:self-auto"
-              aria-label="Toggle theme"
-            >
-              {isDark ? 'Light mode' : 'Dark mode'}
-            </button>
+            <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
+              {isLibraryRoute ? (
+                <div className="min-w-[220px] flex-1 basis-full sm:basis-auto sm:max-w-md">
+                  <Search
+                    ref={searchInputRef}
+                    value={searchValue}
+                    onChange={handleSearchChange}
+                    disabled={!searchBridge}
+                  />
+                </div>
+              ) : null}
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="min-w-[200px] sm:min-w-[220px]">
+                  <MarbleSelect
+                    aria-label="Account selection"
+                    value={accountSelectValue}
+                    options={accountSelectOptions}
+                    onChange={(value) => handleAccountSelectFromHeader(value)}
+                    placeholder={
+                      isLoadingAccounts
+                        ? 'Loading accounts…'
+                        : accountSelectOptions.length === 0
+                          ? 'No available accounts'
+                          : 'Select an account'
+                    }
+                    disabled={isLoadingAccounts || accountSelectOptions.length === 0}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  className="rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] px-4 py-2 text-sm font-semibold uppercase tracking-wide text-[var(--fg)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_75%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)]"
+                  aria-label="Toggle theme"
+                >
+                  {isDark ? 'Light mode' : 'Dark mode'}
+                </button>
+              </div>
+            </div>
           </div>
-          <Search
-            ref={searchInputRef}
-            value={searchValue}
-            onChange={handleSearchChange}
-            disabled={!searchBridge}
-          />
         </div>
       </header>
       <main className="flex-1 bg-[var(--bg)] text-[var(--fg)]">

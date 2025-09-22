@@ -9,7 +9,6 @@ import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ClipCard from '../components/ClipCard'
 import ClipDescription from '../components/ClipDescription'
-import MarbleSelect from '../components/MarbleSelect'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import { listAccountClips } from '../services/clipLibrary'
 import type { AccountSummary, Clip, SearchBridge } from '../types'
@@ -576,17 +575,6 @@ const Library: FC<LibraryProps> = ({
     setSharedVolume({ volume: element.volume, muted: element.muted })
   }, [setSharedVolume])
 
-  const handleAccountChange = useCallback(
-    (nextValue: string) => {
-      setAccountFilter(nextValue)
-      if (nextValue === ALL_ACCOUNTS_VALUE) {
-        return
-      }
-      onSelectAccount(nextValue)
-    },
-    [onSelectAccount]
-  )
-
   const handleClipOpen = useCallback(
     (clip: Clip) => {
       navigate(`/clip/${clip.id}`, { state: { clip } })
@@ -594,31 +582,21 @@ const Library: FC<LibraryProps> = ({
     [navigate]
   )
 
-  const dropdownValue = useMemo(() => {
+  const accountFilterLabel = useMemo(() => {
     if (!hasAccounts) {
-      return ''
+      return 'No connected accounts are available yet.'
+    }
+    if (accountFilter === ALL_ACCOUNTS_VALUE) {
+      return 'Showing clips from all connected accounts.'
     }
     if (accountFilter) {
-      return accountFilter
+      const match = availableAccounts.find((account) => account.id === accountFilter)
+      if (match) {
+        return `Showing clips from ${match.displayName}.`
+      }
     }
-    if (hasMultipleAccounts) {
-      return ALL_ACCOUNTS_VALUE
-    }
-    return availableAccounts[0]?.id ?? ''
-  }, [accountFilter, availableAccounts, hasAccounts, hasMultipleAccounts])
-
-  const accountOptions = useMemo(() => {
-    if (!hasAccounts) {
-      return []
-    }
-    const baseOptions = hasMultipleAccounts
-      ? [{ value: ALL_ACCOUNTS_VALUE, label: 'All accounts' }]
-      : []
-    return [
-      ...baseOptions,
-      ...availableAccounts.map((account) => ({ value: account.id, label: account.displayName }))
-    ]
-  }, [availableAccounts, hasAccounts, hasMultipleAccounts])
+    return 'Select an account from the top navigation to view its clips.'
+  }, [accountFilter, availableAccounts, hasAccounts])
 
   return (
     <section className="flex w-full flex-1 flex-col gap-6 px-6 py-8 lg:px-8">
@@ -632,19 +610,8 @@ const Library: FC<LibraryProps> = ({
                   Browse generated clips by account or review everything at once.
                 </p>
               </div>
-              <div className="flex flex-col gap-2 sm:max-w-xs">
-                <label htmlFor="library-account" className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
-                  Account
-                </label>
-                <MarbleSelect
-                  id="library-account"
-                  name="library-account"
-                  value={dropdownValue || null}
-                  options={accountOptions}
-                  onChange={(value) => handleAccountChange(value)}
-                  placeholder={hasAccounts ? 'Select an account' : 'No available accounts'}
-                  disabled={!hasAccounts || isLoadingAccounts}
-                />
+              <div className="text-sm text-[var(--muted)] sm:text-right">
+                {isLoadingAccounts ? 'Loading accounts…' : accountFilterLabel}
               </div>
             </div>
             {clipsError ? (

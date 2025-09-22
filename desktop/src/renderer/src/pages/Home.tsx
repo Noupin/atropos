@@ -10,7 +10,6 @@ import {
 import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PipelineProgress from '../components/PipelineProgress'
-import MarbleSelect from '../components/MarbleSelect'
 import { BACKEND_MODE, buildJobClipVideoUrl } from '../config/backend'
 import {
   createInitialPipelineSteps,
@@ -593,11 +592,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     [cleanupConnection, updateState]
   )
 
-  const accountOptions = useMemo(
-    () => availableAccounts.map((account) => ({ value: account.id, label: account.displayName })),
-    [availableAccounts]
-  )
-
   const startRealProcessing = useCallback(
     async (urlToProcess: string, accountId: string, shouldPauseForReview: boolean) => {
       updateState((prev) => ({
@@ -685,19 +679,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     [updateState]
   )
 
-  const handleAccountChange = useCallback(
-    (nextValue: string) => {
-      updateState((prev) => ({
-        ...prev,
-        selectedAccountId: nextValue.length > 0 ? nextValue : null,
-        accountError: prev.accountError ? null : prev.accountError,
-        clips: [],
-        selectedClipId: null
-      }))
-    },
-    [updateState]
-  )
-
   const handleReviewModeChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const { checked } = event.target
@@ -720,9 +701,9 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         updateState((prev) => ({
           ...prev,
           accountError:
-            accountOptions.length === 0
+            availableAccounts.length === 0
               ? 'Enable an account with an active platform before starting the pipeline.'
-              : 'Select an account to start processing.'
+              : 'Select an account from the top navigation to start processing.'
         }))
       }
 
@@ -768,7 +749,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       void startRealProcessing(trimmed, accountId, reviewMode)
     },
     [
-      accountOptions.length,
+      availableAccounts.length,
       cleanupConnection,
       clearTimers,
       isMockBackend,
@@ -806,7 +787,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     }
 
     if (!selectedAccountId) {
-      setFolderErrorMessage('Select an account to open its clips folder.')
+      setFolderErrorMessage('Select an account from the top navigation to open its clips folder.')
       setFolderMessage(null)
       return
     }
@@ -933,26 +914,27 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
             <div className="flex flex-col gap-1">
               <h2 className="text-lg font-semibold text-[var(--fg)]">Process a new video</h2>
               <p className="text-sm text-[var(--muted)]">
-                Select an account, paste a link, and start the pipeline when you are ready.
+                Select an account from the top navigation, paste a link, and start the pipeline when you are ready.
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <div className="flex w-full flex-col gap-2 sm:max-w-xs">
-                <label className="sr-only" htmlFor="processing-account">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
                   Account
-                </label>
-                <MarbleSelect
-                  id="processing-account"
-                  name="processing-account"
-                  value={selectedAccountId}
-                  options={accountOptions}
-                  onChange={(value) => handleAccountChange(value)}
-                  placeholder="Select an account"
-                  disabled={accountOptions.length === 0}
-                  error={Boolean(accountError)}
-                  aria-describedby={accountError ? 'account-error' : undefined}
-                />
-                {accountOptions.length === 0 && !accountError ? (
+                </span>
+                <div
+                  className={`rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] px-4 py-2 text-sm text-[var(--fg)] shadow-[0_12px_22px_rgba(43,42,40,0.12)] ${
+                    accountError ? 'ring-2 ring-[var(--ring-strong)] ring-offset-2 ring-offset-[color:var(--panel)]' : ''
+                  }`}
+                  aria-live="polite"
+                >
+                  {selectedAccount
+                    ? `Processing as ${selectedAccount.displayName}.`
+                    : availableAccounts.length === 0
+                      ? 'No active accounts available.'
+                      : 'Select an account from the top navigation before starting.'}
+                </div>
+                {availableAccounts.length === 0 ? (
                   <p className="text-xs text-amber-300">
                     Enable an account with an active platform from your profile before starting the pipeline.
                   </p>
