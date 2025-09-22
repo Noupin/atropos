@@ -314,6 +314,63 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     [clampWithinWindow, rangeStart]
   )
 
+  const snapRangeToValues = useCallback(
+    (startValue: number, endValue: number) => {
+      const baseStart = Math.max(0, Number.isFinite(startValue) ? startValue : 0)
+      const rawEnd = Number.isFinite(endValue) ? endValue : baseStart
+      const baseEnd = rawEnd > baseStart + minGap ? rawEnd : baseStart + minGap
+
+      let nextWindowStart = windowStart
+      let nextWindowEnd = windowEnd
+
+      if (baseStart < windowStart) {
+        nextWindowStart = Math.max(0, baseStart)
+      }
+      if (baseEnd > windowEnd) {
+        nextWindowEnd = Math.max(baseEnd, nextWindowStart + minGap)
+      }
+
+      if (nextWindowStart !== windowStart) {
+        setWindowStart(nextWindowStart)
+      }
+      if (nextWindowEnd !== windowEnd) {
+        setWindowEnd(nextWindowEnd)
+      }
+
+      setRangeStart(baseStart)
+      setRangeEnd(baseEnd)
+      setActiveHandle(null)
+      setEngagedHandle(null)
+      setStartInteractionOrigin(null)
+      setEndInteractionOrigin(null)
+
+      if (previewMode === 'adjusted') {
+        setPreviewTarget({ start: baseStart, end: baseEnd })
+      }
+    },
+    [minGap, previewMode, setPreviewTarget, windowEnd, windowStart]
+  )
+
+  const handleSnapToOriginal = useCallback(() => {
+    if (!clipState) {
+      return
+    }
+    snapRangeToValues(
+      clipState.originalStartSeconds,
+      Math.max(clipState.originalEndSeconds, clipState.originalStartSeconds + minGap)
+    )
+  }, [clipState, minGap, snapRangeToValues])
+
+  const handleSnapToRendered = useCallback(() => {
+    if (!clipState) {
+      return
+    }
+    snapRangeToValues(
+      clipState.startSeconds,
+      Math.max(clipState.endSeconds, clipState.startSeconds + minGap)
+    )
+  }, [clipState, minGap, snapRangeToValues])
+
   const offsetReference = useMemo(() => {
     if (!clipState) {
       return {
@@ -792,6 +849,30 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     }
   }, [clipState, previewEnd, previewMode, previewSourceIsFile, previewStart])
 
+  useEffect(() => {
+    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
+      return
+    }
+    const element = previewVideoRef.current
+    if (!element || element.readyState < 1) {
+      return
+    }
+    const tolerance = 0.05
+    const beforeStart = element.currentTime < previewStart - tolerance
+    const afterWindow = element.currentTime > previewEnd + tolerance
+    if (!beforeStart && !afterWindow) {
+      return
+    }
+    const wasPlaying = !element.paused && !element.ended
+    element.currentTime = previewStart
+    if (wasPlaying) {
+      const playback = element.play()
+      if (playback && typeof playback.catch === 'function') {
+        playback.catch(() => undefined)
+      }
+    }
+  }, [clipState, previewEnd, previewMode, previewSourceIsFile, previewStart])
+
   const runSaveStepAnimation = useCallback(async () => {
     for (let index = 1; index < SAVE_STEP_DEFINITIONS.length; index += 1) {
       await delay(200)
@@ -1169,20 +1250,30 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 </button>
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                <span className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSnapToOriginal}
+                  disabled={!clipState}
+                  className="flex items-center gap-2 rounded-md border border-transparent px-1.5 py-1 text-inherit transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] enabled:hover:border-white/10 enabled:hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)] enabled:hover:text-[var(--fg)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
                   <span
                     className="h-2 w-6 rounded-full bg-[color:var(--clip-original)]"
                     aria-hidden="true"
                   />
                   Original range
-                </span>
-                <span className="flex items-center gap-2">
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSnapToRendered}
+                  disabled={!clipState}
+                  className="flex items-center gap-2 rounded-md border border-transparent px-1.5 py-1 text-inherit transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] enabled:hover:border-white/10 enabled:hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)] enabled:hover:text-[var(--fg)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
                   <span
                     className="h-2 w-6 rounded-full bg-[color:var(--clip-rendered)]"
                     aria-hidden="true"
                   />
                   Rendered output
-                </span>
+                </button>
                 <span className="flex items-center gap-2">
                   <span
                     className="h-2 w-6 rounded-full bg-[color:var(--clip-current)]"
