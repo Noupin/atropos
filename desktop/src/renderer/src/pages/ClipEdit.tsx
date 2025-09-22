@@ -392,21 +392,23 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     setRangeStart(clipState.startSeconds)
     setRangeEnd(clipState.endSeconds)
     setWindowStart(Math.max(0, Math.min(clipState.startSeconds, clipState.originalStartSeconds)))
-    setWindowEnd(
-      Math.min(
-        sourceEndBound,
-        Math.max(
-          clipState.endSeconds,
-          clipState.originalEndSeconds,
-          clipState.startSeconds + minGap,
-          clipState.originalStartSeconds + minGap
-        )
-      )
+    const baseWindowEnd = Math.max(
+      clipState.endSeconds,
+      clipState.originalEndSeconds,
+      clipState.startSeconds + minGap,
+      clipState.originalStartSeconds + minGap
     )
+    setWindowEnd((prevEnd) => {
+      if (lastClipIdRef.current !== clipState.id) {
+        return baseWindowEnd
+      }
+      const next = Math.max(prevEnd, baseWindowEnd)
+      return next === prevEnd ? prevEnd : next
+    })
     setPreviewTarget({ start: clipState.startSeconds, end: clipState.endSeconds })
     setPreviewMode(getDefaultPreviewMode(clipState))
     setSaveSteps(createInitialSaveSteps())
-  }, [clipState, minGap, sourceEndBound])
+  }, [clipState, minGap])
 
   useEffect(() => {
     setWindowStart((prevStart) => {
@@ -1064,17 +1066,30 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     if (duration && duration > 0) {
       const baseline = computeClipSourceEndBound(clipState, minGap)
       const candidate = Math.max(duration, baseline)
+      console.info('Clip preview metadata duration', {
+        clipId: clipState.id,
+        previewMode,
+        duration,
+        baseline,
+        candidate
+      })
       setSourceDuration((prev) => {
         if (prev == null || candidate > prev + SOURCE_DURATION_EPSILON) {
           return candidate
         }
         return prev
       })
+      setWindowEnd((prevEnd) => {
+        const lowerBound = Math.max(windowStart + minGap, rangeEnd)
+        const safeTarget = Math.max(lowerBound, candidate)
+        const next = Math.max(prevEnd, safeTarget)
+        return next === prevEnd ? prevEnd : next
+      })
     }
     if (previewSourceIsFile && Math.abs(element.currentTime - previewStart) > 0.05) {
       element.currentTime = previewStart
     }
-  }, [clipState, minGap, previewMode, previewSourceIsFile, previewStart])
+  }, [clipState, minGap, previewMode, previewSourceIsFile, previewStart, rangeEnd, windowStart])
 
   const handleVideoPlay = useCallback(() => {
     if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
