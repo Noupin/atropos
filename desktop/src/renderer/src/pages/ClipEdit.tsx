@@ -959,7 +959,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                     onClick={() => supportsSourcePreview && setPreviewMode('adjusted')}
                     className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                       previewMode === 'adjusted'
-                        ? 'bg-[var(--ring)] text-black'
+                        ? 'bg-[color:color-mix(in_srgb,var(--card)_82%,var(--panel))] text-[var(--fg)]'
                         : supportsSourcePreview
                           ? 'text-[var(--fg)] hover:bg-white/10'
                           : 'cursor-not-allowed text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]'
@@ -975,7 +975,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                     onClick={() => supportsSourcePreview && setPreviewMode('original')}
                     className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                       previewMode === 'original'
-                        ? 'bg-[var(--ring)] text-black'
+                        ? 'bg-[color:color-mix(in_srgb,var(--card)_82%,var(--panel))] text-[var(--fg)]'
                         : supportsSourcePreview
                           ? 'text-[var(--fg)] hover:bg-white/10'
                           : 'cursor-not-allowed text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]'
@@ -991,7 +991,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                     onClick={() => setPreviewMode('rendered')}
                     className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                       previewMode === 'rendered'
-                        ? 'bg-[var(--ring)] text-black'
+                        ? 'bg-[color:color-mix(in_srgb,var(--card)_82%,var(--panel))] text-[var(--fg)]'
                         : 'text-[var(--fg)] hover:bg-white/10'
                     }`}
                     aria-pressed={previewMode === 'rendered'}
@@ -1280,7 +1280,11 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
             </div>
           ) : null}
           {saveError ? <p className="text-sm text-rose-400">{saveError}</p> : null}
-          {saveSuccess ? <p className="text-sm text-emerald-300">{saveSuccess}</p> : null}
+          {saveSuccess ? (
+            <p className="text-sm text-[color:color-mix(in_srgb,var(--success-strong)_82%,var(--accent-contrast))]">
+              {saveSuccess}
+            </p>
+          ) : null}
         </div>
       </div>
       <div className="grid gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm text-[var(--muted)] sm:grid-cols-[auto_1fr]">
