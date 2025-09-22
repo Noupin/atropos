@@ -1115,7 +1115,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 />
                 {showStartTooltip ? (
                   <div
-                    className="pointer-events-none absolute -top-7 z-50 -translate-x-1/2 rounded-md bg-black/85 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--fg-inverse)] shadow-lg"
+                    className="pointer-events-none absolute -top-7 z-50 -translate-x-1/2 rounded-md bg-black/85 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--clip-tooltip-text)] shadow-lg"
                     style={{ left: `${startPercent}%` }}
                   >
                     {startOffsetTooltip}
@@ -1123,7 +1123,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 ) : null}
                 {showEndTooltip ? (
                   <div
-                    className="pointer-events-none absolute -top-7 z-50 -translate-x-1/2 rounded-md bg-black/85 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--fg-inverse)] shadow-lg"
+                    className="pointer-events-none absolute -top-7 z-50 -translate-x-1/2 rounded-md bg-black/85 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--clip-tooltip-text)] shadow-lg"
                     style={{ left: `${endPercent}%` }}
                   >
                     {endOffsetTooltip}

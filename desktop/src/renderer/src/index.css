@@ -49,6 +49,7 @@
   --clip-handle: #ffffff;
   --clip-handle-hover: #ebe8e2;
   --clip-handle-border: #d9d5ce;
+  --clip-tooltip-text: var(--fg-inverse);
 }
 
 .dark {
@@ -100,6 +101,7 @@
   --clip-handle: #3a3734;
   --clip-handle-hover: #4b4742;
   --clip-handle-border: #5a5651;
+  --clip-tooltip-text: #ffffff;
 }
 
 *,
