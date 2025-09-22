@@ -928,7 +928,10 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="flex-1 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
           <div className="flex h-full flex-col gap-4">
-            <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black">
+            <div
+              className="relative flex w-full items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black"
+              style={{ height: 'clamp(240px, 70vh, 720px)' }}
+            >
               <video
                 ref={previewVideoRef}
                 key={videoKey}
@@ -946,7 +949,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 onTimeUpdate={handleVideoTimeUpdate}
                 onPlay={handleVideoPlay}
                 onVolumeChange={handleVideoVolumeChange}
-                className="h-full w-full bg-black object-contain"
+                className="h-full w-auto max-h-full max-w-full bg-black object-contain"
               >
                 Your browser does not support the video tag.
               </video>
