@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FC, RefObject } from 'react'
-import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import Search from './components/Search'
 import MarbleSelect from './components/MarbleSelect'
 import ClipPage from './pages/Clip'
@@ -41,11 +41,11 @@ const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
 
 const NavItemLabel: FC<{ label: string; isActive: boolean }> = ({ label, isActive }) => (
-  <span className="flex flex-col items-center gap-1">
-    <span>{label}</span>
+  <span className="relative flex h-full items-center justify-center">
+    <span className="leading-none">{label}</span>
     <span
       aria-hidden
-      className={`h-0.5 w-8 rounded-full transition ${
+      className={`pointer-events-none absolute left-1/2 bottom-1 h-0.5 w-8 -translate-x-1/2 rounded-full transition ${
         isActive
           ? 'bg-[color:var(--accent)] opacity-100'
           : 'bg-[color:var(--edge-soft)] opacity-0 group-hover:opacity-60'
@@ -82,6 +82,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [authError, setAuthError] = useState<string | null>(null)
   const [isDark, setIsDark] = useState(false)
   const location = useLocation()
+  const navigate = useNavigate()
 
   useNavigationHistory()
   const availableAccounts = useMemo(
@@ -355,7 +356,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   const navLinkClassName = useCallback(
     ({ isActive }: { isActive: boolean }) =>
-      `group relative rounded-[14px] px-3 py-1.5 text-sm transition ${
+      `group relative inline-flex h-10 items-center justify-center rounded-[14px] px-4 text-sm font-medium transition ${
         isActive
           ? 'bg-[color:color-mix(in_srgb,var(--panel-strong)_70%,transparent)] text-[var(--fg)] shadow-[0_10px_24px_rgba(43,42,40,0.12)]'
           : 'text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_55%,transparent)] hover:text-[var(--fg)]'
@@ -364,6 +365,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   )
 
   const isLibraryRoute = location.pathname.startsWith('/library')
+  const showBackButton = location.pathname.startsWith('/clip/')
 
   const accountSelectOptions = useMemo(() => {
     if (availableAccounts.length === 0) {
@@ -396,16 +398,31 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     [handleSelectAccount]
   )
 
+  const handleHeaderBack = useCallback(() => {
+    navigate(-1)
+  }, [navigate])
+
   return (
     <div className="flex min-h-full flex-col bg-[var(--bg)] text-[var(--fg)]">
       <header className="sticky top-0 z-40 border-b border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] backdrop-blur-md">
         <div className="flex w-full flex-col gap-4 px-6 py-5 lg:px-8">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-3xl font-semibold tracking-tight text-[var(--fg)]">Atropos</h1>
+              {showBackButton ? (
+                <button
+                  type="button"
+                  onClick={handleHeaderBack}
+                  className="inline-flex items-center justify-center rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] px-3 py-1.5 text-sm font-medium text-[var(--fg)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_75%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)]"
+                >
+                  Back
+                </button>
+              ) : null}
+              <h1 className="inline-flex items-center text-3xl font-semibold leading-none tracking-tight text-[var(--fg)]">
+                Atropos
+              </h1>
               <nav
                 aria-label="Primary navigation"
-                className="flex items-center gap-2 rounded-[18px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] p-1 shadow-[0_18px_34px_rgba(43,42,40,0.16)] backdrop-blur"
+                className="inline-flex h-12 items-center gap-2 rounded-[18px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] p-1 shadow-[0_18px_34px_rgba(43,42,40,0.16)] backdrop-blur"
               >
                 <NavLink to="/" end className={navLinkClassName}>
                   {({ isActive }) => <NavItemLabel label="Home" isActive={isActive} />}

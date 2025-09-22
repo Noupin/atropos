@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FC, ChangeEvent, PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useParams } from 'react-router-dom'
 import { formatDuration } from '../lib/format'
 import useSharedVolume from '../hooks/useSharedVolume'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
@@ -78,7 +78,6 @@ const delay = (ms: number): Promise<void> =>
 
 const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = ({ registerSearch }) => {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
   const location = useLocation()
   const state = (location.state as ClipEditLocationState | null) ?? null
 
@@ -790,10 +789,6 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     setSaveSteps((prev) => prev.map((step) => ({ ...step, status: 'completed' })))
   }, [])
 
-  const handleBack = useCallback(() => {
-    navigate(-1)
-  }, [navigate])
-
   const handleSave = useCallback(async () => {
     if (!clipState) {
       return
@@ -863,13 +858,6 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   if (!clipState) {
     return (
       <section className="flex w-full flex-1 flex-col gap-6 px-6 py-10 lg:px-8">
-        <button
-          type="button"
-          onClick={handleBack}
-          className="self-start rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-        >
-          Back
-        </button>
         <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-10 text-center">
           {isLoadingClip ? (
             <div className="flex flex-col items-center gap-4 text-[var(--muted)]">
@@ -918,17 +906,13 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
-      <button
-        type="button"
-        onClick={handleBack}
-        className="self-start rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-      >
-        Back
-      </button>
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="flex-1 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
           <div className="flex h-full flex-col gap-4">
-            <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black">
+            <div
+              className="relative flex w-full items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black"
+              style={{ height: 'clamp(240px, 70vh, 720px)' }}
+            >
               <video
                 ref={previewVideoRef}
                 key={videoKey}
@@ -946,7 +930,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 onTimeUpdate={handleVideoTimeUpdate}
                 onPlay={handleVideoPlay}
                 onVolumeChange={handleVideoVolumeChange}
-                className="h-full w-full bg-black object-contain"
+                className="h-full w-auto max-h-full max-w-full bg-black object-contain"
               >
                 Your browser does not support the video tag.
               </video>
