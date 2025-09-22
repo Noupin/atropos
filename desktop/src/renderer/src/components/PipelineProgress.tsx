@@ -17,16 +17,17 @@ const statusLabels: Record<PipelineStepStatus, string> = {
 
 const segmentClasses: Record<PipelineStepStatus, string> = {
   pending: 'bg-transparent',
-  running: 'bg-sky-400',
-  completed: 'bg-emerald-500',
-  failed: 'bg-rose-500'
+  running: 'bg-[color:var(--info-strong)]',
+  completed: 'bg-[color:var(--success-strong)]',
+  failed: 'bg-[color:var(--error-strong)]'
 }
 
 const indicatorClasses: Record<PipelineStepStatus, string> = {
-  pending: 'border border-white/40 bg-transparent',
-  running: 'bg-sky-400 shadow-[0_0_0_2px_rgba(56,189,248,0.3)]',
-  completed: 'bg-emerald-500',
-  failed: 'bg-rose-500'
+  pending: 'border border-[color:color-mix(in_srgb,var(--edge)_65%,transparent)] bg-transparent',
+  running:
+    'bg-[color:var(--info-strong)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--info-strong)_35%,transparent)]',
+  completed: 'bg-[color:var(--success-strong)]',
+  failed: 'bg-[color:var(--error-strong)]'
 }
 
 const multiStepBadgeBaseClasses =
@@ -274,10 +275,13 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
   }, [activeStep])
 
 const clipBadgeStateClasses: Record<PipelineStepStatus, string> = {
-  pending: 'border-white/10 text-[var(--muted)] bg-white/5',
-  running: 'border-sky-400/40 bg-sky-400/10 text-sky-200',
-  completed: 'border-emerald-400/40 bg-emerald-500/10 text-emerald-200',
-  failed: 'border-rose-400/40 bg-rose-500/10 text-rose-200'
+  pending: 'border-[color:var(--edge-soft)] text-[var(--muted)] bg-white/5',
+  running:
+    'border-[color:color-mix(in_srgb,var(--info-strong)_45%,var(--edge))] bg-[color:var(--info-soft)] text-[color:color-mix(in_srgb,var(--info-strong)_82%,var(--accent-contrast))]',
+  completed:
+    'border-[color:color-mix(in_srgb,var(--success-strong)_45%,var(--edge))] bg-[color:var(--success-soft)] text-[color:color-mix(in_srgb,var(--success-strong)_82%,var(--accent-contrast))]',
+  failed:
+    'border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]'
 }
 
 const getSubstepLabel = (index: number): string => {
@@ -326,11 +330,11 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
       step.status === 'running' && step.etaSeconds !== null ? formatEta(step.etaSeconds) : null
     const progressColor =
       step.status === 'failed'
-        ? 'bg-rose-500'
+        ? 'bg-[color:var(--error-strong)]'
         : step.status === 'completed'
-          ? 'bg-emerald-500'
+          ? 'bg-[color:var(--success-strong)]'
           : step.status === 'running'
-            ? 'bg-sky-400'
+            ? 'bg-[color:var(--info-strong)]'
             : 'bg-white/30'
 
     return (
@@ -382,11 +386,11 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
   ) => {
     const progressColor =
       substep.status === 'failed'
-        ? 'bg-rose-500'
+        ? 'bg-[color:var(--error-strong)]'
         : substep.status === 'completed'
-          ? 'bg-emerald-500'
+          ? 'bg-[color:var(--success-strong)]'
           : substep.status === 'running'
-            ? 'bg-sky-400'
+            ? 'bg-[color:var(--info-strong)]'
             : 'bg-white/40'
     const clipLabel = getSubstepClipLabel(substep)
     const completedSummary = getSubstepCompletedSummary(substep)
@@ -396,7 +400,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
         <button
           type="button"
           onClick={() => toggleSubstep(step.id, substep.id)}
-          className="group flex h-full w-full min-w-0 max-w-full flex-col gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-left text-[11px] transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+          className="group flex h-full w-full min-w-0 max-w-full flex-col gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-left text-[11px] transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
           aria-expanded={false}
           aria-controls={`substep-${step.id}-${substep.id}`}
         >
@@ -439,11 +443,11 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
   ) => {
     const progressColor =
       substep.status === 'failed'
-        ? 'bg-rose-500'
+        ? 'bg-[color:var(--error-strong)]'
         : substep.status === 'completed'
-          ? 'bg-emerald-500'
+          ? 'bg-[color:var(--success-strong)]'
           : substep.status === 'running'
-            ? 'bg-sky-400'
+            ? 'bg-[color:var(--info-strong)]'
             : 'bg-white/40'
     const clipLabel = getSubstepClipLabel(substep)
     const completedSummary = getSubstepCompletedSummary(substep)
@@ -499,7 +503,9 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
               {completedSummary ? <span>{completedSummary}</span> : null}
             </div>
             {substep.status === 'failed' ? (
-              <p className="text-[var(--danger)] font-semibold">Review server logs to retry this step.</p>
+              <p className="font-semibold text-[color:var(--error-strong)]">
+                Review server logs to retry this step.
+              </p>
             ) : null}
           </div>
         </div>
@@ -550,7 +556,9 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
       <li
         key={step.id}
         className={`col-span-full rounded-xl border ${
-          isActive ? 'border-sky-400 shadow-[0_14px_28px_-20px_rgba(56,189,248,0.35)]' : 'border-white/10'
+          isActive
+            ? 'border-[color:color-mix(in_srgb,var(--info-strong)_55%,transparent)] shadow-[0_14px_28px_-20px_color-mix(in_srgb,var(--info-strong)_45%,transparent)]'
+            : 'border-white/10'
         } bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)]`}
       >
         <button
@@ -598,7 +606,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
             <p>{step.description}</p>
             {renderStepProgress(step)}
             {step.status === 'failed' ? (
-              <p className="text-xs font-semibold text-rose-400">
+              <p className="text-xs font-semibold text-[color:var(--error-strong)]">
                 Check the server logs to resolve the failure before retrying.
               </p>
             ) : null}
@@ -636,7 +644,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
         <button
           type="button"
           onClick={() => toggleStep(step.id)}
-          className={`group flex w-full flex-col gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-left text-[11px] transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
+          className={`group flex w-full flex-col gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-left text-[11px] transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
             step.status === 'completed' ? 'opacity-85' : ''
           }`}
           aria-expanded={false}
