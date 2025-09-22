@@ -1283,14 +1283,14 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
               type="button"
               onClick={handleSave}
               disabled={isSaving || isLoadingClip}
-              className="rounded-lg border border-transparent bg-[var(--ring)] px-3 py-2 text-sm font-semibold text-[color:var(--accent-contrast)] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center justify-center rounded-[14px] border border-transparent bg-[color:var(--ring)] px-4 py-2 text-sm font-semibold text-[color:var(--accent-contrast)] shadow-[0_18px_36px_rgba(15,23,42,0.28)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--ring-strong)_75%,var(--ring))] hover:shadow-[0_24px_48px_rgba(15,23,42,0.36)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSaving ? 'Saving…' : 'Save adjustments'}
             </button>
             <button
               type="button"
               onClick={handleReset}
-              className="rounded-lg border border-white/10 px-3 py-2 text-sm font-medium text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              className="inline-flex items-center justify-center rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--fg)] shadow-[0_12px_24px_rgba(15,23,42,0.2)] transition hover:-translate-y-0.5 hover:border-[var(--ring)] hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_72%,transparent)] hover:text-[color:var(--accent)] hover:shadow-[0_18px_36px_rgba(15,23,42,0.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
             >
               Reset to original
             </button>
