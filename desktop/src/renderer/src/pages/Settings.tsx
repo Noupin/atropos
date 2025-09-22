@@ -1,6 +1,6 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import type { FC } from 'react'
-import type { SearchBridge } from '../types'
+import type { AccountSummary, SearchBridge } from '../types'
 import { fetchConfigEntries, updateConfigEntries, type ConfigEntry } from '../services/configApi'
 import MarbleSelect from '../components/MarbleSelect'
 import {
@@ -10,6 +10,7 @@ import {
   type SettingMetadata
 } from './settingsMetadata'
 import { formatConfigValue, formatNumberForStep } from '../utils/configFormatting'
+import { TONE_LABELS } from '../constants/tone'
 import {
   bgrToRgb,
   formatBgrString,
@@ -425,6 +426,7 @@ const parseConfigInput = (raw: string, entry: ConfigEntry): unknown => {
 
 type SettingsProps = {
   registerSearch: (bridge: SearchBridge | null) => void
+  accounts: AccountSummary[]
 }
 
 const clampNumber = (value: number, min: number, max: number): number => {
@@ -458,7 +460,7 @@ const normaliseBooleanString = (value: string): boolean => {
   return TRUE_VALUES.has(value.toLowerCase())
 }
 
-const Settings: FC<SettingsProps> = ({ registerSearch }) => {
+const Settings: FC<SettingsProps> = ({ registerSearch, accounts }) => {
   const [entries, setEntries] = useState<ConfigEntry[]>([])
   const [values, setValues] = useState<Record<string, string>>({})
   const [dirty, setDirty] = useState<Record<string, boolean>>({})
@@ -466,6 +468,23 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  const toneOverrides = useMemo(
+    () => accounts.filter((account) => account.tone),
+    [accounts]
+  )
+
+  const toneOverrideDescriptions = useMemo(
+    () =>
+      toneOverrides.map((account) => {
+        if (!account.tone) {
+          return account.displayName
+        }
+        const label = TONE_LABELS[account.tone] ?? account.tone
+        return `${account.displayName} (${label})`
+      }),
+    [toneOverrides]
+  )
 
   useEffect(() => {
     registerSearch(null)
@@ -1031,6 +1050,12 @@ const Settings: FC<SettingsProps> = ({ registerSearch }) => {
                           </div>
                           <div className="mt-4 space-y-2">
                             {renderInput(entry, metadata)}
+                            {entry.name === 'CLIP_TYPE' && toneOverrideDescriptions.length > 0 ? (
+                              <p className="rounded-lg border border-dashed border-[color:color-mix(in_srgb,var(--info)_35%,var(--edge))] bg-[color:var(--info-soft)] px-3 py-2 text-xs text-[color:var(--info-strong)]">
+                                Account tone overrides are active for {toneOverrideDescriptions.join(', ')}.
+                                Update account-specific tones from the Profile tab.
+                              </p>
+                            ) : null}
                             {recommendedValue && (
                               <p className="text-xs text-[color:var(--muted)]">
                                 Recommended:{' '}

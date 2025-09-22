@@ -900,15 +900,23 @@ async def start_job(payload: RunRequest) -> RunResponse:
         state.resume_event = threading.Event()
     observer = BroadcastObserver(state)
 
+    account_details: AccountResponse | None = None
     if payload.account:
-        ensure_account_available(payload.account)
+        account_details = ensure_account_available(payload.account)
 
     def runner() -> None:
         try:
+            selected_tone = payload.tone
+            if (
+                selected_tone is None
+                and account_details is not None
+                and account_details.tone is not None
+            ):
+                selected_tone = account_details.tone
             process_video(
                 payload.url,
                 account=payload.account,
-                tone=payload.tone,
+                tone=selected_tone,
                 observer=observer,
                 pause_for_review=payload.review_mode,
                 review_gate=state.wait_for_resume if payload.review_mode else None,

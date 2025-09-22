@@ -75,12 +75,19 @@ export const addPlatformToAccount = async (
 
 export const updateAccount = async (
   accountId: string,
-  payload: { active?: boolean }
+  payload: { active?: boolean; tone?: string | null }
 ): Promise<AccountSummary> => {
+  const body: Record<string, unknown> = {}
+  if (payload.active !== undefined) {
+    body.active = payload.active
+  }
+  if (payload.tone !== undefined) {
+    body.tone = payload.tone
+  }
   const response = await requestWithFallback(() => buildAccountUrl(accountId), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ active: payload.active })
+    body: JSON.stringify(body)
   })
   if (!response.ok) {
     throw new Error(await extractErrorMessage(response))

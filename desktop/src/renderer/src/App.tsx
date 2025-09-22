@@ -255,7 +255,10 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   )
 
   const handleUpdateAccount = useCallback(
-    async (accountId: string, payload: { active?: boolean }) => {
+    async (
+      accountId: string,
+      payload: { active?: boolean; tone?: string | null }
+    ) => {
       try {
         const account = await updateAccountApi(accountId, payload)
         setAccounts((prev) => sortAccounts(prev.map((item) => (item.id === account.id ? account : item))))
@@ -504,7 +507,10 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
           />
           <Route path="/clip/:id" element={<ClipPage registerSearch={registerSearch} />} />
           <Route path="/clip/:id/edit" element={<ClipEdit registerSearch={registerSearch} />} />
-          <Route path="/settings" element={<Settings registerSearch={registerSearch} />} />
+          <Route
+            path="/settings"
+            element={<Settings registerSearch={registerSearch} accounts={accounts} />}
+          />
           <Route
             path="/profile"
             element={

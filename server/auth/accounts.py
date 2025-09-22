@@ -17,9 +17,11 @@ from types import ModuleType
 from typing import Any, Callable, Dict, Iterable, List, Literal, Mapping, MutableMapping, Optional
 
 from fastapi import HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from config import TOKENS_DIR
+import config as pipeline_config
+from custom_types.ETone import Tone
 
 
 SupportedPlatform = Literal["tiktok", "youtube", "instagram"]
@@ -73,6 +75,7 @@ class AccountMetadata(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     platforms: List[PlatformRecord] = Field(default_factory=list)
     active: bool = True
+    tone: Tone | None = None
 
 
 class AccountPlatformStatus(BaseModel):
@@ -101,6 +104,8 @@ class AccountResponse(BaseModel):
     created_at: datetime
     platforms: List[AccountPlatformStatus]
     active: bool
+    tone: Tone | None = None
+    effective_tone: Tone | None = None
 
 
 class AccountCreateRequest(BaseModel):
@@ -128,6 +133,17 @@ class AccountUpdateRequest(BaseModel):
     model_config = ConfigDict(alias_generator=_to_camel, populate_by_name=True)
 
     active: bool | None = None
+    tone: Tone | None = None
+
+    @field_validator("tone", mode="before")
+    @classmethod
+    def _parse_tone(cls, value: Any) -> Tone | None:
+        if value is None or isinstance(value, Tone):
+            return value
+        try:
+            return Tone(value)
+        except ValueError as exc:  # pragma: no cover - validation branch
+            raise ValueError(f"Unknown tone '{value}'") from exc
 
 
 class PlatformUpdateRequest(BaseModel):
@@ -459,6 +475,7 @@ class AccountStore:
             if record.platform in SUPPORTED_PLATFORMS
         ]
         platforms.sort(key=lambda item: PLATFORM_LABELS[item.platform])
+        effective_tone = metadata.tone or pipeline_config.CLIP_TYPE
         return AccountResponse(
             id=metadata.id,
             display_name=metadata.display_name,
@@ -466,6 +483,8 @@ class AccountStore:
             created_at=metadata.created_at,
             platforms=platforms,
             active=metadata.active,
+            tone=metadata.tone,
+            effective_tone=effective_tone,
         )
 
     def _get_auth_handler(self, platform: SupportedPlatform) -> AuthHandler:
@@ -562,6 +581,8 @@ class AccountStore:
             metadata = self._load_metadata(account_id)
             if payload.active is not None:
                 metadata.active = payload.active
+            if "tone" in payload.model_fields_set:
+                metadata.tone = payload.tone
             self._write_metadata(metadata)
         return self._render_account(metadata)
 

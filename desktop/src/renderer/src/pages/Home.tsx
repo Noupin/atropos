@@ -603,9 +603,12 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       cleanupConnection()
 
       try {
+        const toneOverride =
+          availableAccounts.find((account) => account.id === accountId)?.tone ?? null
         const { jobId } = await startPipelineJob({
           url: urlToProcess,
           account: accountId,
+          tone: toneOverride,
           reviewMode: shouldPauseForReview
         })
         activeJobIdRef.current = jobId
@@ -644,7 +647,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         }))
       }
     },
-    [cleanupConnection, handlePipelineEvent, updateState]
+    [availableAccounts, cleanupConnection, handlePipelineEvent, updateState]
   )
 
   useEffect(() => {
