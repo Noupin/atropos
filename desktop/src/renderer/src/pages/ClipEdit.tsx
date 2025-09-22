@@ -23,6 +23,11 @@ const toSeconds = (value: number): number => Math.max(0, Number.isFinite(value) 
 const MIN_CLIP_GAP = 0.25
 const MIN_PREVIEW_DURATION = 0.05
 const DEFAULT_EXPAND_SECONDS = 10
+// Keep duration guardrails aligned with the backend defaults in server/config.py.
+const MIN_CLIP_DURATION_SECONDS = 10
+const MAX_CLIP_DURATION_SECONDS = 85
+const SWEET_SPOT_MIN_SECONDS = 25
+const SWEET_SPOT_MAX_SECONDS = 60
 
 const getDefaultPreviewMode = (clip: Clip | null): 'adjusted' | 'rendered' =>
   clip && clip.previewUrl === clip.playbackUrl ? 'rendered' : 'adjusted'
@@ -414,12 +419,18 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         return
       }
       if (kind === 'start') {
-        handleStartChange(offsetReference.startBase + value)
+        snapRangeToValues(offsetReference.startBase + value, rangeEnd)
       } else {
-        handleEndChange(offsetReference.endBase + value)
+        snapRangeToValues(rangeStart, offsetReference.endBase + value)
       }
     },
-    [handleEndChange, handleStartChange, offsetReference.endBase, offsetReference.startBase]
+    [
+      offsetReference.endBase,
+      offsetReference.startBase,
+      rangeEnd,
+      rangeStart,
+      snapRangeToValues
+    ]
   )
 
   const handleRangeInputKeyDown = useCallback(
@@ -625,6 +636,13 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   }, [clipState, minGap])
 
   const durationSeconds = Math.max(minGap, rangeEnd - rangeStart)
+  const durationEpsilon = 0.0005
+  const durationBelowMin = durationSeconds < MIN_CLIP_DURATION_SECONDS - durationEpsilon
+  const durationAboveMax = durationSeconds > MAX_CLIP_DURATION_SECONDS + durationEpsilon
+  const durationWithinLimits = !durationBelowMin && !durationAboveMax
+  const durationWithinSweetSpot =
+    durationSeconds >= SWEET_SPOT_MIN_SECONDS - durationEpsilon &&
+    durationSeconds <= SWEET_SPOT_MAX_SECONDS + durationEpsilon
   const startOffsetSeconds = rangeStart - offsetReference.startBase
   const endOffsetSeconds = rangeEnd - offsetReference.endBase
   const formattedStartOffset = formatRelativeSeconds(startOffsetSeconds)
@@ -1164,7 +1182,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                       : 'Previewing the adjusted range directly from the source video without captions or layout.'}
               </p>
               {renderedOutOfSync ? (
-                <p className="text-xs font-medium text-amber-200/90">
+                <p className="text-xs font-medium text-[color:color-mix(in_srgb,var(--warning-strong)_80%,var(--accent-contrast))]">
                   The rendered output does not yet reflect these boundaries. Save the clip to rerun
                   step 7 and refresh the export.
                 </p>
@@ -1373,6 +1391,39 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   {formatDuration(durationSeconds)}
                 </span>
               </div>
+              {!durationWithinLimits ? (
+                <div className="flex items-start gap-2 rounded-lg border border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] px-3 py-2 text-xs text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]">
+                  <span
+                    className="mt-0.5 h-2 w-2 flex-shrink-0 rounded-full bg-[color:var(--error-strong)]"
+                    aria-hidden="true"
+                  />
+                  <div className="space-y-1">
+                    <p className="font-semibold uppercase tracking-wide">Outside clip limits</p>
+                    <p>
+                      Clips must stay between {MIN_CLIP_DURATION_SECONDS.toFixed(0)}s and{' '}
+                      {MAX_CLIP_DURATION_SECONDS.toFixed(0)}s. Adjust the boundaries to bring
+                      this clip back in range. Current duration: {formatDuration(durationSeconds)}.
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+              {durationWithinLimits && !durationWithinSweetSpot ? (
+                <div className="flex items-start gap-2 rounded-lg border border-[color:color-mix(in_srgb,var(--warning-strong)_45%,var(--edge))] bg-[color:var(--warning-soft)] px-3 py-2 text-xs text-[color:var(--warning-contrast)]">
+                  <span
+                    className="mt-0.5 h-2 w-2 flex-shrink-0 rounded-full bg-[color:var(--warning-strong)]"
+                    aria-hidden="true"
+                  />
+                  <div className="space-y-1">
+                    <p className="font-semibold uppercase tracking-wide">Outside sweet spot</p>
+                    <p>
+                      The recommended sweet spot is {SWEET_SPOT_MIN_SECONDS.toFixed(0)}–
+                      {SWEET_SPOT_MAX_SECONDS.toFixed(0)} seconds. Tweaking the boundaries can help
+                      this clip land inside the preferred window. Current duration:{' '}
+                      {formatDuration(durationSeconds)}.
+                    </p>
+                  </div>
+                </div>
+              ) : null}
               <div className="flex flex-wrap items-center gap-3 text-xs font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
                 <label className="flex items-center gap-2">
                   Expand window (seconds)
@@ -1436,7 +1487,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   const indicatorClasses = isCompleted
                     ? 'border-[color:color-mix(in_srgb,var(--success-strong)_45%,var(--edge))] bg-[color:var(--success-soft)] text-[color:color-mix(in_srgb,var(--success-strong)_85%,var(--accent-contrast))]'
                     : isFailed
-                      ? 'bg-rose-500/10 text-rose-200 border border-rose-500/40'
+                      ? 'border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]'
                       : isRunning
                         ? 'border-[var(--ring)] text-[var(--ring)]'
                         : 'border-white/15 text-[var(--muted)]'
@@ -1466,7 +1517,11 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
               </ol>
             </div>
           ) : null}
-          {saveError ? <p className="text-sm text-rose-400">{saveError}</p> : null}
+          {saveError ? (
+            <p className="text-sm text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
+              {saveError}
+            </p>
+          ) : null}
           {saveSuccess ? (
             <p className="text-sm text-[color:color-mix(in_srgb,var(--success-strong)_82%,var(--accent-contrast))]">
               {saveSuccess}
