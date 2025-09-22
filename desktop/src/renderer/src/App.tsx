@@ -41,11 +41,11 @@ const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
 
 const NavItemLabel: FC<{ label: string; isActive: boolean }> = ({ label, isActive }) => (
-  <span className="flex flex-col items-center gap-1">
-    <span>{label}</span>
+  <span className="relative flex h-full items-center justify-center">
+    <span className="leading-none">{label}</span>
     <span
       aria-hidden
-      className={`h-0.5 w-8 rounded-full transition ${
+      className={`pointer-events-none absolute left-1/2 bottom-1 h-0.5 w-8 -translate-x-1/2 rounded-full transition ${
         isActive
           ? 'bg-[color:var(--accent)] opacity-100'
           : 'bg-[color:var(--edge-soft)] opacity-0 group-hover:opacity-60'
@@ -356,7 +356,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   const navLinkClassName = useCallback(
     ({ isActive }: { isActive: boolean }) =>
-      `group relative rounded-[14px] px-3 py-1.5 text-sm transition ${
+      `group relative inline-flex h-10 items-center justify-center rounded-[14px] px-4 text-sm font-medium transition ${
         isActive
           ? 'bg-[color:color-mix(in_srgb,var(--panel-strong)_70%,transparent)] text-[var(--fg)] shadow-[0_10px_24px_rgba(43,42,40,0.12)]'
           : 'text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_55%,transparent)] hover:text-[var(--fg)]'
