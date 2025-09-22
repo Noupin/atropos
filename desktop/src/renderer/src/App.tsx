@@ -9,6 +9,7 @@ import Library from './pages/Library'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
 import { createInitialPipelineSteps } from './data/pipeline'
+import useNavigationHistory from './hooks/useNavigationHistory'
 import type {
   AccountSummary,
   AuthPingSummary,
@@ -79,6 +80,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [authStatus, setAuthStatus] = useState<AuthPingSummary | null>(null)
   const [authError, setAuthError] = useState<string | null>(null)
   const [isDark, setIsDark] = useState(false)
+
+  useNavigationHistory()
   const availableAccounts = useMemo(
     () =>
       accounts.filter(
@@ -389,7 +392,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
               className="self-start rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] px-4 py-2 text-sm font-semibold uppercase tracking-wide text-[var(--fg)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_75%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)] md:self-auto"
               aria-label="Toggle theme"
             >
-              {isDark ? 'Switch to light' : 'Switch to dark'}
+              {isDark ? 'Light mode' : 'Dark mode'}
             </button>
           </div>
           <Search

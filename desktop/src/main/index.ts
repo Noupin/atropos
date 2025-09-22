@@ -4,9 +4,27 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
 
+type NavigationCommand = 'back' | 'forward'
+
+type NavigationState = {
+  canGoBack: boolean
+  canGoForward: boolean
+}
+
+let mainWindow: BrowserWindow | null = null
+let navigationState: NavigationState = { canGoBack: false, canGoForward: false }
+
+const sendNavigationCommand = (direction: NavigationCommand): void => {
+  if (!mainWindow) {
+    return
+  }
+
+  mainWindow.webContents.send('navigation:command', direction)
+}
+
 function createWindow(): void {
   // Create the browser window.
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 900,
     height: 670,
     show: false,
@@ -19,8 +37,46 @@ function createWindow(): void {
     }
   })
 
+  navigationState = { canGoBack: false, canGoForward: false }
+
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow?.show()
+  })
+
+  mainWindow.on('app-command', (_event, command) => {
+    if (command === 'browser-backward') {
+      if (navigationState.canGoBack) {
+        sendNavigationCommand('back')
+      }
+      return
+    }
+
+    if (command === 'browser-forward') {
+      if (navigationState.canGoForward) {
+        sendNavigationCommand('forward')
+      }
+    }
+  })
+
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' && input.type !== 'mouseDown') {
+      return
+    }
+
+    if (input.code === 'BrowserBack' || input.button === 'back') {
+      if (navigationState.canGoBack) {
+        event.preventDefault()
+        sendNavigationCommand('back')
+      }
+      return
+    }
+
+    if (input.code === 'BrowserForward' || input.button === 'forward') {
+      if (navigationState.canGoForward) {
+        event.preventDefault()
+        sendNavigationCommand('forward')
+      }
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -35,6 +91,10 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
 }
 
 // This method will be called when Electron has finished
@@ -54,6 +114,9 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+  ipcMain.on('navigation:state', (_event, state: NavigationState) => {
+    navigationState = state
+  })
   ipcMain.handle('clips:list', async (_event, accountId: string | null) => {
     try {
       return await listAccountClips(accountId)
