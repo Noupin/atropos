@@ -1053,7 +1053,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   }, [setSharedVolume])
 
   const handleVideoLoadedMetadata = useCallback(() => {
-    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
+    if (!clipState || previewMode === 'rendered') {
       return
     }
     const element = previewVideoRef.current
@@ -1071,7 +1071,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
         return prev
       })
     }
-    if (Math.abs(element.currentTime - previewStart) > 0.05) {
+    if (previewSourceIsFile && Math.abs(element.currentTime - previewStart) > 0.05) {
       element.currentTime = previewStart
     }
   }, [clipState, minGap, previewMode, previewSourceIsFile, previewStart])

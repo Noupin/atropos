@@ -212,4 +212,29 @@ describe('ClipEdit source window expansion', () => {
     expect(Number(updatedHandle.getAttribute('aria-valuenow'))).toBeCloseTo(120, 2)
     expect(Number(updatedHandle.getAttribute('aria-valuemax'))).toBeCloseTo(120, 2)
   })
+
+  it('extends the source boundary using metadata even when the preview is remote', async () => {
+    renderClipEdit(undefined, { previewUrl: 'https://cdn.example.com/source.mp4' })
+
+    const endHandle = await screen.findByRole('slider', { name: /adjust clip end/i })
+    expect(Number(endHandle.getAttribute('aria-valuemax'))).toBeCloseTo(15, 2)
+
+    const video = document.querySelector('video') as HTMLVideoElement | null
+    expect(video).not.toBeNull()
+    if (!video) {
+      throw new Error('Expected preview video element to be rendered')
+    }
+
+    Object.defineProperty(video, 'duration', { value: 210, configurable: true })
+    Object.defineProperty(video, 'currentTime', { value: 0, writable: true })
+
+    await act(async () => {
+      fireEvent.loadedMetadata(video)
+    })
+
+    await waitFor(() => {
+      const handle = screen.getByRole('slider', { name: /adjust clip end/i })
+      expect(Number(handle.getAttribute('aria-valuemax'))).toBeCloseTo(210, 2)
+    })
+  })
 })
