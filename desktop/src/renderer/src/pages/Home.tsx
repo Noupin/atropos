@@ -963,7 +963,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                       : 'Select an account from the top navigation before starting.'}
                 </div>
                 {availableAccounts.length === 0 ? (
-                  <p className="text-xs text-amber-300">
+                  <p className="text-xs text-[color:color-mix(in_srgb,var(--warning-strong)_72%,var(--accent-contrast))]">
                     Enable an account with an active platform from your profile before starting the pipeline.
                   </p>
                 ) : null}
@@ -1018,11 +1018,18 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                 : 'against the backend API for live progress updates.'}
             </div>
             {accountError ? (
-              <p id="account-error" className="text-xs font-medium text-rose-400">
+              <p
+                id="account-error"
+                className="text-xs font-medium text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]"
+              >
                 {accountError}
               </p>
             ) : null}
-            {urlError ? <p className="text-xs font-medium text-rose-400">{urlError}</p> : null}
+            {urlError ? (
+              <p className="text-xs font-medium text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
+                {urlError}
+              </p>
+            ) : null}
           </form>
 
           <div className="rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]">
@@ -1034,13 +1041,13 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
               <PipelineProgress steps={steps} />
             </div>
             {awaitingReview ? (
-              <div className="mt-4 rounded-lg border border-amber-400/40 bg-[color:color-mix(in_srgb,var(--card)_75%,transparent)] p-4 text-sm text-amber-200">
+              <div className="mt-4 rounded-lg border border-[color:color-mix(in_srgb,var(--warning-strong)_45%,var(--edge))] bg-[color:var(--warning-soft)] p-4 text-sm text-[color:var(--warning-contrast)]">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <span>Review the clips below and resume the pipeline once you&apos;re happy with the trims.</span>
                   <button
                     type="button"
                     onClick={handleResumePipeline}
-                    className="inline-flex items-center justify-center rounded-lg border border-white/20 bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-50 transition hover:bg-amber-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                    className="inline-flex items-center justify-center rounded-lg border border-[color:color-mix(in_srgb,var(--warning-strong)_45%,var(--edge))] bg-[color:color-mix(in_srgb,var(--warning-strong)_38%,transparent)] px-3 py-1.5 text-xs font-semibold text-[color:var(--warning-contrast)] transition hover:bg-[color:color-mix(in_srgb,var(--warning-strong)_48%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--warning-strong)_70%,transparent)]"
                   >
                     Resume pipeline
                   </button>
@@ -1122,8 +1129,16 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
                 {isOpeningFolder ? 'Opening…' : 'Open clips folder'}
               </button>
             </div>
-            {folderMessage ? <p className="text-sm text-emerald-300">{folderMessage}</p> : null}
-            {folderErrorMessage ? <p className="text-sm text-rose-400">{folderErrorMessage}</p> : null}
+            {folderMessage ? (
+              <p className="text-sm text-[color:color-mix(in_srgb,var(--success-strong)_78%,var(--accent-contrast))]">
+                {folderMessage}
+              </p>
+            ) : null}
+            {folderErrorMessage ? (
+              <p className="text-sm text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
+                {folderErrorMessage}
+              </p>
+            ) : null}
             {timelineClips.length > 0 ? (
               <div className="relative mt-2">
                 <div className="absolute left-3 top-0 bottom-0 w-px bg-white/10" aria-hidden="true" />

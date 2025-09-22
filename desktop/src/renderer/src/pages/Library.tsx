@@ -504,7 +504,7 @@ const Library: FC<LibraryProps> = ({
               </div>
             </div>
             {clipsError ? (
-              <div className="rounded-lg border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              <div className="rounded-lg border border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] px-4 py-3 text-sm text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]">
                 {clipsError}
               </div>
             ) : null}
