@@ -1415,7 +1415,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 className="relative mt-6 h-2 rounded-full bg-[color:var(--clip-track)] shadow-inner"
               >
                 <div
-                  className={`pointer-events-none absolute -top-1 -bottom-1 ${originalOverlayLayer} rounded-none bg-[color:var(--clip-original)]`}
+                  className={`pointer-events-none absolute -top-1 -bottom-1 ${originalOverlayLayer} rounded-none bg-[color:color-mix(in_srgb,var(--clip-original)_65%,transparent)]`}
                   style={{
                     left: originalOverlayLeftInset,
                     right: originalOverlayRightInset
@@ -1424,7 +1424,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 />
                 {shouldShowRenderedOverlay ? (
                   <div
-                    className={`pointer-events-none absolute -top-1 -bottom-1 ${renderedOverlayLayer} rounded-none bg-[color:var(--clip-rendered)]`}
+                    className={`pointer-events-none absolute -top-1 -bottom-1 ${renderedOverlayLayer} rounded-none bg-[color:color-mix(in_srgb,var(--clip-rendered)_65%,transparent)]`}
                     style={{
                       left: renderedOverlayLeftInset,
                       right: renderedOverlayRightInset
