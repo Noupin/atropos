@@ -1233,7 +1233,7 @@ if __name__ == "__main__":
     # Matt Lane: Can I Get Fit On Fast Food?
     # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
     # Matt Lane: Ask MLFit Show
-    # start next one at [25:]
+    # start next one at [50:]
     yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
 
 
