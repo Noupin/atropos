@@ -409,7 +409,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   return (
     <div className="flex min-h-full flex-col bg-[var(--bg)] text-[var(--fg)]">
-      <header className="sticky top-0 z-40 border-b border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] backdrop-blur-md">
+      <header className="sticky top-0 z-[60] border-b border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] backdrop-blur-md">
         <div className="flex w-full flex-col gap-4 px-6 py-5 lg:px-8">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex flex-wrap items-center gap-3">
