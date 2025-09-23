@@ -415,13 +415,13 @@ const Library: FC<LibraryProps> = ({
             <button
               type="button"
               onClick={() => toggleProjectCollapse(projectGroupId)}
-              className="flex items-center gap-2 text-left text-lg font-semibold text-[var(--fg)] transition hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+              className="group flex items-start gap-3 text-left text-[var(--fg)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
               aria-expanded={!isCollapsed}
             >
               <svg
                 viewBox="0 0 20 20"
                 aria-hidden="true"
-                className={`h-4 w-4 transform transition-transform ${
+                className={`mt-1 h-4 w-4 transform transition-transform text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)] ${
                   isCollapsed ? '-rotate-90' : 'rotate-0'
                 }`}
               >
@@ -430,7 +430,14 @@ const Library: FC<LibraryProps> = ({
                   d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08Z"
                 />
               </svg>
-              <span>{group.title}</span>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
+                  Video
+                </span>
+                <span className="text-lg font-semibold leading-snug text-[var(--fg)] transition-colors group-hover:text-[color:var(--accent)]">
+                  {group.title}
+                </span>
+              </div>
             </button>
             <span className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
               {clipCountLabel}
@@ -548,13 +555,13 @@ const Library: FC<LibraryProps> = ({
                             <button
                               type="button"
                               onClick={() => toggleAccountCollapse(accountGroup.id)}
-                              className="flex items-center gap-2 text-left text-lg font-semibold text-[var(--fg)] transition hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+                              className="group flex items-start gap-3 text-left text-[var(--fg)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
                               aria-expanded={!isCollapsed}
                             >
                               <svg
                                 viewBox="0 0 20 20"
                                 aria-hidden="true"
-                                className={`h-4 w-4 transform transition-transform ${
+                                className={`mt-1 h-4 w-4 transform transition-transform text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)] ${
                                   isCollapsed ? '-rotate-90' : 'rotate-0'
                                 }`}
                               >
@@ -563,7 +570,14 @@ const Library: FC<LibraryProps> = ({
                                   d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08Z"
                                 />
                               </svg>
-                              <span>{accountGroup.title}</span>
+                              <div className="flex flex-col">
+                                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_srgb,var(--accent)_70%,transparent)]">
+                                  Account
+                                </span>
+                                <span className="text-lg font-semibold leading-snug text-[var(--fg)] transition-colors group-hover:text-[color:var(--accent)]">
+                                  {accountGroup.title}
+                                </span>
+                              </div>
                             </button>
                             <span className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
                               {accountClipCount} {accountClipCount === 1 ? 'clip' : 'clips'}
