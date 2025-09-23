@@ -40,9 +40,26 @@ const THEME_STORAGE_KEY = 'atropos:theme'
 const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
 
-const NavItemLabel: FC<{ label: string; isActive: boolean }> = ({ label, isActive }) => (
+type NavItemLabelProps = {
+  label: string
+  isActive: boolean
+  badge?: string | null
+}
+
+const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge }) => (
   <span className="relative flex h-full items-center justify-center">
-    <span className="leading-none">{label}</span>
+    {badge ? (
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--accent)_80%,transparent)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--accent-contrast)] shadow-[0_10px_18px_rgba(43,42,40,0.18)]"
+      >
+        {badge}
+      </span>
+    ) : null}
+    <span className="leading-none">
+      {label}
+      {badge ? <span className="sr-only"> ({badge})</span> : null}
+    </span>
     <span
       aria-hidden
       className={`pointer-events-none absolute left-1/2 bottom-1 h-0.5 w-8 -translate-x-1/2 rounded-full transition ${
@@ -369,6 +386,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   )
 
   const isLibraryRoute = location.pathname.startsWith('/library')
+  const isClipEditRoute = /^\/clip\/[^/]+\/edit$/.test(location.pathname)
   const isSettingsRoute = location.pathname.startsWith('/settings')
   const showBackButton = location.pathname.startsWith('/clip/')
 
@@ -433,7 +451,13 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                   {({ isActive }) => <NavItemLabel label="Home" isActive={isActive} />}
                 </NavLink>
                 <NavLink to="/library" className={navLinkClassName}>
-                  {({ isActive }) => <NavItemLabel label="Library" isActive={isActive} />}
+                  {({ isActive }) => (
+                    <NavItemLabel
+                      label="Library"
+                      isActive={isActive}
+                      badge={isClipEditRoute ? 'Edit mode' : null}
+                    />
+                  )}
                 </NavLink>
                 <NavLink to="/profile" className={navLinkClassName}>
                   {({ isActive }) => <NavItemLabel label="Profile" isActive={isActive} />}
