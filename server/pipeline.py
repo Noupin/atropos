@@ -1216,25 +1216,25 @@ if __name__ == "__main__":
     # yt_url = "https://www.youtube.com/watch?v=Fe6vJU0IV2E"
 
 
-    # tone = Tone.FUNNY 
-    # account = "funnykinda"
-    # # In Review Playlist (newest first)
-    # # yt_url = "https://www.youtube.com/playlist?list=PLy3mMHt2i7RKE9ba8rfL7_qnFcpbUaA8_"
-    # # KFAF Playlist(newest first)
-    # # start next one at [11:]
-    # # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"
-    # # Last Of Us
-    # # start next one at [2:]
+    tone = Tone.FUNNY 
+    account = "funnykinda"
+    # In Review Playlist (newest first)
+    # yt_url = "https://www.youtube.com/playlist?list=PLy3mMHt2i7RKE9ba8rfL7_qnFcpbUaA8_"
+    # KFAF Playlist(newest first)
+    # start next one at [11:]
+    yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"
+    # Last Of Us
+    # start next one at [2:]
     # yt_url = "https://www.youtube.com/playlist?list=PLBIL5prmXqedEXXikBxPsvKRREB-DaoWb"
 
 
-    tone = Tone.HEALTH
-    account = "health"
-    # Matt Lane: Can I Get Fit On Fast Food?
-    # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
-    # Matt Lane: Ask MLFit Show
-    # start next one at [50:]
-    yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
+    # tone = Tone.HEALTH
+    # account = "health"
+    # # Matt Lane: Can I Get Fit On Fast Food?
+    # # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
+    # # Matt Lane: Ask MLFit Show
+    # # start next one at [50:]
+    # yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
 
 
     # tone = Tone.HISTORY
@@ -1255,5 +1255,5 @@ if __name__ == "__main__":
 
     urls = get_video_urls(yt_url)
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[25:50]:
+    for url in urls[11:20]:
         process_video(url, account=account, tone=tone)
