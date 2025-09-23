@@ -1221,11 +1221,20 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const timelineTotal = Math.max(windowEnd - windowStart, minGap)
   const startPercent = ((rangeStart - windowStart) / timelineTotal) * 100
   const endPercent = ((rangeEnd - windowStart) / timelineTotal) * 100
-  const toTrackInset = (percent: number): string => {
+  const toHandleInset = (percent: number): string => {
     if (!Number.isFinite(percent)) {
       return '0px'
     }
-    return `max(0px, calc(${percent}% - 0.5rem))`
+    const clamped = Math.max(0, Math.min(100, percent))
+    return `max(0px, calc(${clamped}% - 0.5rem))`
+  }
+  const toPercentInset = (percent: number): string => {
+    if (!Number.isFinite(percent)) {
+      return '0%'
+    }
+    const clamped = Math.max(0, Math.min(100, percent))
+    const normalized = Math.round(clamped * 1_000_000) / 1_000_000
+    return `${normalized}%`
   }
   const safeTimelineTotal = timelineTotal <= 0 ? 1 : timelineTotal
   const clampRatio = (value: number): number => Math.max(0, Math.min(1, value))
@@ -1238,8 +1247,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const originalOverlayLeftPercent = originalStartRatio * 100
   const originalOverlayRightPercent =
     clampRatio((windowEnd - clipState.originalEndSeconds) / safeTimelineTotal) * 100
-  const originalOverlayLeftInset = toTrackInset(originalOverlayLeftPercent)
-  const originalOverlayRightInset = toTrackInset(originalOverlayRightPercent)
+  const originalOverlayLeftInset = toPercentInset(originalOverlayLeftPercent)
+  const originalOverlayRightInset = toPercentInset(originalOverlayRightPercent)
   const originalStartMarkerPercent = originalStartRatio * 100
   const originalEndMarkerPercent = originalEndRatio * 100
   const renderedStartRatio = clampRatio((clipState.startSeconds - windowStart) / safeTimelineTotal)
@@ -1247,12 +1256,12 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const renderedOverlayLeftPercent = renderedStartRatio * 100
   const renderedOverlayRightPercent =
     clampRatio((windowEnd - clipState.endSeconds) / safeTimelineTotal) * 100
-  const renderedOverlayLeftInset = toTrackInset(renderedOverlayLeftPercent)
-  const renderedOverlayRightInset = toTrackInset(renderedOverlayRightPercent)
+  const renderedOverlayLeftInset = toPercentInset(renderedOverlayLeftPercent)
+  const renderedOverlayRightInset = toPercentInset(renderedOverlayRightPercent)
   const renderedStartMarkerPercent = renderedStartRatio * 100
   const renderedEndMarkerPercent = renderedEndRatio * 100
-  const currentOverlayLeftInset = toTrackInset(startPercent)
-  const currentOverlayRightInset = toTrackInset(100 - endPercent)
+  const currentOverlayLeftInset = toHandleInset(startPercent)
+  const currentOverlayRightInset = toHandleInset(100 - endPercent)
   const originalDuration = Math.max(
     0,
     clipState.originalEndSeconds - clipState.originalStartSeconds
