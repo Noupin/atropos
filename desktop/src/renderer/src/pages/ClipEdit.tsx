@@ -1246,6 +1246,10 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     clipState.originalEndSeconds - clipState.originalStartSeconds
   )
   const renderedDuration = Math.max(0, clipState.endSeconds - clipState.startSeconds)
+  const renderMatchesOriginal =
+    Math.abs(clipState.startSeconds - clipState.originalStartSeconds) < 0.001 &&
+    Math.abs(clipState.endSeconds - clipState.originalEndSeconds) < 0.001
+  const shouldShowRenderedOverlay = !renderMatchesOriginal
   const renderedExtendsOriginal = renderedDuration >= originalDuration
   const originalOverlayLayer = renderedExtendsOriginal ? 'z-20' : 'z-10'
   const renderedOverlayLayer = renderedExtendsOriginal ? 'z-10' : 'z-20'
@@ -1392,14 +1396,16 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   }}
                   aria-hidden="true"
                 />
-                <div
-                  className={`pointer-events-none absolute -top-1 -bottom-1 ${renderedOverlayLayer} rounded-full bg-[color:var(--clip-rendered)]`}
-                  style={{
-                    left: `${renderedOverlayLeftPercent}%`,
-                    right: `${renderedOverlayRightPercent}%`
-                  }}
-                  aria-hidden="true"
-                />
+                {shouldShowRenderedOverlay ? (
+                  <div
+                    className={`pointer-events-none absolute -top-1 -bottom-1 ${renderedOverlayLayer} rounded-full bg-[color:var(--clip-rendered)]`}
+                    style={{
+                      left: `${renderedOverlayLeftPercent}%`,
+                      right: `${renderedOverlayRightPercent}%`
+                    }}
+                    aria-hidden="true"
+                  />
+                ) : null}
                 <div
                   className="pointer-events-none absolute -top-3 -bottom-3 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-original-marker)]"
                   style={{ left: `${originalStartMarkerPercent}%` }}
@@ -1410,16 +1416,20 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   style={{ left: `${originalEndMarkerPercent}%` }}
                   aria-hidden="true"
                 />
-                <div
-                  className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-rendered-marker)]"
-                  style={{ left: `${renderedStartMarkerPercent}%` }}
-                  aria-hidden="true"
-                />
-                <div
-                  className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-rendered-marker)]"
-                  style={{ left: `${renderedEndMarkerPercent}%` }}
-                  aria-hidden="true"
-                />
+                {shouldShowRenderedOverlay ? (
+                  <div
+                    className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-rendered-marker)]"
+                    style={{ left: `${renderedStartMarkerPercent}%` }}
+                    aria-hidden="true"
+                  />
+                ) : null}
+                {shouldShowRenderedOverlay ? (
+                  <div
+                    className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-rendered-marker)]"
+                    style={{ left: `${renderedEndMarkerPercent}%` }}
+                    aria-hidden="true"
+                  />
+                ) : null}
                 <div
                   className="pointer-events-none absolute -top-1 -bottom-1 z-40 rounded-full bg-[color:var(--clip-current)]"
                   style={{ left: `${startPercent}%`, right: `${100 - endPercent}%` }}
