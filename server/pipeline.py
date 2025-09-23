@@ -1228,13 +1228,13 @@ if __name__ == "__main__":
     # yt_url = "https://www.youtube.com/playlist?list=PLBIL5prmXqedEXXikBxPsvKRREB-DaoWb"
 
 
-    # tone = Tone.HEALTH
-    # account = "health"
-    # # Matt Lane: Can I Get Fit On Fast Food?
-    # # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
-    # # Matt Lane: Ask MLFit Show
-    # # start next one at [25:]
-    # yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
+    tone = Tone.HEALTH
+    account = "health"
+    # Matt Lane: Can I Get Fit On Fast Food?
+    # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
+    # Matt Lane: Ask MLFit Show
+    # start next one at [25:]
+    yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
 
 
     # tone = Tone.HISTORY
@@ -1246,14 +1246,14 @@ if __name__ == "__main__":
     # yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
 
 
-    tone = Tone.CONSPIRACY
-    account = "secrets"
-    # Bright Insight: Lost Civilizations
-    # start next one at [20:]
-    yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
+    # tone = Tone.CONSPIRACY
+    # account = "secrets"
+    # # Bright Insight: Lost Civilizations
+    # # start next one at [20:]
+    # yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
 
 
     urls = get_video_urls(yt_url)
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[10:20]:
+    for url in urls[25:50]:
         process_video(url, account=account, tone=tone)
