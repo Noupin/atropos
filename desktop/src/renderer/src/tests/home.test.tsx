@@ -268,6 +268,7 @@ describe('Home pipeline events', () => {
           channel: 'Creator Hub',
           description: 'Full video: https://youtube.com/watch?v=example\n#space',
           duration_seconds: 32,
+          source_duration_seconds: 1800,
           created_at: new Date('2024-06-01T12:00:00Z').toISOString(),
           source_url: 'https://youtube.com/watch?v=example',
           source_title: 'Original science video',

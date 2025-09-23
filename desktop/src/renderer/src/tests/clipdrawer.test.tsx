@@ -12,6 +12,7 @@ const sampleClips: Clip[] = [
     views: 12345,
     createdAt: '2024-10-01T12:00:00Z',
     durationSec: 42,
+    sourceDurationSeconds: null,
     thumbnail: 'https://example.com/one.jpg'
   },
   {
@@ -21,6 +22,7 @@ const sampleClips: Clip[] = [
     views: 6789,
     createdAt: '2024-11-05T09:30:00Z',
     durationSec: 58,
+    sourceDurationSeconds: null,
     thumbnail: 'https://example.com/two.jpg'
   }
 ]
