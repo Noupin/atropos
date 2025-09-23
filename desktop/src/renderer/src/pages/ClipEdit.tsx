@@ -250,8 +250,20 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
     if (!clipState) {
       return minGap
     }
+    const sourceDuration =
+      clipState.sourceDurationSeconds != null && Number.isFinite(clipState.sourceDurationSeconds)
+        ? Math.max(minGap, clipState.sourceDurationSeconds)
+        : null
+    if (sourceDuration !== null) {
+      return sourceDuration
+    }
     const derivedFromDuration = clipState.originalStartSeconds + Math.max(clipState.durationSec, minGap)
-    return Math.max(minGap, clipState.originalEndSeconds, clipState.endSeconds, derivedFromDuration)
+    return Math.max(
+      minGap,
+      clipState.originalEndSeconds,
+      clipState.endSeconds,
+      derivedFromDuration
+    )
   }, [clipState, minGap])
 
   useEffect(() => {
@@ -266,12 +278,16 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       setRangeStart(updated.startSeconds)
       setRangeEnd(updated.endSeconds)
       setWindowStart(Math.max(0, Math.min(updated.startSeconds, updated.originalStartSeconds)))
-      const updatedSourceEnd = Math.max(
+      const fallbackSourceEnd = Math.max(
         minGap,
         updated.originalEndSeconds,
         updated.endSeconds,
         updated.originalStartSeconds + Math.max(updated.durationSec, minGap)
       )
+      const updatedSourceEnd =
+        updated.sourceDurationSeconds != null && Number.isFinite(updated.sourceDurationSeconds)
+          ? Math.max(minGap, updated.sourceDurationSeconds)
+          : fallbackSourceEnd
       const desiredWindowEnd = Math.max(
         updated.endSeconds,
         updated.originalEndSeconds,
@@ -390,6 +406,14 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
       return clamped === prevEnd ? prevEnd : clamped
     })
   }, [minGap, sourceEndBound, windowStart])
+
+  useEffect(() => {
+    setRangeEnd((prevEnd) => {
+      const upperBound = Math.min(sourceEndBound, windowEnd)
+      const limited = Math.max(rangeStart + minGap, Math.min(prevEnd, upperBound))
+      return Math.abs(limited - prevEnd) < 0.0005 ? prevEnd : limited
+    })
+  }, [minGap, rangeStart, sourceEndBound, windowEnd])
 
   const clampWithinWindow = useCallback(
     (value: number, kind: 'start' | 'end'): number => {

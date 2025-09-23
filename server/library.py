@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from fastapi import HTTPException, status
 
 from schedule_upload import get_out_root
+from helpers.media import probe_media_duration
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_ACCOUNT_PLACEHOLDER = "__default__"
@@ -56,6 +57,7 @@ class DescriptionMetadata:
 class ProjectMetadata:
     title: str
     published_at: Optional[str]
+    source_duration_seconds: Optional[float] = None
 
 
 @dataclass
@@ -73,6 +75,7 @@ class LibraryClip:
     channel: str
     created_at: datetime
     duration_seconds: float
+    source_duration_seconds: Optional[float]
     description: str
     source_url: str
     source_title: str
@@ -116,6 +119,7 @@ class LibraryClip:
             "channel": self.channel,
             "created_at": self.created_at,
             "duration_seconds": self.duration_seconds,
+            "source_duration_seconds": self.source_duration_seconds,
             "description": self.description,
             "playback_url": str(playback_url),
             "preview_url": str(preview_url),
@@ -332,6 +336,20 @@ def _infer_project_metadata(project_name: str) -> ProjectMetadata:
     return ProjectMetadata(title=title, published_at=published_at)
 
 
+def _load_project_metadata(project_dir: Path) -> ProjectMetadata:
+    info = _infer_project_metadata(project_dir.name)
+    video_path = project_dir / f"{project_dir.name}.mp4"
+    try:
+        exists = video_path.exists()
+    except OSError:
+        exists = False
+    if exists:
+        duration = probe_media_duration(video_path)
+        if duration is not None and math.isfinite(duration) and duration > 0:
+            info.source_duration_seconds = float(duration)
+    return info
+
+
 def _load_candidate_metadata(project_dir: Path) -> Dict[str, CandidateMetadata]:
     metadata: Dict[str, CandidateMetadata] = {}
     for manifest_name in CANDIDATE_MANIFEST_FILES:
@@ -530,6 +548,14 @@ def _build_clip(
         if description_metadata.timestamp_seconds is not None
         else (start if start is not None and math.isfinite(start) else None)
     )
+    if (
+        project_info.source_duration_seconds is not None
+        and math.isfinite(project_info.source_duration_seconds)
+        and project_info.source_duration_seconds >= 0
+    ):
+        source_duration_value = float(project_info.source_duration_seconds)
+    else:
+        source_duration_value = None
     relative_path = clip_path.relative_to(base)
     clip_id = _encode_clip_id(relative_path)
     project_relative = project_dir.relative_to(base)
@@ -541,6 +567,7 @@ def _build_clip(
         channel=description_metadata.channel or "Unknown channel",
         created_at=created_at,
         duration_seconds=duration,
+        source_duration_seconds=source_duration_value,
         description=description_text,
         source_url=description_metadata.source_url
         or description_metadata.timestamp_url
@@ -573,7 +600,7 @@ def list_account_clips_sync(account_id: Optional[str]) -> List[LibraryClip]:
     projects = _find_project_directories(account_dir)
     clips: List[LibraryClip] = []
     for project_dir in projects:
-        project_info = _infer_project_metadata(project_dir.name)
+        project_info = _load_project_metadata(project_dir)
         candidate_map = _load_candidate_metadata(project_dir)
         shorts_dir = project_dir / "shorts"
         try:

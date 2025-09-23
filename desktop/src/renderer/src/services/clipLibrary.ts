@@ -8,6 +8,7 @@ type RawClipPayload = {
   channel?: unknown
   created_at?: unknown
   duration_seconds?: unknown
+  source_duration_seconds?: unknown
   description?: unknown
   playback_url?: unknown
   preview_url?: unknown
@@ -42,6 +43,7 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
     channel,
     created_at: createdAt,
     duration_seconds: durationSeconds,
+    source_duration_seconds: sourceDurationSecondsRaw,
     description,
     playback_url: playbackUrl,
     preview_url: previewUrlRaw,
@@ -116,6 +118,11 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
       : endSeconds
   const hasAdjustments = hasAdjustmentsRaw === true
 
+  const sourceDurationSeconds =
+    typeof sourceDurationSecondsRaw === 'number' && Number.isFinite(sourceDurationSecondsRaw)
+      ? Math.max(0, sourceDurationSecondsRaw)
+      : null
+
   const clip: Clip = {
     id,
     title,
@@ -123,6 +130,7 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
     views: typeof views === 'number' ? views : null,
     createdAt,
     durationSec: durationSeconds,
+    sourceDurationSeconds,
     thumbnail: typeof thumbnailUrl === 'string' && thumbnailUrl.length > 0 ? thumbnailUrl : null,
     playbackUrl,
     previewUrl,

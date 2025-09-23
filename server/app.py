@@ -398,6 +398,7 @@ class ClipArtifact:
     end_seconds: float = 0.0
     original_start_seconds: float = 0.0
     original_end_seconds: float = 0.0
+    source_duration_seconds: float | None = None
 
 
 class ClipManifest(BaseModel):
@@ -408,6 +409,7 @@ class ClipManifest(BaseModel):
     channel: str
     created_at: datetime
     duration_seconds: float = Field(..., ge=0)
+    source_duration_seconds: float | None = Field(default=None, ge=0)
     description: str
     playback_url: str
     preview_url: str
@@ -448,6 +450,7 @@ def _clip_to_payload(clip: ClipArtifact, request: Request, job_id: str) -> Dict[
         "channel": clip.channel,
         "created_at": clip.created_at,
         "duration_seconds": clip.duration_seconds,
+        "source_duration_seconds": clip.source_duration_seconds,
         "description": clip.description,
         "playback_url": str(
             request.url_for("get_job_clip_video", job_id=job_id, clip_id=clip.clip_id)
@@ -538,6 +541,11 @@ class JobState:
         duration_value = _safe_float(data.get("duration_seconds"))
         if duration_value is None:
             duration_value = 0.0
+        source_duration_value = _safe_float(data.get("source_duration_seconds"))
+        if source_duration_value is not None and math.isfinite(source_duration_value):
+            source_duration = max(0.0, source_duration_value)
+        else:
+            source_duration = None
 
         raw_start = data.get("start_seconds")
         raw_end = data.get("end_seconds")
@@ -590,6 +598,7 @@ class JobState:
             end_seconds=max(0.0, end_value),
             original_start_seconds=max(0.0, original_start_value),
             original_end_seconds=max(0.0, original_end_value),
+            source_duration_seconds=source_duration,
         )
 
         self.project_dir = base
@@ -1146,6 +1155,7 @@ async def adjust_job_clip(
         end_seconds=max(0.0, end_seconds),
         original_start_seconds=clip.original_start_seconds,
         original_end_seconds=clip.original_end_seconds,
+        source_duration_seconds=clip.source_duration_seconds,
     )
 
     with state.lock:

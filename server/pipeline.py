@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path="../.env")
 
 import json
+import math
 from typing import Any, Callable, TypeVar
 
 import config
@@ -221,6 +222,11 @@ def process_video(
             )
         return
 
+    source_duration_seconds: float | None = None
+    info_duration = video_info.get("duration")
+    if isinstance(info_duration, (int, float)) and math.isfinite(info_duration) and info_duration > 0:
+        source_duration_seconds = float(info_duration)
+
     source_title = video_info.get("title", "Unknown Title")
     uploader = video_info.get("uploader") or "Unknown Channel"
     raw_upload = str(video_info.get("upload_date") or "Unknown_Date")
@@ -252,6 +258,15 @@ def process_video(
     # ----------------------
     video_output_path = project_dir / f"{non_suffix_filename}.mp4"
 
+    def update_source_duration_from_file() -> None:
+        nonlocal source_duration_seconds
+        try:
+            probed = probe_media_duration(video_output_path)
+        except Exception:
+            probed = None
+        if probed is not None and math.isfinite(probed) and probed > 0:
+            source_duration_seconds = float(probed)
+
     def step_download() -> None:
         if video_output_path.exists() and video_output_path.stat().st_size > 0:
             emit_log(
@@ -273,6 +288,7 @@ def process_video(
                     extra=build_eta_extra(status),
                 ),
             )
+        update_source_duration_from_file()
 
     if should_run(1):
         run_pipeline_step(
@@ -285,6 +301,8 @@ def process_video(
             f"{Fore.YELLOW}Skipping STEP 1: assuming video exists at {video_output_path}{Style.RESET_ALL}",
             level="warning",
         )
+        if video_output_path.exists():
+            update_source_duration_from_file()
 
     # ----------------------
     # STEP 2: Acquire Audio
@@ -1120,6 +1138,11 @@ def process_video(
                         "end_seconds": float(candidate.end),
                         "original_start_seconds": float(candidate.start),
                         "original_end_seconds": float(candidate.end),
+                        "source_duration_seconds": (
+                            float(source_duration_seconds)
+                            if source_duration_seconds is not None
+                            else None
+                        ),
                     },
                 )
             )

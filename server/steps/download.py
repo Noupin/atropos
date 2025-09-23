@@ -3,6 +3,8 @@ from datetime import datetime
 
 from typing import Any, Callable
 
+import math
+
 import yt_dlp
 from yt_dlp.utils import DownloadError
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -113,10 +115,35 @@ def get_video_info(url: str):
     if not upload_date:
         upload_date = "Unknown Date"
     uploader = info.get("uploader") or info.get("channel") or "Unknown Channel"
+    duration_seconds: float | None = None
+    duration_value = info.get("duration")
+    if isinstance(duration_value, (int, float)) and math.isfinite(duration_value):
+        duration_seconds = float(duration_value)
+    elif isinstance(duration_value, str):
+        try:
+            parsed = float(duration_value)
+        except ValueError:
+            parsed = None
+        if parsed is not None and math.isfinite(parsed):
+            duration_seconds = float(parsed)
+    if duration_seconds is None:
+        duration_str = info.get("duration_string")
+        if isinstance(duration_str, str) and duration_str:
+            try:
+                components = [int(part) for part in duration_str.split(":")]
+            except ValueError:
+                components = []
+            if components:
+                total = 0
+                for component in components:
+                    total = total * 60 + component
+                duration_seconds = float(total)
+
     return {
         "title": title,
         "upload_date": upload_date,
         "uploader": uploader,
+        "duration": duration_seconds,
     }
 
 ProgressHook = Callable[[float, dict[str, Any]], None]

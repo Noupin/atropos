@@ -11,6 +11,7 @@ const mockClip: Clip = {
   views: 123_456,
   createdAt: '2024-10-01T10:00:00Z',
   durationSec: 75,
+  sourceDurationSeconds: 3600,
   thumbnail: 'https://images.unsplash.com/photo-1517430816045-df4b7de11d1d?auto=format&fit=crop&w=800&q=80',
   playbackUrl: 'file:///videos/test-clip.mp4',
   previewUrl: 'file:///videos/test-clip-source.mp4',

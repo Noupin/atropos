@@ -120,6 +120,11 @@ export const normaliseJobClip = (payload: UnknownRecord): Clip | null => {
 
   const { timestampUrl, timestampSeconds } = parseClipTimestamp(description)
 
+  const sourceDurationSeconds =
+    typeof payload.source_duration_seconds === 'number' && Number.isFinite(payload.source_duration_seconds)
+      ? Math.max(0, payload.source_duration_seconds)
+      : null
+
   const startSeconds =
     typeof payload.start_seconds === 'number' && Number.isFinite(payload.start_seconds)
       ? Math.max(0, payload.start_seconds)
@@ -145,6 +150,7 @@ export const normaliseJobClip = (payload: UnknownRecord): Clip | null => {
     views,
     createdAt,
     durationSec: durationSeconds,
+    sourceDurationSeconds,
     thumbnail: null,
     playbackUrl,
     previewUrl,
