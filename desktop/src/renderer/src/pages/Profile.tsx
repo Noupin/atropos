@@ -26,6 +26,23 @@ const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
   instagram: 'instagram_session.json'
 }
 
+const normalizeBillingError = (value: string): string => {
+  const message = value.trim()
+
+  if (message.length === 0) {
+    return 'Billing details are currently unavailable. Refresh to try again.'
+  }
+
+  if (message.toLowerCase() === 'not found') {
+    return 'No Stripe subscription is linked to this account yet. Start a subscription below to unlock access.'
+  }
+
+  const hasTerminalPunctuation = /[.!?]$/.test(message)
+  const suffix = hasTerminalPunctuation ? '' : '.'
+
+  return `${message}${suffix} Try refreshing or update your billing information below.`
+}
+
 const formatTimestamp = (value: string | null | undefined): string => {
   if (!value) {
     return '—'
@@ -881,7 +898,7 @@ const Profile: FC<ProfileProps> = ({
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unable to load billing information from Stripe.'
-      setSubscriptionError(message)
+      setSubscriptionError(normalizeBillingError(message))
       return null
     } finally {
       setIsLoadingSubscription(false)
@@ -983,7 +1000,7 @@ const Profile: FC<ProfileProps> = ({
       : accessError ?? 'Access status unavailable.'
 
   const accessRenewalLabel = accessStatus?.expiresAt
-    ? `Access valid until ${new Date(accessStatus.expiresAt).toLocaleString()}`
+    ? new Date(accessStatus.expiresAt).toLocaleString()
     : null
 
   const subscriptionPlanName = subscriptionStatus?.planName ?? accessStatus?.subscriptionPlan ?? 'Not subscribed'
@@ -996,7 +1013,7 @@ const Profile: FC<ProfileProps> = ({
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unable to refresh access permissions.'
-      setSubscriptionError((prev) => prev ?? message)
+      setSubscriptionError(normalizeBillingError(message))
     }
   }, [loadSubscriptionStatus, onRefreshAccessStatus])
 
@@ -1154,12 +1171,15 @@ const Profile: FC<ProfileProps> = ({
         </div>
 
         <aside className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_50%,transparent)] p-6 text-sm text-[var(--muted)]">
-          <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 p-4 text-left">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <span className={`${accessVariant.pill} text-xs`}>
-                <span className={accessVariant.dot} aria-hidden="true" />
-                {accessBadgeLabel}
-              </span>
+          <div className="flex flex-col gap-4 rounded-xl border border-white/10 bg-black/20 p-4 text-left">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-col gap-2">
+                <h3 className="text-sm font-semibold text-[var(--fg)]">Access & billing</h3>
+                <span className={`${accessVariant.pill} w-fit text-xs`}>
+                  <span className={accessVariant.dot} aria-hidden="true" />
+                  {accessBadgeLabel}
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={() => {
@@ -1171,41 +1191,55 @@ const Profile: FC<ProfileProps> = ({
                 {isCheckingAccess || isLoadingSubscription ? 'Refreshing…' : 'Refresh'}
               </button>
             </div>
-            <p className="text-xs text-[var(--muted)]">{accessSummaryText}</p>
-            {accessRenewalLabel ? (
-              <p className="text-[11px] text-[var(--muted)]">{accessRenewalLabel}</p>
-            ) : null}
-            {billingEmailLabel ? (
-              <p className="text-[11px] text-[var(--muted)]">Billing email: {billingEmailLabel}</p>
-            ) : null}
+            <p className="text-xs text-[var(--muted)]">
+              <span className="font-semibold text-[var(--fg)]">Status:</span> {accessSummaryText}
+            </p>
+            <div className="flex flex-col gap-1 text-[11px] text-[var(--muted)]">
+              {accessRenewalLabel ? (
+                <p>
+                  <span className="font-semibold text-[var(--fg)]">Access valid until:</span>{' '}
+                  {accessRenewalLabel}
+                </p>
+              ) : null}
+              {billingEmailLabel ? (
+                <p>
+                  <span className="font-semibold text-[var(--fg)]">Billing email:</span> {billingEmailLabel}
+                </p>
+              ) : null}
+            </div>
             {isLoadingSubscription ? (
               <p className="text-xs text-[var(--muted)]">Checking Stripe subscription…</p>
             ) : null}
             {subscriptionStatus ? (
-              <dl className="grid gap-2 text-xs text-[var(--muted)]">
-                <div className="flex items-center justify-between gap-2">
-                  <dt className="font-semibold text-[var(--fg)]">Plan</dt>
-                  <dd>{subscriptionPlanName}</dd>
-                </div>
-                {subscriptionStatus.renewsAt ? (
+              <div className="flex flex-col gap-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+                  Subscription details
+                </h4>
+                <dl className="grid gap-2 text-xs text-[var(--muted)]">
                   <div className="flex items-center justify-between gap-2">
-                    <dt className="font-semibold text-[var(--fg)]">Renews</dt>
-                    <dd>{formatTimestamp(subscriptionStatus.renewsAt)}</dd>
+                    <dt className="font-semibold text-[var(--fg)]">Plan</dt>
+                    <dd>{subscriptionPlanName}</dd>
                   </div>
-                ) : null}
-                {subscriptionStatus.trialEndsAt ? (
-                  <div className="flex items-center justify-between gap-2">
-                    <dt className="font-semibold text-[var(--fg)]">Trial ends</dt>
-                    <dd>{formatTimestamp(subscriptionStatus.trialEndsAt)}</dd>
-                  </div>
-                ) : null}
-                {subscriptionStatus.cancelAt ? (
-                  <div className="flex items-center justify-between gap-2">
-                    <dt className="font-semibold text-[var(--fg)]">Cancels</dt>
-                    <dd>{formatTimestamp(subscriptionStatus.cancelAt)}</dd>
-                  </div>
-                ) : null}
-              </dl>
+                  {subscriptionStatus.renewsAt ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <dt className="font-semibold text-[var(--fg)]">Renews</dt>
+                      <dd>{formatTimestamp(subscriptionStatus.renewsAt)}</dd>
+                    </div>
+                  ) : null}
+                  {subscriptionStatus.trialEndsAt ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <dt className="font-semibold text-[var(--fg)]">Trial ends</dt>
+                      <dd>{formatTimestamp(subscriptionStatus.trialEndsAt)}</dd>
+                    </div>
+                  ) : null}
+                  {subscriptionStatus.cancelAt ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <dt className="font-semibold text-[var(--fg)]">Cancels</dt>
+                      <dd>{formatTimestamp(subscriptionStatus.cancelAt)}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </div>
             ) : null}
             {subscriptionStatus?.latestInvoiceUrl ? (
               <a
@@ -1220,32 +1254,40 @@ const Profile: FC<ProfileProps> = ({
             {subscriptionError ? (
               <p className="text-xs font-medium text-[color:var(--error-strong)]">{subscriptionError}</p>
             ) : null}
-            <div className="flex flex-wrap gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  void handleStartCheckout()
-                }}
-                className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
-                disabled={isStartingCheckout}
-              >
-                {isStartingCheckout ? 'Redirecting…' : 'Subscribe with Stripe'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void handleOpenBillingPortal()
-                }}
-                className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
-                disabled={isOpeningPortal}
-              >
-                {isOpeningPortal ? 'Opening portal…' : 'Manage billing'}
-              </button>
+            <div className="flex flex-col gap-2 pt-1">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleStartCheckout()
+                  }}
+                  className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
+                  disabled={isStartingCheckout}
+                >
+                  {isStartingCheckout ? 'Redirecting…' : 'Subscribe with Stripe'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleOpenBillingPortal()
+                  }}
+                  className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
+                  disabled={isOpeningPortal}
+                >
+                  {isOpeningPortal ? 'Opening portal…' : 'Manage billing'}
+                </button>
+              </div>
+              <p className="text-[10px] text-[var(--muted)]">
+                <span className="font-semibold text-[var(--fg)]">Subscribe with Stripe</span> starts a new
+                plan, while{' '}
+                <span className="font-semibold text-[var(--fg)]">Manage billing</span> opens the Stripe
+                customer portal for existing subscriptions.
+              </p>
+              <p className="text-[10px] text-[var(--muted)]">
+                Payments are processed securely by Stripe. After updating your subscription, use Refresh
+                to sync access.
+              </p>
             </div>
-            <p className="text-[10px] text-[var(--muted)]">
-              Payments are processed securely by Stripe. After updating your subscription, refresh to
-              sync access.
-            </p>
           </div>
           <div className="flex flex-col gap-4">
             <h3 className="text-base font-semibold text-[var(--fg)]">Supported platforms</h3>
