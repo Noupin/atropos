@@ -1247,8 +1247,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   )
   const renderedDuration = Math.max(0, clipState.endSeconds - clipState.startSeconds)
   const renderMatchesOriginal =
-    Math.abs(clipState.startSeconds - clipState.originalStartSeconds) < 0.001 &&
-    Math.abs(clipState.endSeconds - clipState.originalEndSeconds) < 0.001
+    clipState.startSeconds === clipState.originalStartSeconds &&
+    clipState.endSeconds === clipState.originalEndSeconds
   const shouldShowRenderedOverlay = !renderMatchesOriginal
   const renderedExtendsOriginal = renderedDuration >= originalDuration
   const originalOverlayLayer = renderedExtendsOriginal ? 'z-20' : 'z-10'
@@ -1259,6 +1259,11 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const endTooltipChange = showEndTooltip && formattedEndChange ? formattedEndChange : null
   const startOffsetTooltip = formatTooltipLabel(formattedStartOffset, startTooltipChange)
   const endOffsetTooltip = formatTooltipLabel(formattedEndOffset, endTooltipChange)
+
+  const startHandleValueMin = Number.isFinite(windowStart) ? windowStart : 0
+  const startHandleValueMax = Number.isFinite(rangeEnd - minGap) ? rangeEnd - minGap : rangeEnd
+  const endHandleValueMin = Number.isFinite(rangeStart + minGap) ? rangeStart + minGap : rangeStart
+  const endHandleValueMax = Number.isFinite(windowEnd) ? windowEnd : rangeEnd
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
@@ -1454,9 +1459,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   type="button"
                   role="slider"
                   aria-label="Adjust clip start"
-                  aria-valuemin={Number(windowStart.toFixed(2))}
-                  aria-valuemax={Number((rangeEnd - minGap).toFixed(2))}
-                  aria-valuenow={Number(rangeStart.toFixed(2))}
+                  aria-valuemin={startHandleValueMin}
+                  aria-valuemax={startHandleValueMax}
+                  aria-valuenow={rangeStart}
                   aria-valuetext={startAriaValueText}
                   onPointerDown={(event) => handleHandlePointerDown(event, 'start')}
                   onPointerMove={(event) => handleHandlePointerMove(event, 'start')}
@@ -1473,9 +1478,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   type="button"
                   role="slider"
                   aria-label="Adjust clip end"
-                  aria-valuemin={Number((rangeStart + minGap).toFixed(2))}
-                  aria-valuemax={Number(windowEnd.toFixed(2))}
-                  aria-valuenow={Number(rangeEnd.toFixed(2))}
+                  aria-valuemin={endHandleValueMin}
+                  aria-valuemax={endHandleValueMax}
+                  aria-valuenow={rangeEnd}
                   aria-valuetext={endAriaValueText}
                   onPointerDown={(event) => handleHandlePointerDown(event, 'end')}
                   onPointerMove={(event) => handleHandlePointerMove(event, 'end')}
@@ -1502,18 +1507,20 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   />
                   Original range
                 </button>
-                <button
-                  type="button"
-                  onClick={handleSnapToRendered}
-                  disabled={!clipState}
-                  className="flex items-center gap-2 rounded-md border border-transparent px-1.5 py-1 text-inherit transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] enabled:hover:border-white/10 enabled:hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)] enabled:hover:text-[var(--fg)] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <span
-                    className="h-2 w-6 rounded-full bg-[color:var(--clip-rendered)]"
-                    aria-hidden="true"
-                  />
-                  Rendered output
-                </button>
+                {shouldShowRenderedOverlay ? (
+                  <button
+                    type="button"
+                    onClick={handleSnapToRendered}
+                    disabled={!clipState}
+                    className="flex items-center gap-2 rounded-md border border-transparent px-1.5 py-1 text-inherit transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] enabled:hover:border-white/10 enabled:hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)] enabled:hover:text-[var(--fg)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span
+                      className="h-2 w-6 rounded-full bg-[color:var(--clip-rendered)]"
+                      aria-hidden="true"
+                    />
+                    Rendered output
+                  </button>
+                ) : null}
                 <span className="flex items-center gap-2">
                   <span
                     className="h-2 w-6 rounded-full bg-[color:var(--clip-current)]"
