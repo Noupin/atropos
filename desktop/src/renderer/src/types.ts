@@ -140,3 +140,62 @@ export type PipelineEventType =
   | 'clip_ready'
   | 'pipeline_completed'
   | 'log'
+
+export type SubscriptionLifecycleStatus =
+  | 'inactive'
+  | 'active'
+  | 'trialing'
+  | 'grace_period'
+  | 'past_due'
+  | 'canceled'
+  | 'incomplete'
+  | 'incomplete_expired'
+  | 'unpaid'
+
+export interface SubscriptionStatus {
+  status: SubscriptionLifecycleStatus
+  planId: string | null
+  planName: string | null
+  renewsAt: string | null
+  cancelAt: string | null
+  trialEndsAt: string | null
+  latestInvoiceUrl: string | null
+}
+
+export interface CheckoutSession {
+  url: string
+}
+
+export interface BillingPortalSession {
+  url: string
+}
+
+export interface AccessCheckResult {
+  allowed: boolean
+  status: SubscriptionLifecycleStatus
+  reason: string | null
+  checkedAt: string
+  expiresAt: string | null
+  customerEmail: string | null
+  subscriptionPlan: string | null
+  subscriptionStatus: SubscriptionLifecycleStatus
+}
+
+export interface AccessJwtPayload {
+  sub: string
+  aud: string
+  iss: string
+  scope: string[]
+  iat: number
+  exp: number
+}
+
+export interface AccessControlConfig {
+  apiUrl: string | null
+  audience: string
+  clientId: string
+  clientVersion: string
+  sharedSecret: string
+  tokenTtlSeconds: number
+  useMock: boolean
+}
