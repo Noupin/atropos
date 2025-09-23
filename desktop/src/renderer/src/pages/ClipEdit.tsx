@@ -1221,6 +1221,12 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const timelineTotal = Math.max(windowEnd - windowStart, minGap)
   const startPercent = ((rangeStart - windowStart) / timelineTotal) * 100
   const endPercent = ((rangeEnd - windowStart) / timelineTotal) * 100
+  const toTrackInset = (percent: number): string => {
+    if (!Number.isFinite(percent)) {
+      return '0px'
+    }
+    return `max(0px, calc(${percent}% - 0.5rem))`
+  }
   const safeTimelineTotal = timelineTotal <= 0 ? 1 : timelineTotal
   const clampRatio = (value: number): number => Math.max(0, Math.min(1, value))
   const originalStartRatio = clampRatio(
@@ -1232,6 +1238,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const originalOverlayLeftPercent = originalStartRatio * 100
   const originalOverlayRightPercent =
     clampRatio((windowEnd - clipState.originalEndSeconds) / safeTimelineTotal) * 100
+  const originalOverlayLeftInset = toTrackInset(originalOverlayLeftPercent)
+  const originalOverlayRightInset = toTrackInset(originalOverlayRightPercent)
   const originalStartMarkerPercent = originalStartRatio * 100
   const originalEndMarkerPercent = originalEndRatio * 100
   const renderedStartRatio = clampRatio((clipState.startSeconds - windowStart) / safeTimelineTotal)
@@ -1239,8 +1247,12 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const renderedOverlayLeftPercent = renderedStartRatio * 100
   const renderedOverlayRightPercent =
     clampRatio((windowEnd - clipState.endSeconds) / safeTimelineTotal) * 100
+  const renderedOverlayLeftInset = toTrackInset(renderedOverlayLeftPercent)
+  const renderedOverlayRightInset = toTrackInset(renderedOverlayRightPercent)
   const renderedStartMarkerPercent = renderedStartRatio * 100
   const renderedEndMarkerPercent = renderedEndRatio * 100
+  const currentOverlayLeftInset = toTrackInset(startPercent)
+  const currentOverlayRightInset = toTrackInset(100 - endPercent)
   const originalDuration = Math.max(
     0,
     clipState.originalEndSeconds - clipState.originalStartSeconds
@@ -1394,19 +1406,19 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 className="relative mt-6 h-2 rounded-full bg-[color:var(--clip-track)] shadow-inner"
               >
                 <div
-                  className={`pointer-events-none absolute -top-1 -bottom-1 ${originalOverlayLayer} rounded-full bg-[color:var(--clip-original)]`}
+                  className={`pointer-events-none absolute -top-1 -bottom-1 ${originalOverlayLayer} rounded-none bg-[color:var(--clip-original)]`}
                   style={{
-                    left: `${originalOverlayLeftPercent}%`,
-                    right: `${originalOverlayRightPercent}%`
+                    left: originalOverlayLeftInset,
+                    right: originalOverlayRightInset
                   }}
                   aria-hidden="true"
                 />
                 {shouldShowRenderedOverlay ? (
                   <div
-                    className={`pointer-events-none absolute -top-1 -bottom-1 ${renderedOverlayLayer} rounded-full bg-[color:var(--clip-rendered)]`}
+                    className={`pointer-events-none absolute -top-1 -bottom-1 ${renderedOverlayLayer} rounded-none bg-[color:var(--clip-rendered)]`}
                     style={{
-                      left: `${renderedOverlayLeftPercent}%`,
-                      right: `${renderedOverlayRightPercent}%`
+                      left: renderedOverlayLeftInset,
+                      right: renderedOverlayRightInset
                     }}
                     aria-hidden="true"
                   />
@@ -1436,8 +1448,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   />
                 ) : null}
                 <div
-                  className="pointer-events-none absolute -top-1 -bottom-1 z-40 rounded-full bg-[color:var(--clip-current)]"
-                  style={{ left: `${startPercent}%`, right: `${100 - endPercent}%` }}
+                  className="pointer-events-none absolute -top-1 -bottom-1 z-40 rounded-none bg-[color:var(--clip-current)]"
+                  style={{ left: currentOverlayLeftInset, right: currentOverlayRightInset }}
                 />
                 {showStartTooltip ? (
                   <div
