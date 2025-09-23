@@ -1457,7 +1457,7 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   />
                 ) : null}
                 <div
-                  className="pointer-events-none absolute -top-1 -bottom-1 z-40 rounded-none bg-[color:var(--clip-current)]"
+                  className="pointer-events-none absolute -top-1 -bottom-1 z-40 rounded-full bg-[color:var(--clip-current)]"
                   style={{ left: currentOverlayLeftInset, right: currentOverlayRightInset }}
                 />
                 {showStartTooltip ? (
