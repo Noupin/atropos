@@ -148,6 +148,21 @@ export const buildAuthPingUrl = (): string => {
   return url.toString()
 }
 
+export const buildSubscriptionStatusUrl = (): string => {
+  const url = new URL('/api/billing/subscription', getApiBaseUrl())
+  return url.toString()
+}
+
+export const buildCheckoutSessionUrl = (): string => {
+  const url = new URL('/api/billing/checkout', getApiBaseUrl())
+  return url.toString()
+}
+
+export const buildBillingPortalUrl = (): string => {
+  const url = new URL('/api/billing/portal', getApiBaseUrl())
+  return url.toString()
+}
+
 export const buildConfigUrl = (): string => {
   const url = new URL('/api/config', getApiBaseUrl())
   return url.toString()

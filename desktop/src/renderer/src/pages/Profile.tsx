@@ -3,15 +3,22 @@ import type { FC } from 'react'
 import {
   PLATFORM_LABELS,
   SUPPORTED_PLATFORMS,
+  type AccessCheckResult,
   type AccountPlatformConnection,
   type AccountSummary,
   type AuthPingSummary,
   type SearchBridge,
+  type SubscriptionStatus,
   type SupportedPlatform
 } from '../types'
 import { TONE_LABELS, TONE_OPTIONS } from '../constants/tone'
 import { timeAgo } from '../lib/format'
 import MarbleSelect from '../components/MarbleSelect'
+import {
+  createBillingPortalSession,
+  createCheckoutSession,
+  fetchSubscriptionStatus
+} from '../services/paymentsApi'
 
 const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
   tiktok: 'tiktok.json',
@@ -37,6 +44,9 @@ type ProfileProps = {
   accountsError: string | null
   authStatus: AuthPingSummary | null
   authError: string | null
+  accessStatus: AccessCheckResult | null
+  accessError: string | null
+  isCheckingAccess: boolean
   isLoadingAccounts: boolean
   onCreateAccount: (payload: {
     displayName: string
@@ -62,6 +72,7 @@ type ProfileProps = {
   ) => Promise<AccountSummary>
   onDeletePlatform: (accountId: string, platform: SupportedPlatform) => Promise<AccountSummary>
   onRefreshAccounts: () => Promise<void>
+  onRefreshAccessStatus: () => Promise<void>
 }
 
 type AccountCardProps = {
@@ -98,6 +109,25 @@ const platformStatusStyles: Record<string, { pill: string; dot: string }> = {
     dot: 'status-pill__dot status-pill__dot--error'
   },
   disabled: {
+    pill: 'status-pill status-pill--neutral',
+    dot: 'status-pill__dot status-pill__dot--muted'
+  }
+}
+
+const accessBadgeVariants: Record<string, { pill: string; dot: string }> = {
+  success: {
+    pill: 'status-pill status-pill--success',
+    dot: 'status-pill__dot status-pill__dot--success'
+  },
+  warning: {
+    pill: 'status-pill status-pill--warning',
+    dot: 'status-pill__dot status-pill__dot--warning'
+  },
+  error: {
+    pill: 'status-pill status-pill--error',
+    dot: 'status-pill__dot status-pill__dot--error'
+  },
+  neutral: {
     pill: 'status-pill status-pill--neutral',
     dot: 'status-pill__dot status-pill__dot--muted'
   }
@@ -812,6 +842,9 @@ const Profile: FC<ProfileProps> = ({
   accountsError,
   authStatus,
   authError,
+  accessStatus,
+  accessError,
+  isCheckingAccess,
   isLoadingAccounts,
   onCreateAccount,
   onAddPlatform,
@@ -819,18 +852,45 @@ const Profile: FC<ProfileProps> = ({
   onDeleteAccount,
   onUpdatePlatform,
   onDeletePlatform,
-  onRefreshAccounts
+  onRefreshAccounts,
+  onRefreshAccessStatus
 }) => {
   const [newAccountName, setNewAccountName] = useState('')
   const [newAccountDescription, setNewAccountDescription] = useState('')
   const [newAccountError, setNewAccountError] = useState<string | null>(null)
   const [newAccountSuccess, setNewAccountSuccess] = useState<string | null>(null)
   const [isCreatingAccount, setIsCreatingAccount] = useState(false)
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus | null>(null)
+  const [subscriptionError, setSubscriptionError] = useState<string | null>(null)
+  const [isLoadingSubscription, setIsLoadingSubscription] = useState(false)
+  const [isStartingCheckout, setIsStartingCheckout] = useState(false)
+  const [isOpeningPortal, setIsOpeningPortal] = useState(false)
 
   useEffect(() => {
     registerSearch(null)
     return () => registerSearch(null)
   }, [registerSearch])
+
+  const loadSubscriptionStatus = useCallback(async () => {
+    setIsLoadingSubscription(true)
+    try {
+      const status = await fetchSubscriptionStatus()
+      setSubscriptionStatus(status)
+      setSubscriptionError(null)
+      return status
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to load billing information from Stripe.'
+      setSubscriptionError(message)
+      return null
+    } finally {
+      setIsLoadingSubscription(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadSubscriptionStatus()
+  }, [loadSubscriptionStatus])
 
   const handleCreateAccount = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -880,6 +940,99 @@ const Profile: FC<ProfileProps> = ({
     .filter(Boolean)
     .join(' ')
   const authStatusDot = authStatusVariant?.dot ?? 'status-pill__dot status-pill__dot--muted'
+
+  const accessVariantKey = accessStatus
+    ? accessStatus.allowed
+      ? accessStatus.status === 'active'
+        ? 'success'
+        : accessStatus.status === 'trialing' || accessStatus.status === 'grace_period'
+          ? 'warning'
+          : accessStatus.status === 'inactive'
+            ? 'neutral'
+            : 'warning'
+      : 'error'
+    : accessError
+      ? 'error'
+      : 'neutral'
+  const accessVariant = accessBadgeVariants[accessVariantKey] ?? accessBadgeVariants.neutral
+
+  const accessBadgeLabel = isCheckingAccess
+    ? 'Checking access'
+    : accessStatus
+      ? accessStatus.allowed
+        ? accessStatus.status === 'active'
+          ? 'Access active'
+          : accessStatus.status === 'trialing'
+            ? 'Trial active'
+            : accessStatus.status === 'grace_period'
+              ? 'Grace period'
+              : 'Subscription attention'
+        : 'Access disabled'
+      : accessError
+        ? 'Access error'
+        : 'Access unknown'
+
+  const accessSummaryText = isCheckingAccess
+    ? 'Verifying access permissions…'
+    : accessStatus
+      ? accessStatus.allowed
+        ? accessStatus.subscriptionPlan
+          ? `Access granted – ${accessStatus.subscriptionPlan}`
+          : 'Access granted.'
+        : accessStatus.reason ?? 'Subscription required to continue using Atropos.'
+      : accessError ?? 'Access status unavailable.'
+
+  const accessRenewalLabel = accessStatus?.expiresAt
+    ? `Access valid until ${new Date(accessStatus.expiresAt).toLocaleString()}`
+    : null
+
+  const subscriptionPlanName = subscriptionStatus?.planName ?? accessStatus?.subscriptionPlan ?? 'Not subscribed'
+  const billingEmailLabel = accessStatus?.customerEmail ?? null
+
+  const handleRefreshBilling = useCallback(async () => {
+    await loadSubscriptionStatus()
+    try {
+      await onRefreshAccessStatus()
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to refresh access permissions.'
+      setSubscriptionError((prev) => prev ?? message)
+    }
+  }, [loadSubscriptionStatus, onRefreshAccessStatus])
+
+  const handleStartCheckout = useCallback(async () => {
+    setSubscriptionError(null)
+    setIsStartingCheckout(true)
+    try {
+      const session = await createCheckoutSession()
+      if (typeof window !== 'undefined' && session.url) {
+        window.open(session.url, '_blank', 'noopener')
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to start the checkout session.'
+      setSubscriptionError(message)
+    } finally {
+      setIsStartingCheckout(false)
+    }
+  }, [])
+
+  const handleOpenBillingPortal = useCallback(async () => {
+    setSubscriptionError(null)
+    setIsOpeningPortal(true)
+    try {
+      const session = await createBillingPortalSession()
+      if (typeof window !== 'undefined' && session.url) {
+        window.open(session.url, '_blank', 'noopener')
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to open the billing portal.'
+      setSubscriptionError(message)
+    } finally {
+      setIsOpeningPortal(false)
+    }
+  }, [])
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
@@ -1001,27 +1154,122 @@ const Profile: FC<ProfileProps> = ({
         </div>
 
         <aside className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_50%,transparent)] p-6 text-sm text-[var(--muted)]">
-          <h3 className="text-base font-semibold text-[var(--fg)]">Supported platforms</h3>
-          <ul className="flex flex-col gap-3">
-            {SUPPORTED_PLATFORMS.map((platform) => (
-              <li
-                key={platform}
-                className="flex flex-col gap-1 rounded-lg border border-white/10 bg-black/20 p-3"
+          <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 p-4 text-left">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className={`${accessVariant.pill} text-xs`}>
+                <span className={accessVariant.dot} aria-hidden="true" />
+                {accessBadgeLabel}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleRefreshBilling()
+                }}
+                className="marble-button marble-button--outline px-3 py-1 text-xs font-semibold"
+                disabled={isCheckingAccess || isLoadingSubscription}
               >
-                <span className="text-sm font-medium text-[var(--fg)]">
-                  {PLATFORM_LABELS[platform]}
-                </span>
-                <p>
-                  Tokens are stored under{' '}
-                  <code className="font-mono text-xs text-[var(--fg)]">
-                    tokens/&lt;account&gt;/{PLATFORM_TOKEN_FILES[platform]}
-                  </code>
-                  {'. '}
-                  Ensure credentials remain valid to publish successfully.
-                </p>
-              </li>
-            ))}
-          </ul>
+                {isCheckingAccess || isLoadingSubscription ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
+            <p className="text-xs text-[var(--muted)]">{accessSummaryText}</p>
+            {accessRenewalLabel ? (
+              <p className="text-[11px] text-[var(--muted)]">{accessRenewalLabel}</p>
+            ) : null}
+            {billingEmailLabel ? (
+              <p className="text-[11px] text-[var(--muted)]">Billing email: {billingEmailLabel}</p>
+            ) : null}
+            {isLoadingSubscription ? (
+              <p className="text-xs text-[var(--muted)]">Checking Stripe subscription…</p>
+            ) : null}
+            {subscriptionStatus ? (
+              <dl className="grid gap-2 text-xs text-[var(--muted)]">
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="font-semibold text-[var(--fg)]">Plan</dt>
+                  <dd>{subscriptionPlanName}</dd>
+                </div>
+                {subscriptionStatus.renewsAt ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="font-semibold text-[var(--fg)]">Renews</dt>
+                    <dd>{formatTimestamp(subscriptionStatus.renewsAt)}</dd>
+                  </div>
+                ) : null}
+                {subscriptionStatus.trialEndsAt ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="font-semibold text-[var(--fg)]">Trial ends</dt>
+                    <dd>{formatTimestamp(subscriptionStatus.trialEndsAt)}</dd>
+                  </div>
+                ) : null}
+                {subscriptionStatus.cancelAt ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="font-semibold text-[var(--fg)]">Cancels</dt>
+                    <dd>{formatTimestamp(subscriptionStatus.cancelAt)}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            ) : null}
+            {subscriptionStatus?.latestInvoiceUrl ? (
+              <a
+                href={subscriptionStatus.latestInvoiceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] font-semibold text-[color:var(--accent)] hover:underline"
+              >
+                View latest invoice
+              </a>
+            ) : null}
+            {subscriptionError ? (
+              <p className="text-xs font-medium text-[color:var(--error-strong)]">{subscriptionError}</p>
+            ) : null}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  void handleStartCheckout()
+                }}
+                className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
+                disabled={isStartingCheckout}
+              >
+                {isStartingCheckout ? 'Redirecting…' : 'Subscribe with Stripe'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleOpenBillingPortal()
+                }}
+                className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
+                disabled={isOpeningPortal}
+              >
+                {isOpeningPortal ? 'Opening portal…' : 'Manage billing'}
+              </button>
+            </div>
+            <p className="text-[10px] text-[var(--muted)]">
+              Payments are processed securely by Stripe. After updating your subscription, refresh to
+              sync access.
+            </p>
+          </div>
+          <div className="flex flex-col gap-4">
+            <h3 className="text-base font-semibold text-[var(--fg)]">Supported platforms</h3>
+            <ul className="flex flex-col gap-3">
+              {SUPPORTED_PLATFORMS.map((platform) => (
+                <li
+                  key={platform}
+                  className="flex flex-col gap-1 rounded-lg border border-white/10 bg-black/20 p-3"
+                >
+                  <span className="text-sm font-medium text-[var(--fg)]">
+                    {PLATFORM_LABELS[platform]}
+                  </span>
+                  <p>
+                    Tokens are stored under{' '}
+                    <code className="font-mono text-xs text-[var(--fg)]">
+                      tokens/&lt;account&gt;/{PLATFORM_TOKEN_FILES[platform]}
+                    </code>
+                    {'. '}
+                    Ensure credentials remain valid to publish successfully.
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
         </aside>
       </div>
     </section>

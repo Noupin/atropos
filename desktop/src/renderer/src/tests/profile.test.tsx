@@ -3,7 +3,12 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import type { ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Profile from '../pages/Profile'
-import type { AccountPlatformConnection, AccountSummary, AuthPingSummary } from '../types'
+import type {
+  AccessCheckResult,
+  AccountPlatformConnection,
+  AccountSummary,
+  AuthPingSummary
+} from '../types'
 
 vi.mock('../components/MarbleSelect', () => {
   return {
@@ -37,6 +42,18 @@ vi.mock('../components/MarbleSelect', () => {
     )
   }
 })
+
+const paymentsMocks = vi.hoisted(() => ({
+  fetchSubscriptionStatus: vi.fn(),
+  createCheckoutSession: vi.fn(),
+  createBillingPortalSession: vi.fn()
+}))
+
+vi.mock('../services/paymentsApi', () => ({
+  fetchSubscriptionStatus: paymentsMocks.fetchSubscriptionStatus,
+  createCheckoutSession: paymentsMocks.createCheckoutSession,
+  createBillingPortalSession: paymentsMocks.createBillingPortalSession
+}))
 
 const createPlatform = (
   overrides: Partial<AccountPlatformConnection> = {}
@@ -84,6 +101,17 @@ const sampleAuthStatus: AuthPingSummary = {
   message: 'All connected platforms look healthy.'
 }
 
+const sampleAccessStatus: AccessCheckResult = {
+  allowed: true,
+  status: 'active',
+  subscriptionStatus: 'active',
+  reason: null,
+  checkedAt: '2025-05-02T09:05:00Z',
+  expiresAt: '2025-06-02T09:05:00Z',
+  customerEmail: 'owner@example.com',
+  subscriptionPlan: 'Pro Monthly'
+}
+
 describe('Profile page', () => {
   const createAccountMock = vi.fn()
   const addPlatformMock = vi.fn()
@@ -92,9 +120,13 @@ describe('Profile page', () => {
   const deleteAccountMock = vi.fn()
   const updatePlatformMock = vi.fn()
   const deletePlatformMock = vi.fn()
+  const refreshAccessStatusMock = vi.fn()
+
+  const originalWindowOpen = window.open
 
   afterEach(() => {
     cleanup()
+    window.open = originalWindowOpen
   })
 
   beforeEach(() => {
@@ -106,6 +138,26 @@ describe('Profile page', () => {
     updatePlatformMock.mockReset()
     deletePlatformMock.mockReset()
     refreshAccountsMock.mockResolvedValue(undefined)
+    refreshAccessStatusMock.mockReset()
+    refreshAccessStatusMock.mockResolvedValue(undefined)
+
+    paymentsMocks.fetchSubscriptionStatus.mockReset()
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValue({
+      status: 'active',
+      planId: 'plan_123',
+      planName: 'Pro Plan',
+      renewsAt: '2025-06-01T10:00:00Z',
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null
+    })
+
+    paymentsMocks.createCheckoutSession.mockReset()
+    paymentsMocks.createCheckoutSession.mockResolvedValue({ url: 'https://stripe.test/checkout' })
+    paymentsMocks.createBillingPortalSession.mockReset()
+    paymentsMocks.createBillingPortalSession.mockResolvedValue({ url: 'https://stripe.test/portal' })
+
+    window.open = vi.fn() as typeof window.open
   })
 
   const renderProfile = (overrides: Partial<ComponentProps<typeof Profile>> = {}) =>
@@ -116,6 +168,9 @@ describe('Profile page', () => {
         accountsError={null}
         authStatus={sampleAuthStatus}
         authError={null}
+        accessStatus={sampleAccessStatus}
+        accessError={null}
+        isCheckingAccess={false}
         isLoadingAccounts={false}
         onCreateAccount={createAccountMock}
         onAddPlatform={addPlatformMock}
@@ -124,15 +179,18 @@ describe('Profile page', () => {
         onUpdatePlatform={updatePlatformMock}
         onDeletePlatform={deletePlatformMock}
         onRefreshAccounts={refreshAccountsMock}
+        onRefreshAccessStatus={refreshAccessStatusMock}
         {...overrides}
       />
     )
 
-  it('displays authentication status and connected platforms', () => {
+  it('displays authentication status, billing, and connected platforms', () => {
     renderProfile()
 
     expect(screen.getByText('Profile')).toBeInTheDocument()
     expect(screen.getByText(/Connected platforms across/i)).toHaveTextContent('1/1')
+    expect(paymentsMocks.fetchSubscriptionStatus).toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /Subscribe with Stripe/i })).toBeInTheDocument()
 
     const creatorCard = screen.getAllByTestId('account-card-account-1')[0]
     const scope = within(creatorCard)
@@ -298,4 +356,25 @@ describe('Profile page', () => {
       confirmSpy.mockRestore()
     }
   })
+
+  it('opens Stripe checkout when subscribing', async () => {
+    renderProfile()
+
+    const checkoutButton = screen.getByRole('button', { name: /Subscribe with Stripe/i })
+    fireEvent.click(checkoutButton)
+
+    await waitFor(() => expect(paymentsMocks.createCheckoutSession).toHaveBeenCalledTimes(1))
+    expect(window.open).toHaveBeenCalledWith('https://stripe.test/checkout', '_blank', 'noopener')
+  })
+
+  it('opens the billing portal when managing billing', async () => {
+    renderProfile()
+
+    const billingButton = screen.getByRole('button', { name: /Manage billing/i })
+    fireEvent.click(billingButton)
+
+    await waitFor(() => expect(paymentsMocks.createBillingPortalSession).toHaveBeenCalledTimes(1))
+    expect(window.open).toHaveBeenCalledWith('https://stripe.test/portal', '_blank', 'noopener')
+  })
 })
+
