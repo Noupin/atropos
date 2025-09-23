@@ -173,6 +173,7 @@ const AccountCard: FC<AccountCardProps> = ({
   const [updatingPlatform, setUpdatingPlatform] = useState<SupportedPlatform | null>(null)
   const [removingPlatform, setRemovingPlatform] = useState<SupportedPlatform | null>(null)
   const [isCollapsed, setIsCollapsed] = useState(true)
+  const [isAddPlatformOpen, setIsAddPlatformOpen] = useState(false)
   const isMounted = useRef(true)
 
   useEffect(() => {
@@ -214,19 +215,29 @@ const AccountCard: FC<AccountCardProps> = ({
     [availablePlatforms]
   )
 
-  useEffect(() => {
-    setSuccess(null)
-    setError(null)
-  }, [account.platforms.length, account.active, account.tone])
-
-  const detailsId = `account-${account.id}-details`
-
   const resetCredentialFields = useCallback(() => {
     setInstagramUsername('')
     setInstagramPassword('')
     setTiktokClientKey('')
     setTiktokClientSecret('')
   }, [])
+
+  useEffect(() => {
+    setSuccess(null)
+    setError(null)
+  }, [account.platforms.length, account.active, account.tone])
+
+  useEffect(() => {
+    if (availablePlatforms.length === 0) {
+      setIsAddPlatformOpen(false)
+      setSelectedPlatform('')
+      setLabel('')
+      resetCredentialFields()
+    }
+  }, [availablePlatforms.length, resetCredentialFields])
+
+  const detailsId = `account-${account.id}-details`
+  const addPlatformFormId = `account-${account.id}-add-platform`
 
   const handlePlatformChange = useCallback(
     (nextValue: string) => {
@@ -237,6 +248,19 @@ const AccountCard: FC<AccountCardProps> = ({
     },
     [resetCredentialFields, setError, setSuccess]
   )
+
+  const handleToggleAddPlatform = useCallback(() => {
+    setError(null)
+    setSuccess(null)
+    setIsAddPlatformOpen((previous) => {
+      if (previous) {
+        setSelectedPlatform('')
+        setLabel('')
+        resetCredentialFields()
+      }
+      return !previous
+    })
+  }, [resetCredentialFields, setError, setLabel, setSelectedPlatform, setSuccess])
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -284,6 +308,7 @@ const AccountCard: FC<AccountCardProps> = ({
           setSelectedPlatform('')
           setLabel('')
           resetCredentialFields()
+          setIsAddPlatformOpen(false)
         }
       } catch (submitError) {
         const message =
@@ -683,7 +708,9 @@ const AccountCard: FC<AccountCardProps> = ({
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-[var(--muted)]">No platforms are connected yet.</p>
+            <p className="text-xs text-[var(--muted)]">
+              No platforms are connected yet. Use Add platform below to connect one.
+            </p>
           )}
         </div>
       ) : (
@@ -787,63 +814,84 @@ const AccountCard: FC<AccountCardProps> = ({
             </ul>
           ) : (
             <p className="rounded-lg border border-dashed border-white/10 bg-black/10 p-4 text-sm text-[var(--muted)]">
-              No platforms are connected yet. Use the form below to authenticate a platform.
+              No platforms are connected yet. Use the Add platform button below to authenticate a
+              platform.
             </p>
           )}
         </div>
       )}
 
       {availablePlatforms.length > 0 ? (
-        <form
-          onSubmit={handleSubmit}
-          className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 p-4"
-        >
+        <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h4 className="text-sm font-semibold text-[var(--fg)]">Add a platform</h4>
-            {selectedPlatform ? (
-              <span className="status-pill status-pill--neutral text-xs">
-                Authenticating {PLATFORM_LABELS[selectedPlatform]}
-              </span>
-            ) : null}
-          </div>
-          <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
-            Platform
-            <MarbleSelect
-              id={`platform-${account.id}`}
-              name="platform"
-              value={selectedPlatform || null}
-              options={platformOptions}
-              onChange={handlePlatformChange}
-              placeholder="Select a platform"
-              disabled={!isAccountActive || isSubmitting}
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
-            Label (optional)
-            <input
-              value={label}
-              onChange={(event) => setLabel(event.target.value)}
-              placeholder="e.g. Brand TikTok"
-              disabled={!isAccountActive || isSubmitting}
-              className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </label>
-          {renderPlatformFields()}
-          {!isAccountActive ? (
-            <p className="text-xs text-[color:var(--info-strong)]">
-              Enable this account to connect new platforms.
-            </p>
-          ) : null}
-          <div className="flex items-center justify-end gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 className="text-sm font-semibold text-[var(--fg)]">Add a platform</h4>
+              {isAddPlatformOpen && selectedPlatform ? (
+                <span className="status-pill status-pill--neutral text-xs">
+                  Authenticating {PLATFORM_LABELS[selectedPlatform]}
+                </span>
+              ) : null}
+            </div>
             <button
-              type="submit"
-              disabled={isSubmitting || !isAccountActive}
-              className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
+              type="button"
+              onClick={handleToggleAddPlatform}
+              className="marble-button marble-button--outline inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold"
+              aria-expanded={isAddPlatformOpen}
+              aria-controls={addPlatformFormId}
             >
-              {isSubmitting ? 'Connecting…' : 'Connect platform'}
+              <span aria-hidden="true" className="text-base leading-none">
+                {isAddPlatformOpen ? '−' : '+'}
+              </span>
+              <span>{isAddPlatformOpen ? 'Cancel' : 'Add platform'}</span>
             </button>
           </div>
-        </form>
+          {isAddPlatformOpen ? (
+            <form id={addPlatformFormId} onSubmit={handleSubmit} className="flex flex-col gap-3">
+              <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
+                Platform
+                <MarbleSelect
+                  id={`platform-${account.id}`}
+                  name="platform"
+                  value={selectedPlatform || null}
+                  options={platformOptions}
+                  onChange={handlePlatformChange}
+                  placeholder="Select a platform"
+                  disabled={!isAccountActive || isSubmitting}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
+                Label (optional)
+                <input
+                  value={label}
+                  onChange={(event) => setLabel(event.target.value)}
+                  placeholder="e.g. Brand TikTok"
+                  disabled={!isAccountActive || isSubmitting}
+                  className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+                />
+              </label>
+              {renderPlatformFields()}
+              {!isAccountActive ? (
+                <p className="text-xs text-[color:var(--info-strong)]">
+                  Enable this account to connect new platforms.
+                </p>
+              ) : null}
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !isAccountActive}
+                  className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
+                >
+                  {isSubmitting ? 'Connecting…' : 'Connect platform'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <p className="text-xs text-[var(--muted)]">
+              Use <span className="font-semibold text-[var(--fg)]">Add platform</span> to connect another
+              service.
+            </p>
+          )}
+        </div>
       ) : (
         <p className="text-xs text-[var(--muted)]">
           All supported platforms are connected for this account.
@@ -877,11 +925,26 @@ const Profile: FC<ProfileProps> = ({
   const [newAccountError, setNewAccountError] = useState<string | null>(null)
   const [newAccountSuccess, setNewAccountSuccess] = useState<string | null>(null)
   const [isCreatingAccount, setIsCreatingAccount] = useState(false)
+  const [isCreateAccountOpen, setIsCreateAccountOpen] = useState(false)
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus | null>(null)
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null)
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false)
   const [isStartingCheckout, setIsStartingCheckout] = useState(false)
   const [isOpeningPortal, setIsOpeningPortal] = useState(false)
+
+  const handleToggleCreateAccount = useCallback(() => {
+    setNewAccountError(null)
+    setIsCreateAccountOpen((previous) => {
+      const next = !previous
+      if (next) {
+        setNewAccountSuccess(null)
+      } else {
+        setNewAccountName('')
+        setNewAccountDescription('')
+      }
+      return next
+    })
+  }, [setNewAccountDescription, setNewAccountError, setNewAccountName, setNewAccountSuccess])
 
   useEffect(() => {
     registerSearch(null)
@@ -929,6 +992,7 @@ const Profile: FC<ProfileProps> = ({
         setNewAccountName('')
         setNewAccountDescription('')
         setNewAccountSuccess('Account created successfully. You can now add platforms below.')
+        setIsCreateAccountOpen(false)
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Unable to create the account. Please try again.'
@@ -1095,53 +1159,72 @@ const Profile: FC<ProfileProps> = ({
             ) : null}
           </div>
 
-          <form
-            onSubmit={handleCreateAccount}
-            className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6"
-          >
-            <h2 className="text-lg font-semibold text-[var(--fg)]">Create a new account</h2>
-            <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
-              Account name
-              <input
-                value={newAccountName}
-                onChange={(event) => {
-                  setNewAccountName(event.target.value)
-                  setNewAccountError(null)
-                  setNewAccountSuccess(null)
-                }}
-                placeholder="e.g. Creator Hub"
-                className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
-              Description (optional)
-              <textarea
-                value={newAccountDescription}
-                onChange={(event) => {
-                  setNewAccountDescription(event.target.value)
-                  setNewAccountError(null)
-                  setNewAccountSuccess(null)
-                }}
-                placeholder="Describe the content this account will publish"
-                className="min-h-[80px] rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              />
-            </label>
+          <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-[var(--fg)]">Accounts</h2>
+              <button
+                type="button"
+                onClick={handleToggleCreateAccount}
+                className="marble-button marble-button--outline inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold"
+                aria-expanded={isCreateAccountOpen}
+                aria-controls="new-account-form"
+              >
+                <span aria-hidden="true" className="text-base leading-none">
+                  {isCreateAccountOpen ? '−' : '+'}
+                </span>
+                <span>{isCreateAccountOpen ? 'Cancel' : 'Add account'}</span>
+              </button>
+            </div>
             {newAccountError ? (
               <p className="text-xs font-medium text-[color:var(--error-strong)]">{newAccountError}</p>
             ) : null}
             {newAccountSuccess ? (
               <p className="text-xs font-medium text-[color:var(--success-strong)]">{newAccountSuccess}</p>
             ) : null}
-            <div className="flex items-center justify-end">
-              <button
-                type="submit"
-                disabled={isCreatingAccount}
-                className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
-              >
-                {isCreatingAccount ? 'Creating…' : 'Create account'}
-              </button>
-            </div>
-          </form>
+            {isCreateAccountOpen ? (
+              <form id="new-account-form" onSubmit={handleCreateAccount} className="flex flex-col gap-3">
+                <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
+                  Account name
+                  <input
+                    value={newAccountName}
+                    onChange={(event) => {
+                      setNewAccountName(event.target.value)
+                      setNewAccountError(null)
+                      setNewAccountSuccess(null)
+                    }}
+                    placeholder="e.g. Creator Hub"
+                    className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
+                  Description (optional)
+                  <textarea
+                    value={newAccountDescription}
+                    onChange={(event) => {
+                      setNewAccountDescription(event.target.value)
+                      setNewAccountError(null)
+                      setNewAccountSuccess(null)
+                    }}
+                    placeholder="Describe the content this account will publish"
+                    className="min-h-[80px] rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  />
+                </label>
+                <div className="flex items-center justify-end">
+                  <button
+                    type="submit"
+                    disabled={isCreatingAccount}
+                    className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
+                  >
+                    {isCreatingAccount ? 'Creating…' : 'Create account'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <p className="text-sm text-[var(--muted)]">
+                Add separate accounts to manage platforms for different brands or clients.
+              </p>
+            )}
+          </div>
 
           {isLoadingAccounts ? (
             <div className="rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6 text-sm text-[var(--muted)]">
@@ -1151,7 +1234,7 @@ const Profile: FC<ProfileProps> = ({
 
           {!isLoadingAccounts && accounts.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-white/10 bg-[color:color-mix(in_srgb,var(--card)_40%,transparent)] p-6 text-sm text-[var(--muted)]">
-              No accounts are connected yet. Create an account above to begin adding platforms.
+              No accounts are connected yet. Use Add account above to begin adding platforms.
             </div>
           ) : null}
 

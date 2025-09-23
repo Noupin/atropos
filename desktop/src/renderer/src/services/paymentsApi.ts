@@ -1,4 +1,5 @@
 import {
+  BACKEND_MODE,
   buildBillingPortalUrl,
   buildCheckoutSessionUrl,
   buildSubscriptionStatusUrl
@@ -10,7 +11,35 @@ import type {
 } from '../types'
 import { extractErrorMessage, requestWithFallback } from './http'
 
+const delay = async (ms: number): Promise<void> =>
+  await new Promise((resolve) => setTimeout(resolve, ms))
+
+const isMockBilling = BACKEND_MODE === 'mock'
+
+const mockSubscriptionStatus = (): SubscriptionStatus => ({
+  status: 'trialing',
+  planId: 'mock-pro',
+  planName: 'Atropos Mock Pro',
+  renewsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+  cancelAt: null,
+  trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+  latestInvoiceUrl: 'https://stripe.test/invoice/mock'
+})
+
+const mockCheckoutSession = (): CheckoutSession => ({
+  url: 'https://stripe.test/checkout'
+})
+
+const mockBillingPortalSession = (): BillingPortalSession => ({
+  url: 'https://stripe.test/portal'
+})
+
 export const fetchSubscriptionStatus = async (): Promise<SubscriptionStatus> => {
+  if (isMockBilling) {
+    await delay(120)
+    return mockSubscriptionStatus()
+  }
+
   const response = await requestWithFallback(buildSubscriptionStatusUrl)
   if (!response.ok) {
     throw new Error(await extractErrorMessage(response))
@@ -28,6 +57,11 @@ export const fetchSubscriptionStatus = async (): Promise<SubscriptionStatus> => 
 }
 
 export const createCheckoutSession = async (): Promise<CheckoutSession> => {
+  if (isMockBilling) {
+    await delay(120)
+    return mockCheckoutSession()
+  }
+
   const response = await requestWithFallback(buildCheckoutSessionUrl, {
     method: 'POST'
   })
@@ -42,6 +76,11 @@ export const createCheckoutSession = async (): Promise<CheckoutSession> => {
 }
 
 export const createBillingPortalSession = async (): Promise<BillingPortalSession> => {
+  if (isMockBilling) {
+    await delay(120)
+    return mockBillingPortalSession()
+  }
+
   const response = await requestWithFallback(buildBillingPortalUrl, {
     method: 'POST'
   })

@@ -204,16 +204,19 @@ describe('Profile page', () => {
 
     renderProfile()
 
-    const [accountNameInput] = screen.getAllByLabelText(/Account name/i)
+    const addAccountButton = screen.getByRole('button', { name: /^Add account$/i })
+    fireEvent.click(addAccountButton)
+
+    const accountNameInput = screen.getByLabelText(/Account name/i)
     fireEvent.change(accountNameInput, {
       target: { value: '  New Account  ' }
     })
-    const [descriptionInput] = screen.getAllByLabelText(/Description/i)
+    const descriptionInput = screen.getByLabelText(/Description/i)
     fireEvent.change(descriptionInput, {
       target: { value: '  Description here  ' }
     })
 
-    const [createButton] = screen.getAllByRole('button', { name: /Create account/i })
+    const createButton = screen.getByRole('button', { name: /Create account/i })
     fireEvent.click(createButton)
 
     await waitFor(() => expect(createAccountMock).toHaveBeenCalledTimes(1))
@@ -232,7 +235,10 @@ describe('Profile page', () => {
 
     const brandCard = screen.getAllByTestId('account-card-account-2')[0]
     const scope = within(brandCard)
-    const [platformSelect] = scope.getAllByLabelText(/Platform/i)
+    const addPlatformButton = scope.getByRole('button', { name: /^Add platform$/i })
+    fireEvent.click(addPlatformButton)
+
+    const platformSelect = scope.getByLabelText(/Platform/i)
     fireEvent.change(platformSelect, { target: { value: 'instagram' } })
     fireEvent.change(scope.getByLabelText(/Label \(optional\)/i), {
       target: { value: 'Brand Instagram' }
@@ -256,7 +262,10 @@ describe('Profile page', () => {
 
     const brandCard = screen.getAllByTestId('account-card-account-2')[0]
     const scope = within(brandCard)
-    const [platformSelect] = scope.getAllByLabelText(/Platform/i)
+    const addPlatformButton = scope.getByRole('button', { name: /^Add platform$/i })
+    fireEvent.click(addPlatformButton)
+
+    const platformSelect = scope.getByLabelText(/Platform/i)
     fireEvent.change(platformSelect, { target: { value: 'instagram' } })
 
     const connectButton = scope.getByRole('button', { name: /Connect platform/i })
