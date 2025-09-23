@@ -1221,6 +1221,21 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const timelineTotal = Math.max(windowEnd - windowStart, minGap)
   const startPercent = ((rangeStart - windowStart) / timelineTotal) * 100
   const endPercent = ((rangeEnd - windowStart) / timelineTotal) * 100
+  const toHandleInset = (percent: number): string => {
+    if (!Number.isFinite(percent)) {
+      return '0px'
+    }
+    const clamped = Math.max(0, Math.min(100, percent))
+    return `max(0px, calc(${clamped}% - 0.5rem))`
+  }
+  const toPercentInset = (percent: number): string => {
+    if (!Number.isFinite(percent)) {
+      return '0%'
+    }
+    const clamped = Math.max(0, Math.min(100, percent))
+    const normalized = Math.round(clamped * 1_000_000) / 1_000_000
+    return `${normalized}%`
+  }
   const safeTimelineTotal = timelineTotal <= 0 ? 1 : timelineTotal
   const clampRatio = (value: number): number => Math.max(0, Math.min(1, value))
   const originalStartRatio = clampRatio(
@@ -1232,6 +1247,8 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const originalOverlayLeftPercent = originalStartRatio * 100
   const originalOverlayRightPercent =
     clampRatio((windowEnd - clipState.originalEndSeconds) / safeTimelineTotal) * 100
+  const originalOverlayLeftInset = toPercentInset(originalOverlayLeftPercent)
+  const originalOverlayRightInset = toPercentInset(originalOverlayRightPercent)
   const originalStartMarkerPercent = originalStartRatio * 100
   const originalEndMarkerPercent = originalEndRatio * 100
   const renderedStartRatio = clampRatio((clipState.startSeconds - windowStart) / safeTimelineTotal)
@@ -1239,13 +1256,21 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const renderedOverlayLeftPercent = renderedStartRatio * 100
   const renderedOverlayRightPercent =
     clampRatio((windowEnd - clipState.endSeconds) / safeTimelineTotal) * 100
+  const renderedOverlayLeftInset = toPercentInset(renderedOverlayLeftPercent)
+  const renderedOverlayRightInset = toPercentInset(renderedOverlayRightPercent)
   const renderedStartMarkerPercent = renderedStartRatio * 100
   const renderedEndMarkerPercent = renderedEndRatio * 100
+  const currentOverlayLeftInset = toHandleInset(startPercent)
+  const currentOverlayRightInset = toHandleInset(100 - endPercent)
   const originalDuration = Math.max(
     0,
     clipState.originalEndSeconds - clipState.originalStartSeconds
   )
   const renderedDuration = Math.max(0, clipState.endSeconds - clipState.startSeconds)
+  const renderMatchesOriginal =
+    clipState.startSeconds === clipState.originalStartSeconds &&
+    clipState.endSeconds === clipState.originalEndSeconds
+  const shouldShowRenderedOverlay = !renderMatchesOriginal
   const renderedExtendsOriginal = renderedDuration >= originalDuration
   const originalOverlayLayer = renderedExtendsOriginal ? 'z-20' : 'z-10'
   const renderedOverlayLayer = renderedExtendsOriginal ? 'z-10' : 'z-20'
@@ -1255,6 +1280,11 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
   const endTooltipChange = showEndTooltip && formattedEndChange ? formattedEndChange : null
   const startOffsetTooltip = formatTooltipLabel(formattedStartOffset, startTooltipChange)
   const endOffsetTooltip = formatTooltipLabel(formattedEndOffset, endTooltipChange)
+
+  const startHandleValueMin = Number.isFinite(windowStart) ? windowStart : 0
+  const startHandleValueMax = Number.isFinite(rangeEnd - minGap) ? rangeEnd - minGap : rangeEnd
+  const endHandleValueMin = Number.isFinite(rangeStart + minGap) ? rangeStart + minGap : rangeStart
+  const endHandleValueMax = Number.isFinite(windowEnd) ? windowEnd : rangeEnd
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
@@ -1385,21 +1415,23 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                 className="relative mt-6 h-2 rounded-full bg-[color:var(--clip-track)] shadow-inner"
               >
                 <div
-                  className={`pointer-events-none absolute -top-1 -bottom-1 ${originalOverlayLayer} rounded-full bg-[color:var(--clip-original)]`}
+                  className={`pointer-events-none absolute -top-1 -bottom-1 ${originalOverlayLayer} rounded-none bg-[color:var(--clip-original)]`}
                   style={{
-                    left: `${originalOverlayLeftPercent}%`,
-                    right: `${originalOverlayRightPercent}%`
+                    left: originalOverlayLeftInset,
+                    right: originalOverlayRightInset
                   }}
                   aria-hidden="true"
                 />
-                <div
-                  className={`pointer-events-none absolute -top-1 -bottom-1 ${renderedOverlayLayer} rounded-full bg-[color:var(--clip-rendered)]`}
-                  style={{
-                    left: `${renderedOverlayLeftPercent}%`,
-                    right: `${renderedOverlayRightPercent}%`
-                  }}
-                  aria-hidden="true"
-                />
+                {shouldShowRenderedOverlay ? (
+                  <div
+                    className={`pointer-events-none absolute -top-1 -bottom-1 ${renderedOverlayLayer} rounded-none bg-[color:var(--clip-rendered)]`}
+                    style={{
+                      left: renderedOverlayLeftInset,
+                      right: renderedOverlayRightInset
+                    }}
+                    aria-hidden="true"
+                  />
+                ) : null}
                 <div
                   className="pointer-events-none absolute -top-3 -bottom-3 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-original-marker)]"
                   style={{ left: `${originalStartMarkerPercent}%` }}
@@ -1410,19 +1442,23 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   style={{ left: `${originalEndMarkerPercent}%` }}
                   aria-hidden="true"
                 />
-                <div
-                  className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-rendered-marker)]"
-                  style={{ left: `${renderedStartMarkerPercent}%` }}
-                  aria-hidden="true"
-                />
-                <div
-                  className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-rendered-marker)]"
-                  style={{ left: `${renderedEndMarkerPercent}%` }}
-                  aria-hidden="true"
-                />
+                {shouldShowRenderedOverlay ? (
+                  <div
+                    className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-rendered-marker)]"
+                    style={{ left: `${renderedStartMarkerPercent}%` }}
+                    aria-hidden="true"
+                  />
+                ) : null}
+                {shouldShowRenderedOverlay ? (
+                  <div
+                    className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-rendered-marker)]"
+                    style={{ left: `${renderedEndMarkerPercent}%` }}
+                    aria-hidden="true"
+                  />
+                ) : null}
                 <div
                   className="pointer-events-none absolute -top-1 -bottom-1 z-40 rounded-full bg-[color:var(--clip-current)]"
-                  style={{ left: `${startPercent}%`, right: `${100 - endPercent}%` }}
+                  style={{ left: currentOverlayLeftInset, right: currentOverlayRightInset }}
                 />
                 {showStartTooltip ? (
                   <div
@@ -1444,9 +1480,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   type="button"
                   role="slider"
                   aria-label="Adjust clip start"
-                  aria-valuemin={Number(windowStart.toFixed(2))}
-                  aria-valuemax={Number((rangeEnd - minGap).toFixed(2))}
-                  aria-valuenow={Number(rangeStart.toFixed(2))}
+                  aria-valuemin={startHandleValueMin}
+                  aria-valuemax={startHandleValueMax}
+                  aria-valuenow={rangeStart}
                   aria-valuetext={startAriaValueText}
                   onPointerDown={(event) => handleHandlePointerDown(event, 'start')}
                   onPointerMove={(event) => handleHandlePointerMove(event, 'start')}
@@ -1463,9 +1499,9 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   type="button"
                   role="slider"
                   aria-label="Adjust clip end"
-                  aria-valuemin={Number((rangeStart + minGap).toFixed(2))}
-                  aria-valuemax={Number(windowEnd.toFixed(2))}
-                  aria-valuenow={Number(rangeEnd.toFixed(2))}
+                  aria-valuemin={endHandleValueMin}
+                  aria-valuemax={endHandleValueMax}
+                  aria-valuenow={rangeEnd}
                   aria-valuetext={endAriaValueText}
                   onPointerDown={(event) => handleHandlePointerDown(event, 'end')}
                   onPointerMove={(event) => handleHandlePointerMove(event, 'end')}
@@ -1492,18 +1528,20 @@ const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = 
                   />
                   Original range
                 </button>
-                <button
-                  type="button"
-                  onClick={handleSnapToRendered}
-                  disabled={!clipState}
-                  className="flex items-center gap-2 rounded-md border border-transparent px-1.5 py-1 text-inherit transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] enabled:hover:border-white/10 enabled:hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)] enabled:hover:text-[var(--fg)] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <span
-                    className="h-2 w-6 rounded-full bg-[color:var(--clip-rendered)]"
-                    aria-hidden="true"
-                  />
-                  Rendered output
-                </button>
+                {shouldShowRenderedOverlay ? (
+                  <button
+                    type="button"
+                    onClick={handleSnapToRendered}
+                    disabled={!clipState}
+                    className="flex items-center gap-2 rounded-md border border-transparent px-1.5 py-1 text-inherit transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] enabled:hover:border-white/10 enabled:hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)] enabled:hover:text-[var(--fg)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span
+                      className="h-2 w-6 rounded-full bg-[color:var(--clip-rendered)]"
+                      aria-hidden="true"
+                    />
+                    Rendered output
+                  </button>
+                ) : null}
                 <span className="flex items-center gap-2">
                   <span
                     className="h-2 w-6 rounded-full bg-[color:var(--clip-current)]"
