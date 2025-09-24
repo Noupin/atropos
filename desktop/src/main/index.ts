@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
+import type { HttpRequestPayload, HttpResponsePayload } from '../common/ipc'
 
 type NavigationCommand = 'back' | 'forward'
 
@@ -123,6 +124,35 @@ app.whenReady().then(() => {
     } catch (error) {
       console.error('Failed to list clips', error)
       return []
+    }
+  })
+  ipcMain.handle('http:request', async (_event, payload: HttpRequestPayload) => {
+    try {
+      const response = await fetch(payload.url, {
+        method: payload.init?.method,
+        headers: payload.init?.headers,
+        body: payload.init?.body
+      })
+
+      const headers: Array<[string, string]> = []
+      response.headers.forEach((value, key) => {
+        headers.push([key, value])
+      })
+
+      const body = await response.text()
+
+      const result: HttpResponsePayload = {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+        body
+      }
+
+      return result
+    } catch (error) {
+      console.error('HTTP request via main process failed', error)
+      throw error instanceof Error ? error : new Error('HTTP request failed')
     }
   })
   ipcMain.handle('clips:open-folder', async (_event, accountId: string) => {
