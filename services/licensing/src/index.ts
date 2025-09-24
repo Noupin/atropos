@@ -49,10 +49,16 @@ interface LicenseIssueBody {
 }
 
 function getAllowedOrigins(env: Env): string[] {
-  return (env.CORS_ALLOW_ORIGINS ?? "")
+  const origins = (env.CORS_ALLOW_ORIGINS ?? "")
     .split(",")
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
+
+  if (origins.length === 0) {
+    return ["*"];
+  }
+
+  return origins;
 }
 
 function normalizeStatus(status: string | null | undefined): string {
