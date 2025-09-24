@@ -18,16 +18,19 @@
     "ksize",
     "lmstudio",
     "Melodysheep",
+    "nacl",
     "ndarray",
     "normalises",
     "ollama",
     "opencl",
     "pytest",
+    "tfvars",
     "PYTHONUNBUFFERED",
     "segs",
     "uvicorn",
     "withatropos",
-    "wtok"
+    "wtok",
+    "urlsafe"
   ],
   "ignorePaths": [
     "node_modules",

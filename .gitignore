@@ -11,6 +11,8 @@ env
 /out
 /upload
 
+**/node_modules
+
 .env
 upload_config.json
 .meta_tokens.json
@@ -20,3 +22,15 @@ server/integrations/instagram/instagrapi_session.json
 server/integrations/instagram/instagrapi_state.json
 yt_client_secret.json
 /server/tokens
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.*
+terraform.tfstate.d/
+*.tfvars
+*.tfvars.json
+crash.log
+*.tfvars
+*.pem

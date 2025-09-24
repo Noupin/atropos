@@ -1,0 +1,23 @@
+{
+  "name": "atropos-licensing-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --dry-run",
+    "check": "tsc --noEmit",
+    "derive-public-key": "node ./scripts/derive-public-key.mjs",
+    "format": "prettier --check \"src/**/*.ts\"",
+    "lint": "npm run check",
+    "test": "echo 'No tests for worker'"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240129.0",
+    "prettier": "^3.2.5",
+    "typescript": "^5.3.3",
+    "wrangler": "^4.39.0"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^3.0.0"
+  }
+}
