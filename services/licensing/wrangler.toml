@@ -1,0 +1,42 @@
+name = "licensing-api"
+main = "src/index.ts"
+compatibility_date = "2024-02-27"
+account_id = "00000000000000000000000000000000"
+workers_dev = false
+
+[vars]
+PRICE_ID_MONTHLY = "price_1234567890"
+TIER = "pro"
+
+[env.dev]
+zone_id = "00000000000000000000000000000000"
+zone_name = "atropos-video.com"
+route = "https://api.atropos-video.com/api/*"
+
+[env.prod]
+zone_id = "00000000000000000000000000000000"
+zone_name = "atropos-video.com"
+route = "https://api.atropos-video.com/api/*"
+
+# KV namespace bindings are populated after Terraform outputs the namespace id.
+# Replace the placeholder ids below with the values from Terraform outputs.
+[[kv_namespaces]]
+binding = "LICENSING_KV"
+id = "00000000000000000000000000000000"
+preview_id = "00000000000000000000000000000000"
+
+[env.dev.vars]
+PRICE_ID_MONTHLY = "price_dev"
+
+[[env.dev.kv_namespaces]]
+binding = "LICENSING_KV"
+id = "00000000000000000000000000000000"
+preview_id = "00000000000000000000000000000000"
+
+[env.prod.vars]
+PRICE_ID_MONTHLY = "price_prod"
+
+[[env.prod.kv_namespaces]]
+binding = "LICENSING_KV"
+id = "00000000000000000000000000000000"
+preview_id = "00000000000000000000000000000000"
