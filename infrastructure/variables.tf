@@ -37,11 +37,6 @@ variable "worker_name" {
   default     = "licensing-api"
 }
 
-variable "price_id_monthly" {
-  type        = string
-  description = "Default Stripe price id for monthly subscriptions"
-}
-
 variable "tier" {
   type        = string
   description = "License tier label"

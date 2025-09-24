@@ -1,6 +1,6 @@
 output "licensing_api_base_url" {
   description = "Base URL for the licensing API"
-  value       = "https://${var.api_hostname}/api"
+  value       = "https://${var.api_hostname}"
 }
 
 output "kv_namespace_id" {

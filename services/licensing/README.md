@@ -62,7 +62,7 @@ Use the Stripe CLI to forward webhook events to the Worker during development.
 
 ```bash
 stripe login
-stripe listen --forward-to http://localhost:8787/api/billing/webhook
+stripe listen --forward-to http://localhost:8787/billing/webhook
 ```
 
 When using `wrangler dev`, Stripe should target the local dev server:

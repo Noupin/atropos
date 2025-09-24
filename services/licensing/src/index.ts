@@ -55,13 +55,6 @@ function getAllowedOrigins(env: Env): string[] {
     .filter((value) => value.length > 0);
 }
 
-function ensureApiPath(pathname: string): string {
-  if (!pathname.startsWith("/api/")) {
-    throw new HttpError(404, "not_found", "Route not found");
-  }
-  return pathname.slice("/api".length);
-}
-
 function normalizeStatus(status: string | null | undefined): string {
   return status ? status.toLowerCase() : "unknown";
 }
@@ -82,7 +75,7 @@ async function handleCheckout(
   env: Env,
   request: Request,
   corsHeaders: HeadersInit,
-  context: RequestContext,
+  context: RequestContext
 ): Promise<Response> {
   const body = await request.json().catch(() => {
     throw new HttpError(400, "invalid_request", "Body must be valid JSON");
@@ -92,19 +85,34 @@ async function handleCheckout(
     throw new HttpError(400, "invalid_request", "Body must be an object");
   }
 
-  const { user_id: userId, email, price_id: priceId, success_url: successUrl, cancel_url: cancelUrl } = body as CheckoutRequestBody;
+  const {
+    user_id: userId,
+    email,
+    price_id: priceId,
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+  } = body as CheckoutRequestBody;
   if (!userId || !email) {
-    throw new HttpError(400, "invalid_request", "user_id and email are required");
+    throw new HttpError(
+      400,
+      "invalid_request",
+      "user_id and email are required"
+    );
   }
 
   const userRecord = await getUserRecord(env, userId);
 
   const price = priceId ?? env.PRICE_ID_MONTHLY;
   if (!price) {
-    throw new HttpError(500, "missing_price", "PRICE_ID_MONTHLY is not configured");
+    throw new HttpError(
+      500,
+      "missing_price",
+      "PRICE_ID_MONTHLY is not configured"
+    );
   }
 
-  const idempotencyKey = request.headers.get("Idempotency-Key") ?? crypto.randomUUID();
+  const idempotencyKey =
+    request.headers.get("Idempotency-Key") ?? crypto.randomUUID();
   const session = await createCheckoutSession(env, {
     userId,
     email,
@@ -125,7 +133,9 @@ async function handleCheckout(
   };
   await putUserRecord(env, userId, updated);
 
-  console.log(`[${context.requestId}] Created checkout session ${session.id} for ${userId}`);
+  console.log(
+    `[${context.requestId}] Created checkout session ${session.id} for ${userId}`
+  );
 
   return jsonResponse({ url: session.url }, 200, corsHeaders);
 }
@@ -135,7 +145,7 @@ async function handlePortal(
   url: URL,
   corsHeaders: HeadersInit,
   context: RequestContext,
-  request: Request,
+  request: Request
 ): Promise<Response> {
   const userId = url.searchParams.get("user_id");
   if (!userId) {
@@ -144,18 +154,36 @@ async function handlePortal(
 
   const userRecord = await getUserRecord(env, userId);
   if (!userRecord || !userRecord.stripe_customer_id) {
-    throw new HttpError(404, "user_not_found", "User is not registered with Stripe");
+    throw new HttpError(
+      404,
+      "user_not_found",
+      "User is not registered with Stripe"
+    );
   }
 
-  const idempotencyKey = request.headers.get("Idempotency-Key") ?? crypto.randomUUID();
-  const portal = await createBillingPortalSession(env, userRecord.stripe_customer_id, env.RETURN_URL_SUCCESS, idempotencyKey);
+  const idempotencyKey =
+    request.headers.get("Idempotency-Key") ?? crypto.randomUUID();
+  const portal = await createBillingPortalSession(
+    env,
+    userRecord.stripe_customer_id,
+    env.RETURN_URL_SUCCESS,
+    idempotencyKey
+  );
   console.log(`[${context.requestId}] Generated portal session for ${userId}`);
   return jsonResponse({ url: portal.url }, 200, corsHeaders);
 }
 
-async function handleWebhook(env: Env, request: Request, context: RequestContext): Promise<Response> {
+async function handleWebhook(
+  env: Env,
+  request: Request,
+  context: RequestContext
+): Promise<Response> {
   const rawBody = await request.text();
-  await verifyStripeSignature(env, rawBody, request.headers.get("stripe-signature"));
+  await verifyStripeSignature(
+    env,
+    rawBody,
+    request.headers.get("stripe-signature")
+  );
   const event = JSON.parse(rawBody) as StripeEvent;
 
   const eventType = event.type;
@@ -165,20 +193,30 @@ async function handleWebhook(env: Env, request: Request, context: RequestContext
     switch (eventType) {
       case "checkout.session.completed": {
         const customerId = String(object.customer ?? "");
-        const userId = (object.metadata as Record<string, string> | undefined)?.user_id ??
+        const userId =
+          (object.metadata as Record<string, string> | undefined)?.user_id ??
           (object.client_reference_id as string | undefined);
-        const email = (object.customer_details as { email?: string } | undefined)?.email ??
-          (object.customer_email as string | undefined) ?? "";
+        const email =
+          (object.customer_details as { email?: string } | undefined)?.email ??
+          (object.customer_email as string | undefined) ??
+          "";
         const subscriptionId = object.subscription as string | undefined;
         if (customerId && userId) {
           const existing = await getUserRecord(env, userId);
-          const paymentStatus = (object.payment_status as string | undefined)?.toLowerCase();
-          const sessionStatus = (object.status as string | undefined)?.toLowerCase();
-          const status = paymentStatus === "paid" || sessionStatus === "complete"
-            ? "active"
-            : existing?.status ?? "pending";
-          const planPriceId = (object.metadata as Record<string, string> | undefined)?.price_id ??
-            existing?.plan_price_id ?? env.PRICE_ID_MONTHLY;
+          const paymentStatus = (
+            object.payment_status as string | undefined
+          )?.toLowerCase();
+          const sessionStatus = (
+            object.status as string | undefined
+          )?.toLowerCase();
+          const status =
+            paymentStatus === "paid" || sessionStatus === "complete"
+              ? "active"
+              : (existing?.status ?? "pending");
+          const planPriceId =
+            (object.metadata as Record<string, string> | undefined)?.price_id ??
+            existing?.plan_price_id ??
+            env.PRICE_ID_MONTHLY;
           await putUserRecord(env, userId, {
             email,
             stripe_customer_id: customerId,
@@ -193,7 +231,9 @@ async function handleWebhook(env: Env, request: Request, context: RequestContext
             current_period_end: existing?.current_period_end,
             updated_at: Date.now(),
           });
-          console.log(`[${context.requestId}] Checkout complete for ${userId} (${customerId}) subscription=${subscriptionId}`);
+          console.log(
+            `[${context.requestId}] Checkout complete for ${userId} (${customerId}) subscription=${subscriptionId}`
+          );
         }
         break;
       }
@@ -201,16 +241,24 @@ async function handleWebhook(env: Env, request: Request, context: RequestContext
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
         const subscription = object as unknown as StripeSubscription;
-        const customerId = typeof subscription.customer === "string" ? subscription.customer : "";
-        const userId = subscription.metadata?.user_id ?? (await getSubscriptionRecord(env, customerId))?.user_id;
+        const customerId =
+          typeof subscription.customer === "string"
+            ? subscription.customer
+            : "";
+        const userId =
+          subscription.metadata?.user_id ??
+          (await getSubscriptionRecord(env, customerId))?.user_id;
         if (!customerId || !userId) {
-          console.warn(`[${context.requestId}] Subscription event missing user_id`);
+          console.warn(
+            `[${context.requestId}] Subscription event missing user_id`
+          );
           break;
         }
         const status = subscription.status ?? "unknown";
-        const currentPeriodEnd = typeof subscription.current_period_end === "number"
-          ? subscription.current_period_end
-          : undefined;
+        const currentPeriodEnd =
+          typeof subscription.current_period_end === "number"
+            ? subscription.current_period_end
+            : undefined;
         const planPriceId = subscription.items?.data?.[0]?.price?.id;
         const existingUser = await getUserRecord(env, userId);
         await putUserRecord(env, userId, {
@@ -227,7 +275,9 @@ async function handleWebhook(env: Env, request: Request, context: RequestContext
           current_period_end: currentPeriodEnd,
           updated_at: Date.now(),
         });
-        console.log(`[${context.requestId}] Subscription ${subscription.id} -> ${status}`);
+        console.log(
+          `[${context.requestId}] Subscription ${subscription.id} -> ${status}`
+        );
         break;
       }
       default:
@@ -235,8 +285,15 @@ async function handleWebhook(env: Env, request: Request, context: RequestContext
         break;
     }
   } catch (error) {
-    console.error(`[${context.requestId}] Failed to process event ${eventType}`, error);
-    throw new HttpError(500, "webhook_processing_failed", "Failed to handle webhook event");
+    console.error(
+      `[${context.requestId}] Failed to process event ${eventType}`,
+      error
+    );
+    throw new HttpError(
+      500,
+      "webhook_processing_failed",
+      "Failed to handle webhook event"
+    );
   }
 
   return new Response(null, { status: 200 });
@@ -245,7 +302,7 @@ async function handleWebhook(env: Env, request: Request, context: RequestContext
 async function handleIssue(
   env: Env,
   request: Request,
-  corsHeaders: HeadersInit,
+  corsHeaders: HeadersInit
 ): Promise<Response> {
   const body = await request.json().catch(() => {
     throw new HttpError(400, "invalid_request", "Body must be valid JSON");
@@ -262,11 +319,19 @@ async function handleIssue(
 
   const userRecord = await getUserRecord(env, userId);
   if (!userRecord) {
-    throw new HttpError(404, "user_not_found", "User has no active subscription");
+    throw new HttpError(
+      404,
+      "user_not_found",
+      "User has no active subscription"
+    );
   }
 
   if (!isEntitled(userRecord.status, userRecord.current_period_end)) {
-    throw new HttpError(403, "subscription_inactive", "Subscription is not active");
+    throw new HttpError(
+      403,
+      "subscription_inactive",
+      "Subscription is not active"
+    );
   }
 
   const tier = env.TIER ?? "pro";
@@ -280,7 +345,27 @@ async function handleIssue(
   return jsonResponse({ token: token.token, exp: token.exp }, 200, corsHeaders);
 }
 
-async function handleValidate(env: Env, request: Request, corsHeaders: HeadersInit): Promise<Response> {
+async function handleHealth(
+  env: Env,
+  corsHeaders: HeadersInit
+): Promise<Response> {
+  return jsonResponse(
+    {
+      status: "ok",
+      service: "licensing",
+      tier: env.TIER ?? "pro",
+      time: new Date().toISOString(),
+    },
+    200,
+    corsHeaders
+  );
+}
+
+async function handleValidate(
+  env: Env,
+  request: Request,
+  corsHeaders: HeadersInit
+): Promise<Response> {
   const authHeader = request.headers.get("authorization");
   const url = new URL(request.url);
   const token = authHeader?.startsWith("Bearer ")
@@ -310,7 +395,7 @@ export default {
     }
 
     try {
-      const apiPath = ensureApiPath(url.pathname);
+      const apiPath = url.pathname;
       const corsHeaders = baseCorsHeaders(origin, allowedOrigins);
 
       switch (request.method) {
@@ -327,6 +412,9 @@ export default {
           break;
         }
         case "GET": {
+          if (apiPath === "/health") {
+            return await handleHealth(env, corsHeaders);
+          }
           if (apiPath === "/billing/portal") {
             return await handlePortal(env, url, corsHeaders, context, request);
           }

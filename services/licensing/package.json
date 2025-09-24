@@ -15,7 +15,7 @@
     "@cloudflare/workers-types": "^4.20240129.0",
     "prettier": "^3.2.5",
     "typescript": "^5.3.3",
-    "wrangler": "^3.28.4"
+    "wrangler": "^4.39.0"
   },
   "dependencies": {
     "@noble/ed25519": "^3.0.0"
