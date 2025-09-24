@@ -168,17 +168,17 @@ export const buildAuthPingUrl = (): string => {
 }
 
 export const buildSubscriptionStatusUrl = (): string => {
-  const url = new URL('/api/billing/subscription', getBillingApiBaseUrl())
+  const url = new URL('/billing/subscription', getBillingApiBaseUrl())
   return url.toString()
 }
 
 export const buildCheckoutSessionUrl = (): string => {
-  const url = new URL('/api/billing/checkout', getBillingApiBaseUrl())
+  const url = new URL('/billing/checkout', getBillingApiBaseUrl())
   return url.toString()
 }
 
 export const buildBillingPortalUrl = (): string => {
-  const url = new URL('/api/billing/portal', getBillingApiBaseUrl())
+  const url = new URL('/billing/portal', getBillingApiBaseUrl())
   return url.toString()
 }
 
