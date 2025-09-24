@@ -64,10 +64,29 @@ const buildDefaultBaseUrls = (): string[] => {
 const explicitBase = normaliseBaseUrl(import.meta.env.VITE_API_BASE_URL)
 const apiBaseCandidates = explicitBase ? [explicitBase] : buildDefaultBaseUrls()
 
+const DEFAULT_BILLING_DEV_BASE_URL = 'https://dev.api.atropos-video.com'
+const DEFAULT_BILLING_PROD_BASE_URL = 'https://api.atropos-video.com'
+
+const resolveBillingBaseUrl = (): string => {
+  const explicitBillingBase = normaliseBaseUrl(import.meta.env.VITE_BILLING_API_BASE_URL)
+  if (explicitBillingBase) {
+    return explicitBillingBase
+  }
+
+  const defaultBillingBase = import.meta.env.PROD
+    ? DEFAULT_BILLING_PROD_BASE_URL
+    : DEFAULT_BILLING_DEV_BASE_URL
+  return defaultBillingBase
+}
+
+const billingBaseUrl = resolveBillingBaseUrl()
+
 let candidateIndex = 0
 let currentBaseUrl = apiBaseCandidates[candidateIndex]
 
 export const getApiBaseUrl = (): string => currentBaseUrl
+
+export const getBillingApiBaseUrl = (): string => billingBaseUrl
 
 export const advanceApiBaseUrl = (): string | null => {
   if (candidateIndex + 1 < apiBaseCandidates.length) {
@@ -149,17 +168,17 @@ export const buildAuthPingUrl = (): string => {
 }
 
 export const buildSubscriptionStatusUrl = (): string => {
-  const url = new URL('/api/billing/subscription', getApiBaseUrl())
+  const url = new URL('/api/billing/subscription', getBillingApiBaseUrl())
   return url.toString()
 }
 
 export const buildCheckoutSessionUrl = (): string => {
-  const url = new URL('/api/billing/checkout', getApiBaseUrl())
+  const url = new URL('/api/billing/checkout', getBillingApiBaseUrl())
   return url.toString()
 }
 
 export const buildBillingPortalUrl = (): string => {
-  const url = new URL('/api/billing/portal', getApiBaseUrl())
+  const url = new URL('/api/billing/portal', getBillingApiBaseUrl())
   return url.toString()
 }
 
