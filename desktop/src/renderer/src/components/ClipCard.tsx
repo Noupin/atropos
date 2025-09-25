@@ -18,7 +18,9 @@ const ClipCard: FC<ClipCardProps> = ({ clip, onClick, isActive = false }) => {
   }
 
   const cardClassName = `group relative flex cursor-pointer flex-col overflow-hidden rounded-xl border bg-[var(--card)] shadow-sm transition hover:-translate-y-1 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
-    isActive ? 'border-[var(--ring)] shadow-[0_0_0_1px_var(--ring)]' : 'border-white/10 hover:border-[var(--ring)]'
+    isActive
+      ? 'border-[var(--ring)] shadow-[0_0_0_1px_var(--ring)]'
+      : 'border-white/10 hover:border-[var(--ring)]'
   }`
 
   return (
@@ -56,7 +58,7 @@ const ClipCard: FC<ClipCardProps> = ({ clip, onClick, isActive = false }) => {
         >
           {clip.hasAdjustments ? 'Adjusted' : 'Original'}
         </span>
-        <span className="absolute bottom-2 right-2 rounded-md bg-black/80 px-2 py-0.5 text-xs font-medium text-white shadow-[0_4px_12px_rgba(15,23,42,0.35)]">
+        <span className="absolute bottom-2 right-2 rounded-md bg-black/80 px-2 py-0.5 text-xs font-medium text-[color:var(--clip-original-badge-text)] shadow-[0_4px_12px_rgba(15,23,42,0.35)]">
           {formatDuration(clip.durationSec)}
         </span>
       </div>
