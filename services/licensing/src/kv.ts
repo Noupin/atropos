@@ -32,10 +32,6 @@ function transferKey(userId: string): string {
   return `transfer:${userId}`;
 }
 
-function customerIndexKey(customerId: string): string {
-  return `idx:customer:${customerId}`;
-}
-
 function rateLimitKey(scope: string): string {
   return `rl:${scope}`;
 }
@@ -98,34 +94,7 @@ export async function putUserRecord(
 
   await env.USERS_KV.put(userKey(userId), JSON.stringify(record));
 
-  const previousCustomerId = existing?.stripe_customer_id;
-  const nextCustomerId = record.stripe_customer_id;
-
-  if (previousCustomerId && previousCustomerId !== nextCustomerId) {
-    await env.USERS_KV.delete(customerIndexKey(previousCustomerId));
-  }
-
-  if (nextCustomerId) {
-    await env.USERS_KV.put(customerIndexKey(nextCustomerId), userId);
-  }
-
   return record;
-}
-
-export async function getUserIdByCustomerId(
-  env: Env,
-  customerId: string,
-): Promise<string | null> {
-  const value = await env.USERS_KV.get(customerIndexKey(customerId));
-  return value ?? null;
-}
-
-export async function setUserIdForCustomer(
-  env: Env,
-  customerId: string,
-  userId: string,
-): Promise<void> {
-  await env.USERS_KV.put(customerIndexKey(customerId), userId);
 }
 
 export async function saveTransferRequest(

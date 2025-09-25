@@ -24,6 +24,12 @@ interface StripeCustomerResponse {
   id: string;
 }
 
+interface StripeCustomerDetailResponse {
+  id: string;
+  metadata?: Record<string, string> | null;
+  email?: string | null;
+}
+
 interface StripeSubscriptionListResponse {
   data: Array<{
     id: string;
@@ -186,6 +192,17 @@ export async function createCustomer(
     body: params,
     idempotencyKey,
   });
+}
+
+export async function retrieveCustomer(
+  env: Env,
+  customerId: string,
+): Promise<StripeCustomerDetailResponse> {
+  return stripeRequest<StripeCustomerDetailResponse>(
+    env,
+    `/v1/customers/${encodeURIComponent(customerId)}`,
+    { method: "GET" },
+  );
 }
 
 export async function hasActiveStripeSubscription(
