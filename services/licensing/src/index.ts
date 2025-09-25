@@ -84,6 +84,14 @@ const LIFECYCLE_STATUSES = new Set([
   "paused",
 ]);
 
+const MANAGEABLE_STATUSES = new Set([
+  "active",
+  "trialing",
+  "past_due",
+  "unpaid",
+  "paused",
+]);
+
 const OTP_LENGTH = 6;
 const OTP_TTL_SECONDS = 10 * 60;
 const RATE_LIMIT_ISSUE_LIMIT = 10;
@@ -500,6 +508,15 @@ async function handlePortal(
       404,
       "user_not_found",
       "User is not registered with Stripe"
+    );
+  }
+
+  const normalizedStatus = toLifecycleStatus(userRecord.status);
+  if (!MANAGEABLE_STATUSES.has(normalizedStatus)) {
+    throw new HttpError(
+      409,
+      "no_active_subscription",
+      "No active Stripe subscription is available to manage",
     );
   }
 

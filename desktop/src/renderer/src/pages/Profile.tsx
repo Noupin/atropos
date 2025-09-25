@@ -8,6 +8,7 @@ import {
   type AccountSummary,
   type AuthPingSummary,
   type SearchBridge,
+  type SubscriptionLifecycleStatus,
   type SubscriptionStatus,
   type SupportedPlatform
 } from '../types'
@@ -22,6 +23,14 @@ const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
   youtube: 'youtube.json',
   instagram: 'instagram_session.json'
 }
+
+const MANAGEABLE_SUBSCRIPTION_STATUSES = new Set<SubscriptionLifecycleStatus>([
+  'active',
+  'trialing',
+  'past_due',
+  'unpaid',
+  'paused'
+])
 
 const normalizeBillingError = (value: string): string => {
   const message = value.trim()
@@ -1178,9 +1187,10 @@ const Profile: FC<ProfileProps> = ({
 
     return null
   }, [accessStatus, subscriptionStatus])
-  const hideSubscribeButton = subscriptionStatus
-    ? ['active', 'trialing', 'past_due', 'unpaid', 'paused'].includes(subscriptionStatus.status)
+  const hasManageableSubscription = subscriptionStatus
+    ? MANAGEABLE_SUBSCRIPTION_STATUSES.has(subscriptionStatus.status)
     : false
+  const hideSubscribeButton = hasManageableSubscription
   const billingEmail = accessStatus?.customerEmail ?? null
   const billingEmailLabel = billingEmail
 
@@ -1233,6 +1243,13 @@ const Profile: FC<ProfileProps> = ({
       return
     }
 
+    if (!hasManageableSubscription) {
+      setSubscriptionError(
+        'No Stripe subscription is linked to this account yet. Start a plan to manage your billing.'
+      )
+      return
+    }
+
     setIsOpeningPortal(true)
     try {
       const session = await createBillingPortalSession({ userId: billingUserId })
@@ -1247,7 +1264,7 @@ const Profile: FC<ProfileProps> = ({
     } finally {
       setIsOpeningPortal(false)
     }
-  }, [billingUserId])
+  }, [billingUserId, hasManageableSubscription])
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
@@ -1485,29 +1502,29 @@ const Profile: FC<ProfileProps> = ({
                     {isStartingCheckout ? 'Redirecting…' : 'Subscribe with Stripe'}
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleOpenBillingPortal()
-                  }}
-                  className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
-                  disabled={isOpeningPortal}
-                >
-                  {isOpeningPortal ? 'Opening portal…' : 'Manage billing'}
-                </button>
+                {hasManageableSubscription ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleOpenBillingPortal()
+                    }}
+                    className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
+                    disabled={isOpeningPortal}
+                  >
+                    {isOpeningPortal ? 'Opening portal…' : 'Manage billing'}
+                  </button>
+                ) : null}
               </div>
               <p className="text-[10px] text-[var(--muted)]">
-                {hideSubscribeButton ? (
+                {hasManageableSubscription ? (
                   <span>
                     <span className="font-semibold text-[var(--fg)]">Manage billing</span> opens the
-                    Stripe customer portal for existing subscriptions.
+                    Stripe customer portal for your existing subscription.
                   </span>
                 ) : (
                   <span>
                     <span className="font-semibold text-[var(--fg)]">Subscribe with Stripe</span> starts a
-                    new plan, while{' '}
-                    <span className="font-semibold text-[var(--fg)]">Manage billing</span> opens the
-                    Stripe customer portal for existing subscriptions.
+                    new plan using secure checkout.
                   </span>
                 )}
               </p>

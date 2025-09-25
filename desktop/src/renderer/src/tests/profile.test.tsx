@@ -381,6 +381,7 @@ describe('Profile page', () => {
   it('opens Stripe checkout when subscribing', async () => {
     renderProfile()
 
+    await waitFor(() => expect(refreshSubscriptionStatusMock).toHaveBeenCalled())
     const checkoutButton = screen.getByRole('button', { name: /Subscribe with Stripe/i })
     fireEvent.click(checkoutButton)
 
@@ -392,10 +393,40 @@ describe('Profile page', () => {
     expect(window.open).toHaveBeenCalledWith('https://stripe.test/checkout', '_blank', 'noopener')
   })
 
-  it('opens the billing portal when managing billing', async () => {
+  it('hides manage billing when no active subscription exists', async () => {
     renderProfile()
 
-    const billingButton = screen.getByRole('button', { name: /Manage billing/i })
+    await waitFor(() => expect(refreshSubscriptionStatusMock).toHaveBeenCalled())
+    expect(
+      screen.queryByRole('button', {
+        name: /Manage billing/i
+      })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', {
+        name: /Subscribe with Stripe/i
+      })
+    ).toBeInTheDocument()
+  })
+
+  it('opens the billing portal when managing billing', async () => {
+    refreshSubscriptionStatusMock.mockResolvedValueOnce({
+      status: 'active',
+      planId: 'price_123',
+      planName: 'Pro Monthly',
+      renewsAt: '2025-06-02T09:05:00Z',
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null,
+      entitled: true,
+      currentPeriodEnd: Math.floor(Date.now() / 1000) + 3600,
+      cancelAtPeriodEnd: false,
+      epoch: 1
+    })
+
+    renderProfile()
+
+    const billingButton = await screen.findByRole('button', { name: /Manage billing/i })
     fireEvent.click(billingButton)
 
     await waitFor(() => expect(paymentsMocks.createBillingPortalSession).toHaveBeenCalledTimes(1))
