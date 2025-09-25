@@ -54,18 +54,6 @@ interface BillingPortalRequestBody {
   return_url?: string;
 }
 
-const LIFECYCLE_STATUSES = new Set([
-  "inactive",
-  "active",
-  "trialing",
-  "grace_period",
-  "past_due",
-  "canceled",
-  "incomplete",
-  "incomplete_expired",
-  "unpaid",
-]);
-
 function getAllowedOrigins(env: Env): string[] {
   const origins = (env.CORS_ALLOW_ORIGINS ?? "")
     .split(",")
@@ -83,36 +71,18 @@ function normalizeStatus(status: string | null | undefined): string {
   return status ? status.toLowerCase() : "unknown";
 }
 
-function toLifecycleStatus(status: string | null | undefined): string {
-  const normalized = normalizeStatus(status);
-  if (LIFECYCLE_STATUSES.has(normalized)) {
-    return normalized;
-  }
-  return "inactive";
-}
-
-function toIsoTimestamp(value?: number | null): string | null {
-  if (!value) {
-    return null;
-  }
-  const milliseconds = value > 1e12 ? value : value * 1000;
-  const date = new Date(milliseconds);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return date.toISOString();
-}
-
 function isEntitled(status: string, currentPeriodEnd?: number | null): boolean {
   const normalized = normalizeStatus(status);
-  if (normalized === "active" || normalized === "trialing") {
-    if (!currentPeriodEnd) {
-      return true;
-    }
-    const now = Math.floor(Date.now() / 1000);
-    return currentPeriodEnd > now;
+  if (normalized !== "active" && normalized !== "trialing") {
+    return false;
   }
-  return false;
+
+  if (typeof currentPeriodEnd !== "number") {
+    return false;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  return currentPeriodEnd > now;
 }
 
 function extractStripeId(value: unknown): string | null {
@@ -301,27 +271,24 @@ async function handleSubscription(
     return jsonResponse(
       {
         status: "inactive",
-        planId: null,
-        planName: null,
-        renewsAt: null,
-        cancelAt: null,
-        trialEndsAt: null,
-        latestInvoiceUrl: null,
+        entitled: false,
+        current_period_end: null,
+        cancel_at_period_end: null,
       },
       200,
       corsHeaders
     );
   }
 
+  const status = normalizeStatus(record.status);
+  const currentPeriodEnd = record.current_period_end ?? null;
+
   return jsonResponse(
     {
-      status: toLifecycleStatus(record.status),
-      planId: record.plan_price_id ?? null,
-      planName: null,
-      renewsAt: toIsoTimestamp(record.current_period_end),
-      cancelAt: null,
-      trialEndsAt: null,
-      latestInvoiceUrl: null,
+      status,
+      entitled: isEntitled(status, currentPeriodEnd ?? undefined),
+      current_period_end: currentPeriodEnd,
+      cancel_at_period_end: null,
     },
     200,
     corsHeaders
