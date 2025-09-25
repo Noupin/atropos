@@ -114,6 +114,23 @@ function isEntitled(status: string, currentPeriodEnd?: number | null): boolean {
   return false;
 }
 
+function extractStripeId(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (value && typeof value === "object" && "id" in value) {
+    const candidate = (value as { id?: unknown }).id;
+    if (typeof candidate === "string") {
+      const trimmed = candidate.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+  }
+
+  return null;
+}
+
 async function handleCheckout(
   env: Env,
   request: Request,
@@ -307,7 +324,7 @@ async function handleWebhook(
   try {
     switch (eventType) {
       case "checkout.session.completed": {
-        const customerId = String(object.customer ?? "");
+        const customerId = extractStripeId(object.customer);
         const userId =
           (object.metadata as Record<string, string> | undefined)?.user_id ??
           (object.client_reference_id as string | undefined);
@@ -356,13 +373,12 @@ async function handleWebhook(
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
         const subscription = object as unknown as StripeSubscription;
-        const customerId =
-          typeof subscription.customer === "string"
-            ? subscription.customer
-            : "";
+        const customerId = extractStripeId(subscription.customer);
+        const existingSubscription = customerId
+          ? await getSubscriptionRecord(env, customerId)
+          : null;
         const userId =
-          subscription.metadata?.user_id ??
-          (await getSubscriptionRecord(env, customerId))?.user_id;
+          subscription.metadata?.user_id ?? existingSubscription?.user_id;
         if (!customerId || !userId) {
           console.warn(
             `[${context.requestId}] Subscription event missing user_id`

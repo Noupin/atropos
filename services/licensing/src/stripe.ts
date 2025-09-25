@@ -72,8 +72,14 @@ export async function createCheckoutSession(
   params.set("line_items[0][price]", payload.priceId);
   params.set("line_items[0][quantity]", "1");
   params.set("allow_promotion_codes", "true");
-  params.set("success_url", payload.successUrl ?? env.RETURN_URL_SUCCESS ?? "https://atropos.video/billing/success");
-  params.set("cancel_url", payload.cancelUrl ?? env.RETURN_URL_CANCEL ?? "https://atropos.video/billing/cancel");
+  params.set(
+    "success_url",
+    payload.successUrl ?? env.RETURN_URL_SUCCESS ?? "https://atropos.video/"
+  );
+  params.set(
+    "cancel_url",
+    payload.cancelUrl ?? env.RETURN_URL_CANCEL ?? "https://atropos.video/"
+  );
   params.set("subscription_data[metadata][user_id]", payload.userId);
   params.set("metadata[user_id]", payload.userId);
   params.set("metadata[price_id]", payload.priceId);
