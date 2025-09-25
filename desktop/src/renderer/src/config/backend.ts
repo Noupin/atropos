@@ -97,10 +97,12 @@ export const advanceApiBaseUrl = (): string | null => {
   return null
 }
 
-const rawMode = (import.meta.env.VITE_BACKEND_MODE ?? '').toLowerCase()
-const mode: BackendMode = rawMode === 'mock' ? 'mock' : 'api'
+// Toggle this constant to 'mock' when you explicitly want to run the desktop UI
+// against the built-in simulation harness. This value is intentionally hard-coded
+// so consumers cannot enable mock behaviour through environment configuration.
+const SELECTED_BACKEND_MODE: BackendMode = 'api'
 
-export const BACKEND_MODE: BackendMode = mode
+export const BACKEND_MODE: BackendMode = SELECTED_BACKEND_MODE
 
 export const buildJobUrl = (): string => {
   const url = new URL('/api/jobs', getApiBaseUrl())

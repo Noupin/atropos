@@ -45,9 +45,10 @@ during development and `https://api.atropos-video.com` for packaged builds.
 Override `VITE_BILLING_API_BASE_URL` when you need to point at a different
 environment.
 
-Set `VITE_BACKEND_MODE=mock` to explore the UI with simulated pipeline events
-when the Python server is unavailable. Remove the variable (or set it to `api`)
-to return to the live backend.
+To explore the UI with simulated pipeline events when the Python server is
+unavailable, edit `desktop/src/renderer/src/config/backend.ts` and set
+`SELECTED_BACKEND_MODE` to `'mock'`. Restore the value to `'api'` to return to the
+live backend.
 
 ### Build
 

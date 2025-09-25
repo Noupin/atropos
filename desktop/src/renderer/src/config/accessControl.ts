@@ -16,7 +16,7 @@ const parseUrl = (value: string | undefined): string | null => {
     url.search = ''
     return url.toString()
   } catch (error) {
-    console.warn('Invalid access control API URL provided. Falling back to mock mode.', error)
+    console.warn('Invalid access control API URL provided. Ignoring configuration.', error)
     return null
   }
 }
@@ -29,8 +29,20 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
-const apiUrl = parseUrl(import.meta.env.VITE_ACCESS_API_URL)
-const useMock = apiUrl === null
+// Flip this flag to true when you need to exercise the access-control mock service during
+// development. It is intentionally code-driven so production builds cannot opt into mock
+// behaviour via environment variables.
+const FORCE_ACCESS_MOCK = false
+
+const configuredApiUrl = parseUrl(import.meta.env.VITE_ACCESS_API_URL)
+const apiUrl = FORCE_ACCESS_MOCK ? null : configuredApiUrl
+const useMock = FORCE_ACCESS_MOCK
+
+if (!apiUrl && !useMock) {
+  console.warn(
+    'Access control API URL is not configured; desktop access verification requests will fail.'
+  )
+}
 
 const config: AccessControlConfig = {
   apiUrl,
