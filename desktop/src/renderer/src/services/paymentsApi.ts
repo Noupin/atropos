@@ -75,7 +75,8 @@ const mockSubscriptionStatus = (): SubscriptionStatus => {
     entitled: true,
     currentPeriodEnd,
     cancelAtPeriodEnd: false,
-    epoch: 0
+    epoch: 0,
+    customerEmail: 'demo-user@example.com'
   }
 }
 
@@ -125,6 +126,9 @@ export const fetchSubscriptionStatus = async (userId: string): Promise<Subscript
   const latestInvoiceUrl = toNullableString(body.latestInvoiceUrl)
   const entitled = Boolean(body.entitled)
   const epoch = toNullableNumber(body.epoch) ?? 0
+  const customerEmail =
+    toNullableString((body as { customerEmail?: unknown }).customerEmail) ??
+    toNullableString((body as { customer_email?: unknown }).customer_email)
 
   return {
     status,
@@ -137,7 +141,8 @@ export const fetchSubscriptionStatus = async (userId: string): Promise<Subscript
     entitled,
     currentPeriodEnd,
     cancelAtPeriodEnd,
-    epoch
+    epoch,
+    customerEmail: customerEmail ?? null
   }
 }
 

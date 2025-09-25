@@ -1,4 +1,12 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ChangeEvent,
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react'
 import type { FC } from 'react'
 import {
   PLATFORM_LABELS,
@@ -940,8 +948,36 @@ const Profile: FC<ProfileProps> = ({
   const [isStartingCheckout, setIsStartingCheckout] = useState(false)
   const [isOpeningPortal, setIsOpeningPortal] = useState(false)
   const [shouldRefreshAfterFocus, setShouldRefreshAfterFocus] = useState(false)
+  const [billingEmailInput, setBillingEmailInput] = useState('')
+  const [hasCustomBillingEmail, setHasCustomBillingEmail] = useState(false)
 
   const billingUserId = useMemo(() => getAccessControlConfig().clientId.trim(), [])
+  const fallbackBillingEmail = useMemo(() => {
+    const subscriptionEmail = subscriptionStatus?.customerEmail?.trim()
+    if (subscriptionEmail && subscriptionEmail.length > 0) {
+      return subscriptionEmail
+    }
+    const accessEmail = accessStatus?.customerEmail?.trim()
+    if (accessEmail && accessEmail.length > 0) {
+      return accessEmail
+    }
+    return ''
+  }, [accessStatus?.customerEmail, subscriptionStatus?.customerEmail])
+
+  useEffect(() => {
+    const fallback = fallbackBillingEmail
+    if (!hasCustomBillingEmail && billingEmailInput !== fallback) {
+      setBillingEmailInput(fallback)
+      return
+    }
+    if (
+      hasCustomBillingEmail &&
+      fallback.length > 0 &&
+      fallback === billingEmailInput.trim()
+    ) {
+      setHasCustomBillingEmail(false)
+    }
+  }, [billingEmailInput, fallbackBillingEmail, hasCustomBillingEmail])
 
   const handleToggleCreateAccount = useCallback(() => {
     setNewAccountError(null)
@@ -1191,8 +1227,21 @@ const Profile: FC<ProfileProps> = ({
     ? MANAGEABLE_SUBSCRIPTION_STATUSES.has(subscriptionStatus.status)
     : false
   const hideSubscribeButton = hasManageableSubscription
-  const billingEmail = accessStatus?.customerEmail ?? null
-  const billingEmailLabel = billingEmail
+  const normalizedBillingEmail = billingEmailInput.trim()
+  const billingEmailLabel = normalizedBillingEmail.length > 0 ? normalizedBillingEmail : null
+  const isBillingEmailMissing = billingEmailLabel === null
+
+  const handleBillingEmailChange = (event: ChangeEvent<HTMLInputElement>): void => {
+    setBillingEmailInput(event.target.value)
+    setHasCustomBillingEmail(true)
+    if (subscriptionError) {
+      setSubscriptionError(null)
+    }
+  }
+
+  const handleBillingEmailBlur = (): void => {
+    setBillingEmailInput((current) => current.trim())
+  }
 
   const handleRefreshBilling = useCallback(async () => {
     await loadSubscriptionStatus()
@@ -1212,7 +1261,7 @@ const Profile: FC<ProfileProps> = ({
       return
     }
 
-    if (!billingEmail) {
+    if (!normalizedBillingEmail) {
       setSubscriptionError('A billing email address is required before starting checkout.')
       return
     }
@@ -1221,7 +1270,7 @@ const Profile: FC<ProfileProps> = ({
     try {
       const session = await createCheckoutSession({
         userId: billingUserId,
-        email: billingEmail
+        email: normalizedBillingEmail
       })
       if (typeof window !== 'undefined' && session.url) {
         window.open(session.url, '_blank', 'noopener')
@@ -1234,7 +1283,7 @@ const Profile: FC<ProfileProps> = ({
     } finally {
       setIsStartingCheckout(false)
     }
-  }, [billingEmail, billingUserId])
+  }, [billingUserId, normalizedBillingEmail])
 
   const handleOpenBillingPortal = useCallback(async () => {
     setSubscriptionError(null)
@@ -1435,11 +1484,31 @@ const Profile: FC<ProfileProps> = ({
                   {accessRenewalLabel}
                 </p>
               ) : null}
-              {billingEmailLabel ? (
-                <p>
-                  <span className="font-semibold text-[var(--fg)]">Billing email:</span> {billingEmailLabel}
-                </p>
-              ) : null}
+            </div>
+            <div className="flex flex-col gap-2 text-xs text-[var(--muted)]">
+              <label
+                htmlFor="billing-email-input"
+                className="text-xs font-semibold text-[var(--fg)]"
+              >
+                Billing email
+              </label>
+              <input
+                id="billing-email-input"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                value={billingEmailInput}
+                onChange={handleBillingEmailChange}
+                onBlur={handleBillingEmailBlur}
+                className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)] focus:outline-none focus:ring-2 focus:ring-[color:var(--accent)] focus:ring-offset-2 focus:ring-offset-black"
+                placeholder="you@example.com"
+                aria-invalid={isBillingEmailMissing}
+              />
+              <p className="text-[10px] leading-relaxed text-[var(--muted)]">
+                {billingEmailLabel
+                  ? `Receipts and device transfer codes will be sent to ${billingEmailLabel}.`
+                  : 'Enter the email address that should receive Stripe receipts and device transfer codes.'}
+              </p>
             </div>
             {isLoadingSubscription ? (
               <p className="text-xs text-[var(--muted)]">Checking Stripe subscription…</p>
@@ -1497,7 +1566,7 @@ const Profile: FC<ProfileProps> = ({
                       void handleStartCheckout()
                     }}
                     className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
-                    disabled={isStartingCheckout}
+                    disabled={isStartingCheckout || isBillingEmailMissing}
                   >
                     {isStartingCheckout ? 'Redirecting…' : 'Subscribe with Stripe'}
                   </button>

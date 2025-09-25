@@ -165,6 +165,7 @@ export interface SubscriptionStatus {
   currentPeriodEnd: number | null
   cancelAtPeriodEnd: boolean
   epoch: number
+  customerEmail: string | null
 }
 
 export interface CheckoutSession {

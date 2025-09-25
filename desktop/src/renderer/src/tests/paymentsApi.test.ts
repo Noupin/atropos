@@ -30,6 +30,7 @@ describe('paymentsApi mock mode', () => {
     expect(typeof status.currentPeriodEnd).toBe('number')
     expect(status.cancelAtPeriodEnd).toBe(false)
     expect(status.epoch).toBe(0)
+    expect(status.customerEmail).toBe('demo-user@example.com')
     expect(httpMocks.requestWithFallback).not.toHaveBeenCalled()
   })
 

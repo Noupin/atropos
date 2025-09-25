@@ -153,7 +153,8 @@ describe('Profile page', () => {
       entitled: false,
       currentPeriodEnd: null,
       cancelAtPeriodEnd: false,
-      epoch: 0
+      epoch: 0,
+      customerEmail: 'owner@example.com'
     })
 
     paymentsMocks.createCheckoutSession.mockReset()
@@ -407,6 +408,7 @@ describe('Profile page', () => {
         name: /Subscribe with Stripe/i
       })
     ).toBeInTheDocument()
+    expect(screen.getByLabelText(/Billing email/i)).toHaveValue('owner@example.com')
   })
 
   it('opens the billing portal when managing billing', async () => {
@@ -421,7 +423,8 @@ describe('Profile page', () => {
       entitled: true,
       currentPeriodEnd: Math.floor(Date.now() / 1000) + 3600,
       cancelAtPeriodEnd: false,
-      epoch: 1
+      epoch: 1,
+      customerEmail: 'owner@example.com'
     })
 
     renderProfile()

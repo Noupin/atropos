@@ -45,7 +45,7 @@ interface StripeSubscription {
 
 interface CheckoutRequestBody {
   user_id: string;
-  email: string;
+  email?: string | null;
   price_id?: string;
   success_url?: string;
   cancel_url?: string;
@@ -192,6 +192,14 @@ function extractStripeId(value: unknown): string | null {
 }
 
 function sanitizeDeviceHash(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeEmail(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
   }
@@ -415,12 +423,8 @@ async function handleCheckout(
     success_url: successUrl,
     cancel_url: cancelUrl,
   } = body as CheckoutRequestBody;
-  if (!userId || !email) {
-    throw new HttpError(
-      400,
-      "invalid_request",
-      "user_id and email are required"
-    );
+  if (!userId) {
+    throw new HttpError(400, "invalid_request", "user_id is required");
   }
 
   const price = priceId ?? env.PRICE_ID_MONTHLY;
@@ -438,12 +442,24 @@ async function handleCheckout(
   const checkoutIdempotencyKey = `${idempotencyRoot}:checkout`;
 
   let userRecord = await getUserRecord(env, userId);
+  const normalizedEmailInput = normalizeEmail(email);
+  const existingEmail = normalizeEmail(userRecord?.email);
+  const effectiveEmail = normalizedEmailInput ?? existingEmail;
+
+  if (!effectiveEmail) {
+    throw new HttpError(
+      400,
+      "billing_email_required",
+      "A billing email address is required to start checkout.",
+    );
+  }
+
   let stripeCustomerId = userRecord?.stripe_customer_id;
   if (!stripeCustomerId) {
     const customer = await createCustomer(
       env,
       userId,
-      email,
+      effectiveEmail,
       customerIdempotencyKey,
     );
     stripeCustomerId = customer.id;
@@ -457,10 +473,16 @@ async function handleCheckout(
     );
   }
 
-  if (!userRecord || userRecord.stripe_customer_id !== stripeCustomerId || userRecord.email !== email) {
+  const recordEmail = userRecord ? normalizeEmail(userRecord.email) : null;
+
+  if (
+    !userRecord ||
+    userRecord.stripe_customer_id !== stripeCustomerId ||
+    recordEmail !== effectiveEmail
+  ) {
     userRecord = await putUserRecord(env, userId, {
       client_id: userId,
-      email,
+      email: effectiveEmail,
       stripe_customer_id: stripeCustomerId,
       plan_price_id: userRecord?.plan_price_id ?? price,
     });
@@ -500,7 +522,7 @@ async function handleCheckout(
 
   const session = await createCheckoutSession(env, {
     userId,
-    email,
+    email: effectiveEmail,
     priceId: price,
     successUrl,
     cancelUrl,
@@ -510,7 +532,7 @@ async function handleCheckout(
 
   userRecord = await putUserRecord(env, userId, {
     client_id: userId,
-    email,
+    email: effectiveEmail,
     stripe_customer_id: stripeCustomerId,
     status: userRecord?.status ?? "pending",
     current_period_end: userRecord?.current_period_end,
@@ -631,6 +653,7 @@ async function handleSubscription(
         deviceHash: null,
         keyVersion: null,
         epoch: 0,
+        customerEmail: null,
       },
       200,
       corsHeaders
@@ -692,6 +715,7 @@ async function handleSubscription(
       deviceHash: record.device_hash ?? null,
       keyVersion: record.key_version,
       epoch: record.epoch ?? 0,
+      customerEmail: normalizeEmail(record.email),
     },
     200,
     corsHeaders
