@@ -86,19 +86,28 @@ export function baseCorsHeaders(
   allowedOrigins: string[],
 ): HeadersInit {
   const allowAllOrigins = allowedOrigins.includes("*");
+  const normalizedOrigin = origin ?? null;
 
-  if (!origin) {
-    return {};
+  if (!allowAllOrigins && normalizedOrigin && !allowedOrigins.includes(normalizedOrigin)) {
+    throw new HttpError(403, "forbidden_origin", "Origin is not allowed");
   }
 
-  if (allowAllOrigins || allowedOrigins.includes(origin)) {
-    return {
-      "access-control-allow-origin": origin,
-      "access-control-allow-credentials": "true",
-    } satisfies HeadersInit;
+  const allowOriginValue = allowAllOrigins
+    ? "*"
+    : normalizedOrigin ?? allowedOrigins[0] ?? "*";
+
+  const headers: Record<string, string> = {
+    "access-control-allow-origin": allowOriginValue,
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "content-type,authorization,idempotency-key",
+    "access-control-expose-headers": "retry-after",
+  };
+
+  if (allowOriginValue !== "*") {
+    headers["access-control-allow-credentials"] = "true";
   }
 
-  throw new HttpError(403, "forbidden_origin", "Origin is not allowed");
+  return headers;
 }
 
 export function corsPreflightResponse(
@@ -106,37 +115,29 @@ export function corsPreflightResponse(
   allowedOrigins: string[],
 ): Response {
   const allowAllOrigins = allowedOrigins.includes("*");
+  const normalizedOrigin = origin ?? null;
 
-  if (!origin) {
-    if (allowAllOrigins) {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          "access-control-allow-origin": "*",
-          "access-control-allow-methods": "GET,POST,OPTIONS",
-          "access-control-allow-headers":
-            "content-type,authorization,idempotency-key",
-          "access-control-max-age": "600",
-        },
-      });
-    }
-
+  if (!allowAllOrigins && normalizedOrigin && !allowedOrigins.includes(normalizedOrigin)) {
     return new Response(null, { status: 403 });
   }
 
-  if (allowAllOrigins || allowedOrigins.includes(origin)) {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "access-control-allow-origin": origin,
-        "access-control-allow-credentials": "true",
-        "access-control-allow-methods": "GET,POST,OPTIONS",
-        "access-control-allow-headers":
-          "content-type,authorization,idempotency-key",
-        "access-control-max-age": "600",
-      },
-    });
+  const allowOriginValue = allowAllOrigins
+    ? "*"
+    : normalizedOrigin ?? allowedOrigins[0] ?? "*";
+
+  const headers: Record<string, string> = {
+    "access-control-allow-origin": allowOriginValue,
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "content-type,authorization,idempotency-key",
+    "access-control-max-age": "600",
+  };
+
+  if (allowOriginValue !== "*") {
+    headers["access-control-allow-credentials"] = "true";
   }
 
-  return new Response(null, { status: 403 });
+  return new Response(null, {
+    status: 204,
+    headers,
+  });
 }

@@ -28,11 +28,15 @@ Set the required secrets for each environment:
 # Repeat for each environment (omit --env for production)
 wrangler secret put STRIPE_SECRET_KEY --env dev
 wrangler secret put STRIPE_WEBHOOK_SECRET --env dev
-wrangler secret put JWT_PRIVATE_KEY --env dev
+wrangler secret put JWT_PRIVATE_KEYS --env dev
+wrangler secret put JWT_ACTIVE_KID --env dev
+wrangler secret put EMAIL_SERVICE_API_KEY --env dev
 ```
 
-> `JWT_PRIVATE_KEY` should be a base64 (URL-safe) encoded 32-byte Ed25519 secret
-> seed. The helper below prints the matching public key.
+> `JWT_PRIVATE_KEYS` must be a JSON object mapping key IDs (`kid`) to base64
+> (URL-safe) encoded 32-byte Ed25519 secret seeds. `JWT_ACTIVE_KID` selects the
+> signing key used for new licenses. The helper below prints the matching public
+> key for a given key ID.
 
 Non-secret variables such as `PRICE_ID_MONTHLY`, `TIER`, and optional return
 URLs are defined in `wrangler.toml`. Update the per-environment overrides once
@@ -41,6 +45,12 @@ Terraform has provisioned the KV namespace IDs. The optional
 restrict API access. When unset, the Worker will accept requests from any
 origin so the Electron desktop app and other local tooling are not blocked by
 CORS.
+
+Additional configuration:
+
+- `EMAIL_SERVICE_URL` – HTTPS endpoint that dispatches device transfer OTPs.
+- `EMAIL_FROM` – Optional sender email address for OTP messages.
+- `STRIPE_PORTAL_CONFIGURATION_ID` – Optional Billing Portal configuration ID.
 
 ## Deploying
 
@@ -57,8 +67,8 @@ wrangler deploy --env dev
 wrangler deploy --env prod
 ```
 
-Ensure the `LICENSING_KV` namespace binding in `wrangler.toml` matches the
-`kv_namespace_id` output from Terraform (for each environment).
+Ensure the `USERS_KV`, `SUBSCRIPTIONS_KV`, and `TRANSFERS_KV` namespace bindings
+in `wrangler.toml` match the Terraform outputs for each environment.
 
 ## Stripe Webhooks
 
@@ -81,8 +91,8 @@ Generate the Ed25519 public key that your Python verifier will use:
 
 ```bash
 npm run derive-public-key -- <base64-private-key>
-# or read from the JWT_PRIVATE_KEY environment variable
-JWT_PRIVATE_KEY=... npm run derive-public-key
+# or select a key from the configured keyset
+JWT_PRIVATE_KEYS='{"v1":"<base64-private-key>"}' JWT_ACTIVE_KID=v1 npm run derive-public-key
 ```
 
 The command prints the base64url-encoded public key.

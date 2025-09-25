@@ -8,9 +8,19 @@ locals {
   route_pattern     = "${var.api_hostname}/*"
 }
 
-resource "cloudflare_workers_kv_namespace" "licensing" {
+resource "cloudflare_workers_kv_namespace" "licensing_users" {
   account_id = var.cloudflare_account_id
-  title      = "licensing-${var.environment}"
+  title      = "licensing-users-${var.environment}"
+}
+
+resource "cloudflare_workers_kv_namespace" "licensing_subscriptions" {
+  account_id = var.cloudflare_account_id
+  title      = "licensing-subscriptions-${var.environment}"
+}
+
+resource "cloudflare_workers_kv_namespace" "licensing_transfers" {
+  account_id = var.cloudflare_account_id
+  title      = "licensing-transfers-${var.environment}"
 }
 
 resource "cloudflare_workers_script" "licensing" {
@@ -32,8 +42,18 @@ EOW
     [
       {
         type         = "kv_namespace"
-        name         = "LICENSING_KV"
-        namespace_id = cloudflare_workers_kv_namespace.licensing.id
+        name         = "USERS_KV"
+        namespace_id = cloudflare_workers_kv_namespace.licensing_users.id
+      },
+      {
+        type         = "kv_namespace"
+        name         = "SUBSCRIPTIONS_KV"
+        namespace_id = cloudflare_workers_kv_namespace.licensing_subscriptions.id
+      },
+      {
+        type         = "kv_namespace"
+        name         = "TRANSFERS_KV"
+        namespace_id = cloudflare_workers_kv_namespace.licensing_transfers.id
       },
       {
         type = "plain_text"

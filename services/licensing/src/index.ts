@@ -10,15 +10,21 @@ import {
   createBillingPortalSession,
   createCheckoutSession,
   createCustomer,
+  hasActiveStripeSubscription,
   verifyStripeSignature,
 } from "./stripe";
 import {
+  assertRateLimit,
+  deleteTransferRequest,
   getSubscriptionRecord,
+  getTransferRequest,
   getUserRecord,
+  incrementFailedTransferAttempts,
   putSubscriptionRecord,
   putUserRecord,
+  saveTransferRequest,
 } from "./kv";
-import { derivePublicKey, issueLicenseToken, verifyLicenseToken } from "./jwt";
+import { derivePublicKey, getJwks, issueLicenseToken, verifyLicenseToken } from "./jwt";
 
 interface StripeEvent {
   id: string;
@@ -54,6 +60,16 @@ interface BillingPortalRequestBody {
   return_url?: string;
 }
 
+interface LicenseTransferRequestBody {
+  user_id: string;
+  new_device_hash: string;
+}
+
+interface LicenseTransferConfirmBody {
+  user_id: string;
+  otp: string;
+}
+
 const LIFECYCLE_STATUSES = new Set([
   "inactive",
   "active",
@@ -65,6 +81,15 @@ const LIFECYCLE_STATUSES = new Set([
   "incomplete_expired",
   "unpaid",
 ]);
+
+const OTP_LENGTH = 6;
+const OTP_TTL_SECONDS = 10 * 60;
+const RATE_LIMIT_ISSUE_LIMIT = 10;
+const RATE_LIMIT_ISSUE_WINDOW_SECONDS = 60;
+const RATE_LIMIT_TRANSFER_REQUEST_LIMIT = 3;
+const RATE_LIMIT_TRANSFER_REQUEST_WINDOW_SECONDS = 10 * 60;
+const RATE_LIMIT_TRANSFER_CONFIRM_LIMIT = 10;
+const RATE_LIMIT_TRANSFER_CONFIRM_WINDOW_SECONDS = 10 * 60;
 
 function getAllowedOrigins(env: Env): string[] {
   const origins = (env.CORS_ALLOW_ORIGINS ?? "")
@@ -132,6 +157,141 @@ function extractStripeId(value: unknown): string | null {
   return null;
 }
 
+function sanitizeDeviceHash(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  let result = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+function generateOtp(): string {
+  const array = new Uint32Array(1);
+  crypto.getRandomValues(array);
+  const value = array[0] % 10 ** OTP_LENGTH;
+  return value.toString().padStart(OTP_LENGTH, "0");
+}
+
+async function hashOtp(otp: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(otp));
+  const bytes = new Uint8Array(digest);
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function ensureActiveSubscriptionSnapshot(
+  env: Env,
+  userId: string,
+  userRecord: Awaited<ReturnType<typeof getUserRecord>>,
+  stripeCustomerId: string,
+  context: RequestContext,
+): Promise<boolean> {
+  if (!stripeCustomerId) {
+    return false;
+  }
+
+  if (userRecord && isEntitled(userRecord.status, userRecord.current_period_end)) {
+    return true;
+  }
+
+  const cached = await getSubscriptionRecord(env, stripeCustomerId);
+  if (cached && isEntitled(cached.status, cached.current_period_end)) {
+    return true;
+  }
+
+  try {
+    const active = await hasActiveStripeSubscription(env, stripeCustomerId);
+    if (!active) {
+      return false;
+    }
+
+    const status = active.status ?? "active";
+    const planPriceId = active.items?.data?.[0]?.price?.id ?? undefined;
+    await putSubscriptionRecord(env, stripeCustomerId, {
+      user_id: userRecord?.client_id ?? userId,
+      status,
+      current_period_end: active.current_period_end,
+      plan_price_id: planPriceId ?? userRecord?.plan_price_id,
+    });
+    await putUserRecord(env, userId, {
+      client_id: userId,
+      stripe_customer_id: stripeCustomerId,
+      status,
+      current_period_end: active.current_period_end,
+      plan_price_id: planPriceId ?? userRecord?.plan_price_id,
+    });
+    return true;
+  } catch (error) {
+    console.error(
+      `[${context.requestId}] Failed to refresh subscription status for ${userId}`,
+      error,
+    );
+    return false;
+  }
+}
+
+async function sendTransferOtpEmail(
+  env: Env,
+  email: string,
+  otp: string,
+  context: RequestContext,
+): Promise<void> {
+  if (!env.EMAIL_SERVICE_URL || !env.EMAIL_SERVICE_API_KEY) {
+    throw new HttpError(
+      500,
+      "email_not_configured",
+      "Email service is not configured",
+    );
+  }
+
+  const subject = "Device transfer verification code";
+  const from = env.EMAIL_FROM ?? "support@atropos-video.com";
+  const body =
+    `Your Atropos device transfer code is ${otp}.\n` +
+    "This code expires in 10 minutes. If you did not request this transfer, please contact support.";
+
+  const response = await fetch(env.EMAIL_SERVICE_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${env.EMAIL_SERVICE_API_KEY}`,
+    },
+    body: JSON.stringify({
+      to: email,
+      from,
+      subject,
+      text: body,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(
+      `[${context.requestId}] Failed to dispatch transfer OTP email`,
+      response.status,
+      errorText,
+    );
+    throw new HttpError(
+      502,
+      "email_delivery_failed",
+      "Failed to dispatch transfer verification email",
+    );
+  }
+}
+
 async function handleCheckout(
   env: Env,
   request: Request,
@@ -161,8 +321,6 @@ async function handleCheckout(
     );
   }
 
-  const userRecord = await getUserRecord(env, userId);
-
   const price = priceId ?? env.PRICE_ID_MONTHLY;
   if (!price) {
     throw new HttpError(
@@ -177,6 +335,7 @@ async function handleCheckout(
   const customerIdempotencyKey = `${idempotencyRoot}:customer`;
   const checkoutIdempotencyKey = `${idempotencyRoot}:checkout`;
 
+  let userRecord = await getUserRecord(env, userId);
   let stripeCustomerId = userRecord?.stripe_customer_id;
   if (!stripeCustomerId) {
     const customer = await createCustomer(
@@ -196,6 +355,38 @@ async function handleCheckout(
     );
   }
 
+  const hasSubscription = await ensureActiveSubscriptionSnapshot(
+    env,
+    userId,
+    userRecord,
+    stripeCustomerId,
+    context,
+  );
+
+  if (hasSubscription) {
+    try {
+      const portal = await createBillingPortalSession(
+        env,
+        stripeCustomerId,
+        successUrl,
+        `${checkoutIdempotencyKey}:portal`,
+      );
+      console.log(
+        `[${context.requestId}] Returning portal session for existing subscription ${userId}`,
+      );
+      return jsonResponse({ url: portal.url, alreadySubscribed: true }, 200, corsHeaders);
+    } catch (error) {
+      if (error instanceof HttpError && error.code === "stripe_error") {
+        throw new HttpError(
+          502,
+          "portal_unavailable",
+          "Stripe Billing Portal is not configured. Configure a Billing Portal session in your Stripe dashboard.",
+        );
+      }
+      throw error;
+    }
+  }
+
   const session = await createCheckoutSession(env, {
     userId,
     email,
@@ -206,15 +397,14 @@ async function handleCheckout(
     idempotencyKey: checkoutIdempotencyKey,
   });
 
-  const updated = {
+  userRecord = await putUserRecord(env, userId, {
+    client_id: userId,
     email,
     stripe_customer_id: stripeCustomerId,
     status: userRecord?.status ?? "pending",
     current_period_end: userRecord?.current_period_end,
     plan_price_id: price,
-    updated_at: Date.now(),
-  };
-  await putUserRecord(env, userId, updated);
+  });
 
   console.log(
     `[${context.requestId}] Created checkout session ${session.id} for ${userId}`
@@ -276,14 +466,25 @@ async function handlePortal(
 
   const idempotencyKey =
     request.headers.get("Idempotency-Key") ?? crypto.randomUUID();
-  const portal = await createBillingPortalSession(
-    env,
-    userRecord.stripe_customer_id,
-    returnUrl ?? env.RETURN_URL_SUCCESS,
-    idempotencyKey
-  );
-  console.log(`[${context.requestId}] Generated portal session for ${userId}`);
-  return jsonResponse({ url: portal.url }, 200, corsHeaders);
+  try {
+    const portal = await createBillingPortalSession(
+      env,
+      userRecord.stripe_customer_id,
+      returnUrl ?? env.RETURN_URL_SUCCESS,
+      `${idempotencyKey}:portal`,
+    );
+    console.log(`[${context.requestId}] Generated portal session for ${userId}`);
+    return jsonResponse({ url: portal.url }, 200, corsHeaders);
+  } catch (error) {
+    if (error instanceof HttpError && error.code === "stripe_error") {
+      throw new HttpError(
+        502,
+        "portal_unavailable",
+        "Stripe Billing Portal is not configured. Configure a Billing Portal session in your Stripe dashboard.",
+      );
+    }
+    throw error;
+  }
 }
 
 async function handleSubscription(
@@ -301,12 +502,13 @@ async function handleSubscription(
     return jsonResponse(
       {
         status: "inactive",
-        planId: null,
-        planName: null,
-        renewsAt: null,
-        cancelAt: null,
-        trialEndsAt: null,
-        latestInvoiceUrl: null,
+        planPriceId: null,
+        current_period_end: null,
+        currentPeriodEndIso: null,
+        entitled: false,
+        stripeCustomerId: null,
+        deviceHash: null,
+        keyVersion: null,
       },
       200,
       corsHeaders
@@ -316,12 +518,13 @@ async function handleSubscription(
   return jsonResponse(
     {
       status: toLifecycleStatus(record.status),
-      planId: record.plan_price_id ?? null,
-      planName: null,
-      renewsAt: toIsoTimestamp(record.current_period_end),
-      cancelAt: null,
-      trialEndsAt: null,
-      latestInvoiceUrl: null,
+      planPriceId: record.plan_price_id ?? null,
+      current_period_end: record.current_period_end ?? null,
+      currentPeriodEndIso: toIsoTimestamp(record.current_period_end),
+      entitled: isEntitled(record.status, record.current_period_end),
+      stripeCustomerId: record.stripe_customer_id ?? null,
+      deviceHash: record.device_hash ?? null,
+      keyVersion: record.key_version,
     },
     200,
     corsHeaders
@@ -373,6 +576,7 @@ async function handleWebhook(
             existing?.plan_price_id ??
             env.PRICE_ID_MONTHLY;
           await putUserRecord(env, userId, {
+            client_id: userId,
             email,
             stripe_customer_id: customerId,
             status,
@@ -384,6 +588,7 @@ async function handleWebhook(
             user_id: userId,
             status,
             current_period_end: existing?.current_period_end,
+            plan_price_id: planPriceId,
             updated_at: Date.now(),
           });
           console.log(
@@ -416,6 +621,7 @@ async function handleWebhook(
         const planPriceId = subscription.items?.data?.[0]?.price?.id;
         const existingUser = await getUserRecord(env, userId);
         await putUserRecord(env, userId, {
+          client_id: userId,
           email: subscription.customer_email ?? existingUser?.email ?? "",
           stripe_customer_id: customerId,
           status,
@@ -427,6 +633,7 @@ async function handleWebhook(
           user_id: userId,
           status,
           current_period_end: currentPeriodEnd,
+          plan_price_id: planPriceId ?? env.PRICE_ID_MONTHLY,
           updated_at: Date.now(),
         });
         console.log(
@@ -471,12 +678,32 @@ async function handleIssue(
     throw new HttpError(400, "invalid_request", "user_id is required");
   }
 
+  await assertRateLimit(
+    env,
+    `issue:${userId}`,
+    RATE_LIMIT_ISSUE_LIMIT,
+    RATE_LIMIT_ISSUE_WINDOW_SECONDS,
+  );
+
+  const sanitizedDeviceHash = sanitizeDeviceHash(deviceHash);
+  if (!sanitizedDeviceHash) {
+    throw new HttpError(400, "invalid_request", "device_hash is required");
+  }
+
   const userRecord = await getUserRecord(env, userId);
   if (!userRecord) {
     throw new HttpError(
       404,
       "user_not_found",
       "User has no active subscription"
+    );
+  }
+
+  if (!userRecord.stripe_customer_id) {
+    throw new HttpError(
+      409,
+      "stripe_customer_missing",
+      "Stripe customer is not linked to this user",
     );
   }
 
@@ -488,15 +715,180 @@ async function handleIssue(
     );
   }
 
+  let updatedRecord = userRecord;
+  if (!userRecord.device_hash) {
+    updatedRecord = await putUserRecord(env, userId, {
+      client_id: userId,
+      device_hash: sanitizedDeviceHash,
+    });
+  } else if (userRecord.device_hash !== sanitizedDeviceHash) {
+    throw new HttpError(403, "device_mismatch", "Device is not authorized");
+  }
+
   const tier = env.TIER ?? "pro";
   const token = await issueLicenseToken(env, {
-    userId,
-    email: userRecord.email,
+    userId: updatedRecord.client_id ?? userId,
+    email: updatedRecord.email,
     tier,
-    deviceHash,
+    customerId: updatedRecord.stripe_customer_id,
+    keyVersion: updatedRecord.key_version ?? 1,
+    deviceHash: sanitizedDeviceHash,
   });
 
-  return jsonResponse({ token: token.token, exp: token.exp }, 200, corsHeaders);
+  return jsonResponse({ token: token.token, exp: token.exp, kid: token.kid }, 200, corsHeaders);
+}
+
+async function handleTransferRequest(
+  env: Env,
+  request: Request,
+  corsHeaders: HeadersInit,
+  context: RequestContext,
+): Promise<Response> {
+  const body = await request.json().catch(() => {
+    throw new HttpError(400, "invalid_request", "Body must be valid JSON");
+  });
+
+  if (typeof body !== "object" || body === null) {
+    throw new HttpError(400, "invalid_request", "Body must be an object");
+  }
+
+  const { user_id: userId, new_device_hash: newDeviceHashRaw } =
+    body as LicenseTransferRequestBody;
+  if (!userId) {
+    throw new HttpError(400, "invalid_request", "user_id is required");
+  }
+
+  const sanitizedDeviceHash = sanitizeDeviceHash(newDeviceHashRaw);
+  if (!sanitizedDeviceHash) {
+    throw new HttpError(400, "invalid_request", "new_device_hash is required");
+  }
+
+  await assertRateLimit(
+    env,
+    `transfer-request:${userId}`,
+    RATE_LIMIT_TRANSFER_REQUEST_LIMIT,
+    RATE_LIMIT_TRANSFER_REQUEST_WINDOW_SECONDS,
+  );
+
+  const userRecord = await getUserRecord(env, userId);
+  if (!userRecord) {
+    throw new HttpError(404, "user_not_found", "User is not registered");
+  }
+
+  if (!userRecord.stripe_customer_id) {
+    throw new HttpError(409, "stripe_customer_missing", "Stripe customer is not linked");
+  }
+
+  if (!isEntitled(userRecord.status, userRecord.current_period_end)) {
+    throw new HttpError(403, "subscription_inactive", "Subscription is not active");
+  }
+
+  if (!userRecord.email) {
+    throw new HttpError(
+      409,
+      "email_missing",
+      "User record does not contain an email address",
+    );
+  }
+
+  const otp = generateOtp();
+  const otpHash = await hashOtp(otp);
+  const expiresAt = Date.now() + OTP_TTL_SECONDS * 1000;
+  await saveTransferRequest(env, userId, {
+    otp_hash: otpHash,
+    new_device_hash: sanitizedDeviceHash,
+    expires_at: expiresAt,
+    attempts: 0,
+  }, OTP_TTL_SECONDS);
+
+  try {
+    await sendTransferOtpEmail(env, userRecord.email, otp, context);
+  } catch (error) {
+    await deleteTransferRequest(env, userId);
+    throw error;
+  }
+  console.log(`[${context.requestId}] Issued device transfer OTP for ${userId}`);
+
+  return jsonResponse({ success: true, expires_in: OTP_TTL_SECONDS }, 200, corsHeaders);
+}
+
+async function handleTransferConfirm(
+  env: Env,
+  request: Request,
+  corsHeaders: HeadersInit,
+  context: RequestContext,
+): Promise<Response> {
+  const body = await request.json().catch(() => {
+    throw new HttpError(400, "invalid_request", "Body must be valid JSON");
+  });
+
+  if (typeof body !== "object" || body === null) {
+    throw new HttpError(400, "invalid_request", "Body must be an object");
+  }
+
+  const { user_id: userId, otp } = body as LicenseTransferConfirmBody;
+  if (!userId || !otp) {
+    throw new HttpError(400, "invalid_request", "user_id and otp are required");
+  }
+
+  await assertRateLimit(
+    env,
+    `transfer-confirm:${userId}`,
+    RATE_LIMIT_TRANSFER_CONFIRM_LIMIT,
+    RATE_LIMIT_TRANSFER_CONFIRM_WINDOW_SECONDS,
+  );
+
+  const requestRecord = await getTransferRequest(env, userId);
+  if (!requestRecord) {
+    throw new HttpError(404, "transfer_request_missing", "No transfer request found");
+  }
+
+  if (requestRecord.expires_at <= Date.now()) {
+    await deleteTransferRequest(env, userId);
+    throw new HttpError(410, "transfer_request_expired", "Transfer request has expired");
+  }
+
+  const otpHash = await hashOtp(otp);
+  if (!timingSafeEqual(otpHash, requestRecord.otp_hash)) {
+    await incrementFailedTransferAttempts(env, userId);
+    throw new HttpError(400, "invalid_otp", "Verification code is invalid");
+  }
+
+  const userRecord = await getUserRecord(env, userId);
+  if (!userRecord) {
+    await deleteTransferRequest(env, userId);
+    throw new HttpError(404, "user_not_found", "User is not registered");
+  }
+
+  if (!userRecord.stripe_customer_id) {
+    await deleteTransferRequest(env, userId);
+    throw new HttpError(409, "stripe_customer_missing", "Stripe customer is not linked");
+  }
+
+  const updatedRecord = await putUserRecord(env, userId, {
+    client_id: userId,
+    device_hash: requestRecord.new_device_hash,
+    key_version: (userRecord.key_version ?? 1) + 1,
+  });
+
+  await deleteTransferRequest(env, userId);
+
+  const tier = env.TIER ?? "pro";
+  if (!updatedRecord.stripe_customer_id) {
+    throw new HttpError(409, "stripe_customer_missing", "Stripe customer is not linked");
+  }
+  const token = await issueLicenseToken(env, {
+    userId: updatedRecord.client_id ?? userId,
+    email: updatedRecord.email,
+    tier,
+    customerId: updatedRecord.stripe_customer_id,
+    keyVersion: updatedRecord.key_version ?? 1,
+    deviceHash: updatedRecord.device_hash,
+  });
+
+  console.log(`[${context.requestId}] Completed device transfer for ${userId}`);
+
+  return jsonResponse({ token: token.token, exp: token.exp, kid: token.kid }, 200, corsHeaders);
 }
 
 async function handleHealth(
@@ -531,6 +923,26 @@ async function handleValidate(
   }
 
   const claims = await verifyLicenseToken(env, token);
+  const userRecord = await getUserRecord(env, claims.sub);
+  if (!userRecord) {
+    throw new HttpError(404, "user_not_found", "User record not found");
+  }
+
+  if (userRecord.key_version !== claims.kv) {
+    throw new HttpError(401, "token_invalidated", "Token has been superseded");
+  }
+
+  if (userRecord.stripe_customer_id && userRecord.stripe_customer_id !== claims.cus) {
+    throw new HttpError(401, "customer_mismatch", "Token customer does not match record");
+  }
+
+  if (
+    userRecord.device_hash &&
+    (!claims.device_hash || userRecord.device_hash !== claims.device_hash)
+  ) {
+    throw new HttpError(401, "device_mismatch", "Token device does not match record");
+  }
+
   return jsonResponse({ status: "ok", claims }, 200, corsHeaders);
 }
 
@@ -566,6 +978,12 @@ export default {
           if (apiPath === "/license/issue") {
             return await handleIssue(env, request, corsHeaders);
           }
+          if (apiPath === "/license/transfer/request") {
+            return await handleTransferRequest(env, request, corsHeaders, context);
+          }
+          if (apiPath === "/license/transfer/confirm") {
+            return await handleTransferConfirm(env, request, corsHeaders, context);
+          }
           break;
         }
         case "GET": {
@@ -583,7 +1001,15 @@ export default {
           }
           if (apiPath === "/license/public-key") {
             const publicKey = await derivePublicKey(env);
-            return jsonResponse({ public_key: publicKey }, 200, corsHeaders);
+            return jsonResponse(
+              { public_key: publicKey, kid: env.JWT_ACTIVE_KID },
+              200,
+              corsHeaders,
+            );
+          }
+          if (apiPath === "/.well-known/jwks.json") {
+            const jwks = await getJwks(env);
+            return jsonResponse(jwks, 200, corsHeaders);
           }
           break;
         }
@@ -600,7 +1026,14 @@ export default {
           return {};
         }
       })();
-      return errorResponse(error, context, corsHeaders);
+      const response = errorResponse(error, context, corsHeaders);
+      if (error instanceof HttpError && error.code === "rate_limited") {
+        const retryAfter = (error.details as { retry_after?: unknown } | undefined)?.retry_after;
+        if (typeof retryAfter === "number") {
+          response.headers.set("retry-after", String(retryAfter));
+        }
+      }
+      return response;
     }
   },
 };
