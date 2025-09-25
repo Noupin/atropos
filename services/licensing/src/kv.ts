@@ -103,12 +103,10 @@ export async function putUserRecord(
 
   if (previousCustomerId && previousCustomerId !== nextCustomerId) {
     await env.USERS_KV.delete(customerIndexKey(previousCustomerId));
-    await env.USERS_KV.delete(`sub:${previousCustomerId}`);
   }
 
   if (nextCustomerId) {
     await env.USERS_KV.put(customerIndexKey(nextCustomerId), userId);
-    await env.USERS_KV.delete(`sub:${nextCustomerId}`);
   }
 
   return record;
