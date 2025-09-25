@@ -20,6 +20,10 @@ interface StripePortalSessionResponse {
   url: string;
 }
 
+interface StripeCustomerResponse {
+  id: string;
+}
+
 function toHex(data: ArrayBuffer): string {
   const bytes = new Uint8Array(data);
   return Array.from(bytes)
@@ -74,11 +78,13 @@ export async function createCheckoutSession(
   params.set("allow_promotion_codes", "true");
   params.set(
     "success_url",
-    payload.successUrl ?? env.RETURN_URL_SUCCESS ?? "https://atropos.video/"
+    payload.successUrl ?? env.RETURN_URL_SUCCESS ??
+      "https://atropos-video.com/app/settings/billing?status=success"
   );
   params.set(
     "cancel_url",
-    payload.cancelUrl ?? env.RETURN_URL_CANCEL ?? "https://atropos.video/"
+    payload.cancelUrl ?? env.RETURN_URL_CANCEL ??
+      "https://atropos-video.com/app/settings/billing?status=cancelled"
   );
   params.set("subscription_data[metadata][user_id]", payload.userId);
   params.set("metadata[user_id]", payload.userId);
@@ -116,6 +122,25 @@ export async function createBillingPortalSession(
   return stripeRequest<StripePortalSessionResponse>(
     env,
     "/v1/billing_portal/sessions",
+    "POST",
+    params,
+    idempotencyKey,
+  );
+}
+
+export async function createCustomer(
+  env: Env,
+  userId: string,
+  email: string,
+  idempotencyKey?: string,
+): Promise<StripeCustomerResponse> {
+  const params = new URLSearchParams();
+  params.set("email", email);
+  params.set("metadata[user_id]", userId);
+
+  return stripeRequest<StripeCustomerResponse>(
+    env,
+    "/v1/customers",
     "POST",
     params,
     idempotencyKey,

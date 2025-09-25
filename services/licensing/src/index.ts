@@ -9,6 +9,7 @@ import {
 import {
   createBillingPortalSession,
   createCheckoutSession,
+  createCustomer,
   verifyStripeSignature,
 } from "./stripe";
 import {
@@ -171,21 +172,43 @@ async function handleCheckout(
     );
   }
 
-  const idempotencyKey =
+  const idempotencyRoot =
     request.headers.get("Idempotency-Key") ?? crypto.randomUUID();
+  const customerIdempotencyKey = `${idempotencyRoot}:customer`;
+  const checkoutIdempotencyKey = `${idempotencyRoot}:checkout`;
+
+  let stripeCustomerId = userRecord?.stripe_customer_id;
+  if (!stripeCustomerId) {
+    const customer = await createCustomer(
+      env,
+      userId,
+      email,
+      customerIdempotencyKey,
+    );
+    stripeCustomerId = customer.id;
+  }
+
+  if (!stripeCustomerId) {
+    throw new HttpError(
+      500,
+      "stripe_customer_unavailable",
+      "Failed to determine Stripe customer ID",
+    );
+  }
+
   const session = await createCheckoutSession(env, {
     userId,
     email,
     priceId: price,
     successUrl,
     cancelUrl,
-    customerId: userRecord?.stripe_customer_id || undefined,
-    idempotencyKey,
+    customerId: stripeCustomerId,
+    idempotencyKey: checkoutIdempotencyKey,
   });
 
   const updated = {
     email,
-    stripe_customer_id: userRecord?.stripe_customer_id ?? "",
+    stripe_customer_id: stripeCustomerId,
     status: userRecord?.status ?? "pending",
     current_period_end: userRecord?.current_period_end,
     plan_price_id: price,
