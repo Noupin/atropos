@@ -56,12 +56,37 @@ export async function putUserRecord(
 ): Promise<UserRecord> {
   const existing = await getUserRecord(env, userId);
   const now = Date.now();
+  const normalizeEpochSeconds = (value: unknown): number | undefined => {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value > 1e12 ? Math.floor(value / 1000) : Math.floor(value);
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed.length === 0) {
+        return undefined;
+      }
+      const parsed = Number(trimmed);
+      if (!Number.isFinite(parsed)) {
+        return undefined;
+      }
+      return parsed > 1e12 ? Math.floor(parsed / 1000) : Math.floor(parsed);
+    }
+
+    return undefined;
+  };
+
+  const normalizedExistingCurrentPeriodEnd =
+    normalizeEpochSeconds(existing?.current_period_end) ?? existing?.current_period_end;
+  const normalizedCurrentPeriodEnd =
+    normalizeEpochSeconds(update.current_period_end) ?? normalizedExistingCurrentPeriodEnd;
+
   const record: UserRecord = {
     client_id: update.client_id ?? existing?.client_id ?? userId,
     email: update.email ?? existing?.email ?? "",
     stripe_customer_id: update.stripe_customer_id ?? existing?.stripe_customer_id,
     status: update.status ?? existing?.status ?? "inactive",
-    current_period_end: update.current_period_end ?? existing?.current_period_end,
+    current_period_end: normalizedCurrentPeriodEnd,
     plan_price_id: update.plan_price_id ?? existing?.plan_price_id,
     device_hash: update.device_hash ?? existing?.device_hash,
     key_version: update.key_version ?? existing?.key_version ?? 1,
@@ -78,10 +103,12 @@ export async function putUserRecord(
 
   if (previousCustomerId && previousCustomerId !== nextCustomerId) {
     await env.USERS_KV.delete(customerIndexKey(previousCustomerId));
+    await env.USERS_KV.delete(`sub:${previousCustomerId}`);
   }
 
   if (nextCustomerId) {
     await env.USERS_KV.put(customerIndexKey(nextCustomerId), userId);
+    await env.USERS_KV.delete(`sub:${nextCustomerId}`);
   }
 
   return record;

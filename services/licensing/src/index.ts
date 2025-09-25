@@ -118,28 +118,52 @@ function toLifecycleStatus(status: string | null | undefined): string {
   return "inactive";
 }
 
-function toIsoTimestamp(value?: number | null): string | null {
-  if (!value) {
+function normalizeEpochSeconds(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value > 1e12 ? Math.floor(value / 1000) : Math.floor(value);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+    return parsed > 1e12 ? Math.floor(parsed / 1000) : Math.floor(parsed);
+  }
+
+  return null;
+}
+
+function toIsoTimestamp(value?: number | string | null): string | null {
+  if (value === undefined || value === null) {
     return null;
   }
-  const milliseconds = value > 1e12 ? value : value * 1000;
-  const date = new Date(milliseconds);
+  const seconds = normalizeEpochSeconds(value);
+  if (seconds === null) {
+    return null;
+  }
+  const date = new Date(seconds * 1000);
   if (Number.isNaN(date.getTime())) {
     return null;
   }
   return date.toISOString();
 }
 
-function isEntitled(status: string, currentPeriodEnd?: number | null): boolean {
+function isEntitled(status: string, currentPeriodEnd?: number | string | null): boolean {
   const normalized = normalizeStatus(status);
   if (normalized !== "active" && normalized !== "trialing") {
     return false;
   }
-  if (typeof currentPeriodEnd !== "number") {
+  const seconds = normalizeEpochSeconds(currentPeriodEnd);
+  if (seconds === null) {
     return false;
   }
   const now = Math.floor(Date.now() / 1000);
-  return currentPeriodEnd > now;
+  return seconds > now;
 }
 
 function extractStripeId(value: unknown): string | null {
@@ -217,13 +241,13 @@ async function ensureActiveSubscriptionSnapshot(
 
     const status = active.status ?? "active";
     const planPriceId = active.items?.data?.[0]?.price?.id ?? undefined;
-    const existingPeriodEnd =
-      userRecord?.current_period_end ??
-      undefined;
+    const existingPeriodEndSeconds = normalizeEpochSeconds(
+      userRecord?.current_period_end,
+    );
     const currentPeriodEnd =
-      typeof active.current_period_end === "number"
-        ? active.current_period_end
-        : existingPeriodEnd;
+      normalizeEpochSeconds(active.current_period_end) ??
+      existingPeriodEndSeconds ??
+      undefined;
     const cancelAtPeriodEnd = Boolean(active.cancel_at_period_end);
     const updatedAt = Date.now();
 
@@ -532,13 +556,15 @@ async function handleSubscription(
     );
   }
 
+  const currentPeriodEnd = normalizeEpochSeconds(record.current_period_end);
+
   return jsonResponse(
     {
       status: toLifecycleStatus(record.status),
       planPriceId: record.plan_price_id ?? null,
-      current_period_end: record.current_period_end ?? null,
-      currentPeriodEndIso: toIsoTimestamp(record.current_period_end),
-      entitled: isEntitled(record.status, record.current_period_end),
+      current_period_end: currentPeriodEnd ?? null,
+      currentPeriodEndIso: toIsoTimestamp(currentPeriodEnd),
+      entitled: isEntitled(record.status, currentPeriodEnd),
       cancel_at_period_end: Boolean(record.cancel_at_period_end),
       stripeCustomerId: record.stripe_customer_id ?? null,
       deviceHash: record.device_hash ?? null,
@@ -633,10 +659,13 @@ async function handleWebhook(
           subscription.items?.data?.[0]?.price?.id ??
           existingUser?.plan_price_id ??
           env.PRICE_ID_MONTHLY;
+        const normalizedExistingPeriodEnd = normalizeEpochSeconds(
+          existingUser?.current_period_end,
+        );
         const currentPeriodEnd =
-          typeof subscription.current_period_end === "number"
-            ? subscription.current_period_end
-            : existingUser?.current_period_end;
+          normalizeEpochSeconds(subscription.current_period_end) ??
+          normalizedExistingPeriodEnd ??
+          undefined;
         const cancelAtPeriodEnd = Boolean(subscription.cancel_at_period_end);
         const updatedAt = Date.now();
         await setUserIdForCustomer(env, customerId, userId);
