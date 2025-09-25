@@ -9,6 +9,7 @@ export interface LicenseClaims {
   tier: string;
   cus: string;
   kv: number;
+  epoch: number;
   iat: number;
   exp: number;
   jti: string;
@@ -145,6 +146,7 @@ export interface IssueLicenseOptions {
   customerId: string;
   keyVersion: number;
   deviceHash?: string;
+  epoch: number;
   lifetimeSeconds?: number;
 }
 
@@ -178,6 +180,7 @@ export async function issueLicenseToken(
     tier: options.tier,
     cus: options.customerId,
     kv: options.keyVersion,
+    epoch: options.epoch,
     iat: issuedAt,
     exp,
     jti,
@@ -225,6 +228,9 @@ export async function verifyLicenseToken(env: Env, token: string): Promise<Licen
   }
 
   const payload = JSON.parse(new TextDecoder().decode(payloadBytes)) as LicenseClaims;
+  if (typeof payload.epoch !== "number" || !Number.isFinite(payload.epoch)) {
+    throw new HttpError(400, "invalid_token", "Token is missing epoch claim");
+  }
   const now = Math.floor(Date.now() / 1000);
   if (payload.exp <= now) {
     throw new HttpError(401, "token_expired", "Token is expired");

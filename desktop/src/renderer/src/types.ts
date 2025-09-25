@@ -151,6 +151,7 @@ export type SubscriptionLifecycleStatus =
   | 'incomplete'
   | 'incomplete_expired'
   | 'unpaid'
+  | 'paused'
 
 export interface SubscriptionStatus {
   status: SubscriptionLifecycleStatus
@@ -160,6 +161,10 @@ export interface SubscriptionStatus {
   cancelAt: string | null
   trialEndsAt: string | null
   latestInvoiceUrl: string | null
+  entitled: boolean
+  currentPeriodEnd: number | null
+  cancelAtPeriodEnd: boolean
+  epoch: number
 }
 
 export interface CheckoutSession {

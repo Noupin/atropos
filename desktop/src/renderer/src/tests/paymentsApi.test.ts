@@ -26,6 +26,10 @@ describe('paymentsApi mock mode', () => {
     expect(status.status).toBe('trialing')
     expect(status.planName).toContain('Mock')
     expect(status.latestInvoiceUrl).toBe('https://stripe.test/invoice/mock')
+    expect(status.entitled).toBe(true)
+    expect(typeof status.currentPeriodEnd).toBe('number')
+    expect(status.cancelAtPeriodEnd).toBe(false)
+    expect(status.epoch).toBe(0)
     expect(httpMocks.requestWithFallback).not.toHaveBeenCalled()
   })
 

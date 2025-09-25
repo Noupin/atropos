@@ -29,6 +29,7 @@ interface StripeSubscriptionListResponse {
     id: string;
     status: string;
     current_period_end?: number;
+    cancel_at_period_end?: boolean;
     items?: { data?: Array<{ price?: { id?: string | null } | null }> } | null;
   }>;
 }

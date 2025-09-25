@@ -10,6 +10,8 @@ export interface UserRecord {
   plan_price_id?: string;
   device_hash?: string;
   key_version: number;
+  cancel_at_period_end?: boolean;
+  epoch: number;
   updated_at: number;
 }
 
@@ -18,6 +20,7 @@ export interface SubscriptionRecord {
   status: string;
   current_period_end?: number;
   plan_price_id?: string;
+  cancel_at_period_end?: boolean;
   updated_at: number;
 }
 
@@ -71,6 +74,9 @@ export async function putUserRecord(
     plan_price_id: update.plan_price_id ?? existing?.plan_price_id,
     device_hash: update.device_hash ?? existing?.device_hash,
     key_version: update.key_version ?? existing?.key_version ?? 1,
+    cancel_at_period_end:
+      update.cancel_at_period_end ?? existing?.cancel_at_period_end ?? false,
+    epoch: update.epoch ?? existing?.epoch ?? 0,
     updated_at: update.updated_at ?? now,
   };
 
@@ -102,6 +108,8 @@ export async function putSubscriptionRecord(
     status: update.status ?? existing?.status ?? "inactive",
     current_period_end: update.current_period_end ?? existing?.current_period_end,
     plan_price_id: update.plan_price_id ?? existing?.plan_price_id,
+    cancel_at_period_end:
+      update.cancel_at_period_end ?? existing?.cancel_at_period_end ?? false,
     updated_at: update.updated_at ?? now,
   };
 

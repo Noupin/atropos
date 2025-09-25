@@ -44,15 +44,15 @@ vi.mock('../components/MarbleSelect', () => {
 })
 
 const paymentsMocks = vi.hoisted(() => ({
-  fetchSubscriptionStatus: vi.fn(),
   createCheckoutSession: vi.fn(),
-  createBillingPortalSession: vi.fn()
+  createBillingPortalSession: vi.fn(),
+  issueLicenseToken: vi.fn()
 }))
 
 vi.mock('../services/paymentsApi', () => ({
-  fetchSubscriptionStatus: paymentsMocks.fetchSubscriptionStatus,
   createCheckoutSession: paymentsMocks.createCheckoutSession,
-  createBillingPortalSession: paymentsMocks.createBillingPortalSession
+  createBillingPortalSession: paymentsMocks.createBillingPortalSession,
+  issueLicenseToken: paymentsMocks.issueLicenseToken
 }))
 
 const createPlatform = (
@@ -121,6 +121,7 @@ describe('Profile page', () => {
   const updatePlatformMock = vi.fn()
   const deletePlatformMock = vi.fn()
   const refreshAccessStatusMock = vi.fn()
+  const refreshSubscriptionStatusMock = vi.fn()
 
   const originalWindowOpen = window.open
 
@@ -140,22 +141,31 @@ describe('Profile page', () => {
     refreshAccountsMock.mockResolvedValue(undefined)
     refreshAccessStatusMock.mockReset()
     refreshAccessStatusMock.mockResolvedValue(undefined)
-
-    paymentsMocks.fetchSubscriptionStatus.mockReset()
-    paymentsMocks.fetchSubscriptionStatus.mockResolvedValue({
-      status: 'active',
-      planId: 'plan_123',
-      planName: 'Pro Plan',
-      renewsAt: '2025-06-01T10:00:00Z',
+    refreshSubscriptionStatusMock.mockReset()
+    refreshSubscriptionStatusMock.mockResolvedValue({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
       cancelAt: null,
       trialEndsAt: null,
-      latestInvoiceUrl: null
+      latestInvoiceUrl: null,
+      entitled: false,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      epoch: 0
     })
 
     paymentsMocks.createCheckoutSession.mockReset()
     paymentsMocks.createCheckoutSession.mockResolvedValue({ url: 'https://stripe.test/checkout' })
     paymentsMocks.createBillingPortalSession.mockReset()
     paymentsMocks.createBillingPortalSession.mockResolvedValue({ url: 'https://stripe.test/portal' })
+    paymentsMocks.issueLicenseToken.mockReset()
+    paymentsMocks.issueLicenseToken.mockResolvedValue({
+      token: 'test-token',
+      exp: Math.floor(Date.now() / 1000) + 600,
+      kid: 'test'
+    })
 
     window.open = vi.fn() as typeof window.open
   })
@@ -180,6 +190,7 @@ describe('Profile page', () => {
         onDeletePlatform={deletePlatformMock}
         onRefreshAccounts={refreshAccountsMock}
         onRefreshAccessStatus={refreshAccessStatusMock}
+        onRefreshSubscriptionStatus={refreshSubscriptionStatusMock}
         {...overrides}
       />
     )
@@ -189,7 +200,8 @@ describe('Profile page', () => {
 
     expect(screen.getByText('Profile')).toBeInTheDocument()
     expect(screen.getByText(/Connected platforms across/i)).toHaveTextContent('1/1')
-    expect(paymentsMocks.fetchSubscriptionStatus).toHaveBeenCalledWith('atropos-desktop-dev')
+    expect(refreshSubscriptionStatusMock).toHaveBeenCalledTimes(1)
+    expect(refreshSubscriptionStatusMock).toHaveBeenCalledWith(undefined)
     expect(screen.getByRole('button', { name: /Subscribe with Stripe/i })).toBeInTheDocument()
 
     const creatorCard = screen.getAllByTestId('account-card-account-1')[0]

@@ -38,6 +38,7 @@ interface StripeSubscription {
   status?: string;
   metadata?: Record<string, string>;
   current_period_end?: number;
+  cancel_at_period_end?: boolean;
   items?: { data?: Array<{ price?: { id?: string } }> };
   customer_email?: string | null;
 }
@@ -52,7 +53,7 @@ interface CheckoutRequestBody {
 
 interface LicenseIssueBody {
   user_id: string;
-  device_hash?: string;
+  device_hash: string;
 }
 
 interface BillingPortalRequestBody {
@@ -80,6 +81,7 @@ const LIFECYCLE_STATUSES = new Set([
   "incomplete",
   "incomplete_expired",
   "unpaid",
+  "paused",
 ]);
 
 const OTP_LENGTH = 6;
@@ -130,14 +132,14 @@ function toIsoTimestamp(value?: number | null): string | null {
 
 function isEntitled(status: string, currentPeriodEnd?: number | null): boolean {
   const normalized = normalizeStatus(status);
-  if (normalized === "active" || normalized === "trialing") {
-    if (!currentPeriodEnd) {
-      return true;
-    }
-    const now = Math.floor(Date.now() / 1000);
-    return currentPeriodEnd > now;
+  if (normalized !== "active" && normalized !== "trialing") {
+    return false;
   }
-  return false;
+  if (typeof currentPeriodEnd !== "number") {
+    return false;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  return currentPeriodEnd > now;
 }
 
 function extractStripeId(value: unknown): string | null {
@@ -220,20 +222,35 @@ async function ensureActiveSubscriptionSnapshot(
 
     const status = active.status ?? "active";
     const planPriceId = active.items?.data?.[0]?.price?.id ?? undefined;
+    const existingPeriodEnd =
+      userRecord?.current_period_end ??
+      cached?.current_period_end ??
+      undefined;
+    const currentPeriodEnd =
+      typeof active.current_period_end === "number"
+        ? active.current_period_end
+        : existingPeriodEnd;
+    const cancelAtPeriodEnd = Boolean(active.cancel_at_period_end);
+    const updatedAt = Date.now();
+
     await putSubscriptionRecord(env, stripeCustomerId, {
       user_id: userRecord?.client_id ?? userId,
       status,
-      current_period_end: active.current_period_end,
+      current_period_end: currentPeriodEnd,
       plan_price_id: planPriceId ?? userRecord?.plan_price_id,
+      cancel_at_period_end: cancelAtPeriodEnd,
+      updated_at: updatedAt,
     });
     await putUserRecord(env, userId, {
       client_id: userId,
       stripe_customer_id: stripeCustomerId,
       status,
-      current_period_end: active.current_period_end,
+      current_period_end: currentPeriodEnd,
       plan_price_id: planPriceId ?? userRecord?.plan_price_id,
+      cancel_at_period_end: cancelAtPeriodEnd,
+      updated_at: updatedAt,
     });
-    return true;
+    return isEntitled(status, currentPeriodEnd);
   } catch (error) {
     console.error(
       `[${context.requestId}] Failed to refresh subscription status for ${userId}`,
@@ -506,9 +523,11 @@ async function handleSubscription(
         current_period_end: null,
         currentPeriodEndIso: null,
         entitled: false,
+        cancel_at_period_end: false,
         stripeCustomerId: null,
         deviceHash: null,
         keyVersion: null,
+        epoch: 0,
       },
       200,
       corsHeaders
@@ -522,9 +541,11 @@ async function handleSubscription(
       current_period_end: record.current_period_end ?? null,
       currentPeriodEndIso: toIsoTimestamp(record.current_period_end),
       entitled: isEntitled(record.status, record.current_period_end),
+      cancel_at_period_end: Boolean(record.cancel_at_period_end),
       stripeCustomerId: record.stripe_customer_id ?? null,
       deviceHash: record.device_hash ?? null,
       keyVersion: record.key_version,
+      epoch: record.epoch ?? 0,
     },
     200,
     corsHeaders
@@ -571,26 +592,29 @@ async function handleWebhook(
             paymentStatus === "paid" || sessionStatus === "complete"
               ? "active"
               : (existing?.status ?? "pending");
-          const planPriceId =
-            (object.metadata as Record<string, string> | undefined)?.price_id ??
-            existing?.plan_price_id ??
-            env.PRICE_ID_MONTHLY;
-          await putUserRecord(env, userId, {
-            client_id: userId,
-            email,
-            stripe_customer_id: customerId,
-            status,
-            current_period_end: existing?.current_period_end,
-            plan_price_id: planPriceId,
-            updated_at: Date.now(),
-          });
-          await putSubscriptionRecord(env, customerId, {
-            user_id: userId,
-            status,
-            current_period_end: existing?.current_period_end,
-            plan_price_id: planPriceId,
-            updated_at: Date.now(),
-          });
+        const planPriceId =
+          (object.metadata as Record<string, string> | undefined)?.price_id ??
+          existing?.plan_price_id ??
+          env.PRICE_ID_MONTHLY;
+        const cancelAtPeriodEnd = existing?.cancel_at_period_end ?? false;
+        await putUserRecord(env, userId, {
+          client_id: userId,
+          email,
+          stripe_customer_id: customerId,
+          status,
+          current_period_end: existing?.current_period_end,
+          plan_price_id: planPriceId,
+          cancel_at_period_end: cancelAtPeriodEnd,
+          updated_at: Date.now(),
+        });
+        await putSubscriptionRecord(env, customerId, {
+          user_id: userId,
+          status,
+          current_period_end: existing?.current_period_end,
+          plan_price_id: planPriceId,
+          cancel_at_period_end: cancelAtPeriodEnd,
+          updated_at: Date.now(),
+        });
           console.log(
             `[${context.requestId}] Checkout complete for ${userId} (${customerId}) subscription=${subscriptionId}`
           );
@@ -598,8 +622,7 @@ async function handleWebhook(
         break;
       }
       case "customer.subscription.created":
-      case "customer.subscription.updated":
-      case "customer.subscription.deleted": {
+      case "customer.subscription.updated": {
         const subscription = object as unknown as StripeSubscription;
         const customerId = extractStripeId(subscription.customer);
         const existingSubscription = customerId
@@ -614,30 +637,84 @@ async function handleWebhook(
           break;
         }
         const status = subscription.status ?? "unknown";
+        const planPriceId =
+          subscription.items?.data?.[0]?.price?.id ??
+          existingSubscription?.plan_price_id ??
+          env.PRICE_ID_MONTHLY;
         const currentPeriodEnd =
           typeof subscription.current_period_end === "number"
             ? subscription.current_period_end
-            : undefined;
-        const planPriceId = subscription.items?.data?.[0]?.price?.id;
+            : existingSubscription?.current_period_end;
+        const cancelAtPeriodEnd = Boolean(subscription.cancel_at_period_end);
         const existingUser = await getUserRecord(env, userId);
+        const updatedAt = Date.now();
         await putUserRecord(env, userId, {
           client_id: userId,
           email: subscription.customer_email ?? existingUser?.email ?? "",
           stripe_customer_id: customerId,
           status,
           current_period_end: currentPeriodEnd,
-          plan_price_id: planPriceId ?? env.PRICE_ID_MONTHLY,
-          updated_at: Date.now(),
+          plan_price_id: planPriceId ?? undefined,
+          cancel_at_period_end: cancelAtPeriodEnd,
+          updated_at: updatedAt,
         });
         await putSubscriptionRecord(env, customerId, {
           user_id: userId,
           status,
           current_period_end: currentPeriodEnd,
-          plan_price_id: planPriceId ?? env.PRICE_ID_MONTHLY,
-          updated_at: Date.now(),
+          plan_price_id: planPriceId ?? undefined,
+          cancel_at_period_end: cancelAtPeriodEnd,
+          updated_at: updatedAt,
         });
         console.log(
           `[${context.requestId}] Subscription ${subscription.id} -> ${status}`
+        );
+        break;
+      }
+      case "customer.subscription.deleted": {
+        const subscription = object as unknown as StripeSubscription;
+        const customerId = extractStripeId(subscription.customer);
+        const existingSubscription = customerId
+          ? await getSubscriptionRecord(env, customerId)
+          : null;
+        const userId =
+          subscription.metadata?.user_id ?? existingSubscription?.user_id;
+        if (!customerId || !userId) {
+          console.warn(
+            `[${context.requestId}] Subscription deleted event missing user_id`
+          );
+          break;
+        }
+        const existingUser = await getUserRecord(env, userId);
+        const planPriceId =
+          existingUser?.plan_price_id ??
+          existingSubscription?.plan_price_id ??
+          subscription.items?.data?.[0]?.price?.id ??
+          env.PRICE_ID_MONTHLY;
+        const updatedAt = Date.now();
+        const nowSeconds = Math.floor(updatedAt / 1000);
+        const nextEpoch = (existingUser?.epoch ?? 0) + 1;
+        await putUserRecord(env, userId, {
+          client_id: userId,
+          email: existingUser?.email ?? subscription.customer_email ?? "",
+          stripe_customer_id: customerId,
+          status: "canceled",
+          current_period_end: nowSeconds,
+          plan_price_id: planPriceId ?? undefined,
+          cancel_at_period_end: false,
+          epoch: nextEpoch,
+          updated_at: updatedAt,
+        });
+        await putSubscriptionRecord(env, customerId, {
+          user_id: userId,
+          status: "canceled",
+          current_period_end: nowSeconds,
+          plan_price_id: planPriceId ?? undefined,
+          cancel_at_period_end: false,
+          updated_at: updatedAt,
+        });
+        console.log(
+          `[${context.requestId}] Subscription ${subscription.id} canceled for ${userId}`
         );
         break;
       }
@@ -733,6 +810,8 @@ async function handleIssue(
     customerId: updatedRecord.stripe_customer_id,
     keyVersion: updatedRecord.key_version ?? 1,
     deviceHash: sanitizedDeviceHash,
+    epoch: updatedRecord.epoch ?? 0,
+    lifetimeSeconds: 600,
   });
 
   return jsonResponse({ token: token.token, exp: token.exp, kid: token.kid }, 200, corsHeaders);
@@ -884,6 +963,8 @@ async function handleTransferConfirm(
     customerId: updatedRecord.stripe_customer_id,
     keyVersion: updatedRecord.key_version ?? 1,
     deviceHash: updatedRecord.device_hash,
+    epoch: updatedRecord.epoch ?? 0,
+    lifetimeSeconds: 600,
   });
 
   console.log(`[${context.requestId}] Completed device transfer for ${userId}`);
@@ -926,6 +1007,15 @@ async function handleValidate(
   const userRecord = await getUserRecord(env, claims.sub);
   if (!userRecord) {
     throw new HttpError(404, "user_not_found", "User record not found");
+  }
+
+  const recordEpoch = userRecord.epoch ?? 0;
+  if (claims.epoch === undefined || claims.epoch !== recordEpoch) {
+    throw new HttpError(
+      401,
+      "epoch_mismatch",
+      "Token epoch does not match record",
+    );
   }
 
   if (userRecord.key_version !== claims.kv) {

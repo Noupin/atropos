@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FC, RefObject } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import Search from './components/Search'
@@ -17,6 +17,7 @@ import type {
   AuthPingSummary,
   HomePipelineState,
   SearchBridge,
+  SubscriptionStatus,
   SupportedPlatform
 } from './types'
 import {
@@ -30,6 +31,12 @@ import {
   updateAccountPlatform
 } from './services/accountsApi'
 import { verifyDesktopAccess } from './services/accessControl'
+import { getAccessControlConfig } from './config/accessControl'
+import {
+  fetchSubscriptionStatus,
+  issueLicenseToken,
+  type LicenseToken
+} from './services/paymentsApi'
 
 type PlatformPayload = {
   platform: SupportedPlatform
@@ -38,6 +45,64 @@ type PlatformPayload = {
 }
 
 const THEME_STORAGE_KEY = 'atropos:theme'
+const DEVICE_HASH_STORAGE_KEY = 'atropos:device-hash'
+const LICENSE_TOKEN_STORAGE_KEY = 'atropos:license-token'
+
+let inMemoryDeviceHash: string | null = null
+
+const generateFallbackDeviceHash = (): string =>
+  `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`
+
+const getOrCreateDeviceHash = (): string => {
+  if (typeof window === 'undefined') {
+    if (!inMemoryDeviceHash) {
+      inMemoryDeviceHash = generateFallbackDeviceHash()
+    }
+    return inMemoryDeviceHash
+  }
+
+  try {
+    const stored = window.localStorage.getItem(DEVICE_HASH_STORAGE_KEY)
+    if (stored && stored.trim().length > 0) {
+      inMemoryDeviceHash = stored
+      return stored
+    }
+    const generated = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID().replace(/-/g, '')
+      : generateFallbackDeviceHash()
+    window.localStorage.setItem(DEVICE_HASH_STORAGE_KEY, generated)
+    inMemoryDeviceHash = generated
+    return generated
+  } catch (error) {
+    console.warn('Unable to persist device hash. Falling back to in-memory identifier.', error)
+    if (!inMemoryDeviceHash) {
+      inMemoryDeviceHash = generateFallbackDeviceHash()
+    }
+    return inMemoryDeviceHash
+  }
+}
+
+const storeLicenseToken = (token: LicenseToken): void => {
+  if (typeof window === 'undefined') {
+    return
+  }
+  try {
+    window.localStorage.setItem(LICENSE_TOKEN_STORAGE_KEY, JSON.stringify(token))
+  } catch (error) {
+    console.warn('Unable to persist license token.', error)
+  }
+}
+
+const clearStoredLicenseToken = (): void => {
+  if (typeof window === 'undefined') {
+    return
+  }
+  try {
+    window.localStorage.removeItem(LICENSE_TOKEN_STORAGE_KEY)
+  } catch (error) {
+    console.warn('Unable to clear stored license token.', error)
+  }
+}
 
 const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
@@ -104,8 +169,17 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [isCheckingAccess, setIsCheckingAccess] = useState(true)
   const [isDark, setIsDark] = useState(false)
   const [settingsHeaderAction, setSettingsHeaderAction] = useState<SettingsHeaderAction | null>(null)
+  const [subscriptionSnapshot, setSubscriptionSnapshot] = useState<SubscriptionStatus | null>(null)
+  const [subscriptionSnapshotError, setSubscriptionSnapshotError] = useState<string | null>(null)
+  const [isLoadingSubscriptionSnapshot, setIsLoadingSubscriptionSnapshot] = useState(true)
   const location = useLocation()
   const navigate = useNavigate()
+
+  const billingConfig = useMemo(() => getAccessControlConfig(), [])
+  const billingUserId = useMemo(() => billingConfig.clientId.trim(), [billingConfig])
+  const deviceHash = useMemo(() => getOrCreateDeviceHash(), [])
+  const licenseIssueInFlightRef = useRef(false)
+  const lastIssuedSnapshotRef = useRef<string | null>(null)
 
   useNavigationHistory()
   const availableAccounts = useMemo(
@@ -184,6 +258,44 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     }
   }, [])
 
+  const refreshSubscriptionSnapshot = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!billingUserId) {
+        const message = 'Billing is not configured for this installation.'
+        setSubscriptionSnapshot(null)
+        setSubscriptionSnapshotError(message)
+        if (!options?.silent) {
+          setIsLoadingSubscriptionSnapshot(false)
+        }
+        throw new Error(message)
+      }
+
+      if (!options?.silent) {
+        setIsLoadingSubscriptionSnapshot(true)
+      }
+
+      try {
+        const status = await fetchSubscriptionStatus(billingUserId)
+        setSubscriptionSnapshot(status)
+        setSubscriptionSnapshotError(null)
+        return status
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unable to load billing information from Stripe.'
+        setSubscriptionSnapshot(null)
+        setSubscriptionSnapshotError(message)
+        throw new Error(message)
+      } finally {
+        if (!options?.silent) {
+          setIsLoadingSubscriptionSnapshot(false)
+        }
+      }
+    },
+    [billingUserId]
+  )
+
   const refreshAccounts = useCallback(async () => {
     setIsLoadingAccounts(true)
     try {
@@ -201,6 +313,23 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   useEffect(() => {
     void refreshAccessStatus()
   }, [refreshAccessStatus])
+
+  useEffect(() => {
+    const run = async (options?: { silent?: boolean }) => {
+      try {
+        await refreshSubscriptionSnapshot(options)
+      } catch (error) {
+        console.warn('Failed to refresh subscription status.', error)
+      }
+    }
+
+    void run()
+    const interval = window.setInterval(() => {
+      void run({ silent: true })
+    }, 60_000)
+
+    return () => window.clearInterval(interval)
+  }, [refreshSubscriptionSnapshot])
 
   useEffect(() => {
     void refreshAccounts()
@@ -416,6 +545,99 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const isProfileRoute = location.pathname.startsWith('/profile')
   const showBackButton = location.pathname.startsWith('/clip/')
 
+  const subscriptionGateState = isLoadingSubscriptionSnapshot
+    ? 'loading'
+    : subscriptionSnapshotError
+      ? 'error'
+      : subscriptionSnapshot && !subscriptionSnapshot.entitled
+        ? 'blocked'
+        : 'ok'
+
+  const accessGateState = isCheckingAccess
+    ? 'loading'
+    : accessStatus && !accessStatus.allowed
+      ? 'blocked'
+      : !accessStatus && accessCheckError
+        ? 'error'
+        : 'ok'
+
+  const shouldShowAccessOverlay =
+    !isProfileRoute && (subscriptionGateState !== 'ok' || accessGateState !== 'ok')
+
+  const overlayTitle = (() => {
+    if (subscriptionGateState === 'loading' || accessGateState === 'loading') {
+      return 'Verifying access…'
+    }
+    if (subscriptionGateState === 'blocked' || accessGateState === 'blocked') {
+      return 'Subscription required'
+    }
+    return 'Unable to verify access'
+  })()
+
+  const overlayMessage = (() => {
+    if (subscriptionGateState === 'loading' || accessGateState === 'loading') {
+      return 'Hold tight while we confirm your access permissions.'
+    }
+    if (subscriptionGateState === 'blocked') {
+      return 'Your account does not have an active subscription. Update your billing details to continue using Atropos.'
+    }
+    if (accessStatus && !accessStatus.allowed) {
+      return accessStatus.reason
+        ? accessStatus.reason
+        : 'Your account does not have an active subscription. Update your billing details to continue using Atropos.'
+    }
+    if (subscriptionGateState === 'error') {
+      return (
+        subscriptionSnapshotError ?? 'An unexpected error occurred while validating access.'
+      )
+    }
+    if (!accessStatus && accessCheckError) {
+      return accessCheckError ?? 'An unexpected error occurred while validating access.'
+    }
+    return 'Your account does not have an active subscription. Update your billing details to continue using Atropos.'
+  })()
+
+  useEffect(() => {
+    if (!subscriptionSnapshot || !subscriptionSnapshot.entitled) {
+      lastIssuedSnapshotRef.current = null
+      if (subscriptionSnapshot && !subscriptionSnapshot.entitled) {
+        clearStoredLicenseToken()
+      }
+      return
+    }
+
+    if (!billingUserId || deviceHash.trim().length === 0) {
+      return
+    }
+
+    const snapshotKey = `${subscriptionSnapshot.epoch}:${subscriptionSnapshot.currentPeriodEnd ?? 'none'}`
+    if (lastIssuedSnapshotRef.current === snapshotKey || licenseIssueInFlightRef.current) {
+      return
+    }
+
+    licenseIssueInFlightRef.current = true
+    void (async () => {
+      try {
+        const token = await issueLicenseToken({
+          userId: billingUserId,
+          deviceHash
+        })
+        storeLicenseToken(token)
+        lastIssuedSnapshotRef.current = snapshotKey
+      } catch (error) {
+        console.error('Failed to refresh license token.', error)
+        lastIssuedSnapshotRef.current = null
+      } finally {
+        licenseIssueInFlightRef.current = false
+      }
+    })()
+  }, [
+    billingUserId,
+    deviceHash,
+    subscriptionSnapshot,
+    issueLicenseToken
+  ])
+
   const accountSelectOptions = useMemo(() => {
     if (availableAccounts.length === 0) {
       return []
@@ -453,27 +675,11 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   return (
     <div className="flex min-h-full flex-col bg-[var(--bg)] text-[var(--fg)]">
-      {!isProfileRoute &&
-        (isCheckingAccess ||
-          (!isCheckingAccess && ((accessStatus && !accessStatus.allowed) || (!accessStatus && accessCheckError)))) && (
+      {shouldShowAccessOverlay && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 backdrop-blur">
             <div className="max-w-md rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_75%,transparent)] p-6 text-center shadow-[0_18px_40px_rgba(0,0,0,0.45)]">
-            <h2 className="text-xl font-semibold text-[var(--fg)]">
-              {isCheckingAccess
-                ? 'Verifying access…'
-                : accessStatus && !accessStatus.allowed
-                  ? 'Subscription required'
-                  : 'Unable to verify access'}
-            </h2>
-            <p className="mt-3 text-sm text-[var(--muted)]">
-              {isCheckingAccess
-                ? 'Hold tight while we confirm your access permissions.'
-                : accessStatus && !accessStatus.allowed
-                  ? accessStatus.reason
-                    ? accessStatus.reason
-                    : 'Your account does not have an active subscription. Update your billing details to continue using Atropos.'
-                  : accessCheckError ?? 'An unexpected error occurred while validating access.'}
-            </p>
+            <h2 className="text-xl font-semibold text-[var(--fg)]">{overlayTitle}</h2>
+            <p className="mt-3 text-sm text-[var(--muted)]">{overlayMessage}</p>
             <div className="mt-5 flex flex-wrap justify-center gap-3">
               <button
                 type="button"
@@ -481,17 +687,28 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                   navigate('/profile')
                 }}
                 className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
-                disabled={isCheckingAccess}
+                disabled={isCheckingAccess || isLoadingSubscriptionSnapshot}
               >
                 Open billing settings
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  void refreshAccessStatus()
+                  void (async () => {
+                    try {
+                      await refreshSubscriptionSnapshot()
+                    } catch (error) {
+                      console.warn('Subscription refresh failed.', error)
+                    }
+                    try {
+                      await refreshAccessStatus()
+                    } catch (error) {
+                      console.warn('Access refresh failed.', error)
+                    }
+                  })()
                 }}
                 className="marble-button marble-button--outline px-4 py-2 text-sm font-semibold"
-                disabled={isCheckingAccess}
+                disabled={isCheckingAccess || isLoadingSubscriptionSnapshot}
               >
                 Retry
               </button>
@@ -650,6 +867,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 onDeletePlatform={handleDeletePlatform}
                 onRefreshAccounts={refreshAccounts}
                 onRefreshAccessStatus={refreshAccessStatus}
+                onRefreshSubscriptionStatus={refreshSubscriptionSnapshot}
               />
             }
           />

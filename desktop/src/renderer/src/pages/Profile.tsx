@@ -14,11 +14,7 @@ import {
 import { TONE_LABELS, TONE_OPTIONS } from '../constants/tone'
 import { timeAgo } from '../lib/format'
 import MarbleSelect from '../components/MarbleSelect'
-import {
-  createBillingPortalSession,
-  createCheckoutSession,
-  fetchSubscriptionStatus
-} from '../services/paymentsApi'
+import { createBillingPortalSession, createCheckoutSession } from '../services/paymentsApi'
 import { getAccessControlConfig } from '../config/accessControl'
 
 const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
@@ -91,6 +87,7 @@ type ProfileProps = {
   onDeletePlatform: (accountId: string, platform: SupportedPlatform) => Promise<AccountSummary>
   onRefreshAccounts: () => Promise<void>
   onRefreshAccessStatus: () => Promise<void>
+  onRefreshSubscriptionStatus: (options?: { silent?: boolean }) => Promise<SubscriptionStatus>
 }
 
 type AccountCardProps = {
@@ -919,7 +916,8 @@ const Profile: FC<ProfileProps> = ({
   onUpdatePlatform,
   onDeletePlatform,
   onRefreshAccounts,
-  onRefreshAccessStatus
+  onRefreshAccessStatus,
+  onRefreshSubscriptionStatus
 }) => {
   const [newAccountName, setNewAccountName] = useState('')
   const [newAccountDescription, setNewAccountDescription] = useState('')
@@ -932,6 +930,7 @@ const Profile: FC<ProfileProps> = ({
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false)
   const [isStartingCheckout, setIsStartingCheckout] = useState(false)
   const [isOpeningPortal, setIsOpeningPortal] = useState(false)
+  const [shouldRefreshAfterFocus, setShouldRefreshAfterFocus] = useState(false)
 
   const billingUserId = useMemo(() => getAccessControlConfig().clientId.trim(), [])
 
@@ -954,32 +953,74 @@ const Profile: FC<ProfileProps> = ({
     return () => registerSearch(null)
   }, [registerSearch])
 
-  const loadSubscriptionStatus = useCallback(async () => {
-    if (!billingUserId) {
-      setSubscriptionStatus(null)
-      setSubscriptionError('Billing is not configured for this installation.')
-      return null
-    }
+  const loadSubscriptionStatus = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!billingUserId) {
+        setSubscriptionStatus(null)
+        setSubscriptionError(
+          normalizeBillingError('Billing is not configured for this installation.')
+        )
+        return null
+      }
 
-    setIsLoadingSubscription(true)
-    try {
-      const status = await fetchSubscriptionStatus(billingUserId)
-      setSubscriptionStatus(status)
-      setSubscriptionError(null)
-      return status
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Unable to load billing information from Stripe.'
-      setSubscriptionError(normalizeBillingError(message))
-      return null
-    } finally {
-      setIsLoadingSubscription(false)
-    }
-  }, [billingUserId])
+      if (!options?.silent) {
+        setIsLoadingSubscription(true)
+      }
+
+      try {
+        const status = await onRefreshSubscriptionStatus(options)
+        setSubscriptionStatus(status)
+        setSubscriptionError(null)
+        return status
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unable to load billing information from Stripe.'
+        setSubscriptionStatus(null)
+        setSubscriptionError(normalizeBillingError(message))
+        return null
+      } finally {
+        if (!options?.silent) {
+          setIsLoadingSubscription(false)
+        }
+      }
+    },
+    [billingUserId, onRefreshSubscriptionStatus]
+  )
 
   useEffect(() => {
     void loadSubscriptionStatus()
   }, [loadSubscriptionStatus])
+
+  useEffect(() => {
+    if (!shouldRefreshAfterFocus) {
+      return undefined
+    }
+
+    const handleFocus = (): void => {
+      setShouldRefreshAfterFocus(false)
+      void (async () => {
+        await loadSubscriptionStatus({ silent: true })
+        try {
+          await onRefreshAccessStatus()
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'Unable to refresh access permissions.'
+          setSubscriptionError(normalizeBillingError(message))
+        }
+      })()
+    }
+
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [
+    loadSubscriptionStatus,
+    onRefreshAccessStatus,
+    shouldRefreshAfterFocus
+  ])
 
   const handleCreateAccount = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -1077,6 +1118,9 @@ const Profile: FC<ProfileProps> = ({
     : null
 
   const subscriptionPlanName = subscriptionStatus?.planName ?? accessStatus?.subscriptionPlan ?? 'Not subscribed'
+  const hideSubscribeButton = subscriptionStatus
+    ? ['active', 'trialing', 'past_due', 'unpaid', 'paused'].includes(subscriptionStatus.status)
+    : false
   const billingEmail = accessStatus?.customerEmail ?? null
   const billingEmailLabel = billingEmail
 
@@ -1111,6 +1155,7 @@ const Profile: FC<ProfileProps> = ({
       })
       if (typeof window !== 'undefined' && session.url) {
         window.open(session.url, '_blank', 'noopener')
+        setShouldRefreshAfterFocus(true)
       }
     } catch (error) {
       const message =
@@ -1133,6 +1178,7 @@ const Profile: FC<ProfileProps> = ({
       const session = await createBillingPortalSession({ userId: billingUserId })
       if (typeof window !== 'undefined' && session.url) {
         window.open(session.url, '_blank', 'noopener')
+        setShouldRefreshAfterFocus(true)
       }
     } catch (error) {
       const message =
@@ -1367,16 +1413,18 @@ const Profile: FC<ProfileProps> = ({
             ) : null}
             <div className="flex flex-col gap-2 pt-1">
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleStartCheckout()
-                  }}
-                  className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
-                  disabled={isStartingCheckout}
-                >
-                  {isStartingCheckout ? 'Redirecting…' : 'Subscribe with Stripe'}
-                </button>
+                {!hideSubscribeButton ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleStartCheckout()
+                    }}
+                    className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
+                    disabled={isStartingCheckout}
+                  >
+                    {isStartingCheckout ? 'Redirecting…' : 'Subscribe with Stripe'}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => {
@@ -1389,10 +1437,19 @@ const Profile: FC<ProfileProps> = ({
                 </button>
               </div>
               <p className="text-[10px] text-[var(--muted)]">
-                <span className="font-semibold text-[var(--fg)]">Subscribe with Stripe</span> starts a new
-                plan, while{' '}
-                <span className="font-semibold text-[var(--fg)]">Manage billing</span> opens the Stripe
-                customer portal for existing subscriptions.
+                {hideSubscribeButton ? (
+                  <span>
+                    <span className="font-semibold text-[var(--fg)]">Manage billing</span> opens the
+                    Stripe customer portal for existing subscriptions.
+                  </span>
+                ) : (
+                  <span>
+                    <span className="font-semibold text-[var(--fg)]">Subscribe with Stripe</span> starts a
+                    new plan, while{' '}
+                    <span className="font-semibold text-[var(--fg)]">Manage billing</span> opens the
+                    Stripe customer portal for existing subscriptions.
+                  </span>
+                )}
               </p>
               <p className="text-[10px] text-[var(--muted)]">
                 Payments are processed securely by Stripe. After updating your subscription, use Refresh

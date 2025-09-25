@@ -65,9 +65,26 @@ vi.mock('../services/accessControl', () => ({
 }))
 
 vi.mock('../services/paymentsApi', () => ({
-  fetchSubscriptionStatus: vi.fn().mockResolvedValue(null),
+  fetchSubscriptionStatus: vi.fn().mockResolvedValue({
+    status: 'inactive',
+    planId: null,
+    planName: null,
+    renewsAt: null,
+    cancelAt: null,
+    trialEndsAt: null,
+    latestInvoiceUrl: null,
+    entitled: false,
+    currentPeriodEnd: null,
+    cancelAtPeriodEnd: false,
+    epoch: 0
+  }),
   createCheckoutSession: vi.fn().mockResolvedValue({}),
-  createBillingPortalSession: vi.fn().mockResolvedValue({})
+  createBillingPortalSession: vi.fn().mockResolvedValue({}),
+  issueLicenseToken: vi.fn().mockResolvedValue({
+    token: 'test-token',
+    exp: Math.floor(Date.now() / 1000) + 600,
+    kid: 'test'
+  })
 }))
 
 import App from '../App'

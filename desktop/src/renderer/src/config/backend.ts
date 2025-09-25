@@ -183,6 +183,11 @@ export const buildBillingPortalUrl = (): string => {
   return url.toString()
 }
 
+export const buildLicenseIssueUrl = (): string => {
+  const url = new URL('/license/issue', getBillingApiBaseUrl())
+  return url.toString()
+}
+
 export const buildConfigUrl = (): string => {
   const url = new URL('/api/config', getApiBaseUrl())
   return url.toString()
