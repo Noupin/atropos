@@ -6,6 +6,7 @@ export interface UserRecord {
   status: string;
   current_period_end?: number;
   plan_price_id?: string;
+  cancel_at_period_end?: boolean;
   updated_at: number;
 }
 
@@ -13,6 +14,7 @@ export interface SubscriptionRecord {
   user_id: string;
   status: string;
   current_period_end?: number;
+  cancel_at_period_end?: boolean;
   updated_at: number;
 }
 
