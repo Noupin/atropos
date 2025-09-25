@@ -36,7 +36,11 @@ wrangler secret put JWT_PRIVATE_KEY --env dev
 
 Non-secret variables such as `PRICE_ID_MONTHLY`, `TIER`, and optional return
 URLs are defined in `wrangler.toml`. Update the per-environment overrides once
-Terraform has provisioned the KV namespace IDs.
+Terraform has provisioned the KV namespace IDs. The optional
+`CORS_ALLOW_ORIGINS` setting accepts a comma-separated list of origins to
+restrict API access. When unset, the Worker will accept requests from any
+origin so the Electron desktop app and other local tooling are not blocked by
+CORS.
 
 ## Deploying
 

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { HttpRequestPayload, HttpResponsePayload } from '../common/ipc'
 
 // Custom APIs for renderer
 type Clip = import('../renderer/src/types').Clip
@@ -20,7 +21,9 @@ const api = {
   },
   updateNavigationState: (state: { canGoBack: boolean; canGoForward: boolean }): void => {
     ipcRenderer.send('navigation:state', state)
-  }
+  },
+  httpRequest: async (payload: HttpRequestPayload): Promise<HttpResponsePayload> =>
+    ipcRenderer.invoke('http:request', payload)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

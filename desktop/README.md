@@ -37,7 +37,13 @@ URL:
 
 ```env
 VITE_API_BASE_URL=http://localhost:8000
+VITE_BILLING_API_BASE_URL=https://dev.api.atropos-video.com
 ```
+
+If not specified, the billing endpoints target `https://dev.api.atropos-video.com`
+during development and `https://api.atropos-video.com` for packaged builds.
+Override `VITE_BILLING_API_BASE_URL` when you need to point at a different
+environment.
 
 Set `VITE_BACKEND_MODE=mock` to explore the UI with simulated pipeline events
 when the Python server is unavailable. Remove the variable (or set it to `api`)

@@ -22,7 +22,7 @@ describe('paymentsApi mock mode', () => {
   })
 
   it('returns a canned subscription status when mocking Stripe', async () => {
-    const status = await fetchSubscriptionStatus()
+    const status = await fetchSubscriptionStatus('user-123')
     expect(status.status).toBe('trialing')
     expect(status.planName).toContain('Mock')
     expect(status.latestInvoiceUrl).toBe('https://stripe.test/invoice/mock')
@@ -30,13 +30,16 @@ describe('paymentsApi mock mode', () => {
   })
 
   it('provides a mock checkout session URL', async () => {
-    const session = await createCheckoutSession()
+    const session = await createCheckoutSession({
+      userId: 'user-123',
+      email: 'owner@example.com'
+    })
     expect(session.url).toBe('https://stripe.test/checkout')
     expect(httpMocks.requestWithFallback).not.toHaveBeenCalled()
   })
 
   it('provides a mock billing portal URL', async () => {
-    const session = await createBillingPortalSession()
+    const session = await createBillingPortalSession({ userId: 'user-123' })
     expect(session.url).toBe('https://stripe.test/portal')
     expect(httpMocks.requestWithFallback).not.toHaveBeenCalled()
   })

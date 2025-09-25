@@ -81,12 +81,17 @@ export function ensureJson<T>(body: unknown, schema: (data: unknown) => data is 
   return body;
 }
 
-export function baseCorsHeaders(origin: string | null, allowedOrigins: string[]): HeadersInit {
+export function baseCorsHeaders(
+  origin: string | null,
+  allowedOrigins: string[],
+): HeadersInit {
+  const allowAllOrigins = allowedOrigins.includes("*");
+
   if (!origin) {
     return {};
   }
 
-  if (allowedOrigins.includes(origin)) {
+  if (allowAllOrigins || allowedOrigins.includes(origin)) {
     return {
       "access-control-allow-origin": origin,
       "access-control-allow-credentials": "true",
@@ -96,19 +101,42 @@ export function baseCorsHeaders(origin: string | null, allowedOrigins: string[])
   throw new HttpError(403, "forbidden_origin", "Origin is not allowed");
 }
 
-export function corsPreflightResponse(origin: string | null, allowedOrigins: string[]): Response {
-  if (!origin || !allowedOrigins.includes(origin)) {
+export function corsPreflightResponse(
+  origin: string | null,
+  allowedOrigins: string[],
+): Response {
+  const allowAllOrigins = allowedOrigins.includes("*");
+
+  if (!origin) {
+    if (allowAllOrigins) {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET,POST,OPTIONS",
+          "access-control-allow-headers":
+            "content-type,authorization,idempotency-key",
+          "access-control-max-age": "600",
+        },
+      });
+    }
+
     return new Response(null, { status: 403 });
   }
 
-  return new Response(null, {
-    status: 204,
-    headers: {
-      "access-control-allow-origin": origin,
-      "access-control-allow-credentials": "true",
-      "access-control-allow-methods": "GET,POST,OPTIONS",
-      "access-control-allow-headers": "content-type,authorization,idempotency-key",
-      "access-control-max-age": "600",
-    },
-  });
+  if (allowAllOrigins || allowedOrigins.includes(origin)) {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "access-control-allow-origin": origin,
+        "access-control-allow-credentials": "true",
+        "access-control-allow-methods": "GET,POST,OPTIONS",
+        "access-control-allow-headers":
+          "content-type,authorization,idempotency-key",
+        "access-control-max-age": "600",
+      },
+    });
+  }
+
+  return new Response(null, { status: 403 });
 }
