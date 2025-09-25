@@ -34,11 +34,6 @@ id = "db363652342e4f28a8e0317a0c2e9de6"
 preview_id = "db363652342e4f28a8e0317a0c2e9de6"
 
 [[kv_namespaces]]
-binding = "SUBSCRIPTIONS_KV"
-id = "db363652342e4f28a8e0317a0c2e9de6"
-preview_id = "db363652342e4f28a8e0317a0c2e9de6"
-
-[[kv_namespaces]]
 binding = "TRANSFERS_KV"
 id = "db363652342e4f28a8e0317a0c2e9de6"
 preview_id = "db363652342e4f28a8e0317a0c2e9de6"
@@ -49,22 +44,12 @@ id = "db363652342e4f28a8e0317a0c2e9de6"
 preview_id = "db363652342e4f28a8e0317a0c2e9de6"
 
 [[env.dev.kv_namespaces]]
-binding = "SUBSCRIPTIONS_KV"
-id = "db363652342e4f28a8e0317a0c2e9de6"
-preview_id = "db363652342e4f28a8e0317a0c2e9de6"
-
-[[env.dev.kv_namespaces]]
 binding = "TRANSFERS_KV"
 id = "db363652342e4f28a8e0317a0c2e9de6"
 preview_id = "db363652342e4f28a8e0317a0c2e9de6"
 
 [[env.prod.kv_namespaces]]
 binding = "USERS_KV"
-id = "72cd84ce754a4dcf95f884bd78f6a83c"
-preview_id = "72cd84ce754a4dcf95f884bd78f6a83c"
-
-[[env.prod.kv_namespaces]]
-binding = "SUBSCRIPTIONS_KV"
 id = "72cd84ce754a4dcf95f884bd78f6a83c"
 preview_id = "72cd84ce754a4dcf95f884bd78f6a83c"
 

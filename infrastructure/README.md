@@ -37,11 +37,10 @@ terraform plan -out tfplan \
 terraform apply tfplan
 ```
 
-After `terraform apply`, copy the `users_kv_namespace_id`,
-`subscriptions_kv_namespace_id`, and `transfers_kv_namespace_id` outputs into
-the corresponding entries in `services/licensing/wrangler.toml` (both `id` and
-`preview_id` for the matching environment). Wrangler secrets must be set
-manually (`wrangler secret put ...`).
+After `terraform apply`, copy the `users_kv_namespace_id` and
+`transfers_kv_namespace_id` outputs into the corresponding entries in
+`services/licensing/wrangler.toml` (both `id` and `preview_id` for the matching
+environment). Wrangler secrets must be set manually (`wrangler secret put ...`).
 
 Terraform only manages the Worker shell and bindings. Deploy the actual script
 with Wrangler after Terraform finishes.

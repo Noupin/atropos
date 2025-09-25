@@ -16,12 +16,10 @@ import {
 import {
   assertRateLimit,
   deleteTransferRequest,
-  getSubscriptionRecord,
   getTransferRequest,
   getUserIdByCustomerId,
   getUserRecord,
   incrementFailedTransferAttempts,
-  putSubscriptionRecord,
   putUserRecord,
   saveTransferRequest,
   setUserIdForCustomer,
@@ -211,11 +209,6 @@ async function ensureActiveSubscriptionSnapshot(
     return true;
   }
 
-  const cached = await getSubscriptionRecord(env, userId);
-  if (cached && isEntitled(cached.status, cached.current_period_end)) {
-    return true;
-  }
-
   try {
     const active = await hasActiveStripeSubscription(env, stripeCustomerId);
     if (!active) {
@@ -226,7 +219,6 @@ async function ensureActiveSubscriptionSnapshot(
     const planPriceId = active.items?.data?.[0]?.price?.id ?? undefined;
     const existingPeriodEnd =
       userRecord?.current_period_end ??
-      cached?.current_period_end ??
       undefined;
     const currentPeriodEnd =
       typeof active.current_period_end === "number"
@@ -235,16 +227,7 @@ async function ensureActiveSubscriptionSnapshot(
     const cancelAtPeriodEnd = Boolean(active.cancel_at_period_end);
     const updatedAt = Date.now();
 
-    await putSubscriptionRecord(env, userId, {
-      user_id: userRecord?.client_id ?? userId,
-      status,
-      current_period_end: currentPeriodEnd,
-      plan_price_id: planPriceId ?? userRecord?.plan_price_id,
-      cancel_at_period_end: cancelAtPeriodEnd,
-      stripe_customer_id: stripeCustomerId,
-      updated_at: updatedAt,
-    });
-    await putUserRecord(env, userId, {
+    const nextRecord = await putUserRecord(env, userId, {
       client_id: userId,
       stripe_customer_id: stripeCustomerId,
       status,
@@ -253,7 +236,8 @@ async function ensureActiveSubscriptionSnapshot(
       cancel_at_period_end: cancelAtPeriodEnd,
       updated_at: updatedAt,
     });
-    return isEntitled(status, currentPeriodEnd);
+    await setUserIdForCustomer(env, stripeCustomerId, userId);
+    return isEntitled(nextRecord.status, nextRecord.current_period_end);
   } catch (error) {
     console.error(
       `[${context.requestId}] Failed to refresh subscription status for ${userId}`,
@@ -373,6 +357,15 @@ async function handleCheckout(
       "stripe_customer_unavailable",
       "Failed to determine Stripe customer ID",
     );
+  }
+
+  if (!userRecord || userRecord.stripe_customer_id !== stripeCustomerId || userRecord.email !== email) {
+    userRecord = await putUserRecord(env, userId, {
+      client_id: userId,
+      email,
+      stripe_customer_id: stripeCustomerId,
+      plan_price_id: userRecord?.plan_price_id ?? price,
+    });
   }
 
   await setUserIdForCustomer(env, stripeCustomerId, userId);
@@ -615,15 +608,6 @@ async function handleWebhook(
             updated_at: updatedAt,
           });
           await setUserIdForCustomer(env, customerId, userId);
-          await putSubscriptionRecord(env, userId, {
-            user_id: userId,
-            status,
-            current_period_end: existing?.current_period_end,
-            plan_price_id: planPriceId,
-            cancel_at_period_end: cancelAtPeriodEnd,
-            stripe_customer_id: customerId,
-            updated_at: updatedAt,
-          });
           console.log(
             `[${context.requestId}] Checkout complete for ${userId} (${customerId}) subscription=${subscriptionId}`
           );
@@ -643,18 +627,17 @@ async function handleWebhook(
           );
           break;
         }
-        const existingSubscription = await getSubscriptionRecord(env, userId);
+        const existingUser = await getUserRecord(env, userId);
         const status = subscription.status ?? "unknown";
         const planPriceId =
           subscription.items?.data?.[0]?.price?.id ??
-          existingSubscription?.plan_price_id ??
+          existingUser?.plan_price_id ??
           env.PRICE_ID_MONTHLY;
         const currentPeriodEnd =
           typeof subscription.current_period_end === "number"
             ? subscription.current_period_end
-            : existingSubscription?.current_period_end;
+            : existingUser?.current_period_end;
         const cancelAtPeriodEnd = Boolean(subscription.cancel_at_period_end);
-        const existingUser = await getUserRecord(env, userId);
         const updatedAt = Date.now();
         await setUserIdForCustomer(env, customerId, userId);
         await putUserRecord(env, userId, {
@@ -665,15 +648,6 @@ async function handleWebhook(
           current_period_end: currentPeriodEnd,
           plan_price_id: planPriceId ?? undefined,
           cancel_at_period_end: cancelAtPeriodEnd,
-          updated_at: updatedAt,
-        });
-        await putSubscriptionRecord(env, userId, {
-          user_id: userId,
-          status,
-          current_period_end: currentPeriodEnd,
-          plan_price_id: planPriceId ?? undefined,
-          cancel_at_period_end: cancelAtPeriodEnd,
-          stripe_customer_id: customerId,
           updated_at: updatedAt,
         });
         console.log(
@@ -693,11 +667,9 @@ async function handleWebhook(
           );
           break;
         }
-        const existingSubscription = await getSubscriptionRecord(env, userId);
         const existingUser = await getUserRecord(env, userId);
         const planPriceId =
           existingUser?.plan_price_id ??
-          existingSubscription?.plan_price_id ??
           subscription.items?.data?.[0]?.price?.id ??
           env.PRICE_ID_MONTHLY;
         const updatedAt = Date.now();
@@ -713,15 +685,6 @@ async function handleWebhook(
           plan_price_id: planPriceId ?? undefined,
           cancel_at_period_end: false,
           epoch: nextEpoch,
-          updated_at: updatedAt,
-        });
-        await putSubscriptionRecord(env, userId, {
-          user_id: userId,
-          status: "canceled",
-          current_period_end: nowSeconds,
-          plan_price_id: planPriceId ?? undefined,
-          cancel_at_period_end: false,
-          stripe_customer_id: customerId,
           updated_at: updatedAt,
         });
         console.log(

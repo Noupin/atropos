@@ -15,16 +15,6 @@ export interface UserRecord {
   updated_at: number;
 }
 
-export interface SubscriptionRecord {
-  user_id: string;
-  status: string;
-  current_period_end?: number;
-  plan_price_id?: string;
-  cancel_at_period_end?: boolean;
-  stripe_customer_id?: string;
-  updated_at: number;
-}
-
 export interface TransferRequestRecord {
   otp_hash: string;
   new_device_hash: string;
@@ -36,10 +26,6 @@ const RATE_LIMIT_MAX_ATTEMPTS = 10;
 
 function userKey(userId: string): string {
   return `user:${userId}`;
-}
-
-function subscriptionKey(userId: string): string {
-  return `sub:user:${userId}`;
 }
 
 function transferKey(userId: string): string {
@@ -86,50 +72,16 @@ export async function putUserRecord(
   };
 
   await env.USERS_KV.put(userKey(userId), JSON.stringify(record));
-  return record;
-}
-
-export async function getSubscriptionRecord(
-  env: Env,
-  userId: string,
-): Promise<SubscriptionRecord | null> {
-  const raw = await env.SUBSCRIPTIONS_KV.get(subscriptionKey(userId));
-  return raw ? (JSON.parse(raw) as SubscriptionRecord) : null;
-}
-
-export type SubscriptionRecordUpdate = Partial<Omit<SubscriptionRecord, "updated_at">> & {
-  updated_at?: number;
-};
-
-export async function putSubscriptionRecord(
-  env: Env,
-  userId: string,
-  update: SubscriptionRecordUpdate,
-): Promise<SubscriptionRecord> {
-  const existing = await getSubscriptionRecord(env, userId);
-  const now = Date.now();
-  const record: SubscriptionRecord = {
-    user_id: update.user_id ?? existing?.user_id ?? userId,
-    status: update.status ?? existing?.status ?? "inactive",
-    current_period_end: update.current_period_end ?? existing?.current_period_end,
-    plan_price_id: update.plan_price_id ?? existing?.plan_price_id,
-    cancel_at_period_end:
-      update.cancel_at_period_end ?? existing?.cancel_at_period_end ?? false,
-    stripe_customer_id: update.stripe_customer_id ?? existing?.stripe_customer_id,
-    updated_at: update.updated_at ?? now,
-  };
-
-  await env.SUBSCRIPTIONS_KV.put(subscriptionKey(userId), JSON.stringify(record));
 
   const previousCustomerId = existing?.stripe_customer_id;
   const nextCustomerId = record.stripe_customer_id;
 
   if (previousCustomerId && previousCustomerId !== nextCustomerId) {
-    await env.SUBSCRIPTIONS_KV.delete(customerIndexKey(previousCustomerId));
+    await env.USERS_KV.delete(customerIndexKey(previousCustomerId));
   }
 
   if (nextCustomerId) {
-    await env.SUBSCRIPTIONS_KV.put(customerIndexKey(nextCustomerId), userId);
+    await env.USERS_KV.put(customerIndexKey(nextCustomerId), userId);
   }
 
   return record;
@@ -139,7 +91,7 @@ export async function getUserIdByCustomerId(
   env: Env,
   customerId: string,
 ): Promise<string | null> {
-  const value = await env.SUBSCRIPTIONS_KV.get(customerIndexKey(customerId));
+  const value = await env.USERS_KV.get(customerIndexKey(customerId));
   return value ?? null;
 }
 
@@ -148,7 +100,7 @@ export async function setUserIdForCustomer(
   customerId: string,
   userId: string,
 ): Promise<void> {
-  await env.SUBSCRIPTIONS_KV.put(customerIndexKey(customerId), userId);
+  await env.USERS_KV.put(customerIndexKey(customerId), userId);
 }
 
 export async function saveTransferRequest(

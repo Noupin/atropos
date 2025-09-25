@@ -13,11 +13,6 @@ resource "cloudflare_workers_kv_namespace" "licensing_users" {
   title      = "licensing-users-${var.environment}"
 }
 
-resource "cloudflare_workers_kv_namespace" "licensing_subscriptions" {
-  account_id = var.cloudflare_account_id
-  title      = "licensing-subscriptions-${var.environment}"
-}
-
 resource "cloudflare_workers_kv_namespace" "licensing_transfers" {
   account_id = var.cloudflare_account_id
   title      = "licensing-transfers-${var.environment}"
@@ -44,11 +39,6 @@ EOW
         type         = "kv_namespace"
         name         = "USERS_KV"
         namespace_id = cloudflare_workers_kv_namespace.licensing_users.id
-      },
-      {
-        type         = "kv_namespace"
-        name         = "SUBSCRIPTIONS_KV"
-        namespace_id = cloudflare_workers_kv_namespace.licensing_subscriptions.id
       },
       {
         type         = "kv_namespace"

@@ -1,6 +1,5 @@
 export interface Env {
   USERS_KV: KVNamespace;
-  SUBSCRIPTIONS_KV: KVNamespace;
   TRANSFERS_KV: KVNamespace;
   STRIPE_SECRET_KEY: string;
   STRIPE_WEBHOOK_SECRET: string;

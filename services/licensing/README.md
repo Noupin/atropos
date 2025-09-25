@@ -67,8 +67,8 @@ wrangler deploy --env dev
 wrangler deploy --env prod
 ```
 
-Ensure the `USERS_KV`, `SUBSCRIPTIONS_KV`, and `TRANSFERS_KV` namespace bindings
-in `wrangler.toml` match the Terraform outputs for each environment.
+Ensure the `USERS_KV` and `TRANSFERS_KV` namespace bindings in `wrangler.toml`
+match the Terraform outputs for each environment.
 
 ## Stripe Webhooks
 
