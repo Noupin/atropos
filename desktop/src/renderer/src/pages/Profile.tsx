@@ -19,6 +19,7 @@ import {
   createCheckoutSession,
   fetchSubscriptionStatus
 } from '../services/paymentsApi'
+import { getAccessControlConfig } from '../config/accessControl'
 
 const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
   tiktok: 'tiktok.json',
@@ -932,6 +933,8 @@ const Profile: FC<ProfileProps> = ({
   const [isStartingCheckout, setIsStartingCheckout] = useState(false)
   const [isOpeningPortal, setIsOpeningPortal] = useState(false)
 
+  const billingUserId = useMemo(() => getAccessControlConfig().clientId.trim(), [])
+
   const handleToggleCreateAccount = useCallback(() => {
     setNewAccountError(null)
     setIsCreateAccountOpen((previous) => {
@@ -952,9 +955,15 @@ const Profile: FC<ProfileProps> = ({
   }, [registerSearch])
 
   const loadSubscriptionStatus = useCallback(async () => {
+    if (!billingUserId) {
+      setSubscriptionStatus(null)
+      setSubscriptionError('Billing is not configured for this installation.')
+      return null
+    }
+
     setIsLoadingSubscription(true)
     try {
-      const status = await fetchSubscriptionStatus()
+      const status = await fetchSubscriptionStatus(billingUserId)
       setSubscriptionStatus(status)
       setSubscriptionError(null)
       return status
@@ -966,7 +975,7 @@ const Profile: FC<ProfileProps> = ({
     } finally {
       setIsLoadingSubscription(false)
     }
-  }, [])
+  }, [billingUserId])
 
   useEffect(() => {
     void loadSubscriptionStatus()
@@ -1068,7 +1077,8 @@ const Profile: FC<ProfileProps> = ({
     : null
 
   const subscriptionPlanName = subscriptionStatus?.planName ?? accessStatus?.subscriptionPlan ?? 'Not subscribed'
-  const billingEmailLabel = accessStatus?.customerEmail ?? null
+  const billingEmail = accessStatus?.customerEmail ?? null
+  const billingEmailLabel = billingEmail
 
   const handleRefreshBilling = useCallback(async () => {
     await loadSubscriptionStatus()
@@ -1083,9 +1093,22 @@ const Profile: FC<ProfileProps> = ({
 
   const handleStartCheckout = useCallback(async () => {
     setSubscriptionError(null)
+    if (!billingUserId) {
+      setSubscriptionError('Billing is not configured for this installation.')
+      return
+    }
+
+    if (!billingEmail) {
+      setSubscriptionError('A billing email address is required before starting checkout.')
+      return
+    }
+
     setIsStartingCheckout(true)
     try {
-      const session = await createCheckoutSession()
+      const session = await createCheckoutSession({
+        userId: billingUserId,
+        email: billingEmail
+      })
       if (typeof window !== 'undefined' && session.url) {
         window.open(session.url, '_blank', 'noopener')
       }
@@ -1096,13 +1119,18 @@ const Profile: FC<ProfileProps> = ({
     } finally {
       setIsStartingCheckout(false)
     }
-  }, [])
+  }, [billingEmail, billingUserId])
 
   const handleOpenBillingPortal = useCallback(async () => {
     setSubscriptionError(null)
+    if (!billingUserId) {
+      setSubscriptionError('Billing is not configured for this installation.')
+      return
+    }
+
     setIsOpeningPortal(true)
     try {
-      const session = await createBillingPortalSession()
+      const session = await createBillingPortalSession({ userId: billingUserId })
       if (typeof window !== 'undefined' && session.url) {
         window.open(session.url, '_blank', 'noopener')
       }
@@ -1113,7 +1141,7 @@ const Profile: FC<ProfileProps> = ({
     } finally {
       setIsOpeningPortal(false)
     }
-  }, [])
+  }, [billingUserId])
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">

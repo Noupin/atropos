@@ -48,6 +48,23 @@ interface LicenseIssueBody {
   device_hash?: string;
 }
 
+interface BillingPortalRequestBody {
+  user_id?: string;
+  return_url?: string;
+}
+
+const LIFECYCLE_STATUSES = new Set([
+  "inactive",
+  "active",
+  "trialing",
+  "grace_period",
+  "past_due",
+  "canceled",
+  "incomplete",
+  "incomplete_expired",
+  "unpaid",
+]);
+
 function getAllowedOrigins(env: Env): string[] {
   const origins = (env.CORS_ALLOW_ORIGINS ?? "")
     .split(",")
@@ -63,6 +80,26 @@ function getAllowedOrigins(env: Env): string[] {
 
 function normalizeStatus(status: string | null | undefined): string {
   return status ? status.toLowerCase() : "unknown";
+}
+
+function toLifecycleStatus(status: string | null | undefined): string {
+  const normalized = normalizeStatus(status);
+  if (LIFECYCLE_STATUSES.has(normalized)) {
+    return normalized;
+  }
+  return "inactive";
+}
+
+function toIsoTimestamp(value?: number | null): string | null {
+  if (!value) {
+    return null;
+  }
+  const milliseconds = value > 1e12 ? value : value * 1000;
+  const date = new Date(milliseconds);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString();
 }
 
 function isEntitled(status: string, currentPeriodEnd?: number | null): boolean {
@@ -146,6 +183,39 @@ async function handleCheckout(
   return jsonResponse({ url: session.url }, 200, corsHeaders);
 }
 
+async function resolvePortalRequest(
+  request: Request,
+  url: URL
+): Promise<{ userId: string; returnUrl?: string | null }> {
+  let userId = url.searchParams.get("user_id");
+  let returnUrl = url.searchParams.get("return_url");
+
+  if (request.method === "POST") {
+    const body = await request.json().catch(() => {
+      throw new HttpError(400, "invalid_request", "Body must be valid JSON");
+    });
+
+    if (typeof body !== "object" || body === null) {
+      throw new HttpError(400, "invalid_request", "Body must be an object");
+    }
+
+    const { user_id: bodyUserId, return_url: bodyReturnUrl } =
+      body as BillingPortalRequestBody;
+    if (bodyUserId) {
+      userId = bodyUserId;
+    }
+    if (bodyReturnUrl) {
+      returnUrl = bodyReturnUrl;
+    }
+  }
+
+  if (!userId) {
+    throw new HttpError(400, "invalid_request", "user_id is required");
+  }
+
+  return { userId, returnUrl };
+}
+
 async function handlePortal(
   env: Env,
   url: URL,
@@ -153,10 +223,7 @@ async function handlePortal(
   context: RequestContext,
   request: Request
 ): Promise<Response> {
-  const userId = url.searchParams.get("user_id");
-  if (!userId) {
-    throw new HttpError(400, "invalid_request", "user_id is required");
-  }
+  const { userId, returnUrl } = await resolvePortalRequest(request, url);
 
   const userRecord = await getUserRecord(env, userId);
   if (!userRecord || !userRecord.stripe_customer_id) {
@@ -172,11 +239,53 @@ async function handlePortal(
   const portal = await createBillingPortalSession(
     env,
     userRecord.stripe_customer_id,
-    env.RETURN_URL_SUCCESS,
+    returnUrl ?? env.RETURN_URL_SUCCESS,
     idempotencyKey
   );
   console.log(`[${context.requestId}] Generated portal session for ${userId}`);
   return jsonResponse({ url: portal.url }, 200, corsHeaders);
+}
+
+async function handleSubscription(
+  env: Env,
+  url: URL,
+  corsHeaders: HeadersInit
+): Promise<Response> {
+  const userId = url.searchParams.get("user_id");
+  if (!userId) {
+    throw new HttpError(400, "invalid_request", "user_id is required");
+  }
+
+  const record = await getUserRecord(env, userId);
+  if (!record) {
+    return jsonResponse(
+      {
+        status: "inactive",
+        planId: null,
+        planName: null,
+        renewsAt: null,
+        cancelAt: null,
+        trialEndsAt: null,
+        latestInvoiceUrl: null,
+      },
+      200,
+      corsHeaders
+    );
+  }
+
+  return jsonResponse(
+    {
+      status: toLifecycleStatus(record.status),
+      planId: record.plan_price_id ?? null,
+      planName: null,
+      renewsAt: toIsoTimestamp(record.current_period_end),
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null,
+    },
+    200,
+    corsHeaders
+  );
 }
 
 async function handleWebhook(
@@ -409,6 +518,9 @@ export default {
           if (apiPath === "/billing/checkout") {
             return await handleCheckout(env, request, corsHeaders, context);
           }
+          if (apiPath === "/billing/portal") {
+            return await handlePortal(env, url, corsHeaders, context, request);
+          }
           if (apiPath === "/billing/webhook") {
             return await handleWebhook(env, request, context);
           }
@@ -423,6 +535,9 @@ export default {
           }
           if (apiPath === "/billing/portal") {
             return await handlePortal(env, url, corsHeaders, context, request);
+          }
+          if (apiPath === "/billing/subscription") {
+            return await handleSubscription(env, url, corsHeaders);
           }
           if (apiPath === "/license/validate") {
             return await handleValidate(env, request, corsHeaders);

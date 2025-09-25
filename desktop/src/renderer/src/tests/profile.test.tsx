@@ -189,7 +189,7 @@ describe('Profile page', () => {
 
     expect(screen.getByText('Profile')).toBeInTheDocument()
     expect(screen.getByText(/Connected platforms across/i)).toHaveTextContent('1/1')
-    expect(paymentsMocks.fetchSubscriptionStatus).toHaveBeenCalled()
+    expect(paymentsMocks.fetchSubscriptionStatus).toHaveBeenCalledWith('atropos-desktop-dev')
     expect(screen.getByRole('button', { name: /Subscribe with Stripe/i })).toBeInTheDocument()
 
     const creatorCard = screen.getAllByTestId('account-card-account-1')[0]
@@ -373,6 +373,10 @@ describe('Profile page', () => {
     fireEvent.click(checkoutButton)
 
     await waitFor(() => expect(paymentsMocks.createCheckoutSession).toHaveBeenCalledTimes(1))
+    expect(paymentsMocks.createCheckoutSession).toHaveBeenCalledWith({
+      userId: 'atropos-desktop-dev',
+      email: 'owner@example.com'
+    })
     expect(window.open).toHaveBeenCalledWith('https://stripe.test/checkout', '_blank', 'noopener')
   })
 
@@ -383,6 +387,9 @@ describe('Profile page', () => {
     fireEvent.click(billingButton)
 
     await waitFor(() => expect(paymentsMocks.createBillingPortalSession).toHaveBeenCalledTimes(1))
+    expect(paymentsMocks.createBillingPortalSession).toHaveBeenCalledWith({
+      userId: 'atropos-desktop-dev'
+    })
     expect(window.open).toHaveBeenCalledWith('https://stripe.test/portal', '_blank', 'noopener')
   })
 })

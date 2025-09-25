@@ -167,8 +167,9 @@ export const buildAuthPingUrl = (): string => {
   return url.toString()
 }
 
-export const buildSubscriptionStatusUrl = (): string => {
+export const buildSubscriptionStatusUrl = (userId: string): string => {
   const url = new URL('/billing/subscription', getBillingApiBaseUrl())
+  url.searchParams.set('user_id', userId)
   return url.toString()
 }
 
