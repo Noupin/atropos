@@ -1072,52 +1072,112 @@ const Profile: FC<ProfileProps> = ({
     .join(' ')
   const authStatusDot = authStatusVariant?.dot ?? 'status-pill__dot status-pill__dot--muted'
 
-  const accessVariantKey = accessStatus
-    ? accessStatus.allowed
-      ? accessStatus.status === 'active'
+  const subscriptionPlanName =
+    subscriptionStatus?.planName ?? accessStatus?.subscriptionPlan ?? 'Not subscribed'
+
+  const derivedSubscriptionStatus =
+    subscriptionStatus?.status ?? accessStatus?.subscriptionStatus ?? accessStatus?.status ?? 'inactive'
+  const derivedAccessAllowed = subscriptionStatus
+    ? subscriptionStatus.entitled
+    : Boolean(accessStatus?.allowed)
+
+  const subscriptionStatusReason = useMemo(() => {
+    if (!subscriptionStatus || subscriptionStatus.entitled) {
+      return null
+    }
+
+    switch (subscriptionStatus.status) {
+      case 'canceled':
+        return 'Subscription canceled. Renew to regain access.'
+      case 'past_due':
+      case 'unpaid':
+        return 'Payment overdue. Update billing details to restore access.'
+      case 'incomplete':
+      case 'incomplete_expired':
+        return 'Complete checkout to activate your subscription.'
+      case 'paused':
+        return 'Subscription paused. Resume billing to regain access.'
+      default:
+        return 'Subscription inactive. Update billing to regain access.'
+    }
+  }, [subscriptionStatus])
+
+  const accessVariantKey = isCheckingAccess
+    ? 'neutral'
+    : derivedAccessAllowed
+      ? derivedSubscriptionStatus === 'active' || derivedSubscriptionStatus === 'trialing'
         ? 'success'
-        : accessStatus.status === 'trialing' || accessStatus.status === 'grace_period'
+        : derivedSubscriptionStatus === 'grace_period'
           ? 'warning'
-          : accessStatus.status === 'inactive'
-            ? 'neutral'
-            : 'warning'
-      : 'error'
-    : accessError
-      ? 'error'
-      : 'neutral'
+          : 'warning'
+      : subscriptionStatus || accessStatus || accessError
+        ? 'error'
+        : 'neutral'
   const accessVariant = accessBadgeVariants[accessVariantKey] ?? accessBadgeVariants.neutral
 
   const accessBadgeLabel = isCheckingAccess
     ? 'Checking access'
-    : accessStatus
-      ? accessStatus.allowed
-        ? accessStatus.status === 'active'
-          ? 'Access active'
-          : accessStatus.status === 'trialing'
-            ? 'Trial active'
-            : accessStatus.status === 'grace_period'
-              ? 'Grace period'
-              : 'Subscription attention'
-        : 'Access disabled'
-      : accessError
-        ? 'Access error'
-        : 'Access unknown'
+    : derivedAccessAllowed
+      ? derivedSubscriptionStatus === 'active'
+        ? 'Access active'
+        : derivedSubscriptionStatus === 'trialing'
+          ? 'Trial active'
+          : derivedSubscriptionStatus === 'grace_period'
+            ? 'Grace period'
+            : 'Subscription attention'
+      : subscriptionStatus
+        ? (() => {
+            switch (subscriptionStatus.status) {
+              case 'canceled':
+                return 'Subscription canceled'
+              case 'past_due':
+              case 'unpaid':
+                return 'Payment required'
+              case 'incomplete':
+              case 'incomplete_expired':
+                return 'Checkout incomplete'
+              case 'paused':
+                return 'Subscription paused'
+              default:
+                return 'Access disabled'
+            }
+          })()
+        : accessError
+          ? 'Access error'
+          : accessStatus
+            ? 'Access disabled'
+            : 'Access unknown'
 
   const accessSummaryText = isCheckingAccess
     ? 'Verifying access permissions…'
-    : accessStatus
-      ? accessStatus.allowed
-        ? accessStatus.subscriptionPlan
-          ? `Access granted – ${accessStatus.subscriptionPlan}`
-          : 'Access granted.'
-        : accessStatus.reason ?? 'Subscription required to continue using Atropos.'
-      : accessError ?? 'Access status unavailable.'
+    : derivedAccessAllowed
+      ? subscriptionPlanName && subscriptionPlanName !== 'Not subscribed'
+        ? `Access granted – ${subscriptionPlanName}`
+        : 'Access granted.'
+      : subscriptionStatusReason ?? accessStatus?.reason ?? accessError ?? 'Subscription required to continue using Atropos.'
 
-  const accessRenewalLabel = accessStatus?.expiresAt
-    ? new Date(accessStatus.expiresAt).toLocaleString()
-    : null
+  const accessRenewalLabel = useMemo(() => {
+    if (subscriptionStatus?.currentPeriodEnd) {
+      const iso = new Date(subscriptionStatus.currentPeriodEnd * 1000).toISOString()
+      const formatted = formatTimestamp(iso)
 
-  const subscriptionPlanName = subscriptionStatus?.planName ?? accessStatus?.subscriptionPlan ?? 'Not subscribed'
+      if (!subscriptionStatus.entitled) {
+        return `Expired on ${formatted}`
+      }
+
+      if (subscriptionStatus.cancelAtPeriodEnd || subscriptionStatus.status === 'canceled') {
+        return `Expires on ${formatted}`
+      }
+
+      return `Renews on ${formatted}`
+    }
+
+    if (accessStatus?.expiresAt) {
+      return `Expires on ${formatTimestamp(accessStatus.expiresAt)}`
+    }
+
+    return null
+  }, [accessStatus, subscriptionStatus])
   const hideSubscribeButton = subscriptionStatus
     ? ['active', 'trialing', 'past_due', 'unpaid', 'paused'].includes(subscriptionStatus.status)
     : false
