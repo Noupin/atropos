@@ -12,6 +12,7 @@ import {
   createCustomer,
   hasActiveStripeSubscription,
   retrieveCustomer,
+  retrieveSubscription,
   verifyStripeSignature,
 } from "./stripe";
 import {
@@ -733,23 +734,50 @@ async function handleWebhook(
           const sessionStatus = (
             object.status as string | undefined
           )?.toLowerCase();
-          const status =
+          let status =
             paymentStatus === "paid" || sessionStatus === "complete"
               ? "active"
               : existing?.status ?? "pending";
-          const planPriceId =
+          let planPriceId =
             (object.metadata as Record<string, string> | undefined)?.price_id ??
             existing?.plan_price_id ??
             env.PRICE_ID_MONTHLY;
-          const cancelAtPeriodEnd = existing?.cancel_at_period_end ?? false;
+          let cancelAtPeriodEnd = existing?.cancel_at_period_end ?? false;
+          let currentPeriodEnd = normalizeEpochSeconds(existing?.current_period_end) ?? undefined;
           const updatedAt = Date.now();
+
+          if (subscriptionId) {
+            try {
+              const subscription = await retrieveSubscription(env, subscriptionId);
+              if (subscription.status) {
+                status = subscription.status;
+              }
+              const refreshedPeriodEnd = normalizeEpochSeconds(
+                subscription.current_period_end,
+              );
+              if (refreshedPeriodEnd !== null) {
+                currentPeriodEnd = refreshedPeriodEnd;
+              }
+              const refreshedPriceId =
+                subscription.items?.data?.[0]?.price?.id ?? undefined;
+              if (refreshedPriceId) {
+                planPriceId = refreshedPriceId;
+              }
+              cancelAtPeriodEnd = Boolean(subscription.cancel_at_period_end);
+            } catch (error) {
+              console.error(
+                `[${context.requestId}] Failed to hydrate subscription ${subscriptionId} on checkout completion`,
+                error,
+              );
+            }
+          }
 
           await putUserRecord(env, userId, {
             client_id: userId,
             email,
             stripe_customer_id: customerId,
             status,
-            current_period_end: existing?.current_period_end,
+            current_period_end: currentPeriodEnd,
             plan_price_id: planPriceId,
             cancel_at_period_end: cancelAtPeriodEnd,
             updated_at: updatedAt,

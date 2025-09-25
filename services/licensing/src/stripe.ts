@@ -30,6 +30,22 @@ interface StripeCustomerDetailResponse {
   email?: string | null;
 }
 
+interface StripeSubscriptionItemPrice {
+  id?: string | null;
+}
+
+interface StripeSubscriptionItem {
+  price?: StripeSubscriptionItemPrice | null;
+}
+
+interface StripeSubscriptionResponse {
+  id: string;
+  status?: string | null;
+  current_period_end?: number | null;
+  cancel_at_period_end?: boolean | null;
+  items?: { data?: StripeSubscriptionItem[] | null } | null;
+}
+
 interface StripeSubscriptionListResponse {
   data: Array<{
     id: string;
@@ -237,6 +253,17 @@ export async function hasActiveStripeSubscription(
       }
       return false;
     }) ?? null
+  );
+}
+
+export async function retrieveSubscription(
+  env: Env,
+  subscriptionId: string,
+): Promise<StripeSubscriptionResponse> {
+  return stripeRequest<StripeSubscriptionResponse>(
+    env,
+    `/v1/subscriptions/${encodeURIComponent(subscriptionId)}`,
+    { method: "GET" },
   );
 }
 
