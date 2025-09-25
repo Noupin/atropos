@@ -9,6 +9,7 @@ import {
 import {
   createBillingPortalSession,
   createCheckoutSession,
+  createCustomer,
   verifyStripeSignature,
 } from "./stripe";
 import {
@@ -114,6 +115,23 @@ function isEntitled(status: string, currentPeriodEnd?: number | null): boolean {
   return false;
 }
 
+function extractStripeId(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (value && typeof value === "object" && "id" in value) {
+    const candidate = (value as { id?: unknown }).id;
+    if (typeof candidate === "string") {
+      const trimmed = candidate.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+  }
+
+  return null;
+}
+
 async function handleCheckout(
   env: Env,
   request: Request,
@@ -154,21 +172,43 @@ async function handleCheckout(
     );
   }
 
-  const idempotencyKey =
+  const idempotencyRoot =
     request.headers.get("Idempotency-Key") ?? crypto.randomUUID();
+  const customerIdempotencyKey = `${idempotencyRoot}:customer`;
+  const checkoutIdempotencyKey = `${idempotencyRoot}:checkout`;
+
+  let stripeCustomerId = userRecord?.stripe_customer_id;
+  if (!stripeCustomerId) {
+    const customer = await createCustomer(
+      env,
+      userId,
+      email,
+      customerIdempotencyKey,
+    );
+    stripeCustomerId = customer.id;
+  }
+
+  if (!stripeCustomerId) {
+    throw new HttpError(
+      500,
+      "stripe_customer_unavailable",
+      "Failed to determine Stripe customer ID",
+    );
+  }
+
   const session = await createCheckoutSession(env, {
     userId,
     email,
     priceId: price,
     successUrl,
     cancelUrl,
-    customerId: userRecord?.stripe_customer_id || undefined,
-    idempotencyKey,
+    customerId: stripeCustomerId,
+    idempotencyKey: checkoutIdempotencyKey,
   });
 
   const updated = {
     email,
-    stripe_customer_id: userRecord?.stripe_customer_id ?? "",
+    stripe_customer_id: stripeCustomerId,
     status: userRecord?.status ?? "pending",
     current_period_end: userRecord?.current_period_end,
     plan_price_id: price,
@@ -307,7 +347,7 @@ async function handleWebhook(
   try {
     switch (eventType) {
       case "checkout.session.completed": {
-        const customerId = String(object.customer ?? "");
+        const customerId = extractStripeId(object.customer);
         const userId =
           (object.metadata as Record<string, string> | undefined)?.user_id ??
           (object.client_reference_id as string | undefined);
@@ -356,13 +396,12 @@ async function handleWebhook(
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
         const subscription = object as unknown as StripeSubscription;
-        const customerId =
-          typeof subscription.customer === "string"
-            ? subscription.customer
-            : "";
+        const customerId = extractStripeId(subscription.customer);
+        const existingSubscription = customerId
+          ? await getSubscriptionRecord(env, customerId)
+          : null;
         const userId =
-          subscription.metadata?.user_id ??
-          (await getSubscriptionRecord(env, customerId))?.user_id;
+          subscription.metadata?.user_id ?? existingSubscription?.user_id;
         if (!customerId || !userId) {
           console.warn(
             `[${context.requestId}] Subscription event missing user_id`
