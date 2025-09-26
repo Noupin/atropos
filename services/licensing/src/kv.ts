@@ -2,10 +2,14 @@ import { Env } from "./env";
 
 export interface TrialState {
   allowed: boolean;
+  started: boolean;
+  total: number;
+  remaining: number;
   used: boolean;
   used_at: number | null;
   jti: string | null;
   exp: number | null;
+  device_hash: string | null;
 }
 
 export interface UserRecord {
@@ -24,10 +28,14 @@ export interface UserRecord {
 export function createDefaultTrialState(): TrialState {
   return {
     allowed: true,
+    started: false,
+    total: 3,
+    remaining: 3,
     used: false,
     used_at: null,
     jti: null,
     exp: null,
+    device_hash: null,
   };
 }
 
@@ -36,6 +44,16 @@ function normalizeTrialState(candidate: Partial<TrialState> | undefined): TrialS
   return {
     allowed:
       typeof candidate?.allowed === "boolean" ? candidate.allowed : defaults.allowed,
+    started:
+      typeof candidate?.started === "boolean" ? candidate.started : defaults.started,
+    total:
+      typeof candidate?.total === "number" && Number.isFinite(candidate.total)
+        ? Math.max(0, Math.floor(candidate.total))
+        : defaults.total,
+    remaining:
+      typeof candidate?.remaining === "number" && Number.isFinite(candidate.remaining)
+        ? Math.max(0, Math.floor(candidate.remaining))
+        : defaults.remaining,
     used: typeof candidate?.used === "boolean" ? candidate.used : defaults.used,
     used_at:
       typeof candidate?.used_at === "number" && Number.isFinite(candidate.used_at)
@@ -46,6 +64,22 @@ function normalizeTrialState(candidate: Partial<TrialState> | undefined): TrialS
       typeof candidate?.exp === "number" && Number.isFinite(candidate.exp)
         ? candidate.exp
         : defaults.exp,
+    device_hash:
+      typeof candidate?.device_hash === "string" && candidate.device_hash.trim().length > 0
+        ? candidate.device_hash.trim()
+        : defaults.device_hash,
+  };
+}
+
+function normalizeAndHydrateTrialState(candidate: Partial<TrialState> | undefined): TrialState {
+  const normalized = normalizeTrialState(candidate);
+  const remaining = Math.max(0, normalized.remaining);
+  const total = Math.max(remaining, normalized.total);
+  return {
+    ...normalized,
+    remaining,
+    total,
+    used: normalized.used || remaining === 0,
   };
 }
 
@@ -59,7 +93,7 @@ export async function getUserRecord(env: Env, userId: string): Promise<UserRecor
   return {
     ...record,
     epoch: typeof record.epoch === "number" ? record.epoch : 0,
-    trial: normalizeTrialState(record.trial),
+    trial: normalizeAndHydrateTrialState(record.trial),
   };
 }
 
@@ -67,7 +101,7 @@ export async function putUserRecord(env: Env, userId: string, record: UserRecord
   const normalized: UserRecord = {
     ...record,
     epoch: typeof record.epoch === "number" ? record.epoch : 0,
-    trial: normalizeTrialState(record.trial),
+    trial: normalizeAndHydrateTrialState(record.trial),
   };
   await env.LICENSING_KV.put(`user:${userId}`, JSON.stringify(normalized));
 }
@@ -105,7 +139,7 @@ export async function findUserByStripeCustomerId(
         const normalized: UserRecord = {
           ...record,
           epoch: typeof record.epoch === "number" ? record.epoch : 0,
-          trial: normalizeTrialState(record.trial),
+          trial: normalizeAndHydrateTrialState(record.trial),
         };
         if (normalized.stripe_customer_id === customerId) {
           const userId = key.name.slice(prefix.length);

@@ -207,8 +207,12 @@ function validateTrialState(trial: TrialState, claims: TrialClaims): void {
     throw createTrialError("Trial access is not allowed");
   }
 
-  if (trial.used) {
-    throw createTrialError("Trial has already been used");
+  if (!trial.started) {
+    throw createTrialError("Trial has not been started");
+  }
+
+  if (trial.remaining <= 0) {
+    throw createTrialError("Trial allocation exhausted");
   }
 
   if (!trial.jti || trial.jti !== claims.jti) {

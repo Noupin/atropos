@@ -26,8 +26,15 @@ import {
 } from '../services/pipelineApi'
 import { consumeTrialRender } from '../services/paymentsApi'
 import {
+  consumeLocalTrialAllowance,
+  enqueuePendingTrialConsume,
+  getDeviceHash,
   getLicenseTokenForRender,
+  getPendingTrialConsumes,
   getStoredTrialToken,
+  getTrialUsageState,
+  markTrialLocked,
+  removePendingTrialConsume,
   setStoredTrialToken,
   type TrialTokenCacheEntry
 } from '../services/accessControl'
@@ -51,6 +58,19 @@ const isValidVideoUrl = (value: string): boolean => {
 
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value))
 
+const isLikelyNetworkError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false
+  }
+  const message = error.message.toLowerCase()
+  return (
+    message.includes('network') ||
+    message.includes('fetch') ||
+    message.includes('timeout') ||
+    message.includes('unable to contact')
+  )
+}
+
 type HomeProps = {
   registerSearch: (bridge: SearchBridge | null) => void
   initialState: HomePipelineState
@@ -65,10 +85,29 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
   const [isOpeningFolder, setIsOpeningFolder] = useState(false)
   const canAttemptToOpenFolder = useMemo(() => canOpenAccountClipsFolder(), [])
+  const deviceHash = useMemo(() => getDeviceHash(), [])
 
   useEffect(() => {
     setState(initialState)
   }, [initialState])
+
+  useEffect(() => {
+    void flushQueuedTrialConsumes()
+
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const handleOnline = () => {
+      void flushQueuedTrialConsumes()
+    }
+
+    window.addEventListener('online', handleOnline)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+    }
+  }, [flushQueuedTrialConsumes])
 
   const updateState = useCallback(
     (updater: (prev: HomePipelineState) => HomePipelineState) =>
@@ -81,6 +120,43 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       }),
     [onStateChange]
   )
+
+  const flushQueuedTrialConsumes = useCallback(async () => {
+    const pending = getPendingTrialConsumes()
+    if (!pending.length) {
+      return
+    }
+
+    for (const entry of pending) {
+      try {
+        await consumeTrialRender(entry.userId, entry.token, entry.deviceHash)
+        removePendingTrialConsume(entry.token)
+      } catch (error) {
+        if (error instanceof Error) {
+          const message = error.message.toLowerCase()
+          if (
+            message.includes('trial_invalid') ||
+            message.includes('trial_exhausted') ||
+            message.includes('trial_not_allowed')
+          ) {
+            markTrialLocked()
+            removePendingTrialConsume(entry.token)
+            continue
+          }
+          if (
+            message.includes('network') ||
+            message.includes('fetch') ||
+            message.includes('unable to contact')
+          ) {
+            break
+          }
+        }
+
+        console.warn('Failed to flush queued trial consumption.', error)
+        break
+      }
+    }
+  }, [])
 
   const {
     videoUrl,
@@ -631,9 +707,22 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
           if (trialEntry) {
             void (async () => {
               try {
-                await consumeTrialRender(trialEntry.userId, trialEntry.token)
+                await consumeTrialRender(trialEntry.userId, trialEntry.token, deviceHash)
+                await flushQueuedTrialConsumes()
               } catch (error) {
-                console.warn('Failed to consume trial token after render.', error)
+                if (isLikelyNetworkError(error)) {
+                  enqueuePendingTrialConsume({
+                    userId: trialEntry.userId,
+                    token: trialEntry.token,
+                    deviceHash,
+                    exp: trialEntry.exp,
+                    queuedAt: Date.now()
+                  })
+                  consumeLocalTrialAllowance()
+                } else {
+                  console.warn('Failed to consume trial token after render.', error)
+                  markTrialLocked()
+                }
               } finally {
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(new CustomEvent(SUBSCRIPTION_REFRESH_EVENT))
@@ -646,7 +735,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         }
       }
     },
-    [cleanupConnection, updateState]
+    [cleanupConnection, deviceHash, flushQueuedTrialConsumes, updateState]
   )
 
   const startRealProcessing = useCallback(
@@ -658,6 +747,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         awaitingReview: false
       }))
       cleanupConnection()
+
+      await flushQueuedTrialConsumes()
 
       if (!billingUserId) {
         updateState((prev) => ({
@@ -688,6 +779,27 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         }
       }
 
+      if (trialTokenEntry) {
+        const trialUsage = getTrialUsageState()
+        if (trialUsage.locked) {
+          updateState((prev) => ({
+            ...prev,
+            pipelineError: 'Trial access is locked on this device. Please subscribe to continue.',
+            isProcessing: false
+          }))
+          return
+        }
+        if (trialUsage.remaining <= 0) {
+          updateState((prev) => ({
+            ...prev,
+            pipelineError: 'All trial runs have been used on this device. Subscribe to continue rendering.',
+            isProcessing: false
+          }))
+          setStoredTrialToken(null)
+          return
+        }
+      }
+
       if (!trialTokenEntry && (!licenseToken || licenseToken.trim().length === 0)) {
         updateState((prev) => ({
           ...prev,
@@ -707,7 +819,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
           reviewMode: shouldPauseForReview,
           userId: billingUserId,
           licenseToken: trialTokenEntry ? null : licenseToken ?? null,
-          trialToken: trialTokenEntry?.token ?? null
+          trialToken: trialTokenEntry?.token ?? null,
+          deviceHash
         })
         if (trialTokenEntry) {
           activeTrialTokenRef.current = trialTokenEntry
@@ -759,6 +872,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       availableAccounts,
       billingUserId,
       cleanupConnection,
+      deviceHash,
+      flushQueuedTrialConsumes,
       handlePipelineEvent,
       updateState
     ]

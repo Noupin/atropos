@@ -235,11 +235,11 @@ def _validate_license_token(token: str, expected_user_id: str | None) -> None:
             )
 
 
-def _consume_trial_token(user_id: str, token: str) -> None:
+def _consume_trial_token(user_id: str, token: str, device_hash: str) -> None:
     response = _request_licensing(
         "POST",
         "/trial/consume",
-        json={"user_id": user_id, "token": token},
+        json={"user_id": user_id, "token": token, "device_hash": device_hash},
     )
     if response.status_code != status.HTTP_200_OK:
         _handle_licensing_error(response)
@@ -254,6 +254,7 @@ class RunRequest(BaseModel):
     user_id: str | None = Field(default=None)
     license_token: str | None = Field(default=None)
     trial_token: str | None = Field(default=None)
+    device_hash: str | None = Field(default=None)
 
     @field_validator("tone", mode="before")
     @classmethod
@@ -270,6 +271,7 @@ def _ensure_render_allowed(payload: RunRequest) -> None:
     user_id = _normalise_optional_str(payload.user_id)
     license_token = _normalise_optional_str(payload.license_token)
     trial_token = _normalise_optional_str(payload.trial_token)
+    device_hash = _normalise_optional_str(payload.device_hash)
 
     if license_token:
         _validate_license_token(license_token, user_id)
@@ -281,7 +283,12 @@ def _ensure_render_allowed(payload: RunRequest) -> None:
                 status.HTTP_400_BAD_REQUEST,
                 detail="user_id is required when using a trial token.",
             )
-        _consume_trial_token(user_id, trial_token)
+        if not device_hash:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="device_hash is required when using a trial token.",
+            )
+        _consume_trial_token(user_id, trial_token, device_hash)
         return
 
     raise HTTPException(

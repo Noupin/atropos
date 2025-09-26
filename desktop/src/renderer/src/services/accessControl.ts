@@ -31,6 +31,8 @@ type LicenseIssueResponse = {
 const DEVICE_HASH_STORAGE_KEY = 'atropos:device-hash'
 const LICENSE_STORAGE_KEY = 'atropos:license-token'
 const TRIAL_STORAGE_KEY = 'atropos:trial-token'
+const TRIAL_STATE_STORAGE_KEY = 'atropos:trial-state'
+const TRIAL_CONSUME_QUEUE_KEY = 'atropos:trial-consume-queue'
 
 export const TRIAL_UPDATE_EVENT = 'atropos:trial-token-updated'
 
@@ -47,8 +49,28 @@ const allowedStatuses: SubscriptionLifecycleStatus[] = [
   'paused'
 ]
 
+type TrialUsageState = {
+  started: boolean
+  total: number
+  remaining: number
+  usedAt: number | null
+  deviceHash: string | null
+  locked: boolean
+  lastSyncedAt: number | null
+}
+
+export type PendingTrialConsume = {
+  userId: string
+  token: string
+  deviceHash: string
+  exp: number
+  queuedAt: number
+}
+
 let cachedLicense: LicenseCacheEntry | null = null
 let cachedTrialToken: TrialTokenCacheEntry | null = null
+let cachedTrialState: TrialUsageState | null = null
+let cachedTrialQueue: PendingTrialConsume[] | null = null
 
 const textEncoder = new TextEncoder()
 
@@ -114,6 +136,136 @@ const getOrCreateDeviceHash = (): string => {
   deviceHashCache = generated
   writeStorageValue(DEVICE_HASH_STORAGE_KEY, generated)
   return generated
+}
+
+export const getDeviceHash = (): string => getOrCreateDeviceHash()
+
+const createDefaultTrialState = (): TrialUsageState => ({
+  started: false,
+  total: 3,
+  remaining: 3,
+  usedAt: null,
+  deviceHash: null,
+  locked: false,
+  lastSyncedAt: null
+})
+
+const normaliseTrialState = (candidate: Partial<TrialUsageState> | null | undefined): TrialUsageState => {
+  const defaults = createDefaultTrialState()
+  const totalValue =
+    typeof candidate?.total === 'number' && Number.isFinite(candidate.total)
+      ? Math.max(0, Math.floor(candidate.total))
+      : defaults.total
+  const remainingValue =
+    typeof candidate?.remaining === 'number' && Number.isFinite(candidate.remaining)
+      ? Math.max(0, Math.floor(candidate.remaining))
+      : defaults.remaining
+  const deviceHashValue =
+    typeof candidate?.deviceHash === 'string' && candidate.deviceHash.trim().length > 0
+      ? candidate.deviceHash.trim()
+      : defaults.deviceHash
+  const lockedValue = candidate?.locked === true
+  const lastSynced =
+    typeof candidate?.lastSyncedAt === 'number' && Number.isFinite(candidate.lastSyncedAt)
+      ? candidate.lastSyncedAt
+      : defaults.lastSyncedAt
+  const usedAtValue =
+    typeof candidate?.usedAt === 'number' && Number.isFinite(candidate.usedAt)
+      ? candidate.usedAt
+      : defaults.usedAt
+
+  const total = Math.max(totalValue, remainingValue)
+  const remaining = Math.min(remainingValue, total)
+  const startedValue = candidate?.started === true || remaining > 0
+
+  return {
+    started: startedValue,
+    total,
+    remaining,
+    usedAt: usedAtValue,
+    deviceHash: deviceHashValue,
+    locked: lockedValue,
+    lastSyncedAt: lastSynced
+  }
+}
+
+const loadTrialState = (): TrialUsageState => {
+  if (cachedTrialState) {
+    return { ...cachedTrialState }
+  }
+
+  const raw = readStorageValue(TRIAL_STATE_STORAGE_KEY)
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as Partial<TrialUsageState>
+      cachedTrialState = normaliseTrialState(parsed)
+    } catch (error) {
+      console.warn('Unable to parse cached trial usage state.', error)
+      cachedTrialState = createDefaultTrialState()
+    }
+  } else {
+    cachedTrialState = createDefaultTrialState()
+  }
+
+  if (!cachedTrialState.deviceHash) {
+    cachedTrialState = { ...cachedTrialState, deviceHash: getOrCreateDeviceHash() }
+  }
+
+  return { ...cachedTrialState }
+}
+
+const storeTrialState = (state: TrialUsageState): void => {
+  cachedTrialState = { ...state }
+  writeStorageValue(TRIAL_STATE_STORAGE_KEY, JSON.stringify(cachedTrialState))
+  dispatchTrialTokenEvent()
+}
+
+const normaliseQueueEntry = (candidate: Partial<PendingTrialConsume>): PendingTrialConsume | null => {
+  const userId = typeof candidate.userId === 'string' ? candidate.userId.trim() : ''
+  const token = typeof candidate.token === 'string' ? candidate.token.trim() : ''
+  const deviceHash = typeof candidate.deviceHash === 'string' ? candidate.deviceHash.trim() : ''
+  const exp =
+    typeof candidate.exp === 'number' && Number.isFinite(candidate.exp) ? candidate.exp : NaN
+  const queuedAt =
+    typeof candidate.queuedAt === 'number' && Number.isFinite(candidate.queuedAt)
+      ? candidate.queuedAt
+      : Date.now()
+
+  if (!userId || !token || !deviceHash || Number.isNaN(exp)) {
+    return null
+  }
+
+  return { userId, token, deviceHash, exp, queuedAt }
+}
+
+const loadTrialQueue = (): PendingTrialConsume[] => {
+  if (cachedTrialQueue) {
+    return [...cachedTrialQueue]
+  }
+
+  const raw = readStorageValue(TRIAL_CONSUME_QUEUE_KEY)
+  if (!raw) {
+    cachedTrialQueue = []
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Array<Partial<PendingTrialConsume>>
+    cachedTrialQueue = parsed
+      .map(normaliseQueueEntry)
+      .filter((entry): entry is PendingTrialConsume => Boolean(entry))
+  } catch (error) {
+    console.warn('Unable to parse queued trial consumption entries.', error)
+    cachedTrialQueue = []
+  }
+
+  return [...cachedTrialQueue]
+}
+
+const storeTrialQueue = (queue: PendingTrialConsume[]): void => {
+  cachedTrialQueue = [...queue]
+  writeStorageValue(TRIAL_CONSUME_QUEUE_KEY, JSON.stringify(cachedTrialQueue))
+  dispatchTrialTokenEvent()
 }
 
 const isLicenseEntryValid = (entry: LicenseCacheEntry | null): entry is LicenseCacheEntry => {
@@ -208,6 +360,12 @@ const dispatchTrialTokenEvent = (): void => {
   }
 }
 
+if (isWindowAvailable()) {
+  window.addEventListener('online', () => {
+    dispatchTrialTokenEvent()
+  })
+}
+
 const storeTrialCache = (entry: TrialTokenCacheEntry | null): void => {
   cachedTrialToken = entry
   if (entry) {
@@ -227,6 +385,124 @@ export const setStoredTrialToken = (entry: TrialTokenCacheEntry | null): void =>
     storeTrialCache(null)
   }
 }
+
+export const getTrialUsageState = (): TrialUsageState => loadTrialState()
+
+export const syncTrialUsageFromServer = (
+  snapshot: {
+    started?: boolean
+    total?: number
+    remaining?: number
+    used_at?: number | null
+    device_hash?: string | null
+  },
+  options?: { entitled?: boolean }
+): TrialUsageState => {
+  const current = loadTrialState()
+  const totalValue =
+    typeof snapshot.total === 'number' && Number.isFinite(snapshot.total)
+      ? Math.max(0, Math.floor(snapshot.total))
+      : current.total
+  const remainingValue =
+    typeof snapshot.remaining === 'number' && Number.isFinite(snapshot.remaining)
+      ? Math.max(0, Math.floor(snapshot.remaining))
+      : current.remaining
+  const usedAtValue =
+    snapshot.used_at === null
+      ? null
+      : typeof snapshot.used_at === 'number' && Number.isFinite(snapshot.used_at)
+        ? snapshot.used_at
+        : current.usedAt
+  const deviceHashValue = snapshot.device_hash?.trim()
+    ? snapshot.device_hash.trim()
+    : current.deviceHash ?? getOrCreateDeviceHash()
+  const startedValue = snapshot.started ?? current.started
+  const lockedValue = options?.entitled ? false : current.locked
+
+  const next = normaliseTrialState({
+    started: startedValue,
+    total: totalValue,
+    remaining: remainingValue,
+    usedAt: usedAtValue,
+    deviceHash: deviceHashValue,
+    locked: lockedValue,
+    lastSyncedAt: Date.now()
+  })
+
+  storeTrialState(next)
+  return next
+}
+
+export const updateTrialRemainingFromServer = (remaining: number): TrialUsageState => {
+  const current = loadTrialState()
+  const next = normaliseTrialState({
+    ...current,
+    remaining: Math.max(0, Math.floor(remaining)),
+    started: current.started || remaining > 0,
+    lastSyncedAt: Date.now()
+  })
+  storeTrialState(next)
+  return next
+}
+
+export const consumeLocalTrialAllowance = (): TrialUsageState => {
+  const current = loadTrialState()
+  const next = normaliseTrialState({
+    ...current,
+    remaining: Math.max(0, current.remaining - 1),
+    usedAt: Math.floor(Date.now() / 1000),
+    lastSyncedAt: current.lastSyncedAt
+  })
+  storeTrialState(next)
+  return next
+}
+
+export const markTrialLocked = (): TrialUsageState => {
+  const current = loadTrialState()
+  if (current.locked) {
+    return current
+  }
+  const next = normaliseTrialState({ ...current, locked: true, lastSyncedAt: current.lastSyncedAt })
+  storeTrialState(next)
+  return next
+}
+
+export const clearTrialLock = (): TrialUsageState => {
+  const current = loadTrialState()
+  if (!current.locked) {
+    return current
+  }
+  const next = normaliseTrialState({ ...current, locked: false, lastSyncedAt: current.lastSyncedAt })
+  storeTrialState(next)
+  return next
+}
+
+export const getPendingTrialConsumes = (): PendingTrialConsume[] => loadTrialQueue()
+
+export const enqueuePendingTrialConsume = (
+  entry: PendingTrialConsume
+): PendingTrialConsume[] => {
+  const normalized = normaliseQueueEntry(entry)
+  if (!normalized) {
+    return loadTrialQueue()
+  }
+  const queue = loadTrialQueue().filter((item) => item.token !== normalized.token)
+  queue.push(normalized)
+  storeTrialQueue(queue)
+  return [...queue]
+}
+
+export const removePendingTrialConsume = (token: string): PendingTrialConsume[] => {
+  const queue = loadTrialQueue().filter((item) => item.token !== token.trim())
+  storeTrialQueue(queue)
+  return [...queue]
+}
+
+export const clearPendingTrialConsumes = (): void => {
+  storeTrialQueue([])
+}
+
+export const hasPendingTrialConsumes = (): boolean => loadTrialQueue().length > 0
 
 const normalizeStatus = (value: string | null | undefined): SubscriptionLifecycleStatus => {
   if (!value) {

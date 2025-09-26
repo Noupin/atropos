@@ -15,7 +15,7 @@ import {
   verifyStripeSignature,
 } from "./stripe";
 import type { StripeSubscriptionSummary } from "./stripe";
-import type { UserRecord } from "./kv";
+import type { TrialState, UserRecord } from "./kv";
 import {
   createDefaultTrialState,
   findUserByStripeCustomerId,
@@ -60,13 +60,20 @@ interface LicenseIssueBody {
   device_hash: string;
 }
 
+interface TrialStartBody {
+  user_id: string;
+  device_hash: string;
+}
+
 interface TrialClaimBody {
   user_id: string;
+  device_hash: string;
 }
 
 interface TrialConsumeBody {
   user_id: string;
   token: string;
+  device_hash: string;
 }
 
 interface BillingPortalRequestBody {
@@ -85,7 +92,7 @@ const PORTAL_ELIGIBLE_SUBSCRIPTION_STATUSES = new Set([
 function cloneUserRecord(record: UserRecord): UserRecord {
   return {
     ...record,
-    trial: { ...record.trial },
+    trial: refreshTrialUsageFlags({ ...record.trial }),
   };
 }
 
@@ -97,21 +104,50 @@ function createMinimalUserRecord(): UserRecord {
     updated_at: Date.now(),
     epoch: 0,
     cancel_at_period_end: false,
-    trial: createDefaultTrialState(),
+    trial: refreshTrialUsageFlags(createDefaultTrialState()),
   };
 }
 
 function buildTrialResponse(trial: UserRecord["trial"]): {
   allowed: boolean;
-  used: boolean;
+  started: boolean;
+  total: number;
+  remaining: number;
   used_at: number | null;
+  device_hash: string | null;
   exp: number | null;
 } {
   return {
     allowed: trial.allowed,
-    used: trial.used,
+    started: trial.started,
+    total: trial.total,
+    remaining: trial.remaining,
     used_at: trial.used_at,
+    device_hash: trial.device_hash,
     exp: trial.exp ?? null,
+  };
+}
+
+const TRIAL_TOTAL_ALLOCATION = 3;
+
+function normaliseDeviceHash(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new HttpError(400, "invalid_request", "device_hash is required");
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new HttpError(400, "invalid_request", "device_hash is required");
+  }
+  return trimmed;
+}
+
+function refreshTrialUsageFlags(trial: TrialState): TrialState {
+  const remaining = Math.max(0, Math.min(trial.remaining, trial.total));
+  return {
+    ...trial,
+    remaining,
+    total: Math.max(trial.total, remaining, TRIAL_TOTAL_ALLOCATION),
+    used: remaining === 0,
   };
 }
 
@@ -436,7 +472,7 @@ async function handleSubscription(
   }
 
   if (!record) {
-    const trial = createDefaultTrialState();
+    const trial = refreshTrialUsageFlags(createDefaultTrialState());
     return jsonResponse(
       {
         status: "inactive",
@@ -721,10 +757,11 @@ async function handleIssue(
   return jsonResponse({ token: token.token, exp: token.exp }, 200, corsHeaders);
 }
 
-async function handleTrialClaim(
+async function handleTrialStart(
   env: Env,
   request: Request,
   corsHeaders: HeadersInit,
+  context: RequestContext,
 ): Promise<Response> {
   const body = await request.json().catch(() => {
     throw new HttpError(400, "invalid_request", "Body must be valid JSON");
@@ -734,44 +771,165 @@ async function handleTrialClaim(
     throw new HttpError(400, "invalid_request", "Body must be an object");
   }
 
-  const { user_id: rawUserId } = body as TrialClaimBody;
+  const { user_id: rawUserId, device_hash: rawDeviceHash } = body as TrialStartBody;
+
   if (typeof rawUserId !== "string" || rawUserId.trim().length === 0) {
     throw new HttpError(400, "invalid_request", "user_id is required");
   }
 
   const userId = rawUserId.trim();
+  const deviceHash = normaliseDeviceHash(rawDeviceHash);
+
+  const existingRecord = await getUserRecord(env, userId);
+  const baseRecord = existingRecord ? cloneUserRecord(existingRecord) : createMinimalUserRecord();
+
+  const entitled = isEntitled(
+    normalizeStatus(baseRecord.status),
+    baseRecord.current_period_end ?? null,
+  );
+
+  if (entitled) {
+    throw new HttpError(409, "already_subscribed", "Subscription already active");
+  }
+
+  if (!baseRecord.trial.allowed) {
+    throw new HttpError(403, "trial_not_allowed", "Trial is not allowed");
+  }
+
+  const existingHash = baseRecord.trial.device_hash;
+  if (baseRecord.trial.started && existingHash && existingHash !== deviceHash) {
+    throw new HttpError(
+      409,
+      "trial_already_started_on_other_device",
+      "Trial already started on another device",
+    );
+  }
+
+  const shouldPreserveRemaining =
+    baseRecord.trial.started && (!existingHash || existingHash === deviceHash);
+  const remaining = shouldPreserveRemaining
+    ? Math.min(baseRecord.trial.remaining, TRIAL_TOTAL_ALLOCATION)
+    : TRIAL_TOTAL_ALLOCATION;
+
+  const updatedTrial = refreshTrialUsageFlags({
+    ...baseRecord.trial,
+    started: true,
+    total: TRIAL_TOTAL_ALLOCATION,
+    remaining,
+    device_hash: existingHash ?? deviceHash,
+    jti: null,
+    exp: null,
+  });
+
+  const updatedRecord: UserRecord = {
+    ...baseRecord,
+    trial: updatedTrial,
+    updated_at: Date.now(),
+  };
+
+  await putUserRecord(env, userId, updatedRecord);
+
+  console.log(
+    `[${context.requestId}] Trial started for ${userId} on device ${deviceHash} (remaining=${updatedTrial.remaining})`,
+  );
+
+  return jsonResponse(
+    { started: true, total: updatedTrial.total, remaining: updatedTrial.remaining },
+    200,
+    corsHeaders,
+  );
+}
+
+async function handleTrialClaim(
+  env: Env,
+  request: Request,
+  corsHeaders: HeadersInit,
+  context: RequestContext,
+): Promise<Response> {
+  const body = await request.json().catch(() => {
+    throw new HttpError(400, "invalid_request", "Body must be valid JSON");
+  });
+
+  if (typeof body !== "object" || body === null) {
+    throw new HttpError(400, "invalid_request", "Body must be an object");
+  }
+
+  const { user_id: rawUserId, device_hash: rawDeviceHash } = body as TrialClaimBody;
+  if (typeof rawUserId !== "string" || rawUserId.trim().length === 0) {
+    throw new HttpError(400, "invalid_request", "user_id is required");
+  }
+
+  const userId = rawUserId.trim();
+  const deviceHash = normaliseDeviceHash(rawDeviceHash);
+
   const existingRecord = await getUserRecord(env, userId);
   const record: UserRecord = existingRecord
     ? cloneUserRecord(existingRecord)
     : createMinimalUserRecord();
 
-  if (record.trial.used) {
-    throw new HttpError(409, "trial_used", "Trial has already been used");
+  const entitled = isEntitled(
+    normalizeStatus(record.status),
+    record.current_period_end ?? null,
+  );
+
+  if (entitled) {
+    throw new HttpError(403, "trial_invalid", "Subscription already active");
   }
 
   if (!record.trial.allowed) {
     throw new HttpError(403, "trial_not_allowed", "Trial is not allowed");
   }
 
+  if (!record.trial.started) {
+    throw new HttpError(403, "trial_invalid", "Trial has not been started");
+  }
+
+  const storedDeviceHash = record.trial.device_hash;
+  if (storedDeviceHash && storedDeviceHash !== deviceHash) {
+    throw new HttpError(
+      409,
+      "trial_already_started_on_other_device",
+      "Trial already started on another device",
+    );
+  }
+
+  if (record.trial.remaining <= 0) {
+    throw new HttpError(409, "trial_exhausted", "Trial has been exhausted");
+  }
+
   const trialToken = await issueTrialToken(env, userId);
-  record.trial = {
+  const updatedTrial = refreshTrialUsageFlags({
     ...record.trial,
-    used: false,
-    used_at: null,
+    started: true,
+    device_hash: storedDeviceHash ?? deviceHash,
     jti: trialToken.jti,
     exp: trialToken.exp,
+  });
+
+  const updatedRecord: UserRecord = {
+    ...record,
+    trial: updatedTrial,
+    updated_at: Date.now(),
   };
-  record.updated_at = Date.now();
 
-  await putUserRecord(env, userId, record);
+  await putUserRecord(env, userId, updatedRecord);
 
-  return jsonResponse({ token: trialToken.token, exp: trialToken.exp }, 200, corsHeaders);
+  console.log(
+    `[${context.requestId}] Trial claim issued for ${userId} (remaining=${updatedTrial.remaining})`,
+  );
+
+  return jsonResponse(
+    { token: trialToken.token, exp: trialToken.exp, remaining: updatedTrial.remaining },
+    200,
+    corsHeaders,
+  );
 }
 
 async function handleTrialConsume(
   env: Env,
   request: Request,
   corsHeaders: HeadersInit,
+  context: RequestContext,
 ): Promise<Response> {
   const body = await request.json().catch(() => {
     throw new HttpError(400, "invalid_request", "Body must be valid JSON");
@@ -781,7 +939,7 @@ async function handleTrialConsume(
     throw new HttpError(400, "invalid_request", "Body must be an object");
   }
 
-  const { user_id: rawUserId, token } = body as TrialConsumeBody;
+  const { user_id: rawUserId, token, device_hash: rawDeviceHash } = body as TrialConsumeBody;
   if (typeof rawUserId !== "string" || rawUserId.trim().length === 0) {
     throw new HttpError(400, "invalid_request", "user_id is required");
   }
@@ -791,28 +949,53 @@ async function handleTrialConsume(
   }
 
   const userId = rawUserId.trim();
+  const deviceHash = normaliseDeviceHash(rawDeviceHash);
   const verification = await verifyTrialToken(env, token.trim());
 
   if (verification.claims.sub !== userId) {
     throw new HttpError(403, "trial_invalid", "Trial token does not match user");
   }
 
+  const record = cloneUserRecord(verification.record);
+
+  const storedDeviceHash = record.trial.device_hash;
+  if (storedDeviceHash && storedDeviceHash !== deviceHash) {
+    throw new HttpError(
+      409,
+      "trial_already_started_on_other_device",
+      "Trial already started on another device",
+    );
+  }
+
+  if (record.trial.remaining <= 0) {
+    throw new HttpError(403, "trial_invalid", "Trial balance exhausted");
+  }
+
+  const remaining = Math.max(0, record.trial.remaining - 1);
   const usedAt = Math.floor(Date.now() / 1000);
+
+  const updatedTrial = refreshTrialUsageFlags({
+    ...record.trial,
+    remaining,
+    used_at: usedAt,
+    jti: null,
+    exp: null,
+    device_hash: storedDeviceHash ?? deviceHash,
+  });
+
   const updatedRecord: UserRecord = {
-    ...cloneUserRecord(verification.record),
-    trial: {
-      ...verification.record.trial,
-      used: true,
-      used_at: usedAt,
-      jti: null,
-      exp: null,
-    },
+    ...record,
+    trial: updatedTrial,
     updated_at: Date.now(),
   };
 
   await putUserRecord(env, userId, updatedRecord);
 
-  return jsonResponse({ success: true }, 200, corsHeaders);
+  console.log(
+    `[${context.requestId}] Trial consume recorded for ${userId} (remaining=${updatedTrial.remaining})`,
+  );
+
+  return jsonResponse({ success: true, remaining: updatedTrial.remaining }, 200, corsHeaders);
 }
 
 async function handleHealth(
@@ -901,11 +1084,14 @@ export default {
           if (apiPath === "/license/issue") {
             return await handleIssue(env, request, corsHeaders);
           }
+          if (apiPath === "/trial/start") {
+            return await handleTrialStart(env, request, corsHeaders, context);
+          }
           if (apiPath === "/trial/claim") {
-            return await handleTrialClaim(env, request, corsHeaders);
+            return await handleTrialClaim(env, request, corsHeaders, context);
           }
           if (apiPath === "/trial/consume") {
-            return await handleTrialConsume(env, request, corsHeaders);
+            return await handleTrialConsume(env, request, corsHeaders, context);
           }
           break;
         }

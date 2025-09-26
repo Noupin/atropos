@@ -12,6 +12,7 @@ export type PipelineJobRequest = {
   userId?: string | null
   licenseToken?: string | null
   trialToken?: string | null
+  deviceHash?: string | null
 }
 
 export type PipelineJobResponse = {
@@ -59,6 +60,10 @@ export const startPipelineJob = async (request: PipelineJobRequest): Promise<Pip
 
       if (request.trialToken && request.trialToken.trim().length > 0) {
         payload.trial_token = request.trialToken.trim()
+      }
+
+      if (request.deviceHash && request.deviceHash.trim().length > 0) {
+        payload.device_hash = request.deviceHash.trim()
       }
 
       response = await fetch(url, {

@@ -155,8 +155,11 @@ export type SubscriptionLifecycleStatus =
 
 export interface TrialStatus {
   allowed: boolean
-  used: boolean
+  started: boolean
+  total: number
+  remaining: number
   usedAt: number | null
+  deviceHash: string | null
   exp: number | null
 }
 

@@ -183,6 +183,11 @@ export const buildTrialConsumeUrl = (): string => {
   return url.toString()
 }
 
+export const buildTrialStartUrl = (): string => {
+  const url = new URL('/trial/start', getBillingApiBaseUrl())
+  return url.toString()
+}
+
 export const buildCheckoutSessionUrl = (): string => {
   const url = new URL('/billing/checkout', getBillingApiBaseUrl())
   return url.toString()
