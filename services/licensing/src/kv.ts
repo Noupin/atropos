@@ -8,15 +8,28 @@ export interface UserRecord {
   plan_price_id?: string;
   cancel_at_period_end?: boolean;
   updated_at: number;
+  epoch: number;
 }
 
 export async function getUserRecord(env: Env, userId: string): Promise<UserRecord | null> {
   const raw = await env.LICENSING_KV.get(`user:${userId}`);
-  return raw ? (JSON.parse(raw) as UserRecord) : null;
+  if (!raw) {
+    return null;
+  }
+
+  const record = JSON.parse(raw) as UserRecord & { epoch?: number };
+  return {
+    ...record,
+    epoch: typeof record.epoch === "number" ? record.epoch : 0,
+  };
 }
 
 export async function putUserRecord(env: Env, userId: string, record: UserRecord): Promise<void> {
-  await env.LICENSING_KV.put(`user:${userId}`, JSON.stringify(record));
+  const normalized: UserRecord = {
+    ...record,
+    epoch: typeof record.epoch === "number" ? record.epoch : 0,
+  };
+  await env.LICENSING_KV.put(`user:${userId}`, JSON.stringify(normalized));
 }
 
 interface KVListResult {
@@ -45,10 +58,14 @@ export async function findUserByStripeCustomerId(
       }
 
       try {
-        const record = JSON.parse(raw) as UserRecord;
-        if (record.stripe_customer_id === customerId) {
+        const record = JSON.parse(raw) as UserRecord & { epoch?: number };
+        const normalized: UserRecord = {
+          ...record,
+          epoch: typeof record.epoch === "number" ? record.epoch : 0,
+        };
+        if (normalized.stripe_customer_id === customerId) {
           const userId = key.name.slice(prefix.length);
-          return { userId, record };
+          return { userId, record: normalized };
         }
       } catch (error) {
         console.warn("Failed to parse user record", key.name, error);

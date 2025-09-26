@@ -183,6 +183,8 @@ async function handleCheckout(
     current_period_end: userRecord?.current_period_end,
     plan_price_id: price,
     updated_at: Date.now(),
+    cancel_at_period_end: userRecord?.cancel_at_period_end ?? false,
+    epoch: userRecord?.epoch ?? 0,
   };
   await putUserRecord(env, userId, updated);
 
@@ -348,6 +350,7 @@ async function handleWebhook(
             plan_price_id: planPriceId,
             cancel_at_period_end: existing?.cancel_at_period_end ?? false,
             updated_at: Date.now(),
+            epoch: existing?.epoch ?? 0,
           });
           console.log(
             `[${context.requestId}] Checkout complete for ${userId} (${customerId}) subscription=${subscriptionId}`
@@ -399,6 +402,7 @@ async function handleWebhook(
           plan_price_id: planPriceId,
           cancel_at_period_end: cancelAtPeriodEnd,
           updated_at: updatedAt,
+          epoch: existingUser?.epoch ?? 0,
         });
         console.log(
           `[${context.requestId}] Subscription ${subscription.id} -> ${status}`
@@ -431,6 +435,7 @@ async function handleWebhook(
           existingUser?.plan_price_id ??
           subscription.items?.data?.[0]?.price?.id ??
           env.PRICE_ID_MONTHLY;
+        const previousEpoch = existingUser?.epoch ?? 0;
         await putUserRecord(env, userId, {
           email: existingUser?.email ?? subscription.customer_email ?? "",
           stripe_customer_id: customerId,
@@ -439,6 +444,7 @@ async function handleWebhook(
           plan_price_id: planPriceId,
           cancel_at_period_end: false,
           updated_at: updatedAt,
+          epoch: previousEpoch + 1,
         });
         console.log(
           `[${context.requestId}] Subscription ${subscription.id} canceled`
@@ -505,6 +511,7 @@ async function handleIssue(
     email: userRecord.email,
     tier,
     deviceHash,
+    epoch: userRecord.epoch,
   });
 
   return jsonResponse({ token: token.token, exp: token.exp }, 200, corsHeaders);
@@ -542,6 +549,10 @@ async function handleValidate(
   }
 
   const claims = await verifyLicenseToken(env, token);
+  const userRecord = await getUserRecord(env, claims.sub);
+  if (!userRecord || claims.epoch !== userRecord.epoch) {
+    throw new HttpError(401, "invalid_token", "Token is no longer valid");
+  }
   return jsonResponse({ status: "ok", claims }, 200, corsHeaders);
 }
 

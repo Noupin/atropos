@@ -11,6 +11,7 @@ export interface LicenseClaims {
   exp: number;
   jti: string;
   device_hash?: string;
+  epoch: number;
 }
 
 function textEncoder(): TextEncoder {
@@ -98,6 +99,7 @@ export interface IssueLicenseOptions {
   tier: string;
   deviceHash?: string;
   lifetimeSeconds?: number;
+  epoch: number;
 }
 
 export interface LicenseTokenResult {
@@ -114,7 +116,7 @@ export async function issueLicenseToken(env: Env, options: IssueLicenseOptions):
   };
 
   const issuedAt = Math.floor(Date.now() / 1000);
-  const lifetimeSeconds = options.lifetimeSeconds ?? 30 * 60;
+  const lifetimeSeconds = options.lifetimeSeconds ?? 600;
   const exp = issuedAt + lifetimeSeconds;
   const jti = crypto.randomUUID();
 
@@ -125,6 +127,7 @@ export async function issueLicenseToken(env: Env, options: IssueLicenseOptions):
     iat: issuedAt,
     exp,
     jti,
+    epoch: options.epoch,
     ...(options.deviceHash ? { device_hash: options.deviceHash } : {}),
   };
 
@@ -159,6 +162,9 @@ export async function verifyLicenseToken(env: Env, token: string): Promise<Licen
   }
 
   const payload = JSON.parse(new TextDecoder().decode(payloadBytes)) as LicenseClaims;
+  if (typeof payload.epoch !== "number") {
+    throw new HttpError(401, "invalid_token", "Token epoch is missing");
+  }
   const now = Math.floor(Date.now() / 1000);
   if (payload.exp <= now) {
     throw new HttpError(401, "token_expired", "Token is expired");
