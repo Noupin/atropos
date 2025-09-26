@@ -9,6 +9,7 @@ export interface UserRecord {
   cancel_at_period_end?: boolean;
   updated_at: number;
   epoch: number;
+  device_hash?: string;
 }
 
 export async function getUserRecord(env: Env, userId: string): Promise<UserRecord | null> {

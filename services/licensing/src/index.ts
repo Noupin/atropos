@@ -46,7 +46,7 @@ interface CheckoutRequestBody {
 
 interface LicenseIssueBody {
   user_id: string;
-  device_hash?: string;
+  device_hash: string;
 }
 
 interface BillingPortalRequestBody {
@@ -185,6 +185,7 @@ async function handleCheckout(
     updated_at: Date.now(),
     cancel_at_period_end: userRecord?.cancel_at_period_end ?? false,
     epoch: userRecord?.epoch ?? 0,
+    device_hash: userRecord?.device_hash,
   };
   await putUserRecord(env, userId, updated);
 
@@ -351,6 +352,7 @@ async function handleWebhook(
             cancel_at_period_end: existing?.cancel_at_period_end ?? false,
             updated_at: Date.now(),
             epoch: existing?.epoch ?? 0,
+            device_hash: existing?.device_hash,
           });
           console.log(
             `[${context.requestId}] Checkout complete for ${userId} (${customerId}) subscription=${subscriptionId}`
@@ -403,6 +405,7 @@ async function handleWebhook(
           cancel_at_period_end: cancelAtPeriodEnd,
           updated_at: updatedAt,
           epoch: existingUser?.epoch ?? 0,
+          device_hash: existingUser?.device_hash,
         });
         console.log(
           `[${context.requestId}] Subscription ${subscription.id} -> ${status}`
@@ -445,6 +448,7 @@ async function handleWebhook(
           cancel_at_period_end: false,
           updated_at: updatedAt,
           epoch: previousEpoch + 1,
+          device_hash: existingUser?.device_hash,
         });
         console.log(
           `[${context.requestId}] Subscription ${subscription.id} canceled`
@@ -488,6 +492,11 @@ async function handleIssue(
     throw new HttpError(400, "invalid_request", "user_id is required");
   }
 
+  if (typeof deviceHash !== "string" || deviceHash.trim().length === 0) {
+    throw new HttpError(400, "invalid_request", "device_hash is required");
+  }
+  const normalizedDeviceHash = deviceHash.trim();
+
   const userRecord = await getUserRecord(env, userId);
   if (!userRecord) {
     throw new HttpError(
@@ -495,6 +504,13 @@ async function handleIssue(
       "user_not_found",
       "User has no active subscription"
     );
+  }
+
+  if (
+    userRecord.device_hash &&
+    userRecord.device_hash !== normalizedDeviceHash
+  ) {
+    throw new HttpError(403, "device_mismatch", "Device hash mismatch");
   }
 
   if (!isEntitled(userRecord.status, userRecord.current_period_end)) {
@@ -505,12 +521,21 @@ async function handleIssue(
     );
   }
 
+  if (!userRecord.device_hash) {
+    const updatedRecord = {
+      ...userRecord,
+      device_hash: normalizedDeviceHash,
+      updated_at: Date.now(),
+    };
+    await putUserRecord(env, userId, updatedRecord);
+  }
+
   const tier = env.TIER ?? "pro";
   const token = await issueLicenseToken(env, {
     userId,
     email: userRecord.email,
     tier,
-    deviceHash,
+    deviceHash: normalizedDeviceHash,
     epoch: userRecord.epoch,
   });
 
