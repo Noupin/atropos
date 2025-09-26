@@ -163,6 +163,9 @@ export async function createCustomer(
 export interface StripeSubscriptionSummary {
   id: string;
   status?: string | null;
+  current_period_end?: number | null;
+  cancel_at_period_end?: boolean | null;
+  metadata?: Record<string, string> | null;
 }
 
 interface StripeSubscriptionListResponse {
