@@ -158,6 +158,7 @@ describe('access control service', () => {
     mockConfig.apiUrl = null
 
     storeTrialState({
+      allowed: true,
       started: true,
       total: 3,
       remaining: 2,
@@ -170,6 +171,24 @@ describe('access control service', () => {
     expect(result.allowed).toBe(true)
     expect(result.subscriptionStatus).toBe('trialing')
     expect(result.expiresAt).toBeNull()
+  })
+
+  it('rejects cached trials when the trial is disallowed', async () => {
+    mockConfig.useMock = false
+    mockConfig.apiUrl = null
+
+    storeTrialState({
+      allowed: false,
+      started: false,
+      total: 3,
+      remaining: 0,
+      usedAt: null,
+      deviceHash: 'device-abc'
+    })
+
+    await expect(verifyDesktopAccess()).rejects.toThrow(
+      'Access control API URL is not configured.'
+    )
   })
 
   it('throws when the shared secret is missing', async () => {
@@ -190,6 +209,7 @@ describe('access control service', () => {
 
   it('persists trial state snapshots to localStorage', () => {
     const snapshot = storeTrialState({
+      allowed: true,
       started: true,
       total: 5,
       remaining: 4,
@@ -198,6 +218,7 @@ describe('access control service', () => {
     })
 
     expect(snapshot).toEqual({
+      allowed: true,
       started: true,
       total: 5,
       remaining: 4,
@@ -207,6 +228,7 @@ describe('access control service', () => {
 
     const cached = getCachedTrialState()
     expect(cached).toEqual({
+      allowed: true,
       started: true,
       total: 5,
       remaining: 4,
@@ -221,6 +243,7 @@ describe('access control service', () => {
 
   it('clears stored trial state when null is provided', () => {
     storeTrialState({
+      allowed: true,
       started: true,
       total: 3,
       remaining: 1,

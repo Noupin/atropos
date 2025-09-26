@@ -165,6 +165,7 @@ export interface SubscriptionStatus {
 }
 
 export interface SubscriptionTrialState {
+  allowed: boolean
   started: boolean
   total: number
   remaining: number

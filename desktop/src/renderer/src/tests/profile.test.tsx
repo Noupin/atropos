@@ -168,23 +168,25 @@ describe('Profile page', () => {
     paymentsMocks.createBillingPortalSession.mockReset()
     paymentsMocks.createBillingPortalSession.mockResolvedValue({ url: 'https://stripe.test/portal' })
 
-    trialMocks.startTrial.mockReset()
-    trialMocks.startTrial.mockResolvedValue({
+  trialMocks.startTrial.mockReset()
+  trialMocks.startTrial.mockResolvedValue({
+    allowed: true,
+    started: true,
+    total: 3,
+    remaining: 3,
+    usedAt: null,
+    deviceHash: 'device-123'
+  })
+    trialMocks.claimTrial.mockReset()
+  trialMocks.claimTrial.mockResolvedValue({
+    token: { token: 'trial-token', exp: Math.floor(Date.now() / 1000) + 900 },
+    snapshot: {
+      allowed: true,
       started: true,
       total: 3,
-      remaining: 3,
+      remaining: 2,
       usedAt: null,
       deviceHash: 'device-123'
-    })
-    trialMocks.claimTrial.mockReset()
-    trialMocks.claimTrial.mockResolvedValue({
-      token: { token: 'trial-token', exp: Math.floor(Date.now() / 1000) + 900 },
-      snapshot: {
-        started: true,
-        total: 3,
-        remaining: 2,
-        usedAt: null,
-        deviceHash: 'device-123'
       }
     })
 
@@ -551,6 +553,7 @@ describe('Profile page', () => {
       trialEndsAt: null,
       latestInvoiceUrl: null,
       trial: {
+        allowed: true,
         started: false,
         total: 3,
         remaining: 3,
@@ -579,6 +582,40 @@ describe('Profile page', () => {
     await waitFor(() => expect(trialMocks.startTrial).toHaveBeenCalledWith('atropos-desktop-dev'))
   })
 
+  it('hides trial onboarding when the trial is not allowed', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null,
+      trial: {
+        allowed: false,
+        started: false,
+        total: 3,
+        remaining: 0,
+        usedAt: null,
+        deviceHash: null
+      }
+    })
+
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: false,
+        status: 'inactive',
+        reason: 'Subscription required to continue using Atropos.'
+      }
+    })
+
+    expect(await screen.findByRole('button', { name: /^Subscribe$/i })).toBeInTheDocument()
+    expect(screen.queryByText(/Try Atropos free with three renders/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Start 3-video Trial/i })).not.toBeInTheDocument()
+    expect(trialMocks.startTrial).not.toHaveBeenCalled()
+  })
+
   it('shows remaining trial renders without manual actions once the trial has started', async () => {
     paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
       status: 'inactive',
@@ -589,6 +626,7 @@ describe('Profile page', () => {
       trialEndsAt: null,
       latestInvoiceUrl: null,
       trial: {
+        allowed: true,
         started: true,
         total: 3,
         remaining: 2,
@@ -626,6 +664,7 @@ describe('Profile page', () => {
       trialEndsAt: null,
       latestInvoiceUrl: null,
       trial: {
+        allowed: true,
         started: true,
         total: 3,
         remaining: 0,

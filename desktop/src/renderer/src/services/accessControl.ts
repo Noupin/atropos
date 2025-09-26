@@ -16,6 +16,7 @@ type SubscriptionApiResponse = {
   current_period_end?: number | null
   cancel_at_period_end?: boolean | null
   trial?: {
+    allowed?: boolean
     started?: boolean
     total?: number
     remaining?: number
@@ -40,6 +41,7 @@ export type TrialTokenCacheEntry = {
 }
 
 export type TrialStateSnapshot = {
+  allowed: boolean
   started: boolean
   total: number
   remaining: number
@@ -224,6 +226,7 @@ const storeTrialTokenCache = (entry: TrialTokenCacheEntry | null): void => {
 
 const normalizeTrialSnapshot = (input: unknown): TrialStateSnapshot => {
   const snapshot: TrialStateSnapshot = {
+    allowed: true,
     started: false,
     total: TRIAL_DEFAULT_TOTAL,
     remaining: TRIAL_DEFAULT_TOTAL,
@@ -236,6 +239,10 @@ const normalizeTrialSnapshot = (input: unknown): TrialStateSnapshot => {
   }
 
   const record = input as Record<string, unknown>
+
+  if (typeof record.allowed === 'boolean') {
+    snapshot.allowed = record.allowed
+  }
 
   if (typeof record.started === 'boolean') {
     snapshot.started = record.started
@@ -269,6 +276,11 @@ const normalizeTrialSnapshot = (input: unknown): TrialStateSnapshot => {
   const rawDevice = record.device_hash ?? record.deviceHash
   if (typeof rawDevice === 'string' && rawDevice.trim().length > 0) {
     snapshot.deviceHash = rawDevice.trim()
+  }
+
+  if (!snapshot.allowed) {
+    snapshot.started = false
+    snapshot.remaining = 0
   }
 
   return snapshot
@@ -320,6 +332,7 @@ const trialStateFromCache = (entry: TrialStateCacheEntry | null): TrialStateSnap
     return null
   }
   return {
+    allowed: entry.allowed,
     started: entry.started,
     total: entry.total,
     remaining: entry.remaining,
@@ -492,7 +505,7 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
   const trialAccessFromCache = (): AccessCheckResult | null => {
     const trialToken = getCachedTrialToken()
     const trialState = getCachedTrialState()
-    if (trialState && trialState.started && trialState.remaining > 0) {
+    if (trialState && trialState.allowed && trialState.started && trialState.remaining > 0) {
       const expiresAtIso =
         trialToken && isTrialTokenActive(trialToken)
           ? new Date(trialToken.exp * 1000).toISOString()

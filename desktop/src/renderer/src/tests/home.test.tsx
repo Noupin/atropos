@@ -150,7 +150,14 @@ describe('Home account selection', () => {
     claimTrialMock.mockReset()
     claimTrialMock.mockResolvedValue({
       token: { token: 'trial-token', exp: Math.floor(Date.now() / 1000) + 900 },
-      snapshot: { started: true, total: 3, remaining: 2, usedAt: null, deviceHash: 'device-123' }
+      snapshot: {
+        allowed: true,
+        started: true,
+        total: 3,
+        remaining: 2,
+        usedAt: null,
+        deviceHash: 'device-123'
+      }
     })
     consumeTrialMock.mockReset()
     consumeTrialMock.mockResolvedValue({ remaining: 1 })
@@ -226,6 +233,7 @@ describe('Home account selection', () => {
 
   it('automatically claims a trial token when renders remain', async () => {
     getCachedTrialStateMock.mockReturnValue({
+      allowed: true,
       started: true,
       total: 3,
       remaining: 2,

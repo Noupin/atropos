@@ -41,12 +41,15 @@ export function normalizeTrialState(trial?: Partial<TrialState> | null): TrialSt
   const total = Number.isFinite(totalRaw) && totalRaw > 0
     ? Math.floor(totalRaw)
     : DEFAULT_TRIAL_TOTAL;
-  const remaining = normalizeRemaining(total, trial?.remaining);
-  return {
-    allowed: trial?.allowed ?? true,
-    started: trial?.started ?? false,
+  const allowed = trial?.allowed ?? true;
+  const started = allowed ? trial?.started ?? false : false;
+  const remaining = started ? normalizeRemaining(total, trial?.remaining) : allowed ? total : 0;
+
+  const normalized: TrialState = {
+    allowed,
+    started,
     total,
-    remaining: trial?.started ? remaining : total,
+    remaining,
     used_at:
       typeof trial?.used_at === "number" && Number.isFinite(trial.used_at)
         ? trial.used_at
@@ -61,6 +64,15 @@ export function normalizeTrialState(trial?: Partial<TrialState> | null): TrialSt
         ? trial.device_hash.trim()
         : null,
   };
+
+  if (!normalized.allowed) {
+    normalized.started = false;
+    normalized.remaining = 0;
+    normalized.jti = null;
+    normalized.exp = null;
+  }
+
+  return normalized;
 }
 
 export async function getUserRecord(env: Env, userId: string): Promise<UserRecord | null> {

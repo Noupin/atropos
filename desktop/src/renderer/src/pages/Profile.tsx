@@ -54,6 +54,7 @@ const normalizeBillingError = (value: string): string => {
 const DEFAULT_TRIAL_TOTAL = 3
 
 const DEFAULT_TRIAL_STATE: SubscriptionTrialState = {
+  allowed: true,
   started: false,
   total: DEFAULT_TRIAL_TOTAL,
   remaining: DEFAULT_TRIAL_TOTAL,
@@ -68,6 +69,7 @@ const normalizeTrialStateForUi = (
     return null
   }
   return {
+    allowed: snapshot.allowed,
     started: snapshot.started,
     total: snapshot.total,
     remaining: snapshot.remaining,
@@ -1130,11 +1132,13 @@ const Profile: FC<ProfileProps> = ({
   }, [accessStatus, subscriptionStatus?.status])
 
   const effectiveTrialStatus = trialStatus ?? DEFAULT_TRIAL_STATE
-  const hasTrialStarted = effectiveTrialStatus.started
+  const isTrialAllowed = effectiveTrialStatus.allowed
+  const hasTrialStarted = isTrialAllowed && effectiveTrialStatus.started
   const trialRemaining = effectiveTrialStatus.remaining
   const trialTotal = effectiveTrialStatus.total
   const hasTrialAccess = hasTrialStarted && trialRemaining > 0
   const isTrialExhausted = hasTrialStarted && trialRemaining <= 0
+  const shouldShowTrialCta = !hasEntitledSubscription && isTrialAllowed
 
   const accessVariantKey = isCheckingAccess
     ? 'neutral'
@@ -1307,6 +1311,12 @@ const Profile: FC<ProfileProps> = ({
     setTrialError(null)
     if (!billingUserId) {
       setTrialError('Billing is not configured for this installation.')
+      return
+    }
+
+    const current = trialStatus ?? DEFAULT_TRIAL_STATE
+    if (!current.allowed) {
+      setTrialError('Trial is no longer available for this account.')
       return
     }
 
@@ -1579,7 +1589,7 @@ const Profile: FC<ProfileProps> = ({
             {subscriptionError ? (
               <p className="text-xs font-medium text-[color:var(--error-strong)]">{subscriptionError}</p>
             ) : null}
-            {!hasEntitledSubscription ? (
+            {shouldShowTrialCta ? (
               <div className="flex flex-col gap-2 rounded-lg border border-dashed border-white/15 bg-black/10 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-semibold text-[var(--fg)]">
@@ -1590,7 +1600,7 @@ const Profile: FC<ProfileProps> = ({
                 </div>
                 {trialError ? (
                   <p className="text-xs font-medium text-[color:var(--error-strong)]">{trialError}</p>
-                ) : null}
+            ) : null}
                 <div className="flex flex-wrap gap-2">
                   {!hasTrialStarted ? (
                     <button
@@ -1610,10 +1620,10 @@ const Profile: FC<ProfileProps> = ({
                     ? 'Reserve three single-use renders tied to this device. A subscription unlocks unlimited processing.'
                     : isTrialExhausted
                       ? 'You have used all trial renders. Subscribe to continue processing videos without limits.'
-                      : 'Trial renders are applied automatically the next time you process a video.'}
-                </p>
-              </div>
-            ) : null}
+            : 'Trial renders are applied automatically the next time you process a video.'}
+              </p>
+            </div>
+          ) : null}
             <div className="flex flex-col gap-2 pt-1">
               <button
                 type="button"

@@ -29,6 +29,7 @@ const mockSubscriptionStatus = (): SubscriptionStatus => ({
   trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
   latestInvoiceUrl: 'https://stripe.test/invoice/mock',
   trial: {
+    allowed: true,
     started: true,
     total: 3,
     remaining: 3,
@@ -44,6 +45,7 @@ const toSubscriptionTrialState = (
     return null
   }
   return {
+    allowed: snapshot.allowed,
     started: snapshot.started,
     total: snapshot.total,
     remaining: snapshot.remaining,

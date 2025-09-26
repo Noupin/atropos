@@ -107,6 +107,21 @@ function normalizeStatus(status: string | null | undefined): string {
   return status ? status.toLowerCase() : "unknown";
 }
 
+const SUBSCRIPTION_HISTORY_STATUSES = new Set([
+  "active",
+  "trialing",
+  "past_due",
+  "unpaid",
+  "canceled",
+  "grace_period",
+  "paused",
+]);
+
+function hasSubscriptionHistory(status: string | null | undefined): boolean {
+  const normalized = normalizeStatus(status);
+  return SUBSCRIPTION_HISTORY_STATUSES.has(normalized);
+}
+
 function isEntitled(status: string, currentPeriodEnd?: number | null): boolean {
   const normalized = normalizeStatus(status);
   if (normalized !== "active" && normalized !== "trialing") {
@@ -157,10 +172,21 @@ function mergeUserRecord(
         trial: normalizeTrialState(null),
       };
 
+  const normalizedTrial = normalizeTrialState(updates.trial ?? base.trial);
+  const resolvedStatus = updates.status ?? base.status;
+  const trialWasDisabled = base.trial.allowed === false;
+  const shouldDisableTrial =
+    trialWasDisabled || hasSubscriptionHistory(resolvedStatus) || hasSubscriptionHistory(base.status);
+  const mergedTrial: TrialState = {
+    ...normalizedTrial,
+    allowed: shouldDisableTrial ? false : normalizedTrial.allowed,
+  };
+
   return {
     ...base,
     ...updates,
-    trial: updates.trial ?? base.trial,
+    status: resolvedStatus,
+    trial: mergedTrial,
   };
 }
 
@@ -445,6 +471,7 @@ async function handleSubscription(
         current_period_end: null,
         cancel_at_period_end: false,
         trial: {
+          allowed: trial.allowed,
           started: trial.started,
           total: trial.total,
           remaining: trial.remaining,
@@ -469,6 +496,7 @@ async function handleSubscription(
       current_period_end: currentPeriodEnd,
       cancel_at_period_end: cancelAtPeriodEnd,
       trial: {
+        allowed: trial.allowed,
         started: trial.started,
         total: trial.total,
         remaining: trial.remaining,
