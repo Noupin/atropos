@@ -119,12 +119,17 @@ export async function createBillingPortalSession(
   env: Env,
   customerId: string,
   returnUrl?: string,
+  configurationId?: string,
   idempotencyKey?: string,
 ): Promise<StripePortalSessionResponse> {
   const params = new URLSearchParams();
   params.set("customer", customerId);
   if (returnUrl ?? env.RETURN_URL_SUCCESS) {
     params.set("return_url", returnUrl ?? env.RETURN_URL_SUCCESS!);
+  }
+
+  if (configurationId) {
+    params.set("configuration", configurationId);
   }
 
   return stripeRequest<StripePortalSessionResponse>(
