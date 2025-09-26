@@ -151,6 +151,7 @@ export type SubscriptionLifecycleStatus =
   | 'incomplete'
   | 'incomplete_expired'
   | 'unpaid'
+  | 'paused'
 
 export interface SubscriptionStatus {
   status: SubscriptionLifecycleStatus

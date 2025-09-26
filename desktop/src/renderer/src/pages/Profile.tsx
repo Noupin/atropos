@@ -8,6 +8,7 @@ import {
   type AccountSummary,
   type AuthPingSummary,
   type SearchBridge,
+  type SubscriptionLifecycleStatus,
   type SubscriptionStatus,
   type SupportedPlatform
 } from '../types'
@@ -43,6 +44,14 @@ const normalizeBillingError = (value: string): string => {
 
   return `${message}${suffix} Try refreshing or update your billing information below.`
 }
+
+const PORTAL_ELIGIBLE_STATUSES = new Set<SubscriptionLifecycleStatus>([
+  'active',
+  'trialing',
+  'past_due',
+  'unpaid',
+  'paused'
+])
 
 const formatTimestamp = (value: string | null | undefined): string => {
   if (!value) {
@@ -932,6 +941,7 @@ const Profile: FC<ProfileProps> = ({
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false)
   const [isStartingCheckout, setIsStartingCheckout] = useState(false)
   const [isOpeningPortal, setIsOpeningPortal] = useState(false)
+  const refreshOnFocusRef = useRef(false)
 
   const billingUserId = useMemo(() => getAccessControlConfig().clientId.trim(), [])
 
@@ -1080,6 +1090,32 @@ const Profile: FC<ProfileProps> = ({
   const billingEmail = accessStatus?.customerEmail ?? null
   const billingEmailLabel = billingEmail
 
+  const effectiveSubscriptionStatus = useMemo<SubscriptionLifecycleStatus>(() => {
+    if (subscriptionStatus?.status) {
+      return subscriptionStatus.status
+    }
+    if (accessStatus?.status) {
+      return accessStatus.status
+    }
+    return 'inactive'
+  }, [accessStatus?.status, subscriptionStatus?.status])
+
+  const shouldOpenPortal = PORTAL_ELIGIBLE_STATUSES.has(effectiveSubscriptionStatus)
+
+  const primaryCtaLabel = shouldOpenPortal
+    ? isOpeningPortal
+      ? 'Opening portal…'
+      : 'Manage billing'
+    : isStartingCheckout
+      ? 'Redirecting…'
+      : 'Subscribe'
+
+  const primaryCtaDisabled = shouldOpenPortal ? isOpeningPortal : isStartingCheckout
+
+  const primaryCtaDescription = shouldOpenPortal
+    ? 'Manage billing opens the Stripe customer portal for existing subscriptions.'
+    : 'Subscribe opens Stripe checkout to start a new plan.'
+
   const handleRefreshBilling = useCallback(async () => {
     await loadSubscriptionStatus()
     try {
@@ -1090,6 +1126,25 @@ const Profile: FC<ProfileProps> = ({
       setSubscriptionError(normalizeBillingError(message))
     }
   }, [loadSubscriptionStatus, onRefreshAccessStatus])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const handleFocus = (): void => {
+      if (refreshOnFocusRef.current) {
+        refreshOnFocusRef.current = false
+        void handleRefreshBilling()
+      }
+    }
+
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [handleRefreshBilling])
 
   const handleStartCheckout = useCallback(async () => {
     setSubscriptionError(null)
@@ -1104,18 +1159,21 @@ const Profile: FC<ProfileProps> = ({
     }
 
     setIsStartingCheckout(true)
+    refreshOnFocusRef.current = false
     try {
       const session = await createCheckoutSession({
         userId: billingUserId,
         email: billingEmail
       })
       if (typeof window !== 'undefined' && session.url) {
+        refreshOnFocusRef.current = true
         window.open(session.url, '_blank', 'noopener')
       }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unable to start the checkout session.'
       setSubscriptionError(message)
+      refreshOnFocusRef.current = false
     } finally {
       setIsStartingCheckout(false)
     }
@@ -1129,15 +1187,18 @@ const Profile: FC<ProfileProps> = ({
     }
 
     setIsOpeningPortal(true)
+    refreshOnFocusRef.current = false
     try {
       const session = await createBillingPortalSession({ userId: billingUserId })
       if (typeof window !== 'undefined' && session.url) {
+        refreshOnFocusRef.current = true
         window.open(session.url, '_blank', 'noopener')
       }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unable to open the billing portal.'
       setSubscriptionError(message)
+      refreshOnFocusRef.current = false
     } finally {
       setIsOpeningPortal(false)
     }
@@ -1366,34 +1427,21 @@ const Profile: FC<ProfileProps> = ({
               <p className="text-xs font-medium text-[color:var(--error-strong)]">{subscriptionError}</p>
             ) : null}
             <div className="flex flex-col gap-2 pt-1">
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleStartCheckout()
-                  }}
-                  className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
-                  disabled={isStartingCheckout}
-                >
-                  {isStartingCheckout ? 'Redirecting…' : 'Subscribe with Stripe'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
+              <button
+                type="button"
+                onClick={() => {
+                  if (shouldOpenPortal) {
                     void handleOpenBillingPortal()
-                  }}
-                  className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
-                  disabled={isOpeningPortal}
-                >
-                  {isOpeningPortal ? 'Opening portal…' : 'Manage billing'}
-                </button>
-              </div>
-              <p className="text-[10px] text-[var(--muted)]">
-                <span className="font-semibold text-[var(--fg)]">Subscribe with Stripe</span> starts a new
-                plan, while{' '}
-                <span className="font-semibold text-[var(--fg)]">Manage billing</span> opens the Stripe
-                customer portal for existing subscriptions.
-              </p>
+                  } else {
+                    void handleStartCheckout()
+                  }
+                }}
+                className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
+                disabled={primaryCtaDisabled}
+              >
+                {primaryCtaLabel}
+              </button>
+              <p className="text-[10px] text-[var(--muted)]">{primaryCtaDescription}</p>
               <p className="text-[10px] text-[var(--muted)]">
                 Payments are processed securely by Stripe. After updating your subscription, use Refresh
                 to sync access.

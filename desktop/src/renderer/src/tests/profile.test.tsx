@@ -190,7 +190,7 @@ describe('Profile page', () => {
     expect(screen.getByText('Profile')).toBeInTheDocument()
     expect(screen.getByText(/Connected platforms across/i)).toHaveTextContent('1/1')
     expect(paymentsMocks.fetchSubscriptionStatus).toHaveBeenCalledWith('atropos-desktop-dev')
-    expect(screen.getByRole('button', { name: /Subscribe with Stripe/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Manage billing/i })).toBeInTheDocument()
 
     const creatorCard = screen.getAllByTestId('account-card-account-1')[0]
     const scope = within(creatorCard)
@@ -367,9 +367,19 @@ describe('Profile page', () => {
   })
 
   it('opens Stripe checkout when subscribing', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null
+    })
+
     renderProfile()
 
-    const checkoutButton = screen.getByRole('button', { name: /Subscribe with Stripe/i })
+    const checkoutButton = await screen.findByRole('button', { name: /^Subscribe$/i })
     fireEvent.click(checkoutButton)
 
     await waitFor(() => expect(paymentsMocks.createCheckoutSession).toHaveBeenCalledTimes(1))
@@ -378,6 +388,11 @@ describe('Profile page', () => {
       email: 'owner@example.com'
     })
     expect(window.open).toHaveBeenCalledWith('https://stripe.test/checkout', '_blank', 'noopener')
+
+    window.dispatchEvent(new Event('focus'))
+
+    await waitFor(() => expect(paymentsMocks.fetchSubscriptionStatus).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(refreshAccessStatusMock).toHaveBeenCalledTimes(1))
   })
 
   it('opens the billing portal when managing billing', async () => {
@@ -391,6 +406,11 @@ describe('Profile page', () => {
       userId: 'atropos-desktop-dev'
     })
     expect(window.open).toHaveBeenCalledWith('https://stripe.test/portal', '_blank', 'noopener')
+
+    window.dispatchEvent(new Event('focus'))
+
+    await waitFor(() => expect(paymentsMocks.fetchSubscriptionStatus).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(refreshAccessStatusMock).toHaveBeenCalledTimes(1))
   })
 })
 
