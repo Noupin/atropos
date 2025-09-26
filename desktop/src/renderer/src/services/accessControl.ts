@@ -251,9 +251,13 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
     exp: nowSeconds + config.tokenTtlSeconds
   }
 
-  if (config.useMock || !config.apiUrl) {
+  if (config.useMock) {
     await new Promise((resolve) => setTimeout(resolve, 120))
     return mockAccessResponse(payload)
+  }
+
+  if (!config.apiUrl) {
+    throw new Error('Access control API URL is not configured.')
   }
 
   const baseUrl = new URL(config.apiUrl)

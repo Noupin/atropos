@@ -1,9 +1,9 @@
 import { webcrypto } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AccessJwtPayload } from '../types'
 
 const mockConfig = {
-  apiUrl: null,
+  apiUrl: null as string | null,
   audience: 'atropos-access',
   clientId: 'test-client',
   clientVersion: '1.0.0',
@@ -26,6 +26,11 @@ describe('access control service', () => {
       configurable: true,
       value: webcrypto
     })
+  })
+
+  beforeEach(() => {
+    mockConfig.useMock = true
+    mockConfig.apiUrl = null
   })
 
   afterAll(() => {
@@ -62,6 +67,15 @@ describe('access control service', () => {
     expect(result.allowed).toBe(true)
     expect(result.subscriptionStatus).toBe('active')
     expect(result.customerEmail).toBe('demo-user@example.com')
+  })
+
+  it('fails when the access API URL is missing and mocks are disabled', async () => {
+    mockConfig.useMock = false
+    mockConfig.apiUrl = null
+
+    await expect(verifyDesktopAccess()).rejects.toThrow(
+      'Access control API URL is not configured.'
+    )
   })
 
   it('throws when the shared secret is missing', async () => {
