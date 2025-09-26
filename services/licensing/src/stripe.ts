@@ -35,23 +35,31 @@ async function stripeRequest<T>(
   env: Env,
   path: string,
   method: string,
-  body: URLSearchParams,
+  body?: URLSearchParams,
   idempotencyKey?: string,
 ): Promise<T> {
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-    "Content-Type": "application/x-www-form-urlencoded",
   };
+
+  if (body && method !== "GET") {
+    headers["Content-Type"] = "application/x-www-form-urlencoded";
+  }
 
   if (idempotencyKey) {
     headers["Idempotency-Key"] = idempotencyKey;
   }
 
-  const response = await fetch(`https://api.stripe.com${path}`, {
+  const init: RequestInit = {
     method,
     headers,
-    body,
-  });
+  };
+
+  if (body && method !== "GET") {
+    init.body = body;
+  }
+
+  const response = await fetch(`https://api.stripe.com${path}`, init);
 
   const text = await response.text();
   const json = text ? (JSON.parse(text) as T & { error?: { message: string; type: string } }) : {};
@@ -145,6 +153,32 @@ export async function createCustomer(
     params,
     idempotencyKey,
   );
+}
+
+export interface StripeSubscriptionSummary {
+  id: string;
+  status?: string | null;
+}
+
+interface StripeSubscriptionListResponse {
+  data?: StripeSubscriptionSummary[];
+}
+
+export async function listCustomerSubscriptions(
+  env: Env,
+  customerId: string,
+): Promise<StripeSubscriptionSummary[]> {
+  const params = new URLSearchParams();
+  params.set("customer", customerId);
+  params.set("status", "all");
+
+  const response = await stripeRequest<StripeSubscriptionListResponse>(
+    env,
+    `/v1/subscriptions?${params.toString()}`,
+    "GET",
+  );
+
+  return response.data ?? [];
 }
 
 export interface StripeWebhookVerificationResult {
