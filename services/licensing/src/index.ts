@@ -122,14 +122,14 @@ function hasSubscriptionHistory(status: string | null | undefined): boolean {
   return SUBSCRIPTION_HISTORY_STATUSES.has(normalized);
 }
 
-function isEntitled(status: string, currentPeriodEnd?: number | null): boolean {
+export function isEntitled(status: string, currentPeriodEnd?: number | null): boolean {
   const normalized = normalizeStatus(status);
   if (normalized !== "active" && normalized !== "trialing") {
     return false;
   }
 
-  if (typeof currentPeriodEnd !== "number") {
-    return false;
+  if (typeof currentPeriodEnd !== "number" || !Number.isFinite(currentPeriodEnd)) {
+    return true;
   }
 
   const now = Math.floor(Date.now() / 1000);
