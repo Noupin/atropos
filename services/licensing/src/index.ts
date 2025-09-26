@@ -10,8 +10,10 @@ import {
   createBillingPortalSession,
   createCheckoutSession,
   createCustomer,
+  listCustomerSubscriptions,
   verifyStripeSignature,
 } from "./stripe";
+import type { StripeSubscriptionSummary } from "./stripe";
 import {
   findUserByStripeCustomerId,
   getUserRecord,
@@ -53,6 +55,14 @@ interface BillingPortalRequestBody {
   user_id?: string;
   return_url?: string;
 }
+
+const PORTAL_ELIGIBLE_SUBSCRIPTION_STATUSES = new Set([
+  "active",
+  "trialing",
+  "past_due",
+  "unpaid",
+  "paused",
+]);
 
 function getAllowedOrigins(env: Env): string[] {
   const origins = (env.CORS_ALLOW_ORIGINS ?? "")
@@ -147,7 +157,37 @@ async function handleCheckout(
   const customerIdempotencyKey = `${idempotencyRoot}:customer`;
   const checkoutIdempotencyKey = `${idempotencyRoot}:checkout`;
 
-  let stripeCustomerId = userRecord?.stripe_customer_id;
+  const existingCustomerId = userRecord?.stripe_customer_id;
+  if (existingCustomerId) {
+    const subscriptions = await listCustomerSubscriptions(env, existingCustomerId);
+    const hasBillableSubscription = subscriptions.some(
+      (subscription: StripeSubscriptionSummary) => {
+        const normalized = subscription.status?.toLowerCase() ?? null;
+        return (
+          normalized !== null &&
+          PORTAL_ELIGIBLE_SUBSCRIPTION_STATUSES.has(normalized)
+        );
+      },
+    );
+
+    if (hasBillableSubscription) {
+      const portalIdempotencyKey = `${idempotencyRoot}:portal`;
+      const portal = await createBillingPortalSession(
+        env,
+        existingCustomerId,
+        successUrl ?? env.RETURN_URL_SUCCESS,
+        portalIdempotencyKey,
+      );
+
+      console.log(
+        `[${context.requestId}] Redirecting ${userId} to portal due to existing subscription`,
+      );
+
+      return jsonResponse({ portal_url: portal.url }, 200, corsHeaders);
+    }
+  }
+
+  let stripeCustomerId = existingCustomerId;
   if (!stripeCustomerId) {
     const customer = await createCustomer(
       env,
