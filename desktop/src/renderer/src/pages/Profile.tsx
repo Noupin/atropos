@@ -28,6 +28,9 @@ const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
   instagram: 'instagram_session.json'
 }
 
+const MISSING_BILLING_EMAIL_ERROR =
+  'A billing email address is required before starting checkout.'
+
 const normalizeBillingError = (value: string): string => {
   const message = value.trim()
 
@@ -938,6 +941,7 @@ const Profile: FC<ProfileProps> = ({
   const [isCreateAccountOpen, setIsCreateAccountOpen] = useState(false)
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus | null>(null)
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null)
+  const [billingEmailInput, setBillingEmailInput] = useState('')
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false)
   const [isStartingCheckout, setIsStartingCheckout] = useState(false)
   const [isOpeningPortal, setIsOpeningPortal] = useState(false)
@@ -963,6 +967,10 @@ const Profile: FC<ProfileProps> = ({
     registerSearch(null)
     return () => registerSearch(null)
   }, [registerSearch])
+
+  useEffect(() => {
+    setBillingEmailInput(accessStatus?.customerEmail ?? '')
+  }, [accessStatus?.customerEmail])
 
   const loadSubscriptionStatus = useCallback(async () => {
     if (!billingUserId) {
@@ -1109,8 +1117,8 @@ const Profile: FC<ProfileProps> = ({
   const subscriptionPlanName = hasEntitledSubscription
     ? activePlanLabel ?? 'Current plan'
     : activePlanLabel ?? 'Not subscribed'
-  const billingEmail = accessStatus?.customerEmail ?? null
-  const billingEmailLabel = billingEmail
+  const billingEmail = billingEmailInput.trim()
+  const billingEmailLabel = billingEmail.length > 0 ? billingEmail : null
 
   const canManageBilling = hasEntitledSubscription
 
@@ -1122,11 +1130,15 @@ const Profile: FC<ProfileProps> = ({
       ? 'Redirecting…'
       : 'Subscribe'
 
-  const primaryCtaDisabled = canManageBilling ? isOpeningPortal : isStartingCheckout
+  const primaryCtaDisabled = canManageBilling
+    ? isOpeningPortal
+    : isStartingCheckout || billingEmail.length === 0
 
   const primaryCtaDescription = canManageBilling
     ? 'Manage billing opens the Stripe customer portal for existing subscriptions.'
-    : 'Subscribe opens Stripe checkout to start a new plan.'
+    : billingEmail.length > 0
+      ? 'Subscribe opens Stripe checkout to start a new plan.'
+      : 'Enter a billing email address to enable Stripe checkout.'
 
   const handleRefreshBilling = useCallback(async () => {
     await loadSubscriptionStatus()
@@ -1166,7 +1178,7 @@ const Profile: FC<ProfileProps> = ({
     }
 
     if (!billingEmail) {
-      setSubscriptionError('A billing email address is required before starting checkout.')
+      setSubscriptionError(MISSING_BILLING_EMAIL_ERROR)
       return
     }
 
@@ -1390,6 +1402,29 @@ const Profile: FC<ProfileProps> = ({
                   <span className="font-semibold text-[var(--fg)]">Billing email:</span> {billingEmailLabel}
                 </p>
               ) : null}
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
+                Billing email address
+                <input
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  value={billingEmailInput}
+                  onChange={(event) => {
+                    setBillingEmailInput(event.target.value)
+                    setSubscriptionError((current) =>
+                      current === MISSING_BILLING_EMAIL_ERROR ? null : current
+                    )
+                  }}
+                  placeholder="name@example.com"
+                  className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                />
+              </label>
+              <p className="text-[11px] text-[var(--muted)]">
+                Stripe uses this email to send receipts and manage your subscription. We'll prefill it
+                when starting checkout.
+              </p>
             </div>
             {isLoadingSubscription ? (
               <p className="text-xs text-[var(--muted)]">Checking Stripe subscription…</p>

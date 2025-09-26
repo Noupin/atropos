@@ -386,6 +386,7 @@ describe('Profile page', () => {
       }
     })
 
+    expect(await screen.findByLabelText(/Billing email address/i)).toHaveValue('owner@example.com')
     const checkoutButton = await screen.findByRole('button', { name: /^Subscribe$/i })
     fireEvent.click(checkoutButton)
 
@@ -400,6 +401,46 @@ describe('Profile page', () => {
 
     await waitFor(() => expect(paymentsMocks.fetchSubscriptionStatus).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(refreshAccessStatusMock).toHaveBeenCalledTimes(1))
+  })
+
+  it('allows entering a billing email before subscribing when none is stored', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null
+    })
+
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: false,
+        status: 'inactive',
+        reason: 'Subscription required to continue using Atropos.',
+        customerEmail: null
+      }
+    })
+
+    const emailField = await screen.findByLabelText(/Billing email address/i)
+    expect(emailField).toHaveValue('')
+
+    const subscribeButton = await screen.findByRole('button', { name: /^Subscribe$/i })
+    expect(subscribeButton).toBeDisabled()
+
+    fireEvent.change(emailField, { target: { value: 'new-owner@example.com' } })
+    expect(subscribeButton).not.toBeDisabled()
+
+    fireEvent.click(subscribeButton)
+
+    await waitFor(() => expect(paymentsMocks.createCheckoutSession).toHaveBeenCalledTimes(1))
+    expect(paymentsMocks.createCheckoutSession).toHaveBeenCalledWith({
+      userId: 'atropos-desktop-dev',
+      email: 'new-owner@example.com'
+    })
+    expect(window.open).toHaveBeenCalledWith('https://stripe.test/checkout', '_blank', 'noopener')
   })
 
   it('prefers the access entitlement when determining the billing CTA', async () => {
