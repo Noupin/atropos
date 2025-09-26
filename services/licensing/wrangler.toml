@@ -14,6 +14,7 @@ custom_domain = true
 
 [env.dev.vars]
 TIER = "pro"
+CORS_ALLOW_ORIGINS = "http://localhost:5173,http://localhost:3000"
 
 [env.prod]
 zone_id = "06ff1a42b61b530829c3877a31a39c7b2"
@@ -25,6 +26,7 @@ custom_domain = true
 
 [env.prod.vars]
 TIER = "pro"
+CORS_ALLOW_ORIGINS = "https://atropos-video.com"
 
 # KV namespace bindings are populated after Terraform outputs the namespace id.
 # Replace the placeholder ids below with the values from Terraform outputs.
