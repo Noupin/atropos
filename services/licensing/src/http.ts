@@ -85,58 +85,91 @@ export function baseCorsHeaders(
   origin: string | null,
   allowedOrigins: string[],
 ): HeadersInit {
-  const allowAllOrigins = allowedOrigins.includes("*");
-
-  if (!origin) {
-    return {};
-  }
-
-  if (allowAllOrigins || allowedOrigins.includes(origin)) {
-    return {
-      "access-control-allow-origin": origin,
-      "access-control-allow-credentials": "true",
-    } satisfies HeadersInit;
-  }
-
-  throw new HttpError(403, "forbidden_origin", "Origin is not allowed");
+  const allowedOrigin = resolveAllowedOrigin(origin, allowedOrigins);
+  return createCorsHeaders(allowedOrigin);
 }
 
 export function corsPreflightResponse(
   origin: string | null,
   allowedOrigins: string[],
 ): Response {
-  const allowAllOrigins = allowedOrigins.includes("*");
+  try {
+    const allowedOrigin = resolveAllowedOrigin(origin, allowedOrigins);
+    const headers: Record<string, string> = {
+      ...createCorsHeaders(allowedOrigin),
+      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type",
+      "Access-Control-Max-Age": "86400",
+    };
 
-  if (!origin) {
-    if (allowAllOrigins) {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          "access-control-allow-origin": "*",
-          "access-control-allow-methods": "GET,POST,OPTIONS",
-          "access-control-allow-headers":
-            "content-type,authorization,idempotency-key",
-          "access-control-max-age": "600",
-        },
-      });
-    }
-
-    return new Response(null, { status: 403 });
-  }
-
-  if (allowAllOrigins || allowedOrigins.includes(origin)) {
     return new Response(null, {
       status: 204,
-      headers: {
-        "access-control-allow-origin": origin,
-        "access-control-allow-credentials": "true",
-        "access-control-allow-methods": "GET,POST,OPTIONS",
-        "access-control-allow-headers":
-          "content-type,authorization,idempotency-key",
-        "access-control-max-age": "600",
-      },
+      headers,
     });
+  } catch (error) {
+    if (error instanceof HttpError) {
+      const headers: Record<string, string> = {
+        ...fallbackCorsHeaders(origin, allowedOrigins),
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        "Access-Control-Max-Age": "86400",
+      };
+
+      return new Response(null, { status: error.status, headers });
+    }
+
+    throw error;
+  }
+}
+
+function resolveAllowedOrigin(
+  origin: string | null,
+  allowedOrigins: string[],
+): string {
+  const normalizedOrigin = origin?.trim() ?? null;
+  const allowAllOrigins = allowedOrigins.includes("*");
+
+  if (allowAllOrigins) {
+    return "*";
   }
 
-  return new Response(null, { status: 403 });
+  if (normalizedOrigin && allowedOrigins.includes(normalizedOrigin)) {
+    return normalizedOrigin;
+  }
+
+  if (!normalizedOrigin) {
+    return allowedOrigins[0] ?? "*";
+  }
+
+  throw new HttpError(403, "forbidden_origin", "Origin is not allowed");
+}
+
+function createCorsHeaders(allowedOrigin: string): HeadersInit {
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    Vary: "Origin",
+  };
+
+  if (allowedOrigin !== "*") {
+    headers["Access-Control-Allow-Credentials"] = "true";
+  }
+
+  return headers;
+}
+
+export function fallbackCorsHeaders(
+  origin: string | null,
+  allowedOrigins: string[],
+): HeadersInit {
+  const allowAllOrigins = allowedOrigins.includes("*");
+
+  if (allowAllOrigins) {
+    return createCorsHeaders("*");
+  }
+
+  if (origin && allowedOrigins.includes(origin)) {
+    return createCorsHeaders(origin);
+  }
+
+  return createCorsHeaders(allowedOrigins[0] ?? "*");
 }

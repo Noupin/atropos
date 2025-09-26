@@ -3,6 +3,7 @@ import {
   baseCorsHeaders,
   corsPreflightResponse,
   errorResponse,
+  fallbackCorsHeaders,
   HttpError,
   jsonResponse,
 } from "./http";
@@ -342,7 +343,8 @@ async function handleSubscription(
 async function handleWebhook(
   env: Env,
   request: Request,
-  context: RequestContext
+  context: RequestContext,
+  corsHeaders: HeadersInit
 ): Promise<Response> {
   const rawBody = await request.text();
   await verifyStripeSignature(
@@ -511,7 +513,7 @@ async function handleWebhook(
     );
   }
 
-  return new Response(null, { status: 200 });
+  return new Response(null, { status: 200, headers: corsHeaders });
 }
 
 async function handleIssue(
@@ -635,9 +637,24 @@ export default {
       return corsPreflightResponse(origin, allowedOrigins);
     }
 
+    let corsHeaders: HeadersInit;
+
+    try {
+      corsHeaders = baseCorsHeaders(origin, allowedOrigins);
+    } catch (error) {
+      if (error instanceof HttpError) {
+        return errorResponse(
+          error,
+          context,
+          fallbackCorsHeaders(origin, allowedOrigins)
+        );
+      }
+
+      throw error;
+    }
+
     try {
       const apiPath = url.pathname;
-      const corsHeaders = baseCorsHeaders(origin, allowedOrigins);
 
       switch (request.method) {
         case "POST": {
@@ -648,7 +665,7 @@ export default {
             return await handlePortal(env, url, corsHeaders, context, request);
           }
           if (apiPath === "/billing/webhook") {
-            return await handleWebhook(env, request, context);
+            return await handleWebhook(env, request, context, corsHeaders);
           }
           if (apiPath === "/license/issue") {
             return await handleIssue(env, request, corsHeaders);
@@ -680,13 +697,6 @@ export default {
 
       throw new HttpError(404, "not_found", "Route not found");
     } catch (error) {
-      const corsHeaders = (() => {
-        try {
-          return baseCorsHeaders(origin, allowedOrigins);
-        } catch {
-          return {};
-        }
-      })();
       return errorResponse(error, context, corsHeaders);
     }
   },
