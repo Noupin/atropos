@@ -501,13 +501,11 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
   const trialAccessFromCache = (): AccessCheckResult | null => {
     const trialToken = getCachedTrialToken()
     const trialState = getCachedTrialState()
-    if (
-      trialState &&
-      trialState.started &&
-      trialState.remaining > 0 &&
-      isTrialTokenActive(trialToken)
-    ) {
-      const expiresAtIso = new Date(trialToken.exp * 1000).toISOString()
+    if (trialState && trialState.started && trialState.remaining > 0) {
+      const expiresAtIso =
+        trialToken && isTrialTokenActive(trialToken)
+          ? new Date(trialToken.exp * 1000).toISOString()
+          : null
       return {
         allowed: true,
         status: 'trialing',
@@ -557,8 +555,11 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
   if (!entitled) {
     storeLicenseCache(null)
 
-    if (trialSnapshot.started && trialSnapshot.remaining > 0 && isTrialTokenActive(trialToken)) {
-      const expiresAtIso = new Date(trialToken.exp * 1000).toISOString()
+    if (trialSnapshot.started && trialSnapshot.remaining > 0) {
+      const expiresAtIso =
+        trialToken && isTrialTokenActive(trialToken)
+          ? new Date(trialToken.exp * 1000).toISOString()
+          : null
       return {
         allowed: true,
         status: 'trialing',
@@ -572,7 +573,7 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
     }
 
     const reason = trialSnapshot.started
-      ? `Trial remaining: ${trialSnapshot.remaining} of ${trialSnapshot.total}. Claim a trial render from your profile to continue.`
+      ? `Trial remaining: ${trialSnapshot.remaining} of ${trialSnapshot.total}. Subscribe to continue using Atropos.`
       : 'Active subscription required to continue using Atropos.'
 
     return {

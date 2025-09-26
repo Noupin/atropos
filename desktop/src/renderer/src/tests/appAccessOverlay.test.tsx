@@ -128,22 +128,25 @@ describe('App access overlay behaviour', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('surfaces trial guidance when renders remain', async () => {
+  it('allows navigation when trial renders remain', async () => {
     verifyDesktopAccessMock.mockResolvedValueOnce({
-      allowed: false,
-      status: 'inactive',
-      reason: 'Trial remaining: 2 of 3. Claim a trial render from your profile to continue.'
+      allowed: true,
+      status: 'trialing',
+      subscriptionStatus: 'trialing',
+      subscriptionPlan: 'trial',
+      reason: null,
+      checkedAt: new Date().toISOString(),
+      expiresAt: null,
+      customerEmail: null
     })
 
     render(
-      <MemoryRouter initialEntries={['/']}> 
+      <MemoryRouter initialEntries={['/']}>
         <App searchInputRef={{ current: null }} />
       </MemoryRouter>
     )
 
     await waitFor(() => expect(verifyDesktopAccessMock).toHaveBeenCalled())
-    expect(
-      await screen.findByText(/Trial remaining: 2 of 3/i)
-    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Open billing settings/i })).not.toBeInTheDocument()
   })
 })

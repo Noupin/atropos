@@ -24,8 +24,8 @@ import {
   subscribeToPipelineEvents,
   type PipelineEventMessage
 } from '../services/pipelineApi'
-import { consumeTrial, getActiveTrialToken } from '../services/trialAccess'
-import type { TrialTokenCacheEntry } from '../services/accessControl'
+import { claimTrial, consumeTrial, getActiveTrialToken } from '../services/trialAccess'
+import { getCachedTrialState, type TrialTokenCacheEntry } from '../services/accessControl'
 import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
 import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
@@ -661,7 +661,38 @@ const Home: FC<HomeProps> = ({
       cleanupConnection()
 
       try {
-        const trialToken = getActiveTrialToken()
+        let trialToken = getActiveTrialToken()
+        const trialState = getCachedTrialState()
+        const shouldAttemptTrial =
+          !trialToken &&
+          Boolean(billingUserId) &&
+          trialState?.started &&
+          trialState.remaining > 0
+
+        if (shouldAttemptTrial) {
+          try {
+            const { token } = await claimTrial(billingUserId)
+            trialToken = token
+          } catch (claimError) {
+            const message =
+              claimError instanceof Error && claimError.message
+                ? claimError.message
+                : 'Unable to reserve a trial render automatically.'
+            const normalized = message.toLowerCase()
+            if (normalized.includes('already_subscribed') || normalized.includes('already subscribed')) {
+              console.info('Skipping trial claim because a subscription is active.')
+            } else {
+              pendingTrialTokenRef.current = null
+              updateState((prev) => ({
+                ...prev,
+                pipelineError: message,
+                isProcessing: false
+              }))
+              return
+            }
+          }
+        }
+
         const toneOverride =
           availableAccounts.find((account) => account.id === accountId)?.tone ?? null
         const { jobId } = await startPipelineJob({

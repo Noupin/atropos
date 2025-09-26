@@ -21,17 +21,8 @@ import {
   createCheckoutSession,
   fetchSubscriptionStatus
 } from '../services/paymentsApi'
-import {
-  claimTrial,
-  startTrial
-} from '../services/trialAccess'
-import {
-  getCachedTrialState,
-  getCachedTrialToken,
-  isTrialTokenActive,
-  TrialStateSnapshot,
-  TrialTokenCacheEntry
-} from '../services/accessControl'
+import { startTrial } from '../services/trialAccess'
+import { getCachedTrialState, TrialStateSnapshot } from '../services/accessControl'
 import { getAccessControlConfig } from '../config/accessControl'
 
 const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
@@ -87,14 +78,6 @@ const normalizeTrialStateForUi = (
 
 const getInitialTrialState = (): SubscriptionTrialState | null =>
   normalizeTrialStateForUi(getCachedTrialState())
-
-const getInitialTrialToken = (): TrialTokenCacheEntry | null => {
-  const cached = getCachedTrialToken()
-  if (!cached) {
-    return null
-  }
-  return isTrialTokenActive(cached) ? cached : null
-}
 
 const PORTAL_ELIGIBLE_STATUSES = new Set<SubscriptionLifecycleStatus>([
   'active',
@@ -994,10 +977,8 @@ const Profile: FC<ProfileProps> = ({
   const [isStartingCheckout, setIsStartingCheckout] = useState(false)
   const [isOpeningPortal, setIsOpeningPortal] = useState(false)
   const [trialStatus, setTrialStatus] = useState<SubscriptionTrialState | null>(getInitialTrialState)
-  const [trialToken, setTrialToken] = useState<TrialTokenCacheEntry | null>(getInitialTrialToken)
   const [trialError, setTrialError] = useState<string | null>(null)
   const [isStartingTrial, setIsStartingTrial] = useState(false)
-  const [isClaimingTrial, setIsClaimingTrial] = useState(false)
   const refreshOnFocusRef = useRef(false)
 
   const billingUserId = useMemo(() => getAccessControlConfig().clientId.trim(), [])
@@ -1045,8 +1026,6 @@ const Profile: FC<ProfileProps> = ({
       setSubscriptionError(null)
       const snapshot = normalizeTrialStateForUi(getCachedTrialState())
       setTrialStatus(status.trial ?? snapshot ?? DEFAULT_TRIAL_STATE)
-      const cachedToken = getCachedTrialToken()
-      setTrialToken(cachedToken && isTrialTokenActive(cachedToken) ? cachedToken : null)
       setTrialError(null)
       return status
     } catch (error) {
@@ -1055,8 +1034,6 @@ const Profile: FC<ProfileProps> = ({
       setSubscriptionError(normalizeBillingError(message))
       const snapshot = normalizeTrialStateForUi(getCachedTrialState())
       setTrialStatus(snapshot ?? DEFAULT_TRIAL_STATE)
-      const cachedToken = getCachedTrialToken()
-      setTrialToken(cachedToken && isTrialTokenActive(cachedToken) ? cachedToken : null)
       return null
     } finally {
       setIsLoadingSubscription(false)
@@ -1138,13 +1115,26 @@ const Profile: FC<ProfileProps> = ({
 
   const hasEntitledSubscription = useMemo(() => {
     if (accessStatus) {
-      return accessStatus.allowed
+      if (!accessStatus.allowed) {
+        return false
+      }
+      if (accessStatus.subscriptionStatus === 'trialing' && accessStatus.subscriptionPlan === 'trial') {
+        return false
+      }
+      return true
     }
     if (subscriptionStatus?.status) {
       return PORTAL_ELIGIBLE_STATUSES.has(subscriptionStatus.status)
     }
     return false
   }, [accessStatus, subscriptionStatus?.status])
+
+  const effectiveTrialStatus = trialStatus ?? DEFAULT_TRIAL_STATE
+  const hasTrialStarted = effectiveTrialStatus.started
+  const trialRemaining = effectiveTrialStatus.remaining
+  const trialTotal = effectiveTrialStatus.total
+  const hasTrialAccess = hasTrialStarted && trialRemaining > 0
+  const isTrialExhausted = hasTrialStarted && trialRemaining <= 0
 
   const accessVariantKey = isCheckingAccess
     ? 'neutral'
@@ -1156,9 +1146,11 @@ const Profile: FC<ProfileProps> = ({
           : resolvedLifecycleStatus === 'inactive'
             ? 'neutral'
             : 'warning'
-      : accessStatus || subscriptionStatus || accessError
-        ? 'error'
-        : 'neutral'
+      : hasTrialAccess
+        ? 'warning'
+        : accessStatus || subscriptionStatus || accessError
+          ? 'error'
+          : 'neutral'
   const accessVariant = accessBadgeVariants[accessVariantKey] ?? accessBadgeVariants.neutral
 
   const accessBadgeLabel = isCheckingAccess
@@ -1171,11 +1163,15 @@ const Profile: FC<ProfileProps> = ({
           : resolvedLifecycleStatus === 'grace_period'
             ? 'Grace period'
             : 'Subscription attention'
-      : accessStatus
-        ? 'Access disabled'
-        : accessError
-          ? 'Access error'
-          : 'Access required'
+      : hasTrialAccess
+        ? `Trial access — ${trialRemaining} left`
+        : hasTrialStarted
+          ? 'Trial exhausted'
+          : accessStatus
+            ? 'Access disabled'
+            : accessError
+              ? 'Access error'
+              : 'Access required'
 
   const activePlanLabel = accessStatus?.subscriptionPlan ?? subscriptionStatus?.planName ?? null
 
@@ -1185,7 +1181,9 @@ const Profile: FC<ProfileProps> = ({
       ? activePlanLabel
         ? `Access granted – ${activePlanLabel}`
         : 'Access granted.'
-      : accessStatus?.reason ?? accessError ?? 'Subscription required to continue using Atropos.'
+      : hasTrialAccess
+        ? `Trial access active — ${trialRemaining} of ${trialTotal} renders remaining.`
+        : accessStatus?.reason ?? accessError ?? 'Subscription required to continue using Atropos.'
 
   const accessRenewalLabel = accessStatus?.expiresAt
     ? new Date(accessStatus.expiresAt).toLocaleString()
@@ -1196,21 +1194,6 @@ const Profile: FC<ProfileProps> = ({
     : activePlanLabel ?? 'Not subscribed'
   const billingEmail = billingEmailInput.trim()
   const billingEmailLabel = billingEmail.length > 0 ? billingEmail : null
-  const activeTrialToken = useMemo(
-    () => (trialToken && isTrialTokenActive(trialToken) ? trialToken : null),
-    [trialToken]
-  )
-  const trialTokenExpiryLabel = useMemo(() => {
-    if (!activeTrialToken) {
-      return null
-    }
-    return new Date(activeTrialToken.exp * 1000).toLocaleString()
-  }, [activeTrialToken])
-  const effectiveTrialStatus = trialStatus ?? DEFAULT_TRIAL_STATE
-  const hasTrialStarted = effectiveTrialStatus.started
-  const trialRemaining = effectiveTrialStatus.remaining
-  const trialTotal = effectiveTrialStatus.total
-  const isTrialExhausted = hasTrialStarted && trialRemaining <= 0
 
   const canManageBilling = hasEntitledSubscription
 
@@ -1333,7 +1316,6 @@ const Profile: FC<ProfileProps> = ({
       const normalized = normalizeTrialStateForUi(snapshot) ?? DEFAULT_TRIAL_STATE
       setTrialStatus(normalized)
       setSubscriptionStatus((prev) => (prev ? { ...prev, trial: normalized } : prev))
-      setTrialToken(null)
       await loadSubscriptionStatus()
       try {
         await onRefreshAccessStatus()
@@ -1351,40 +1333,6 @@ const Profile: FC<ProfileProps> = ({
       setIsStartingTrial(false)
     }
   }, [billingUserId, loadSubscriptionStatus, onRefreshAccessStatus])
-
-  const handleClaimTrial = useCallback(async () => {
-    setTrialError(null)
-    if (!billingUserId) {
-      setTrialError('Billing is not configured for this installation.')
-      return
-    }
-
-    setIsClaimingTrial(true)
-    try {
-      const { token, snapshot } = await claimTrial(billingUserId)
-      const normalized = normalizeTrialStateForUi(snapshot) ?? DEFAULT_TRIAL_STATE
-      setTrialStatus(normalized)
-      setSubscriptionStatus((prev) => (prev ? { ...prev, trial: normalized } : prev))
-      setTrialToken(token)
-      try {
-        await onRefreshAccessStatus()
-      } catch (accessError) {
-        const message =
-          accessError instanceof Error
-            ? accessError.message
-            : 'Unable to refresh access permissions.'
-        setSubscriptionError(normalizeBillingError(message))
-      }
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Unable to reserve a trial render. Please try again.'
-      setTrialError(message)
-    } finally {
-      setIsClaimingTrial(false)
-    }
-  }, [billingUserId, onRefreshAccessStatus])
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
@@ -1639,11 +1587,6 @@ const Profile: FC<ProfileProps> = ({
                       ? `Trial mode — ${trialRemaining} of ${trialTotal} left`
                       : 'Try Atropos free with three renders'}
                   </span>
-                  {trialTokenExpiryLabel ? (
-                    <span className="text-[11px] text-[var(--muted)]">
-                      Token expires {trialTokenExpiryLabel}
-                    </span>
-                  ) : null}
                 </div>
                 {trialError ? (
                   <p className="text-xs font-medium text-[color:var(--error-strong)]">{trialError}</p>
@@ -1660,31 +1603,14 @@ const Profile: FC<ProfileProps> = ({
                     >
                       {isStartingTrial ? 'Starting trial…' : 'Start 3-video Trial'}
                     </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleClaimTrial()
-                      }}
-                      className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
-                      disabled={isClaimingTrial || isTrialExhausted}
-                    >
-                      {isClaimingTrial
-                        ? 'Reserving trial…'
-                        : isTrialExhausted
-                          ? 'Trial exhausted'
-                          : 'Use trial for next render'}
-                    </button>
-                  )}
+                  ) : null}
                 </div>
                 <p className="text-[11px] text-[var(--muted)]">
                   {!hasTrialStarted
                     ? 'Reserve three single-use renders tied to this device. A subscription unlocks unlimited processing.'
                     : isTrialExhausted
                       ? 'You have used all trial renders. Subscribe to continue processing videos without limits.'
-                      : activeTrialToken
-                        ? 'A trial token is ready for your next render. Start the pipeline to consume it.'
-                        : 'Reserve a trial token before starting a render to consume one of your remaining trial uses.'}
+                      : 'Trial renders are applied automatically the next time you process a video.'}
                 </p>
               </div>
             ) : null}

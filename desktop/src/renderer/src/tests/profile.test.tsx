@@ -579,7 +579,7 @@ describe('Profile page', () => {
     await waitFor(() => expect(trialMocks.startTrial).toHaveBeenCalledWith('atropos-desktop-dev'))
   })
 
-  it('allows claiming trial renders when the trial has started', async () => {
+  it('shows remaining trial renders without manual actions once the trial has started', async () => {
     paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
       status: 'inactive',
       planId: null,
@@ -600,18 +600,20 @@ describe('Profile page', () => {
     renderProfile({
       accessStatus: {
         ...sampleAccessStatus,
-        allowed: false,
-        status: 'inactive',
-        reason: 'Trial remaining: 2 of 3. Claim a trial render from your profile to continue.'
+        allowed: true,
+        status: 'trialing',
+        subscriptionStatus: 'trialing',
+        subscriptionPlan: 'trial',
+        expiresAt: null,
+        reason: null
       }
     })
 
     expect(await screen.findByText(/Trial mode — 2 of 3 left/i)).toBeInTheDocument()
-    const claimButton = await screen.findByRole('button', { name: /Use trial for next render/i })
-    expect(claimButton).toBeEnabled()
-
-    fireEvent.click(claimButton)
-    await waitFor(() => expect(trialMocks.claimTrial).toHaveBeenCalledWith('atropos-desktop-dev'))
+    expect(screen.getByText(/Trial access — 2 left/i)).toBeInTheDocument()
+    expect(screen.getByText(/Trial renders are applied automatically/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Use trial/i })).not.toBeInTheDocument()
+    expect(trialMocks.claimTrial).not.toHaveBeenCalled()
   })
 
   it('disables the trial action when all renders are exhausted', async () => {
@@ -642,12 +644,11 @@ describe('Profile page', () => {
     })
 
     expect(await screen.findByText(/Trial mode — 0 of 3 left/i)).toBeInTheDocument()
-    const claimButton = await screen.findByRole('button', { name: /Trial exhausted/i })
-    expect(claimButton).toBeDisabled()
     expect(
       screen.getByText(/You have used all trial renders. Subscribe to continue/i)
     ).toBeInTheDocument()
-    expect(trialMocks.claimTrial).not.toHaveBeenCalled()
+    expect(screen.getByText(/Trial exhausted/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Trial exhausted/i })).not.toBeInTheDocument()
   })
 })
 
