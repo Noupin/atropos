@@ -11,6 +11,7 @@ import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PipelineProgress from '../components/PipelineProgress'
 import { BACKEND_MODE, buildJobClipVideoUrl } from '../config/backend'
+import { getAccessControlConfig } from '../config/accessControl'
 import {
   createInitialPipelineSteps,
   PIPELINE_STEP_DEFINITIONS,
@@ -23,11 +24,20 @@ import {
   subscribeToPipelineEvents,
   type PipelineEventMessage
 } from '../services/pipelineApi'
+import { consumeTrialRender } from '../services/paymentsApi'
+import {
+  getLicenseTokenForRender,
+  getStoredTrialToken,
+  setStoredTrialToken,
+  type TrialTokenCacheEntry
+} from '../services/accessControl'
 import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
 import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
 
 const SUPPORTED_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv'] as const
+
+const SUBSCRIPTION_REFRESH_EVENT = 'atropos:refresh-subscription'
 
 const isValidVideoUrl = (value: string): boolean => {
   try {
@@ -115,8 +125,10 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   const runStepRef = useRef<(index: number) => void>(() => {})
   const connectionCleanupRef = useRef<(() => void) | null>(null)
   const activeJobIdRef = useRef<string | null>(initialState.activeJobId ?? null)
+  const activeTrialTokenRef = useRef<TrialTokenCacheEntry | null>(null)
 
   const isMockBackend = BACKEND_MODE === 'mock'
+  const billingUserId = useMemo(() => getAccessControlConfig().clientId.trim(), [])
 
   const clearTimers = useCallback(() => {
     for (const id of timersRef.current) {
@@ -612,6 +624,26 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
           })
         }))
         cleanupConnection()
+
+        if (success) {
+          const trialEntry = activeTrialTokenRef.current
+          activeTrialTokenRef.current = null
+          if (trialEntry) {
+            void (async () => {
+              try {
+                await consumeTrialRender(trialEntry.userId, trialEntry.token)
+              } catch (error) {
+                console.warn('Failed to consume trial token after render.', error)
+              } finally {
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent(SUBSCRIPTION_REFRESH_EVENT))
+                }
+              }
+            })()
+          }
+        } else {
+          activeTrialTokenRef.current = null
+        }
       }
     },
     [cleanupConnection, updateState]
@@ -627,6 +659,44 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       }))
       cleanupConnection()
 
+      if (!billingUserId) {
+        updateState((prev) => ({
+          ...prev,
+          pipelineError: 'Billing is not configured for this installation.',
+          isProcessing: false
+        }))
+        return
+      }
+
+      let trialTokenEntry = getStoredTrialToken()
+      let licenseToken: string | null = null
+
+      if (!trialTokenEntry) {
+        try {
+          licenseToken = await getLicenseTokenForRender()
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : 'Unable to prepare the subscription license.'
+          updateState((prev) => ({
+            ...prev,
+            pipelineError: message,
+            isProcessing: false
+          }))
+          return
+        }
+      }
+
+      if (!trialTokenEntry && (!licenseToken || licenseToken.trim().length === 0)) {
+        updateState((prev) => ({
+          ...prev,
+          pipelineError: 'Active subscription or trial token required to start a render.',
+          isProcessing: false
+        }))
+        return
+      }
+
       try {
         const toneOverride =
           availableAccounts.find((account) => account.id === accountId)?.tone ?? null
@@ -634,8 +704,17 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
           url: urlToProcess,
           account: accountId,
           tone: toneOverride,
-          reviewMode: shouldPauseForReview
+          reviewMode: shouldPauseForReview,
+          userId: billingUserId,
+          licenseToken: trialTokenEntry ? null : licenseToken ?? null,
+          trialToken: trialTokenEntry?.token ?? null
         })
+        if (trialTokenEntry) {
+          activeTrialTokenRef.current = trialTokenEntry
+          setStoredTrialToken(null)
+        } else {
+          activeTrialTokenRef.current = null
+        }
         activeJobIdRef.current = jobId
         let unsubscribe: (() => void) | null = null
         const cleanup = () => {
@@ -670,9 +749,19 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
             error instanceof Error ? error.message : 'Unable to start the pipeline.',
           isProcessing: false
         }))
+        if (trialTokenEntry) {
+          activeTrialTokenRef.current = null
+          setStoredTrialToken(trialTokenEntry)
+        }
       }
     },
-    [availableAccounts, cleanupConnection, handlePipelineEvent, updateState]
+    [
+      availableAccounts,
+      billingUserId,
+      cleanupConnection,
+      handlePipelineEvent,
+      updateState
+    ]
   )
 
   useEffect(() => {

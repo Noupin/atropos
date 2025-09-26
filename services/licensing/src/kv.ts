@@ -1,5 +1,13 @@
 import { Env } from "./env";
 
+export interface TrialState {
+  allowed: boolean;
+  used: boolean;
+  used_at: number | null;
+  jti: string | null;
+  exp: number | null;
+}
+
 export interface UserRecord {
   email: string;
   stripe_customer_id: string;
@@ -10,6 +18,35 @@ export interface UserRecord {
   updated_at: number;
   epoch: number;
   device_hash?: string;
+  trial: TrialState;
+}
+
+export function createDefaultTrialState(): TrialState {
+  return {
+    allowed: true,
+    used: false,
+    used_at: null,
+    jti: null,
+    exp: null,
+  };
+}
+
+function normalizeTrialState(candidate: Partial<TrialState> | undefined): TrialState {
+  const defaults = createDefaultTrialState();
+  return {
+    allowed:
+      typeof candidate?.allowed === "boolean" ? candidate.allowed : defaults.allowed,
+    used: typeof candidate?.used === "boolean" ? candidate.used : defaults.used,
+    used_at:
+      typeof candidate?.used_at === "number" && Number.isFinite(candidate.used_at)
+        ? candidate.used_at
+        : defaults.used_at,
+    jti: typeof candidate?.jti === "string" ? candidate.jti : defaults.jti,
+    exp:
+      typeof candidate?.exp === "number" && Number.isFinite(candidate.exp)
+        ? candidate.exp
+        : defaults.exp,
+  };
 }
 
 export async function getUserRecord(env: Env, userId: string): Promise<UserRecord | null> {
@@ -18,10 +55,11 @@ export async function getUserRecord(env: Env, userId: string): Promise<UserRecor
     return null;
   }
 
-  const record = JSON.parse(raw) as UserRecord & { epoch?: number };
+  const record = JSON.parse(raw) as UserRecord & { epoch?: number; trial?: Partial<TrialState> };
   return {
     ...record,
     epoch: typeof record.epoch === "number" ? record.epoch : 0,
+    trial: normalizeTrialState(record.trial),
   };
 }
 
@@ -29,6 +67,7 @@ export async function putUserRecord(env: Env, userId: string, record: UserRecord
   const normalized: UserRecord = {
     ...record,
     epoch: typeof record.epoch === "number" ? record.epoch : 0,
+    trial: normalizeTrialState(record.trial),
   };
   await env.LICENSING_KV.put(`user:${userId}`, JSON.stringify(normalized));
 }
@@ -59,10 +98,14 @@ export async function findUserByStripeCustomerId(
       }
 
       try {
-        const record = JSON.parse(raw) as UserRecord & { epoch?: number };
+        const record = JSON.parse(raw) as UserRecord & {
+          epoch?: number;
+          trial?: Partial<TrialState>;
+        };
         const normalized: UserRecord = {
           ...record,
           epoch: typeof record.epoch === "number" ? record.epoch : 0,
+          trial: normalizeTrialState(record.trial),
         };
         if (normalized.stripe_customer_id === customerId) {
           const userId = key.name.slice(prefix.length);

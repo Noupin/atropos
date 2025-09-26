@@ -9,6 +9,9 @@ export type PipelineJobRequest = {
   account?: string | null
   tone?: string | null
   reviewMode?: boolean
+  userId?: string | null
+  licenseToken?: string | null
+  trialToken?: string | null
 }
 
 export type PipelineJobResponse = {
@@ -39,17 +42,31 @@ export const startPipelineJob = async (request: PipelineJobRequest): Promise<Pip
   while (true) {
     const url = buildJobUrl()
     try {
+      const payload: Record<string, unknown> = {
+        url: request.url,
+        account: request.account ?? null,
+        tone: request.tone ?? null,
+        review_mode: request.reviewMode ?? false
+      }
+
+      if (request.userId && request.userId.trim().length > 0) {
+        payload.user_id = request.userId.trim()
+      }
+
+      if (request.licenseToken && request.licenseToken.trim().length > 0) {
+        payload.license_token = request.licenseToken.trim()
+      }
+
+      if (request.trialToken && request.trialToken.trim().length > 0) {
+        payload.trial_token = request.trialToken.trim()
+      }
+
       response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          url: request.url,
-          account: request.account ?? null,
-          tone: request.tone ?? null,
-          review_mode: request.reviewMode ?? false
-        })
+        body: JSON.stringify(payload)
       })
       break
     } catch (error) {

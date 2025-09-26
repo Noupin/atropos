@@ -1,7 +1,8 @@
 import { getPublicKey, sign, verify } from "@noble/ed25519";
 import { Env } from "./env";
 import { HttpError } from "./http";
-import { isTokenRevoked, markTokenRevoked } from "./kv";
+import { getUserRecord, isTokenRevoked, markTokenRevoked } from "./kv";
+import type { TrialState, UserRecord } from "./kv";
 
 export interface LicenseClaims {
   sub: string;
@@ -12,6 +13,15 @@ export interface LicenseClaims {
   jti: string;
   device_hash?: string;
   epoch: number;
+}
+
+export interface TrialClaims {
+  sub: string;
+  trial: true;
+  use: number;
+  iat: number;
+  exp: number;
+  jti: string;
 }
 
 function textEncoder(): TextEncoder {
@@ -108,6 +118,12 @@ export interface LicenseTokenResult {
   jti: string;
 }
 
+export interface TrialTokenResult {
+  token: string;
+  exp: number;
+  jti: string;
+}
+
 export async function issueLicenseToken(env: Env, options: IssueLicenseOptions): Promise<LicenseTokenResult> {
   const { privateKey } = await getSigningMaterial(env);
   const header = {
@@ -139,6 +155,137 @@ export async function issueLicenseToken(env: Env, options: IssueLicenseOptions):
   const token = `${encodedHeader}.${encodedPayload}.${encodedSignature}`;
 
   return { token, exp, jti };
+}
+
+function createTrialError(message: string): HttpError {
+  return new HttpError(403, "trial_invalid", message);
+}
+
+function assertTrialState(record: UserRecord | null, userId: string): asserts record is UserRecord {
+  if (!record) {
+    throw createTrialError(`Trial not registered for ${userId}`);
+  }
+}
+
+export async function issueTrialToken(env: Env, userId: string): Promise<TrialTokenResult> {
+  const { privateKey } = await getSigningMaterial(env);
+  const header = {
+    alg: "EdDSA",
+    typ: "JWT",
+  };
+
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const exp = issuedAt + 15 * 60;
+  const jti = crypto.randomUUID();
+
+  const payload: TrialClaims = {
+    sub: userId,
+    trial: true,
+    use: 1,
+    iat: issuedAt,
+    exp,
+    jti,
+  };
+
+  const encodedHeader = base64UrlEncodeString(JSON.stringify(header));
+  const encodedPayload = base64UrlEncodeString(JSON.stringify(payload));
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
+  const signature = await sign(utf8ToUint8(signingInput), privateKey.slice(0, 32));
+  const encodedSignature = base64UrlEncode(signature);
+  const token = `${encodedHeader}.${encodedPayload}.${encodedSignature}`;
+
+  return { token, exp, jti };
+}
+
+export interface TrialVerificationResult {
+  claims: TrialClaims;
+  record: UserRecord;
+}
+
+function validateTrialState(trial: TrialState, claims: TrialClaims): void {
+  if (!trial.allowed) {
+    throw createTrialError("Trial access is not allowed");
+  }
+
+  if (trial.used) {
+    throw createTrialError("Trial has already been used");
+  }
+
+  if (!trial.jti || trial.jti !== claims.jti) {
+    throw createTrialError("Trial token is not recognised");
+  }
+
+  if (typeof trial.exp !== "number" || !Number.isFinite(trial.exp)) {
+    throw createTrialError("Stored trial expiration is invalid");
+  }
+
+  if (claims.exp > trial.exp) {
+    throw createTrialError("Trial token expiry exceeds allowed value");
+  }
+}
+
+export async function verifyTrialToken(env: Env, token: string): Promise<TrialVerificationResult> {
+  const { publicKey } = await getSigningMaterial(env);
+  const [encodedHeader, encodedPayload, encodedSignature] = token.split(".");
+  if (!encodedHeader || !encodedPayload || !encodedSignature) {
+    throw createTrialError("Malformed trial token");
+  }
+
+  let headerJson: { alg?: string; typ?: string };
+  try {
+    headerJson = JSON.parse(new TextDecoder().decode(base64UrlDecode(encodedHeader)));
+  } catch (error) {
+    console.warn("Failed to parse trial token header", error);
+    throw createTrialError("Trial token header is invalid");
+  }
+
+  if (headerJson.alg !== "EdDSA" || headerJson.typ !== "JWT") {
+    throw createTrialError("Unexpected trial token header");
+  }
+
+  let payload: TrialClaims;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(encodedPayload))) as TrialClaims;
+  } catch (error) {
+    console.warn("Failed to parse trial token payload", error);
+    throw createTrialError("Trial token payload is invalid");
+  }
+
+  if (payload.trial !== true || payload.use !== 1) {
+    throw createTrialError("Trial token is missing required flags");
+  }
+
+  if (typeof payload.sub !== "string" || payload.sub.trim().length === 0) {
+    throw createTrialError("Trial token subject is missing");
+  }
+
+  if (typeof payload.jti !== "string" || payload.jti.trim().length === 0) {
+    throw createTrialError("Trial token identifier is missing");
+  }
+
+  if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp)) {
+    throw createTrialError("Trial token expiry is invalid");
+  }
+
+  const signatureBytes = base64UrlDecode(encodedSignature);
+  const signingInput = utf8ToUint8(`${encodedHeader}.${encodedPayload}`);
+  const isValid = await verify(signatureBytes, signingInput, publicKey);
+  if (!isValid) {
+    throw createTrialError("Trial token signature is invalid");
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.exp <= now) {
+    throw createTrialError("Trial token has expired");
+  }
+
+  const userId = payload.sub;
+  const record = await getUserRecord(env, userId);
+  assertTrialState(record, userId);
+
+  validateTrialState(record.trial, payload);
+
+  return { claims: payload, record };
 }
 
 export async function verifyLicenseToken(env: Env, token: string): Promise<LicenseClaims> {

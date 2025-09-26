@@ -62,6 +62,18 @@ emits real-time progress updates over WebSockets. Start the server with:
 uvicorn server.app:app --reload
 ```
 
+Set the licensing service endpoint before starting the API server:
+
+```env
+# Base URL for the licensing Cloudflare Worker (required)
+LICENSING_API_BASE_URL=https://licensing.example.workers.dev
+# Optional timeout (seconds) for requests to the licensing service
+LICENSING_API_TIMEOUT=10
+```
+
+The server validates active subscriptions or one-time trials by calling this
+licensing service before starting each render job.
+
 Submit jobs via `POST /api/jobs` with JSON payloads containing the `url`,
 optional `account`, and optional `tone`. Subscribe to
 `ws://<host>/ws/jobs/<job_id>` to receive step-by-step events without polling.

@@ -10,6 +10,12 @@ type LicenseCacheEntry = {
   exp: number
 }
 
+export type TrialTokenCacheEntry = {
+  token: string
+  exp: number
+  userId: string
+}
+
 type SubscriptionApiResponse = {
   status?: string | null
   entitled?: boolean
@@ -24,6 +30,9 @@ type LicenseIssueResponse = {
 
 const DEVICE_HASH_STORAGE_KEY = 'atropos:device-hash'
 const LICENSE_STORAGE_KEY = 'atropos:license-token'
+const TRIAL_STORAGE_KEY = 'atropos:trial-token'
+
+export const TRIAL_UPDATE_EVENT = 'atropos:trial-token-updated'
 
 const allowedStatuses: SubscriptionLifecycleStatus[] = [
   'inactive',
@@ -39,6 +48,7 @@ const allowedStatuses: SubscriptionLifecycleStatus[] = [
 ]
 
 let cachedLicense: LicenseCacheEntry | null = null
+let cachedTrialToken: TrialTokenCacheEntry | null = null
 
 const textEncoder = new TextEncoder()
 
@@ -148,6 +158,76 @@ const storeLicenseCache = (entry: LicenseCacheEntry | null): void => {
   }
 }
 
+const isTrialEntryValid = (
+  entry: TrialTokenCacheEntry | null
+): entry is TrialTokenCacheEntry => {
+  if (!entry) {
+    return false
+  }
+  if (typeof entry.token !== 'string' || entry.token.trim().length === 0) {
+    return false
+  }
+  if (typeof entry.userId !== 'string' || entry.userId.trim().length === 0) {
+    return false
+  }
+  if (typeof entry.exp !== 'number' || !Number.isFinite(entry.exp)) {
+    return false
+  }
+  return entry.exp * 1000 > Date.now() + 5000
+}
+
+const loadTrialCache = (): TrialTokenCacheEntry | null => {
+  if (cachedTrialToken && isTrialEntryValid(cachedTrialToken)) {
+    return cachedTrialToken
+  }
+
+  const raw = readStorageValue(TRIAL_STORAGE_KEY)
+  if (!raw) {
+    cachedTrialToken = null
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as TrialTokenCacheEntry
+    if (isTrialEntryValid(parsed)) {
+      cachedTrialToken = parsed
+      return parsed
+    }
+  } catch (error) {
+    console.warn('Unable to parse cached trial token.', error)
+  }
+
+  cachedTrialToken = null
+  writeStorageValue(TRIAL_STORAGE_KEY, null)
+  return null
+}
+
+const dispatchTrialTokenEvent = (): void => {
+  if (isWindowAvailable()) {
+    window.dispatchEvent(new CustomEvent(TRIAL_UPDATE_EVENT))
+  }
+}
+
+const storeTrialCache = (entry: TrialTokenCacheEntry | null): void => {
+  cachedTrialToken = entry
+  if (entry) {
+    writeStorageValue(TRIAL_STORAGE_KEY, JSON.stringify(entry))
+  } else {
+    writeStorageValue(TRIAL_STORAGE_KEY, null)
+  }
+  dispatchTrialTokenEvent()
+}
+
+export const getStoredTrialToken = (): TrialTokenCacheEntry | null => loadTrialCache()
+
+export const setStoredTrialToken = (entry: TrialTokenCacheEntry | null): void => {
+  if (entry) {
+    storeTrialCache(entry)
+  } else {
+    storeTrialCache(null)
+  }
+}
+
 const normalizeStatus = (value: string | null | undefined): SubscriptionLifecycleStatus => {
   if (!value) {
     return 'inactive'
@@ -239,6 +319,43 @@ const mockAccessResponse = (payload: AccessJwtPayload): AccessCheckResult => {
   }
 }
 
+const ensureLicenseToken = async (
+  baseUrl: URL,
+  clientId: string
+): Promise<LicenseCacheEntry> => {
+  const existing = loadLicenseCache()
+  if (existing) {
+    return existing
+  }
+
+  const deviceHash = getOrCreateDeviceHash()
+  const licenseUrl = new URL('/license/issue', baseUrl)
+  const issueResponse = await fetch(licenseUrl.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: clientId, device_hash: deviceHash })
+  })
+
+  if (!issueResponse.ok) {
+    throw new Error(await extractApiError(issueResponse))
+  }
+
+  const licenseBody = (await issueResponse.json()) as LicenseIssueResponse
+  const token = typeof licenseBody.token === 'string' ? licenseBody.token : null
+  const exp =
+    typeof licenseBody.exp === 'number' && Number.isFinite(licenseBody.exp)
+      ? licenseBody.exp
+      : null
+
+  if (!token || exp === null) {
+    throw new Error('License issue response was missing required fields.')
+  }
+
+  const entry: LicenseCacheEntry = { token, exp }
+  storeLicenseCache(entry)
+  return entry
+}
+
 export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
   const config = getAccessControlConfig()
   const nowSeconds = Math.floor(Date.now() / 1000)
@@ -299,35 +416,7 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
     }
   }
 
-  let license = loadLicenseCache()
-
-  if (!license) {
-    const deviceHash = getOrCreateDeviceHash()
-    const licenseUrl = new URL('/license/issue', baseUrl)
-    const issueResponse = await fetch(licenseUrl.toString(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: config.clientId, device_hash: deviceHash })
-    })
-
-    if (!issueResponse.ok) {
-      throw new Error(await extractApiError(issueResponse))
-    }
-
-    const licenseBody = (await issueResponse.json()) as LicenseIssueResponse
-    const token = typeof licenseBody.token === 'string' ? licenseBody.token : null
-    const exp =
-      typeof licenseBody.exp === 'number' && Number.isFinite(licenseBody.exp)
-        ? licenseBody.exp
-        : null
-
-    if (!token || !exp) {
-      throw new Error('License issue response was missing required fields.')
-    }
-
-    license = { token, exp }
-    storeLicenseCache(license)
-  }
+  const license = await ensureLicenseToken(baseUrl, config.clientId)
 
   const licenseExpiryIso = new Date(license.exp * 1000).toISOString()
 
@@ -341,5 +430,17 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
     subscriptionPlan: null,
     subscriptionStatus
   }
+}
+
+export const getLicenseTokenForRender = async (): Promise<string> => {
+  const config = getAccessControlConfig()
+
+  if (!config.apiUrl) {
+    throw new Error('Access control API URL is not configured.')
+  }
+
+  const baseUrl = new URL(config.apiUrl)
+  const license = await ensureLicenseToken(baseUrl, config.clientId)
+  return license.token
 }
 

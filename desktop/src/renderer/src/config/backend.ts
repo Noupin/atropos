@@ -173,6 +173,16 @@ export const buildSubscriptionStatusUrl = (userId: string): string => {
   return url.toString()
 }
 
+export const buildTrialClaimUrl = (): string => {
+  const url = new URL('/trial/claim', getBillingApiBaseUrl())
+  return url.toString()
+}
+
+export const buildTrialConsumeUrl = (): string => {
+  const url = new URL('/trial/consume', getBillingApiBaseUrl())
+  return url.toString()
+}
+
 export const buildCheckoutSessionUrl = (): string => {
   const url = new URL('/billing/checkout', getBillingApiBaseUrl())
   return url.toString()

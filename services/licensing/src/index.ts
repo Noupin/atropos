@@ -15,12 +15,20 @@ import {
   verifyStripeSignature,
 } from "./stripe";
 import type { StripeSubscriptionSummary } from "./stripe";
+import type { UserRecord } from "./kv";
 import {
+  createDefaultTrialState,
   findUserByStripeCustomerId,
   getUserRecord,
   putUserRecord,
 } from "./kv";
-import { derivePublicKey, issueLicenseToken, verifyLicenseToken } from "./jwt";
+import {
+  derivePublicKey,
+  issueLicenseToken,
+  issueTrialToken,
+  verifyLicenseToken,
+  verifyTrialToken,
+} from "./jwt";
 
 interface StripeEvent {
   id: string;
@@ -52,6 +60,15 @@ interface LicenseIssueBody {
   device_hash: string;
 }
 
+interface TrialClaimBody {
+  user_id: string;
+}
+
+interface TrialConsumeBody {
+  user_id: string;
+  token: string;
+}
+
 interface BillingPortalRequestBody {
   user_id?: string;
   return_url?: string;
@@ -64,6 +81,39 @@ const PORTAL_ELIGIBLE_SUBSCRIPTION_STATUSES = new Set([
   "unpaid",
   "paused",
 ]);
+
+function cloneUserRecord(record: UserRecord): UserRecord {
+  return {
+    ...record,
+    trial: { ...record.trial },
+  };
+}
+
+function createMinimalUserRecord(): UserRecord {
+  return {
+    email: "",
+    stripe_customer_id: "",
+    status: "inactive",
+    updated_at: Date.now(),
+    epoch: 0,
+    cancel_at_period_end: false,
+    trial: createDefaultTrialState(),
+  };
+}
+
+function buildTrialResponse(trial: UserRecord["trial"]): {
+  allowed: boolean;
+  used: boolean;
+  used_at: number | null;
+  exp: number | null;
+} {
+  return {
+    allowed: trial.allowed,
+    used: trial.used,
+    used_at: trial.used_at,
+    exp: trial.exp ?? null,
+  };
+}
 
 function getAllowedOrigins(env: Env): string[] {
   const origins = (env.CORS_ALLOW_ORIGINS ?? "")
@@ -218,7 +268,9 @@ async function handleCheckout(
     idempotencyKey: checkoutIdempotencyKey,
   });
 
-  const updated = {
+  const baseRecord = userRecord ? cloneUserRecord(userRecord) : createMinimalUserRecord();
+  const updated: UserRecord = {
+    ...baseRecord,
     email,
     stripe_customer_id: stripeCustomerId,
     status: userRecord?.status ?? "pending",
@@ -226,8 +278,6 @@ async function handleCheckout(
     plan_price_id: price,
     updated_at: Date.now(),
     cancel_at_period_end: userRecord?.cancel_at_period_end ?? false,
-    epoch: userRecord?.epoch ?? 0,
-    device_hash: userRecord?.device_hash,
   };
   await putUserRecord(env, userId, updated);
 
@@ -372,8 +422,9 @@ async function handleSubscription(
           ? subscription.cancel_at_period_end
           : record.cancel_at_period_end ?? false;
 
-      const updatedRecord = {
-        ...record,
+      const baseRecord = cloneUserRecord(record);
+      const updatedRecord: UserRecord = {
+        ...baseRecord,
         status: subscriptionStatus ?? record.status,
         current_period_end: subscriptionPeriodEnd,
         cancel_at_period_end: subscriptionCancelAtPeriodEnd,
@@ -385,12 +436,14 @@ async function handleSubscription(
   }
 
   if (!record) {
+    const trial = createDefaultTrialState();
     return jsonResponse(
       {
         status: "inactive",
         entitled: false,
         current_period_end: null,
         cancel_at_period_end: false,
+        trial: buildTrialResponse(trial),
       },
       200,
       corsHeaders
@@ -407,6 +460,7 @@ async function handleSubscription(
       entitled: isEntitled(status, currentPeriodEnd ?? undefined),
       current_period_end: currentPeriodEnd,
       cancel_at_period_end: cancelAtPeriodEnd,
+      trial: buildTrialResponse(record.trial),
     },
     200,
     corsHeaders
@@ -458,7 +512,11 @@ async function handleWebhook(
             (object.metadata as Record<string, string> | undefined)?.price_id ??
             existing?.plan_price_id ??
             env.PRICE_ID_MONTHLY;
-          await putUserRecord(env, userId, {
+          const baseRecord = existing
+            ? cloneUserRecord(existing)
+            : createMinimalUserRecord();
+          const updatedRecord: UserRecord = {
+            ...baseRecord,
             email,
             stripe_customer_id: customerId,
             status,
@@ -466,9 +524,8 @@ async function handleWebhook(
             plan_price_id: planPriceId,
             cancel_at_period_end: existing?.cancel_at_period_end ?? false,
             updated_at: Date.now(),
-            epoch: existing?.epoch ?? 0,
-            device_hash: existing?.device_hash,
-          });
+          };
+          await putUserRecord(env, userId, updatedRecord);
           console.log(
             `[${context.requestId}] Checkout complete for ${userId} (${customerId}) subscription=${subscriptionId}`
           );
@@ -511,7 +568,11 @@ async function handleWebhook(
           existingUser?.plan_price_id ??
           env.PRICE_ID_MONTHLY;
         const updatedAt = Date.now();
-        await putUserRecord(env, userId, {
+        const baseRecord = existingUser
+          ? cloneUserRecord(existingUser)
+          : createMinimalUserRecord();
+        const updatedRecord: UserRecord = {
+          ...baseRecord,
           email: subscription.customer_email ?? existingUser?.email ?? "",
           stripe_customer_id: customerId,
           status,
@@ -519,9 +580,8 @@ async function handleWebhook(
           plan_price_id: planPriceId,
           cancel_at_period_end: cancelAtPeriodEnd,
           updated_at: updatedAt,
-          epoch: existingUser?.epoch ?? 0,
-          device_hash: existingUser?.device_hash,
-        });
+        };
+        await putUserRecord(env, userId, updatedRecord);
         console.log(
           `[${context.requestId}] Subscription ${subscription.id} -> ${status}`
         );
@@ -554,7 +614,11 @@ async function handleWebhook(
           subscription.items?.data?.[0]?.price?.id ??
           env.PRICE_ID_MONTHLY;
         const previousEpoch = existingUser?.epoch ?? 0;
-        await putUserRecord(env, userId, {
+        const baseRecord = existingUser
+          ? cloneUserRecord(existingUser)
+          : createMinimalUserRecord();
+        const updatedRecord: UserRecord = {
+          ...baseRecord,
           email: existingUser?.email ?? subscription.customer_email ?? "",
           stripe_customer_id: customerId,
           status: "canceled",
@@ -563,8 +627,8 @@ async function handleWebhook(
           cancel_at_period_end: false,
           updated_at: updatedAt,
           epoch: previousEpoch + 1,
-          device_hash: existingUser?.device_hash,
-        });
+        };
+        await putUserRecord(env, userId, updatedRecord);
         console.log(
           `[${context.requestId}] Subscription ${subscription.id} canceled`
         );
@@ -637,8 +701,8 @@ async function handleIssue(
   }
 
   if (!userRecord.device_hash) {
-    const updatedRecord = {
-      ...userRecord,
+    const updatedRecord: UserRecord = {
+      ...cloneUserRecord(userRecord),
       device_hash: normalizedDeviceHash,
       updated_at: Date.now(),
     };
@@ -655,6 +719,100 @@ async function handleIssue(
   });
 
   return jsonResponse({ token: token.token, exp: token.exp }, 200, corsHeaders);
+}
+
+async function handleTrialClaim(
+  env: Env,
+  request: Request,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  const body = await request.json().catch(() => {
+    throw new HttpError(400, "invalid_request", "Body must be valid JSON");
+  });
+
+  if (typeof body !== "object" || body === null) {
+    throw new HttpError(400, "invalid_request", "Body must be an object");
+  }
+
+  const { user_id: rawUserId } = body as TrialClaimBody;
+  if (typeof rawUserId !== "string" || rawUserId.trim().length === 0) {
+    throw new HttpError(400, "invalid_request", "user_id is required");
+  }
+
+  const userId = rawUserId.trim();
+  const existingRecord = await getUserRecord(env, userId);
+  const record: UserRecord = existingRecord
+    ? cloneUserRecord(existingRecord)
+    : createMinimalUserRecord();
+
+  if (record.trial.used) {
+    throw new HttpError(409, "trial_used", "Trial has already been used");
+  }
+
+  if (!record.trial.allowed) {
+    throw new HttpError(403, "trial_not_allowed", "Trial is not allowed");
+  }
+
+  const trialToken = await issueTrialToken(env, userId);
+  record.trial = {
+    ...record.trial,
+    used: false,
+    used_at: null,
+    jti: trialToken.jti,
+    exp: trialToken.exp,
+  };
+  record.updated_at = Date.now();
+
+  await putUserRecord(env, userId, record);
+
+  return jsonResponse({ token: trialToken.token, exp: trialToken.exp }, 200, corsHeaders);
+}
+
+async function handleTrialConsume(
+  env: Env,
+  request: Request,
+  corsHeaders: HeadersInit,
+): Promise<Response> {
+  const body = await request.json().catch(() => {
+    throw new HttpError(400, "invalid_request", "Body must be valid JSON");
+  });
+
+  if (typeof body !== "object" || body === null) {
+    throw new HttpError(400, "invalid_request", "Body must be an object");
+  }
+
+  const { user_id: rawUserId, token } = body as TrialConsumeBody;
+  if (typeof rawUserId !== "string" || rawUserId.trim().length === 0) {
+    throw new HttpError(400, "invalid_request", "user_id is required");
+  }
+
+  if (typeof token !== "string" || token.trim().length === 0) {
+    throw new HttpError(400, "invalid_request", "token is required");
+  }
+
+  const userId = rawUserId.trim();
+  const verification = await verifyTrialToken(env, token.trim());
+
+  if (verification.claims.sub !== userId) {
+    throw new HttpError(403, "trial_invalid", "Trial token does not match user");
+  }
+
+  const usedAt = Math.floor(Date.now() / 1000);
+  const updatedRecord: UserRecord = {
+    ...cloneUserRecord(verification.record),
+    trial: {
+      ...verification.record.trial,
+      used: true,
+      used_at: usedAt,
+      jti: null,
+      exp: null,
+    },
+    updated_at: Date.now(),
+  };
+
+  await putUserRecord(env, userId, updatedRecord);
+
+  return jsonResponse({ success: true }, 200, corsHeaders);
 }
 
 async function handleHealth(
@@ -742,6 +900,12 @@ export default {
           }
           if (apiPath === "/license/issue") {
             return await handleIssue(env, request, corsHeaders);
+          }
+          if (apiPath === "/trial/claim") {
+            return await handleTrialClaim(env, request, corsHeaders);
+          }
+          if (apiPath === "/trial/consume") {
+            return await handleTrialConsume(env, request, corsHeaders);
           }
           break;
         }

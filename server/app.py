@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import hashlib
 import logging
 import math
@@ -13,6 +14,8 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
+
+import requests
 
 from fastapi import (
     FastAPI,
@@ -71,6 +74,13 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Atropos Pipeline API")
 
+_licensing_base = (os.environ.get("LICENSING_API_BASE_URL") or "").strip()
+LICENSING_API_BASE_URL = _licensing_base.rstrip("/") if _licensing_base else ""
+try:
+    LICENSING_API_TIMEOUT = float(os.environ.get("LICENSING_API_TIMEOUT", "10"))
+except (TypeError, ValueError):  # pragma: no cover - environment misconfiguration
+    LICENSING_API_TIMEOUT = 10.0
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -115,6 +125,125 @@ def _parse_clip_bounds_from_id(clip_id: str) -> tuple[float, float] | None:
     return start_value, end_value
 
 
+def _normalise_optional_str(value: str | None) -> str | None:
+    if value is None:
+        return None
+    token = value.strip()
+    return token or None
+
+
+def _get_licensing_base_url() -> str:
+    if not LICENSING_API_BASE_URL:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Licensing service is not configured.",
+        )
+    return LICENSING_API_BASE_URL
+
+
+def _extract_licensing_error(response: requests.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        return f"Licensing request failed with status {response.status_code}"
+
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return message
+            code = error.get("code")
+            if isinstance(code, str) and code.strip():
+                return code
+
+    return f"Licensing request failed with status {response.status_code}"
+
+
+def _handle_licensing_error(response: requests.Response) -> None:
+    detail = _extract_licensing_error(response)
+    if 500 <= response.status_code < 600:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
+    if response.status_code == status.HTTP_409_CONFLICT:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=detail)
+    raise HTTPException(status.HTTP_403_FORBIDDEN, detail=detail)
+
+
+def _request_licensing(
+    method: str,
+    path: str,
+    *,
+    json: Dict[str, Any] | None = None,
+    params: Dict[str, Any] | None = None,
+    headers: Dict[str, str] | None = None,
+) -> requests.Response:
+    base_url = _get_licensing_base_url()
+    url = f"{base_url}{path}"
+    merged_headers: Dict[str, str] = {"Accept": "application/json"}
+    if headers:
+        merged_headers.update(headers)
+
+    try:
+        response = requests.request(
+            method,
+            url,
+            json=json,
+            params=params,
+            headers=merged_headers,
+            timeout=LICENSING_API_TIMEOUT,
+        )
+    except requests.RequestException as exc:  # pragma: no cover - network failure
+        logger.exception("Licensing request %s %s failed", method, url)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to contact licensing service.",
+        ) from exc
+
+    return response
+
+
+def _validate_license_token(token: str, expected_user_id: str | None) -> None:
+    response = _request_licensing(
+        "GET",
+        "/license/validate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if response.status_code != status.HTTP_200_OK:
+        _handle_licensing_error(response)
+        return
+
+    try:
+        payload = response.json()
+    except ValueError as exc:  # pragma: no cover - unexpected payload
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Licensing service returned an invalid response.",
+        ) from exc
+
+    if expected_user_id:
+        claims = payload.get("claims")
+        if not isinstance(claims, dict):
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Licensing response was missing token claims.",
+            )
+        subject = claims.get("sub")
+        if isinstance(subject, str) and subject != expected_user_id:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                detail="License token does not match the requested user.",
+            )
+
+
+def _consume_trial_token(user_id: str, token: str) -> None:
+    response = _request_licensing(
+        "POST",
+        "/trial/consume",
+        json={"user_id": user_id, "token": token},
+    )
+    if response.status_code != status.HTTP_200_OK:
+        _handle_licensing_error(response)
+
 class RunRequest(BaseModel):
     """Payload for starting a new pipeline job."""
 
@@ -122,6 +251,9 @@ class RunRequest(BaseModel):
     account: str | None = Field(default=None, max_length=128)
     tone: Tone | None = Field(default=None)
     review_mode: bool = Field(default=False)
+    user_id: str | None = Field(default=None)
+    license_token: str | None = Field(default=None)
+    trial_token: str | None = Field(default=None)
 
     @field_validator("tone", mode="before")
     @classmethod
@@ -132,6 +264,30 @@ class RunRequest(BaseModel):
             return Tone(value)
         except ValueError as exc:  # pragma: no cover - validation branch
             raise ValueError(f"Unknown tone '{value}'") from exc
+
+
+def _ensure_render_allowed(payload: RunRequest) -> None:
+    user_id = _normalise_optional_str(payload.user_id)
+    license_token = _normalise_optional_str(payload.license_token)
+    trial_token = _normalise_optional_str(payload.trial_token)
+
+    if license_token:
+        _validate_license_token(license_token, user_id)
+        return
+
+    if trial_token:
+        if not user_id:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="user_id is required when using a trial token.",
+            )
+        _consume_trial_token(user_id, trial_token)
+        return
+
+    raise HTTPException(
+        status.HTTP_403_FORBIDDEN,
+        detail="Active subscription or trial required to start a render.",
+    )
 
 
 class RunResponse(BaseModel):
@@ -901,6 +1057,8 @@ def _generate_preview_clip(
 @app.post("/api/jobs", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED)
 async def start_job(payload: RunRequest) -> RunResponse:
     """Start processing ``payload.url`` in a background thread."""
+
+    _ensure_render_allowed(payload)
 
     job_id = uuid.uuid4().hex
     loop = asyncio.get_running_loop()

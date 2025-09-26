@@ -153,6 +153,13 @@ export type SubscriptionLifecycleStatus =
   | 'unpaid'
   | 'paused'
 
+export interface TrialStatus {
+  allowed: boolean
+  used: boolean
+  usedAt: number | null
+  exp: number | null
+}
+
 export interface SubscriptionStatus {
   status: SubscriptionLifecycleStatus
   planId: string | null
@@ -161,6 +168,8 @@ export interface SubscriptionStatus {
   cancelAt: string | null
   trialEndsAt: string | null
   latestInvoiceUrl: string | null
+  entitled: boolean
+  trial: TrialStatus
 }
 
 export interface CheckoutSession {

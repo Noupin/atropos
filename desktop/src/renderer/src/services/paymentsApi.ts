@@ -2,12 +2,15 @@ import {
   BACKEND_MODE,
   buildBillingPortalUrl,
   buildCheckoutSessionUrl,
-  buildSubscriptionStatusUrl
+  buildSubscriptionStatusUrl,
+  buildTrialClaimUrl,
+  buildTrialConsumeUrl
 } from '../config/backend'
 import type {
   BillingPortalSession,
   CheckoutSession,
-  SubscriptionStatus
+  SubscriptionStatus,
+  TrialStatus
 } from '../types'
 import { extractErrorMessage, requestWithFallback } from './http'
 
@@ -25,7 +28,14 @@ const mockSubscriptionStatus = (): SubscriptionStatus => ({
   renewsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
   cancelAt: null,
   trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-  latestInvoiceUrl: 'https://stripe.test/invoice/mock'
+  latestInvoiceUrl: 'https://stripe.test/invoice/mock',
+  entitled: true,
+  trial: {
+    allowed: true,
+    used: false,
+    usedAt: null,
+    exp: Math.floor(Date.now() / 1000) + 15 * 60
+  }
 })
 
 const mockCheckoutSession = (): CheckoutSession => ({
@@ -51,7 +61,35 @@ export const fetchSubscriptionStatus = async (userId: string): Promise<Subscript
   if (!response.ok) {
     throw new Error(await extractErrorMessage(response))
   }
-  const body = (await response.json()) as Partial<SubscriptionStatus>
+  const body = (await response.json()) as {
+    status?: SubscriptionStatus['status']
+    planId?: string | null
+    planName?: string | null
+    renewsAt?: string | null
+    cancelAt?: string | null
+    trialEndsAt?: string | null
+    latestInvoiceUrl?: string | null
+    entitled?: boolean
+    trial?: Partial<{
+      allowed: boolean
+      used: boolean
+      used_at: number | null
+      exp: number | null
+    }>
+  }
+  const trialPayload = body.trial ?? {}
+  const trial: TrialStatus = {
+    allowed: trialPayload?.allowed === true,
+    used: trialPayload?.used === true,
+    usedAt:
+      typeof trialPayload?.used_at === 'number' && Number.isFinite(trialPayload.used_at)
+        ? trialPayload.used_at
+        : null,
+    exp:
+      typeof trialPayload?.exp === 'number' && Number.isFinite(trialPayload.exp)
+        ? trialPayload.exp
+        : null
+  }
   return {
     status: body.status ?? 'inactive',
     planId: body.planId ?? null,
@@ -59,7 +97,9 @@ export const fetchSubscriptionStatus = async (userId: string): Promise<Subscript
     renewsAt: body.renewsAt ?? null,
     cancelAt: body.cancelAt ?? null,
     trialEndsAt: body.trialEndsAt ?? null,
-    latestInvoiceUrl: body.latestInvoiceUrl ?? null
+    latestInvoiceUrl: body.latestInvoiceUrl ?? null,
+    entitled: body.entitled === true,
+    trial
   }
 }
 
@@ -160,5 +200,56 @@ export const createBillingPortalSession = async (
     throw new Error('The billing portal session did not include a redirect URL.')
   }
   return body
+}
+
+type TrialClaimResponse = {
+  token: string
+  exp: number
+}
+
+export const claimTrialRender = async (userId: string): Promise<TrialClaimResponse> => {
+  const normalizedUserId = userId.trim()
+  if (!normalizedUserId) {
+    throw new Error('A billing user ID is required to claim the trial render.')
+  }
+
+  const response = await requestWithFallback(buildTrialClaimUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: normalizedUserId })
+  })
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response))
+  }
+
+  const body = (await response.json()) as Partial<TrialClaimResponse>
+  const token = typeof body.token === 'string' && body.token.trim().length > 0 ? body.token : null
+  const exp = typeof body.exp === 'number' && Number.isFinite(body.exp) ? body.exp : null
+
+  if (!token || exp === null) {
+    throw new Error('Trial claim response was missing required fields.')
+  }
+
+  return { token, exp }
+}
+
+export const consumeTrialRender = async (userId: string, token: string): Promise<void> => {
+  const normalizedUserId = userId.trim()
+  const normalizedToken = token.trim()
+
+  if (!normalizedUserId || !normalizedToken) {
+    throw new Error('A trial token and billing user ID are required to consume the trial.')
+  }
+
+  const response = await requestWithFallback(buildTrialConsumeUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: normalizedUserId, token: normalizedToken })
+  })
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response))
+  }
 }
 

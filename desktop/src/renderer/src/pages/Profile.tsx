@@ -18,9 +18,16 @@ import MarbleSelect from '../components/MarbleSelect'
 import {
   createBillingPortalSession,
   createCheckoutSession,
-  fetchSubscriptionStatus
+  fetchSubscriptionStatus,
+  claimTrialRender
 } from '../services/paymentsApi'
-import { getAccessControlConfig } from '../config/accessControl'
+import {
+  getAccessControlConfig,
+  getStoredTrialToken,
+  setStoredTrialToken,
+  TRIAL_UPDATE_EVENT,
+  type TrialTokenCacheEntry
+} from '../services/accessControl'
 
 const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
   tiktok: 'tiktok.json',
@@ -55,6 +62,8 @@ const PORTAL_ELIGIBLE_STATUSES = new Set<SubscriptionLifecycleStatus>([
   'unpaid',
   'paused'
 ])
+
+const SUBSCRIPTION_REFRESH_EVENT = 'atropos:refresh-subscription'
 
 const formatTimestamp = (value: string | null | undefined): string => {
   if (!value) {
@@ -945,6 +954,13 @@ const Profile: FC<ProfileProps> = ({
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false)
   const [isStartingCheckout, setIsStartingCheckout] = useState(false)
   const [isOpeningPortal, setIsOpeningPortal] = useState(false)
+  const initialTrialToken = useMemo<TrialTokenCacheEntry | null>(getStoredTrialToken, [])
+  const [pendingTrialToken, setPendingTrialToken] = useState<TrialTokenCacheEntry | null>(initialTrialToken)
+  const [isClaimingTrial, setIsClaimingTrial] = useState(false)
+  const [trialError, setTrialError] = useState<string | null>(null)
+  const [trialNotice, setTrialNotice] = useState<string | null>(
+    initialTrialToken ? 'Trial token ready. Start a render to use it.' : null
+  )
   const refreshOnFocusRef = useRef(false)
 
   const billingUserId = useMemo(() => getAccessControlConfig().clientId.trim(), [])
@@ -972,6 +988,15 @@ const Profile: FC<ProfileProps> = ({
     setBillingEmailInput(accessStatus?.customerEmail ?? '')
   }, [accessStatus?.customerEmail])
 
+  useEffect(() => {
+    if (pendingTrialToken) {
+      setTrialNotice('Trial token ready. Start a render to use it.')
+      setTrialError(null)
+    } else if (!isClaimingTrial) {
+      setTrialNotice(null)
+    }
+  }, [pendingTrialToken, isClaimingTrial])
+
   const loadSubscriptionStatus = useCallback(async () => {
     if (!billingUserId) {
       setSubscriptionStatus(null)
@@ -984,6 +1009,7 @@ const Profile: FC<ProfileProps> = ({
       const status = await fetchSubscriptionStatus(billingUserId)
       setSubscriptionStatus(status)
       setSubscriptionError(null)
+      setPendingTrialToken(getStoredTrialToken())
       return status
     } catch (error) {
       const message =
@@ -1140,6 +1166,16 @@ const Profile: FC<ProfileProps> = ({
       ? 'Subscribe opens Stripe checkout to start a new plan.'
       : 'Enter a billing email address to enable Stripe checkout.'
 
+  const trialInfo = subscriptionStatus?.trial ?? null
+  const hasPendingTrial = pendingTrialToken !== null
+  const trialAvailable = !hasEntitledSubscription && Boolean(trialInfo?.allowed) && !trialInfo?.used
+  const trialButtonDisabled = hasPendingTrial || isClaimingTrial
+  const trialButtonLabel = hasPendingTrial
+    ? 'Trial ready – run a render'
+    : isClaimingTrial
+      ? 'Preparing…'
+      : 'Try one free render'
+
   const handleRefreshBilling = useCallback(async () => {
     await loadSubscriptionStatus()
     try {
@@ -1169,6 +1205,34 @@ const Profile: FC<ProfileProps> = ({
       window.removeEventListener('focus', handleFocus)
     }
   }, [handleRefreshBilling])
+
+  const handleClaimTrial = useCallback(async () => {
+    if (isClaimingTrial || pendingTrialToken) {
+      return
+    }
+
+    if (!billingUserId) {
+      setTrialError('Billing is not configured for this installation.')
+      return
+    }
+
+    setIsClaimingTrial(true)
+    setTrialError(null)
+    setTrialNotice(null)
+
+    try {
+      const { token, exp } = await claimTrialRender(billingUserId)
+      setStoredTrialToken({ token, exp, userId: billingUserId })
+      setPendingTrialToken(getStoredTrialToken())
+      setTrialNotice('Trial token ready. Start a render to use it.')
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to claim the trial render.'
+      setTrialError(normalizeBillingError(message))
+    } finally {
+      setIsClaimingTrial(false)
+    }
+  }, [billingUserId, isClaimingTrial, pendingTrialToken])
 
   const handleStartCheckout = useCallback(async () => {
     setSubscriptionError(null)
@@ -1227,6 +1291,23 @@ const Profile: FC<ProfileProps> = ({
       setIsOpeningPortal(false)
     }
   }, [billingUserId])
+
+  useEffect(() => {
+    const handleTrialStorageUpdate = () => {
+      setPendingTrialToken(getStoredTrialToken())
+    }
+    const handleSubscriptionRefreshEvent = () => {
+      void handleRefreshBilling()
+    }
+
+    window.addEventListener(TRIAL_UPDATE_EVENT, handleTrialStorageUpdate)
+    window.addEventListener(SUBSCRIPTION_REFRESH_EVENT, handleSubscriptionRefreshEvent)
+
+    return () => {
+      window.removeEventListener(TRIAL_UPDATE_EVENT, handleTrialStorageUpdate)
+      window.removeEventListener(SUBSCRIPTION_REFRESH_EVENT, handleSubscriptionRefreshEvent)
+    }
+  }, [handleRefreshBilling])
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
@@ -1457,6 +1538,12 @@ const Profile: FC<ProfileProps> = ({
                       <dd>{formatTimestamp(subscriptionStatus.cancelAt)}</dd>
                     </div>
                   ) : null}
+                  {trialInfo ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <dt className="font-semibold text-[var(--fg)]">Trial status</dt>
+                      <dd>{trialInfo.used ? 'Used' : trialInfo.allowed ? 'Available' : 'Unavailable'}</dd>
+                    </div>
+                  ) : null}
                 </dl>
               </div>
             ) : null}
@@ -1472,6 +1559,28 @@ const Profile: FC<ProfileProps> = ({
             ) : null}
             {subscriptionError ? (
               <p className="text-xs font-medium text-[color:var(--error-strong)]">{subscriptionError}</p>
+            ) : null}
+            {trialAvailable || trialNotice ? (
+              <div className="flex flex-col gap-1">
+                {trialAvailable ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleClaimTrial()
+                    }}
+                    className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
+                    disabled={trialButtonDisabled}
+                  >
+                    {trialButtonLabel}
+                  </button>
+                ) : null}
+                {trialNotice ? (
+                  <p className="text-[10px] text-[var(--muted)]">{trialNotice}</p>
+                ) : null}
+                {trialError ? (
+                  <p className="text-xs font-medium text-[color:var(--error-strong)]">{trialError}</p>
+                ) : null}
+              </div>
             ) : null}
             <div className="flex flex-col gap-2 pt-1">
               <button
