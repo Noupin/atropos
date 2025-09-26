@@ -330,7 +330,60 @@ async function handleSubscription(
     throw new HttpError(400, "invalid_request", "user_id is required");
   }
 
-  const record = await getUserRecord(env, userId);
+  const forceParam = url.searchParams.get("force");
+  const shouldForce = forceParam?.toLowerCase() === "true";
+  const isDevEnvironment = env.STRIPE_SECRET_KEY.startsWith("sk_test");
+
+  let record = await getUserRecord(env, userId);
+
+  if (shouldForce && !isDevEnvironment) {
+    console.warn(
+      `Ignoring forced subscription refresh for ${userId} outside development`
+    );
+  }
+
+  if (
+    shouldForce &&
+    isDevEnvironment &&
+    record &&
+    record.stripe_customer_id
+  ) {
+    const subscriptions = await listCustomerSubscriptions(
+      env,
+      record.stripe_customer_id
+    );
+
+    const subscription =
+      subscriptions.find((candidate) => candidate.metadata?.user_id === userId) ??
+      subscriptions.find((candidate) => {
+        const normalized = normalizeStatus(candidate.status);
+        return normalized === "active" || normalized === "trialing";
+      }) ??
+      subscriptions[0];
+
+    if (subscription) {
+      const subscriptionStatus = subscription.status ?? record.status;
+      const subscriptionPeriodEnd =
+        typeof subscription.current_period_end === "number"
+          ? subscription.current_period_end
+          : record.current_period_end;
+      const subscriptionCancelAtPeriodEnd =
+        typeof subscription.cancel_at_period_end === "boolean"
+          ? subscription.cancel_at_period_end
+          : record.cancel_at_period_end ?? false;
+
+      const updatedRecord = {
+        ...record,
+        status: subscriptionStatus ?? record.status,
+        current_period_end: subscriptionPeriodEnd,
+        cancel_at_period_end: subscriptionCancelAtPeriodEnd,
+        updated_at: Date.now(),
+      };
+      await putUserRecord(env, userId, updatedRecord);
+      record = updatedRecord;
+    }
+  }
+
   if (!record) {
     return jsonResponse(
       {
