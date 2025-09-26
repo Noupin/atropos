@@ -39,7 +39,8 @@ const {
   storeTrialToken,
   clearTrialToken,
   getCachedTrialState,
-  getCachedTrialToken
+  getCachedTrialToken,
+  updateTrialStateFromApi
 } = await import('../services/accessControl')
 
 describe('access control service', () => {
@@ -239,6 +240,52 @@ describe('access control service', () => {
     const storedValue = window.localStorage.getItem('atropos:trial-state')
     expect(storedValue).not.toBeNull()
     expect(JSON.parse(storedValue ?? '{}')).toMatchObject({ started: true, remaining: 4 })
+  })
+
+  it('keeps the lower remaining count when overwriting cached trial snapshots', () => {
+    storeTrialState({
+      allowed: true,
+      started: true,
+      total: 3,
+      remaining: 1,
+      usedAt: null,
+      deviceHash: 'device-123'
+    })
+
+    const snapshot = storeTrialState({
+      allowed: true,
+      started: true,
+      total: 3,
+      remaining: 3,
+      usedAt: null,
+      deviceHash: 'device-123'
+    })
+
+    expect(snapshot?.remaining).toBe(1)
+    expect(getCachedTrialState()?.remaining).toBe(1)
+  })
+
+  it('synchronizes API trial responses with the cached remaining value', () => {
+    storeTrialState({
+      allowed: true,
+      started: true,
+      total: 3,
+      remaining: 2,
+      usedAt: null,
+      deviceHash: 'device-123'
+    })
+
+    const snapshot = updateTrialStateFromApi({
+      allowed: true,
+      started: true,
+      total: 3,
+      remaining: 3,
+      used_at: null,
+      device_hash: 'device-123'
+    })
+
+    expect(snapshot.remaining).toBe(2)
+    expect(getCachedTrialState()?.remaining).toBe(2)
   })
 
   it('clears stored trial state when null is provided', () => {

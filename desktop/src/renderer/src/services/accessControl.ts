@@ -349,9 +349,19 @@ const writeTrialStateSnapshot = (
     return null
   }
   const normalized = normalizeTrialSnapshot(snapshot)
-  const entry: TrialStateCacheEntry = { ...normalized, updatedAt: Date.now() }
+  const previous = loadTrialStateCache()
+  let resolved: TrialStateSnapshot = normalized
+
+  if (previous && previous.started && normalized.started) {
+    const synchronizedRemaining = Math.min(previous.remaining, normalized.remaining)
+    if (synchronizedRemaining !== normalized.remaining) {
+      resolved = { ...normalized, remaining: synchronizedRemaining }
+    }
+  }
+
+  const entry: TrialStateCacheEntry = { ...resolved, updatedAt: Date.now() }
   storeTrialStateCache(entry)
-  return normalized
+  return resolved
 }
 
 export const normalizeTrialFromResponse = (trial: unknown): TrialStateSnapshot =>
@@ -359,8 +369,7 @@ export const normalizeTrialFromResponse = (trial: unknown): TrialStateSnapshot =
 
 export const updateTrialStateFromApi = (trial: unknown): TrialStateSnapshot => {
   const normalized = normalizeTrialSnapshot(trial)
-  storeTrialStateCache({ ...normalized, updatedAt: Date.now() })
-  return normalized
+  return writeTrialStateSnapshot(normalized) ?? normalized
 }
 
 export const getCachedTrialState = (): TrialStateSnapshot | null =>
