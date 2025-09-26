@@ -1206,26 +1206,24 @@ def process_video(
 
 
 if __name__ == "__main__":
-    # tone = Tone.SCIENCE
-    # account = "cosmos"
-    # # Melodysheep: Water Worlds
-    # # yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
-    # # StarTalk
-    # # yt_url = ""
-    # # SEA
-    # yt_url = "https://www.youtube.com/watch?v=Fe6vJU0IV2E"
+    tone = Tone.SCIENCE
+    account = "cosmos"
+    # Melodysheep: Water Worlds
+    # yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
+    # General
+    yt_url = "https://www.youtube.com/watch?v=b2_M-1YqnNI"
+    # yt_url = "https://www.youtube.com/watch?v=ryg077wBvsM"
 
-
-    tone = Tone.FUNNY 
-    account = "funnykinda"
-    # In Review Playlist (newest first)
-    # yt_url = "https://www.youtube.com/playlist?list=PLy3mMHt2i7RKE9ba8rfL7_qnFcpbUaA8_"
-    # KFAF Playlist(newest first)
-    # start next one at [20:]
-    yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"
-    # Last Of Us
-    # start next one at [2:]
-    # yt_url = "https://www.youtube.com/playlist?list=PLBIL5prmXqedEXXikBxPsvKRREB-DaoWb"
+    # tone = Tone.FUNNY 
+    # account = "funnykinda"
+    # # In Review Playlist (newest first)
+    # # yt_url = "https://www.youtube.com/playlist?list=PLy3mMHt2i7RKE9ba8rfL7_qnFcpbUaA8_"
+    # # KFAF Playlist(newest first)
+    # # start next one at [20:]
+    # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"
+    # # Last Of Us
+    # # start next one at [2:]
+    # # yt_url = "https://www.youtube.com/playlist?list=PLBIL5prmXqedEXXikBxPsvKRREB-DaoWb"
 
 
     # tone = Tone.HEALTH
@@ -1255,5 +1253,5 @@ if __name__ == "__main__":
 
     urls = get_video_urls(yt_url)
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[11:20]:
+    for url in urls[:]:
         process_video(url, account=account, tone=tone)
