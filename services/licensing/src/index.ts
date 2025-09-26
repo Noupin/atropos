@@ -13,9 +13,8 @@ import {
   verifyStripeSignature,
 } from "./stripe";
 import {
-  getSubscriptionRecord,
+  findUserByStripeCustomerId,
   getUserRecord,
-  putSubscriptionRecord,
   putUserRecord,
 } from "./kv";
 import { derivePublicKey, issueLicenseToken, verifyLicenseToken } from "./jwt";
@@ -32,6 +31,7 @@ interface StripeSubscription {
   status?: string;
   metadata?: Record<string, string>;
   current_period_end?: number;
+  cancel_at_period_end?: boolean;
   items?: { data?: Array<{ price?: { id?: string } }> };
   customer_email?: string | null;
 }
@@ -273,7 +273,7 @@ async function handleSubscription(
         status: "inactive",
         entitled: false,
         current_period_end: null,
-        cancel_at_period_end: null,
+        cancel_at_period_end: false,
       },
       200,
       corsHeaders
@@ -282,13 +282,14 @@ async function handleSubscription(
 
   const status = normalizeStatus(record.status);
   const currentPeriodEnd = record.current_period_end ?? null;
+  const cancelAtPeriodEnd = record.cancel_at_period_end ?? false;
 
   return jsonResponse(
     {
       status,
       entitled: isEntitled(status, currentPeriodEnd ?? undefined),
       current_period_end: currentPeriodEnd,
-      cancel_at_period_end: null,
+      cancel_at_period_end: cancelAtPeriodEnd,
     },
     200,
     corsHeaders
@@ -345,12 +346,7 @@ async function handleWebhook(
             status,
             current_period_end: existing?.current_period_end,
             plan_price_id: planPriceId,
-            updated_at: Date.now(),
-          });
-          await putSubscriptionRecord(env, customerId, {
-            user_id: userId,
-            status,
-            current_period_end: existing?.current_period_end,
+            cancel_at_period_end: existing?.cancel_at_period_end ?? false,
             updated_at: Date.now(),
           });
           console.log(
@@ -360,44 +356,92 @@ async function handleWebhook(
         break;
       }
       case "customer.subscription.created":
-      case "customer.subscription.updated":
-      case "customer.subscription.deleted": {
+      case "customer.subscription.updated": {
         const subscription = object as unknown as StripeSubscription;
         const customerId = extractStripeId(subscription.customer);
-        const existingSubscription = customerId
-          ? await getSubscriptionRecord(env, customerId)
-          : null;
-        const userId =
-          subscription.metadata?.user_id ?? existingSubscription?.user_id;
+        let userId = subscription.metadata?.user_id ?? null;
+        let existingUser = userId ? await getUserRecord(env, userId) : null;
+
+        if ((!userId || !existingUser) && customerId) {
+          const match = await findUserByStripeCustomerId(env, customerId);
+          if (match) {
+            userId = match.userId;
+            existingUser = match.record;
+          }
+        }
+
         if (!customerId || !userId) {
           console.warn(
             `[${context.requestId}] Subscription event missing user_id`
           );
           break;
         }
-        const status = subscription.status ?? "unknown";
+
+        const status = subscription.status ?? existingUser?.status ?? "unknown";
         const currentPeriodEnd =
           typeof subscription.current_period_end === "number"
             ? subscription.current_period_end
-            : undefined;
-        const planPriceId = subscription.items?.data?.[0]?.price?.id;
-        const existingUser = await getUserRecord(env, userId);
+            : existingUser?.current_period_end;
+        const cancelAtPeriodEnd =
+          typeof subscription.cancel_at_period_end === "boolean"
+            ? subscription.cancel_at_period_end
+            : existingUser?.cancel_at_period_end ?? false;
+        const planPriceId =
+          subscription.items?.data?.[0]?.price?.id ??
+          existingUser?.plan_price_id ??
+          env.PRICE_ID_MONTHLY;
+        const updatedAt = Date.now();
         await putUserRecord(env, userId, {
           email: subscription.customer_email ?? existingUser?.email ?? "",
           stripe_customer_id: customerId,
           status,
           current_period_end: currentPeriodEnd,
-          plan_price_id: planPriceId ?? env.PRICE_ID_MONTHLY,
-          updated_at: Date.now(),
-        });
-        await putSubscriptionRecord(env, customerId, {
-          user_id: userId,
-          status,
-          current_period_end: currentPeriodEnd,
-          updated_at: Date.now(),
+          plan_price_id: planPriceId,
+          cancel_at_period_end: cancelAtPeriodEnd,
+          updated_at: updatedAt,
         });
         console.log(
           `[${context.requestId}] Subscription ${subscription.id} -> ${status}`
+        );
+        break;
+      }
+      case "customer.subscription.deleted": {
+        const subscription = object as unknown as StripeSubscription;
+        const customerId = extractStripeId(subscription.customer);
+        let userId = subscription.metadata?.user_id ?? null;
+        let existingUser = userId ? await getUserRecord(env, userId) : null;
+
+        if ((!userId || !existingUser) && customerId) {
+          const match = await findUserByStripeCustomerId(env, customerId);
+          if (match) {
+            userId = match.userId;
+            existingUser = match.record;
+          }
+        }
+
+        if (!customerId || !userId) {
+          console.warn(
+            `[${context.requestId}] Subscription event missing user_id`
+          );
+          break;
+        }
+        const updatedAt = Date.now();
+        const currentPeriodEnd = Math.floor(updatedAt / 1000);
+        const planPriceId =
+          existingUser?.plan_price_id ??
+          subscription.items?.data?.[0]?.price?.id ??
+          env.PRICE_ID_MONTHLY;
+        await putUserRecord(env, userId, {
+          email: existingUser?.email ?? subscription.customer_email ?? "",
+          stripe_customer_id: customerId,
+          status: "canceled",
+          current_period_end: currentPeriodEnd,
+          plan_price_id: planPriceId,
+          cancel_at_period_end: false,
+          updated_at: updatedAt,
+        });
+        console.log(
+          `[${context.requestId}] Subscription ${subscription.id} canceled`
         );
         break;
       }

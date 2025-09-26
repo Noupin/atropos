@@ -14,7 +14,9 @@ import { extractErrorMessage, requestWithFallback } from './http'
 const delay = async (ms: number): Promise<void> =>
   await new Promise((resolve) => setTimeout(resolve, ms))
 
-const isMockBilling = BACKEND_MODE === 'mock'
+const USE_BILLING_API_MOCKS = false
+
+const isMockBilling = USE_BILLING_API_MOCKS || BACKEND_MODE === 'mock'
 
 const mockSubscriptionStatus = (): SubscriptionStatus => ({
   status: 'trialing',
