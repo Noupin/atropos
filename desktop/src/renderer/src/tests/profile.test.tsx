@@ -49,10 +49,21 @@ const paymentsMocks = vi.hoisted(() => ({
   createBillingPortalSession: vi.fn()
 }))
 
+const trialMocks = vi.hoisted(() => ({
+  startTrial: vi.fn(),
+  claimTrial: vi.fn()
+}))
+
 vi.mock('../services/paymentsApi', () => ({
   fetchSubscriptionStatus: paymentsMocks.fetchSubscriptionStatus,
   createCheckoutSession: paymentsMocks.createCheckoutSession,
   createBillingPortalSession: paymentsMocks.createBillingPortalSession
+}))
+
+vi.mock('../services/trialAccess', () => ({
+  startTrial: trialMocks.startTrial,
+  claimTrial: trialMocks.claimTrial,
+  consumeTrial: vi.fn()
 }))
 
 const createPlatform = (
@@ -156,6 +167,26 @@ describe('Profile page', () => {
     paymentsMocks.createCheckoutSession.mockResolvedValue({ url: 'https://stripe.test/checkout' })
     paymentsMocks.createBillingPortalSession.mockReset()
     paymentsMocks.createBillingPortalSession.mockResolvedValue({ url: 'https://stripe.test/portal' })
+
+    trialMocks.startTrial.mockReset()
+    trialMocks.startTrial.mockResolvedValue({
+      started: true,
+      total: 3,
+      remaining: 3,
+      usedAt: null,
+      deviceHash: 'device-123'
+    })
+    trialMocks.claimTrial.mockReset()
+    trialMocks.claimTrial.mockResolvedValue({
+      token: { token: 'trial-token', exp: Math.floor(Date.now() / 1000) + 900 },
+      snapshot: {
+        started: true,
+        total: 3,
+        remaining: 2,
+        usedAt: null,
+        deviceHash: 'device-123'
+      }
+    })
 
     window.open = vi.fn() as typeof window.open
   })
@@ -508,6 +539,115 @@ describe('Profile page', () => {
 
     await waitFor(() => expect(paymentsMocks.fetchSubscriptionStatus).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(refreshAccessStatusMock).toHaveBeenCalledTimes(1))
+  })
+
+  it('shows trial onboarding UI when no subscription is active', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null,
+      trial: {
+        started: false,
+        total: 3,
+        remaining: 3,
+        usedAt: null,
+        deviceHash: null
+      }
+    })
+
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: false,
+        status: 'inactive',
+        reason: 'Subscription required to continue using Atropos.'
+      }
+    })
+
+    expect(
+      await screen.findByText(/Try Atropos free with three renders/i)
+    ).toBeInTheDocument()
+    const startButton = await screen.findByRole('button', { name: /Start 3-video Trial/i })
+    expect(startButton).toBeEnabled()
+    expect(screen.getByRole('button', { name: /^Subscribe$/i })).toBeInTheDocument()
+
+    fireEvent.click(startButton)
+    await waitFor(() => expect(trialMocks.startTrial).toHaveBeenCalledWith('atropos-desktop-dev'))
+  })
+
+  it('allows claiming trial renders when the trial has started', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null,
+      trial: {
+        started: true,
+        total: 3,
+        remaining: 2,
+        usedAt: null,
+        deviceHash: 'device-123'
+      }
+    })
+
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: false,
+        status: 'inactive',
+        reason: 'Trial remaining: 2 of 3. Claim a trial render from your profile to continue.'
+      }
+    })
+
+    expect(await screen.findByText(/Trial mode — 2 of 3 left/i)).toBeInTheDocument()
+    const claimButton = await screen.findByRole('button', { name: /Use trial for next render/i })
+    expect(claimButton).toBeEnabled()
+
+    fireEvent.click(claimButton)
+    await waitFor(() => expect(trialMocks.claimTrial).toHaveBeenCalledWith('atropos-desktop-dev'))
+  })
+
+  it('disables the trial action when all renders are exhausted', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null,
+      trial: {
+        started: true,
+        total: 3,
+        remaining: 0,
+        usedAt: null,
+        deviceHash: 'device-123'
+      }
+    })
+
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: false,
+        status: 'inactive',
+        reason: 'Trial remaining: 0 of 3. Subscribe to continue using Atropos.'
+      }
+    })
+
+    expect(await screen.findByText(/Trial mode — 0 of 3 left/i)).toBeInTheDocument()
+    const claimButton = await screen.findByRole('button', { name: /Trial exhausted/i })
+    expect(claimButton).toBeDisabled()
+    expect(
+      screen.getByText(/You have used all trial renders. Subscribe to continue/i)
+    ).toBeInTheDocument()
+    expect(trialMocks.claimTrial).not.toHaveBeenCalled()
   })
 })
 

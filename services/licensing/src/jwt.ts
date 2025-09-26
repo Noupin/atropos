@@ -14,6 +14,15 @@ export interface LicenseClaims {
   epoch: number;
 }
 
+export interface TrialClaims {
+  sub: string;
+  trial: true;
+  use: number;
+  iat: number;
+  exp: number;
+  jti: string;
+}
+
 function textEncoder(): TextEncoder {
   return new TextEncoder();
 }
@@ -108,6 +117,8 @@ export interface LicenseTokenResult {
   jti: string;
 }
 
+const TRIAL_LIFETIME_SECONDS = 15 * 60;
+
 export async function issueLicenseToken(env: Env, options: IssueLicenseOptions): Promise<LicenseTokenResult> {
   const { privateKey } = await getSigningMaterial(env);
   const header = {
@@ -129,6 +140,36 @@ export async function issueLicenseToken(env: Env, options: IssueLicenseOptions):
     jti,
     epoch: options.epoch,
     ...(options.deviceHash ? { device_hash: options.deviceHash } : {}),
+  };
+
+  const encodedHeader = base64UrlEncodeString(JSON.stringify(header));
+  const encodedPayload = base64UrlEncodeString(JSON.stringify(payload));
+  const signingInput = `${encodedHeader}.${encodedPayload}`;
+  const signature = await sign(utf8ToUint8(signingInput), privateKey.slice(0, 32));
+  const encodedSignature = base64UrlEncode(signature);
+  const token = `${encodedHeader}.${encodedPayload}.${encodedSignature}`;
+
+  return { token, exp, jti };
+}
+
+export async function issueTrialToken(env: Env, userId: string): Promise<LicenseTokenResult> {
+  const { privateKey } = await getSigningMaterial(env);
+  const header = {
+    alg: "EdDSA",
+    typ: "JWT",
+  };
+
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const exp = issuedAt + TRIAL_LIFETIME_SECONDS;
+  const jti = crypto.randomUUID();
+
+  const payload: TrialClaims = {
+    sub: userId,
+    trial: true,
+    use: 1,
+    iat: issuedAt,
+    exp,
+    jti,
   };
 
   const encodedHeader = base64UrlEncodeString(JSON.stringify(header));
@@ -172,6 +213,44 @@ export async function verifyLicenseToken(env: Env, token: string): Promise<Licen
 
   if (await isTokenRevoked(env, payload.jti)) {
     throw new HttpError(401, "token_revoked", "Token has been revoked");
+  }
+
+  return payload;
+}
+
+export async function verifyTrialToken(env: Env, token: string): Promise<TrialClaims> {
+  const { publicKey } = await getSigningMaterial(env);
+  const [encodedHeader, encodedPayload, encodedSignature] = token.split(".");
+  if (!encodedHeader || !encodedPayload || !encodedSignature) {
+    throw new HttpError(400, "invalid_token", "Malformed token");
+  }
+
+  const headerJson = JSON.parse(new TextDecoder().decode(base64UrlDecode(encodedHeader)));
+  if (headerJson.alg !== "EdDSA" || headerJson.typ !== "JWT") {
+    throw new HttpError(400, "invalid_token", "Unexpected token header");
+  }
+
+  const payloadBytes = base64UrlDecode(encodedPayload);
+  const signatureBytes = base64UrlDecode(encodedSignature);
+  const signingInput = utf8ToUint8(`${encodedHeader}.${encodedPayload}`);
+  const isValid = await verify(signatureBytes, signingInput, publicKey);
+  if (!isValid) {
+    throw new HttpError(401, "invalid_token", "Token signature is invalid");
+  }
+
+  const payload = JSON.parse(new TextDecoder().decode(payloadBytes)) as TrialClaims;
+  if (!payload || payload.trial !== true || payload.use !== 1) {
+    throw new HttpError(401, "invalid_token", "Token payload is invalid");
+  }
+  if (typeof payload.sub !== "string" || payload.sub.trim().length === 0) {
+    throw new HttpError(401, "invalid_token", "Token subject is invalid");
+  }
+  if (typeof payload.jti !== "string" || payload.jti.trim().length === 0) {
+    throw new HttpError(401, "invalid_token", "Token identifier is invalid");
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.exp <= now) {
+    throw new HttpError(401, "token_expired", "Token is expired");
   }
 
   return payload;

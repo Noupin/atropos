@@ -7,8 +7,10 @@ import {
 import type {
   BillingPortalSession,
   CheckoutSession,
-  SubscriptionStatus
+  SubscriptionStatus,
+  SubscriptionTrialState
 } from '../types'
+import { updateTrialStateFromApi, TrialStateSnapshot } from './accessControl'
 import { extractErrorMessage, requestWithFallback } from './http'
 
 const delay = async (ms: number): Promise<void> =>
@@ -25,8 +27,30 @@ const mockSubscriptionStatus = (): SubscriptionStatus => ({
   renewsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
   cancelAt: null,
   trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-  latestInvoiceUrl: 'https://stripe.test/invoice/mock'
+  latestInvoiceUrl: 'https://stripe.test/invoice/mock',
+  trial: {
+    started: true,
+    total: 3,
+    remaining: 3,
+    usedAt: null,
+    deviceHash: null
+  }
 })
+
+const toSubscriptionTrialState = (
+  snapshot: TrialStateSnapshot | null
+): SubscriptionTrialState | null => {
+  if (!snapshot) {
+    return null
+  }
+  return {
+    started: snapshot.started,
+    total: snapshot.total,
+    remaining: snapshot.remaining,
+    usedAt: snapshot.usedAt ? new Date(snapshot.usedAt).toISOString() : null,
+    deviceHash: snapshot.deviceHash ?? null
+  }
+}
 
 const mockCheckoutSession = (): CheckoutSession => ({
   url: 'https://stripe.test/checkout'
@@ -52,6 +76,7 @@ export const fetchSubscriptionStatus = async (userId: string): Promise<Subscript
     throw new Error(await extractErrorMessage(response))
   }
   const body = (await response.json()) as Partial<SubscriptionStatus>
+  const trialSnapshot = updateTrialStateFromApi((body as { trial?: unknown })?.trial ?? null)
   return {
     status: body.status ?? 'inactive',
     planId: body.planId ?? null,
@@ -59,7 +84,8 @@ export const fetchSubscriptionStatus = async (userId: string): Promise<Subscript
     renewsAt: body.renewsAt ?? null,
     cancelAt: body.cancelAt ?? null,
     trialEndsAt: body.trialEndsAt ?? null,
-    latestInvoiceUrl: body.latestInvoiceUrl ?? null
+    latestInvoiceUrl: body.latestInvoiceUrl ?? null,
+    trial: toSubscriptionTrialState(trialSnapshot)
   }
 }
 

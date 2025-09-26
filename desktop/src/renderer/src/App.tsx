@@ -618,6 +618,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 initialState={homeState}
                 onStateChange={setHomeState}
                 accounts={accounts}
+                onTrialConsumed={refreshAccessStatus}
               />
             }
           />
@@ -675,6 +676,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 initialState={homeState}
                 onStateChange={setHomeState}
                 accounts={accounts}
+                onTrialConsumed={refreshAccessStatus}
               />
             }
           />

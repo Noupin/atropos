@@ -11,6 +11,7 @@ import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PipelineProgress from '../components/PipelineProgress'
 import { BACKEND_MODE, buildJobClipVideoUrl } from '../config/backend'
+import { getAccessControlConfig } from '../config/accessControl'
 import {
   createInitialPipelineSteps,
   PIPELINE_STEP_DEFINITIONS,
@@ -23,6 +24,8 @@ import {
   subscribeToPipelineEvents,
   type PipelineEventMessage
 } from '../services/pipelineApi'
+import { consumeTrial, getActiveTrialToken } from '../services/trialAccess'
+import type { TrialTokenCacheEntry } from '../services/accessControl'
 import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
 import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
@@ -46,15 +49,43 @@ type HomeProps = {
   initialState: HomePipelineState
   onStateChange: (state: HomePipelineState) => void
   accounts: AccountSummary[]
+  onTrialConsumed?: () => Promise<void> | void
 }
 
-const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, accounts }) => {
+const Home: FC<HomeProps> = ({
+  registerSearch,
+  initialState,
+  onStateChange,
+  accounts,
+  onTrialConsumed
+}) => {
   const navigate = useNavigate()
   const [state, setState] = useState<HomePipelineState>(initialState)
   const [folderMessage, setFolderMessage] = useState<string | null>(null)
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
   const [isOpeningFolder, setIsOpeningFolder] = useState(false)
   const canAttemptToOpenFolder = useMemo(() => canOpenAccountClipsFolder(), [])
+  const billingUserId = useMemo(() => getAccessControlConfig().clientId.trim(), [])
+  const pendingTrialTokenRef = useRef<TrialTokenCacheEntry | null>(null)
+
+  const consumePendingTrial = useCallback(async () => {
+    const pending = pendingTrialTokenRef.current
+    if (!pending || !billingUserId) {
+      pendingTrialTokenRef.current = null
+      return
+    }
+
+    try {
+      await consumeTrial(billingUserId, pending.token)
+      if (onTrialConsumed) {
+        await Promise.resolve(onTrialConsumed())
+      }
+    } catch (error) {
+      console.warn('Failed to consume trial token after pipeline completion.', error)
+    } finally {
+      pendingTrialTokenRef.current = null
+    }
+  }, [billingUserId, onTrialConsumed])
 
   useEffect(() => {
     setState(initialState)
@@ -593,6 +624,8 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         const errorMessage =
           typeof errorValue === 'string' ? errorValue : typeof event.message === 'string' ? event.message : null
 
+        void consumePendingTrial()
+
         updateState((prev) => ({
           ...prev,
           pipelineError: success ? null : errorMessage ?? 'Pipeline failed.',
@@ -614,7 +647,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         cleanupConnection()
       }
     },
-    [cleanupConnection, updateState]
+    [cleanupConnection, consumePendingTrial, updateState]
   )
 
   const startRealProcessing = useCallback(
@@ -628,6 +661,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       cleanupConnection()
 
       try {
+        const trialToken = getActiveTrialToken()
         const toneOverride =
           availableAccounts.find((account) => account.id === accountId)?.tone ?? null
         const { jobId } = await startPipelineJob({
@@ -636,6 +670,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
           tone: toneOverride,
           reviewMode: shouldPauseForReview
         })
+        pendingTrialTokenRef.current = trialToken ?? null
         activeJobIdRef.current = jobId
         let unsubscribe: (() => void) | null = null
         const cleanup = () => {
@@ -664,6 +699,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         })
         updateState((prev) => ({ ...prev, activeJobId: jobId, awaitingReview: false }))
       } catch (error) {
+        pendingTrialTokenRef.current = null
         updateState((prev) => ({
           ...prev,
           pipelineError:
