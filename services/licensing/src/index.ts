@@ -177,6 +177,7 @@ async function handleCheckout(
         env,
         existingCustomerId,
         successUrl ?? env.RETURN_URL_SUCCESS,
+        env.STRIPE_PORTAL_CONFIGURATION_ID,
         portalIdempotencyKey,
       );
 
@@ -290,12 +291,31 @@ async function handlePortal(
 
   const idempotencyKey =
     request.headers.get("Idempotency-Key") ?? crypto.randomUUID();
-  const portal = await createBillingPortalSession(
-    env,
-    userRecord.stripe_customer_id,
-    returnUrl ?? env.RETURN_URL_SUCCESS,
-    idempotencyKey
-  );
+  let portal: Awaited<ReturnType<typeof createBillingPortalSession>>;
+  try {
+    portal = await createBillingPortalSession(
+      env,
+      userRecord.stripe_customer_id,
+      returnUrl ?? env.RETURN_URL_SUCCESS,
+      env.STRIPE_PORTAL_CONFIGURATION_ID,
+      idempotencyKey
+    );
+  } catch (error) {
+    if (
+      error instanceof HttpError &&
+      error.code === "stripe_error" &&
+      /invalid_request_error: no configuration provided/i.test(error.message)
+    ) {
+      throw new HttpError(
+        409,
+        "portal_not_configured",
+        "Stripe billing portal is not configured. " +
+          "Configure the customer portal in the Stripe Dashboard for both test and live modes.",
+      );
+    }
+
+    throw error;
+  }
   console.log(`[${context.requestId}] Generated portal session for ${userId}`);
   return jsonResponse({ url: portal.url }, 200, corsHeaders);
 }

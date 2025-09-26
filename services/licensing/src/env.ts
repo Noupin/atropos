@@ -5,6 +5,7 @@ export interface Env {
   JWT_PRIVATE_KEY: string;
   PRICE_ID_MONTHLY: string;
   TIER?: string;
+  STRIPE_PORTAL_CONFIGURATION_ID?: string;
   RETURN_URL_SUCCESS?: string;
   RETURN_URL_CANCEL?: string;
   CORS_ALLOW_ORIGINS?: string;
