@@ -38,6 +38,7 @@ type PlatformPayload = {
 }
 
 const THEME_STORAGE_KEY = 'atropos:theme'
+const ACCESS_REFRESH_INTERVAL_MS = 60_000
 
 const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
@@ -199,7 +200,20 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   }, [])
 
   useEffect(() => {
+    let intervalId: number | null = null
     void refreshAccessStatus()
+
+    if (typeof window !== 'undefined') {
+      intervalId = window.setInterval(() => {
+        void refreshAccessStatus()
+      }, ACCESS_REFRESH_INTERVAL_MS)
+    }
+
+    return () => {
+      if (intervalId !== null && typeof window !== 'undefined') {
+        window.clearInterval(intervalId)
+      }
+    }
   }, [refreshAccessStatus])
 
   useEffect(() => {

@@ -29,8 +29,29 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
+const parseBoolean = (value: string | undefined, fallback = false): boolean => {
+  if (!value) {
+    return fallback
+  }
+
+  const normalized = value.trim().toLowerCase()
+  if (normalized.length === 0) {
+    return fallback
+  }
+
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) {
+    return true
+  }
+
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) {
+    return false
+  }
+
+  return fallback
+}
+
 const apiUrl = parseUrl(import.meta.env.VITE_ACCESS_API_URL)
-const useMock = apiUrl === null
+const useMock = parseBoolean(import.meta.env.VITE_ACCESS_USE_MOCK, false)
 
 const config: AccessControlConfig = {
   apiUrl,

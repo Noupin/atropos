@@ -190,7 +190,7 @@ describe('Profile page', () => {
     expect(screen.getByText('Profile')).toBeInTheDocument()
     expect(screen.getByText(/Connected platforms across/i)).toHaveTextContent('1/1')
     expect(paymentsMocks.fetchSubscriptionStatus).toHaveBeenCalledWith('atropos-desktop-dev')
-    expect(screen.getByRole('button', { name: /Subscribe with Stripe/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Manage billing/i })).toBeInTheDocument()
 
     const creatorCard = screen.getAllByTestId('account-card-account-1')[0]
     const scope = within(creatorCard)
@@ -367,9 +367,27 @@ describe('Profile page', () => {
   })
 
   it('opens Stripe checkout when subscribing', async () => {
-    renderProfile()
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null
+    })
 
-    const checkoutButton = screen.getByRole('button', { name: /Subscribe with Stripe/i })
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: false,
+        status: 'inactive',
+        reason: 'Subscription required to continue using Atropos.'
+      }
+    })
+
+    expect(await screen.findByLabelText(/Billing email address/i)).toHaveValue('owner@example.com')
+    const checkoutButton = await screen.findByRole('button', { name: /^Subscribe$/i })
     fireEvent.click(checkoutButton)
 
     await waitFor(() => expect(paymentsMocks.createCheckoutSession).toHaveBeenCalledTimes(1))
@@ -378,6 +396,100 @@ describe('Profile page', () => {
       email: 'owner@example.com'
     })
     expect(window.open).toHaveBeenCalledWith('https://stripe.test/checkout', '_blank', 'noopener')
+
+    window.dispatchEvent(new Event('focus'))
+
+    await waitFor(() => expect(paymentsMocks.fetchSubscriptionStatus).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(refreshAccessStatusMock).toHaveBeenCalledTimes(1))
+  })
+
+  it('allows entering a billing email before subscribing when none is stored', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null
+    })
+
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: false,
+        status: 'inactive',
+        reason: 'Subscription required to continue using Atropos.',
+        customerEmail: null
+      }
+    })
+
+    const emailField = await screen.findByLabelText(/Billing email address/i)
+    expect(emailField).toHaveValue('')
+
+    const subscribeButton = await screen.findByRole('button', { name: /^Subscribe$/i })
+    expect(subscribeButton).toBeDisabled()
+
+    fireEvent.change(emailField, { target: { value: 'new-owner@example.com' } })
+    expect(subscribeButton).not.toBeDisabled()
+
+    fireEvent.click(subscribeButton)
+
+    await waitFor(() => expect(paymentsMocks.createCheckoutSession).toHaveBeenCalledTimes(1))
+    expect(paymentsMocks.createCheckoutSession).toHaveBeenCalledWith({
+      userId: 'atropos-desktop-dev',
+      email: 'new-owner@example.com'
+    })
+    expect(window.open).toHaveBeenCalledWith('https://stripe.test/checkout', '_blank', 'noopener')
+  })
+
+  it('prefers the access entitlement when determining the billing CTA', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null
+    })
+
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: true,
+        status: 'active'
+      }
+    })
+
+    const manageButton = await screen.findByRole('button', { name: /Manage billing/i })
+    expect(manageButton).toBeInTheDocument()
+    expect(screen.getByText(/Access active/i)).toBeVisible()
+  })
+
+  it('shows subscribe when access is disabled despite an active subscription response', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'active',
+      planId: 'plan_123',
+      planName: 'Pro Plan',
+      renewsAt: '2025-06-01T10:00:00Z',
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null
+    })
+
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: false,
+        status: 'inactive',
+        reason: 'Subscription is no longer active.'
+      }
+    })
+
+    const subscribeButton = await screen.findByRole('button', { name: /^Subscribe$/i })
+    expect(subscribeButton).toBeInTheDocument()
+    expect(screen.getByText(/Access disabled/i)).toBeVisible()
   })
 
   it('opens the billing portal when managing billing', async () => {
@@ -391,6 +503,11 @@ describe('Profile page', () => {
       userId: 'atropos-desktop-dev'
     })
     expect(window.open).toHaveBeenCalledWith('https://stripe.test/portal', '_blank', 'noopener')
+
+    window.dispatchEvent(new Event('focus'))
+
+    await waitFor(() => expect(paymentsMocks.fetchSubscriptionStatus).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(refreshAccessStatusMock).toHaveBeenCalledTimes(1))
   })
 })
 
