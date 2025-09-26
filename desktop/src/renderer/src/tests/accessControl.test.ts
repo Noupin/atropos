@@ -153,6 +153,25 @@ describe('access control service', () => {
     )
   })
 
+  it('allows access using cached trial state when the access API URL is missing', async () => {
+    mockConfig.useMock = false
+    mockConfig.apiUrl = null
+
+    storeTrialState({
+      started: true,
+      total: 3,
+      remaining: 2,
+      usedAt: null,
+      deviceHash: 'device-abc'
+    })
+
+    const result = await verifyDesktopAccess()
+
+    expect(result.allowed).toBe(true)
+    expect(result.subscriptionStatus).toBe('trialing')
+    expect(result.expiresAt).toBeNull()
+  })
+
   it('throws when the shared secret is missing', async () => {
     await expect(
       createAccessJwt(

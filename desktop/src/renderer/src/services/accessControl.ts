@@ -489,15 +489,6 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
     return mockAccessResponse(payload)
   }
 
-  if (!config.apiUrl) {
-    throw new Error('Access control API URL is not configured.')
-  }
-
-  const baseUrl = new URL(config.apiUrl)
-
-  const subscriptionUrl = new URL('/billing/subscription', baseUrl)
-  subscriptionUrl.searchParams.set('user_id', config.clientId)
-
   const trialAccessFromCache = (): AccessCheckResult | null => {
     const trialToken = getCachedTrialToken()
     const trialState = getCachedTrialState()
@@ -519,6 +510,19 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
     }
     return null
   }
+
+  if (!config.apiUrl) {
+    const cachedTrial = trialAccessFromCache()
+    if (cachedTrial) {
+      return cachedTrial
+    }
+    throw new Error('Access control API URL is not configured.')
+  }
+
+  const baseUrl = new URL(config.apiUrl)
+
+  const subscriptionUrl = new URL('/billing/subscription', baseUrl)
+  subscriptionUrl.searchParams.set('user_id', config.clientId)
 
   let subscriptionResponse: Response
   try {

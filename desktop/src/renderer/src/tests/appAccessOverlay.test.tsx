@@ -147,6 +147,8 @@ describe('App access overlay behaviour', () => {
     )
 
     await waitFor(() => expect(verifyDesktopAccessMock).toHaveBeenCalled())
-    expect(screen.queryByRole('button', { name: /Open billing settings/i })).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Open billing settings/i })).not.toBeInTheDocument()
+    )
   })
 })
