@@ -377,7 +377,14 @@ describe('Profile page', () => {
       latestInvoiceUrl: null
     })
 
-    renderProfile()
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: false,
+        status: 'inactive',
+        reason: 'Subscription required to continue using Atropos.'
+      }
+    })
 
     const checkoutButton = await screen.findByRole('button', { name: /^Subscribe$/i })
     fireEvent.click(checkoutButton)
@@ -393,6 +400,55 @@ describe('Profile page', () => {
 
     await waitFor(() => expect(paymentsMocks.fetchSubscriptionStatus).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(refreshAccessStatusMock).toHaveBeenCalledTimes(1))
+  })
+
+  it('prefers the access entitlement when determining the billing CTA', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null
+    })
+
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: true,
+        status: 'active'
+      }
+    })
+
+    const manageButton = await screen.findByRole('button', { name: /Manage billing/i })
+    expect(manageButton).toBeInTheDocument()
+    expect(screen.getByText(/Access active/i)).toBeVisible()
+  })
+
+  it('shows subscribe when access is disabled despite an active subscription response', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'active',
+      planId: 'plan_123',
+      planName: 'Pro Plan',
+      renewsAt: '2025-06-01T10:00:00Z',
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null
+    })
+
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: false,
+        status: 'inactive',
+        reason: 'Subscription is no longer active.'
+      }
+    })
+
+    const subscribeButton = await screen.findByRole('button', { name: /^Subscribe$/i })
+    expect(subscribeButton).toBeInTheDocument()
+    expect(screen.getByText(/Access disabled/i)).toBeVisible()
   })
 
   it('opens the billing portal when managing billing', async () => {

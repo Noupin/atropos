@@ -1041,68 +1041,80 @@ const Profile: FC<ProfileProps> = ({
     .join(' ')
   const authStatusDot = authStatusVariant?.dot ?? 'status-pill__dot status-pill__dot--muted'
 
-  const accessVariantKey = accessStatus
-    ? accessStatus.allowed
-      ? accessStatus.status === 'active'
+  const resolvedLifecycleStatus: SubscriptionLifecycleStatus = useMemo(() => {
+    if (accessStatus?.status) {
+      return accessStatus.status
+    }
+    if (subscriptionStatus?.status) {
+      return subscriptionStatus.status
+    }
+    return 'inactive'
+  }, [accessStatus?.status, subscriptionStatus?.status])
+
+  const hasEntitledSubscription = useMemo(() => {
+    if (accessStatus) {
+      return accessStatus.allowed
+    }
+    if (subscriptionStatus?.status) {
+      return PORTAL_ELIGIBLE_STATUSES.has(subscriptionStatus.status)
+    }
+    return false
+  }, [accessStatus, subscriptionStatus?.status])
+
+  const accessVariantKey = isCheckingAccess
+    ? 'neutral'
+    : hasEntitledSubscription
+      ? resolvedLifecycleStatus === 'active'
         ? 'success'
-        : accessStatus.status === 'trialing' || accessStatus.status === 'grace_period'
+        : resolvedLifecycleStatus === 'trialing' || resolvedLifecycleStatus === 'grace_period'
           ? 'warning'
-          : accessStatus.status === 'inactive'
+          : resolvedLifecycleStatus === 'inactive'
             ? 'neutral'
             : 'warning'
-      : 'error'
-    : accessError
-      ? 'error'
-      : 'neutral'
+      : accessStatus || subscriptionStatus || accessError
+        ? 'error'
+        : 'neutral'
   const accessVariant = accessBadgeVariants[accessVariantKey] ?? accessBadgeVariants.neutral
 
   const accessBadgeLabel = isCheckingAccess
     ? 'Checking access'
-    : accessStatus
-      ? accessStatus.allowed
-        ? accessStatus.status === 'active'
-          ? 'Access active'
-          : accessStatus.status === 'trialing'
-            ? 'Trial active'
-            : accessStatus.status === 'grace_period'
-              ? 'Grace period'
-              : 'Subscription attention'
-        : 'Access disabled'
-      : accessError
-        ? 'Access error'
-        : 'Access unknown'
+    : hasEntitledSubscription
+      ? resolvedLifecycleStatus === 'active'
+        ? 'Access active'
+        : resolvedLifecycleStatus === 'trialing'
+          ? 'Trial active'
+          : resolvedLifecycleStatus === 'grace_period'
+            ? 'Grace period'
+            : 'Subscription attention'
+      : accessStatus
+        ? 'Access disabled'
+        : accessError
+          ? 'Access error'
+          : 'Access required'
+
+  const activePlanLabel = accessStatus?.subscriptionPlan ?? subscriptionStatus?.planName ?? null
 
   const accessSummaryText = isCheckingAccess
     ? 'Verifying access permissions…'
-    : accessStatus
-      ? accessStatus.allowed
-        ? accessStatus.subscriptionPlan
-          ? `Access granted – ${accessStatus.subscriptionPlan}`
-          : 'Access granted.'
-        : accessStatus.reason ?? 'Subscription required to continue using Atropos.'
-      : accessError ?? 'Access status unavailable.'
+    : hasEntitledSubscription
+      ? activePlanLabel
+        ? `Access granted – ${activePlanLabel}`
+        : 'Access granted.'
+      : accessStatus?.reason ?? accessError ?? 'Subscription required to continue using Atropos.'
 
   const accessRenewalLabel = accessStatus?.expiresAt
     ? new Date(accessStatus.expiresAt).toLocaleString()
     : null
 
-  const subscriptionPlanName = subscriptionStatus?.planName ?? accessStatus?.subscriptionPlan ?? 'Not subscribed'
+  const subscriptionPlanName = hasEntitledSubscription
+    ? activePlanLabel ?? 'Current plan'
+    : activePlanLabel ?? 'Not subscribed'
   const billingEmail = accessStatus?.customerEmail ?? null
   const billingEmailLabel = billingEmail
 
-  const effectiveSubscriptionStatus = useMemo<SubscriptionLifecycleStatus>(() => {
-    if (subscriptionStatus?.status) {
-      return subscriptionStatus.status
-    }
-    if (accessStatus?.status) {
-      return accessStatus.status
-    }
-    return 'inactive'
-  }, [accessStatus?.status, subscriptionStatus?.status])
+  const canManageBilling = hasEntitledSubscription
 
-  const shouldOpenPortal = PORTAL_ELIGIBLE_STATUSES.has(effectiveSubscriptionStatus)
-
-  const primaryCtaLabel = shouldOpenPortal
+  const primaryCtaLabel = canManageBilling
     ? isOpeningPortal
       ? 'Opening portal…'
       : 'Manage billing'
@@ -1110,9 +1122,9 @@ const Profile: FC<ProfileProps> = ({
       ? 'Redirecting…'
       : 'Subscribe'
 
-  const primaryCtaDisabled = shouldOpenPortal ? isOpeningPortal : isStartingCheckout
+  const primaryCtaDisabled = canManageBilling ? isOpeningPortal : isStartingCheckout
 
-  const primaryCtaDescription = shouldOpenPortal
+  const primaryCtaDescription = canManageBilling
     ? 'Manage billing opens the Stripe customer portal for existing subscriptions.'
     : 'Subscribe opens Stripe checkout to start a new plan.'
 
@@ -1430,7 +1442,7 @@ const Profile: FC<ProfileProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  if (shouldOpenPortal) {
+                  if (canManageBilling) {
                     void handleOpenBillingPortal()
                   } else {
                     void handleStartCheckout()
