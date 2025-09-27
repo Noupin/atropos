@@ -484,15 +484,102 @@ const mockAccessResponse = (payload: AccessJwtPayload): AccessCheckResult => {
   const expiresAt = new Date(payload.exp * 1000).toISOString()
   return {
     allowed: true,
-    status: 'active',
+    entitled: true,
+    mode: 'subscription',
     reason: null,
-    checkedAt: new Date().toISOString(),
     expiresAt,
-    customerEmail: 'demo-user@example.com',
-    subscriptionPlan: 'mock-pro',
-    subscriptionStatus: 'active'
+    snapshot: {
+      status: 'active',
+      cancel_at_period_end: false
+    },
+    customerEmail: 'demo-user@example.com'
   }
 }
+
+const shouldDebugAccess = (() => {
+  const flag = import.meta.env.VITE_ACCESS_DEBUG
+  if (!flag) {
+    return false
+  }
+  const normalized = String(flag).trim().toLowerCase()
+  return ['1', 'true', 'yes', 'on', 'debug'].includes(normalized)
+})()
+
+const logAccessResolution = (baseUrl: URL | null, result: AccessCheckResult): void => {
+  if (!shouldDebugAccess) {
+    return
+  }
+  console.info('[access] verifyDesktopAccess', {
+    mode: result.mode,
+    allowed: result.allowed,
+    entitled: result.entitled,
+    baseUrl: baseUrl ? `${baseUrl.protocol}//${baseUrl.host}` : null
+  })
+}
+
+const resolveTrialAccess = (
+  state: TrialStateSnapshot | null,
+  token: TrialTokenCacheEntry | null
+): AccessCheckResult | null => {
+  if (!state || !state.allowed || !state.started || state.remaining <= 0) {
+    return null
+  }
+
+  const expiresAtIso =
+    token && isTrialTokenActive(token) ? new Date(token.exp * 1000).toISOString() : null
+
+  return {
+    allowed: true,
+    entitled: false,
+    mode: 'trial',
+    reason: null,
+    expiresAt: expiresAtIso,
+    snapshot: {
+      status: 'trialing',
+      remaining: state.remaining
+    },
+    customerEmail: null
+  }
+}
+
+const resolveAccessApiBase = (value: string | null): URL | null => {
+  if (!value) {
+    return null
+  }
+  try {
+    const url = new URL(value)
+    const hostname = url.hostname.toLowerCase()
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      const fallbackHost = import.meta.env.DEV
+        ? 'dev.api.atropos-video.com'
+        : 'api.atropos-video.com'
+      const fallback = new URL(url.toString())
+      fallback.protocol = 'https:'
+      fallback.hostname = fallbackHost
+      fallback.port = ''
+      return fallback
+    }
+    return url
+  } catch (error) {
+    console.warn('Invalid access control API URL provided.', error)
+    return null
+  }
+}
+
+const buildDeniedResult = (
+  mode: 'subscription' | 'none',
+  reason: string,
+  snapshot?: AccessCheckResult['snapshot'],
+  expiresAt?: string | null
+): AccessCheckResult => ({
+  allowed: false,
+  entitled: false,
+  mode,
+  reason,
+  expiresAt: expiresAt ?? null,
+  snapshot: snapshot ?? null,
+  customerEmail: null
+})
 
 export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
   const config = getAccessControlConfig()
@@ -508,40 +595,24 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
 
   if (config.useMock) {
     await new Promise((resolve) => setTimeout(resolve, 120))
-    return mockAccessResponse(payload)
+    const result = mockAccessResponse(payload)
+    logAccessResolution(null, result)
+    return result
   }
 
-  const trialAccessFromCache = (): AccessCheckResult | null => {
-    const trialToken = getCachedTrialToken()
-    const trialState = getCachedTrialState()
-    if (trialState && trialState.allowed && trialState.started && trialState.remaining > 0) {
-      const expiresAtIso =
-        trialToken && isTrialTokenActive(trialToken)
-          ? new Date(trialToken.exp * 1000).toISOString()
-          : null
-      return {
-        allowed: true,
-        status: 'trialing',
-        reason: null,
-        checkedAt: new Date().toISOString(),
-        expiresAt: expiresAtIso,
-        customerEmail: null,
-        subscriptionPlan: 'trial',
-        subscriptionStatus: 'trialing'
-      }
-    }
-    return null
+  const trialToken = getCachedTrialToken()
+  const cachedTrial = resolveTrialAccess(getCachedTrialState(), trialToken)
+  if (cachedTrial) {
+    logAccessResolution(null, cachedTrial)
+    return cachedTrial
   }
 
-  if (!config.apiUrl) {
-    const cachedTrial = trialAccessFromCache()
-    if (cachedTrial) {
-      return cachedTrial
-    }
-    throw new Error('Access control API URL is not configured.')
+  const baseUrl = resolveAccessApiBase(config.apiUrl)
+  if (!baseUrl) {
+    const fallback = buildDeniedResult('none', 'Unable to verify access')
+    logAccessResolution(null, fallback)
+    return fallback
   }
-
-  const baseUrl = new URL(config.apiUrl)
 
   const subscriptionUrl = new URL('/billing/subscription', baseUrl)
   subscriptionUrl.searchParams.set('user_id', config.clientId)
@@ -552,23 +623,30 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
       headers: { Accept: 'application/json' }
     })
   } catch (error) {
-    const cachedTrial = trialAccessFromCache()
-    if (cachedTrial) {
-      return cachedTrial
-    }
-    const detail = error instanceof Error && error.message ? ` (${error.message})` : ''
-    throw new Error(`Unable to verify subscription status${detail}.`)
+    const result = buildDeniedResult('none', 'Unable to verify access')
+    logAccessResolution(baseUrl, result)
+    return result
   }
 
   if (!subscriptionResponse.ok) {
-    throw new Error(await extractApiError(subscriptionResponse))
+    const detail = await extractApiError(subscriptionResponse)
+    const reason = detail && detail.trim().length > 0 ? detail : 'Unable to verify access'
+    const result = buildDeniedResult('none', reason)
+    logAccessResolution(baseUrl, result)
+    return result
   }
 
   const subscriptionBody = (await subscriptionResponse.json()) as SubscriptionApiResponse
   const trialSnapshot = updateTrialStateFromApi(subscriptionBody.trial ?? null)
-  const trialToken = getCachedTrialToken()
+  const refreshedTrialToken = getCachedTrialToken()
+  const trialAccess = resolveTrialAccess(trialSnapshot, refreshedTrialToken)
+  if (trialAccess) {
+    logAccessResolution(baseUrl, trialAccess)
+    return trialAccess
+  }
+
   const subscriptionStatus = normalizeStatus(subscriptionBody.status ?? 'inactive')
-  const entitled = Boolean(subscriptionBody.entitled)
+  const cancelAtPeriodEnd = subscriptionBody.cancel_at_period_end ?? null
   const currentPeriodEndSeconds =
     typeof subscriptionBody.current_period_end === 'number'
       ? subscriptionBody.current_period_end
@@ -578,40 +656,26 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
       ? new Date(currentPeriodEndSeconds * 1000).toISOString()
       : null
 
+  const entitlementWindowActive =
+    typeof currentPeriodEndSeconds === 'number' && currentPeriodEndSeconds > nowSeconds
+  const entitled =
+    entitlementWindowActive && (subscriptionStatus === 'active' || subscriptionStatus === 'trialing')
+
   if (!entitled) {
     storeLicenseCache(null)
 
-    if (trialSnapshot.started && trialSnapshot.remaining > 0) {
-      const expiresAtIso =
-        trialToken && isTrialTokenActive(trialToken)
-          ? new Date(trialToken.exp * 1000).toISOString()
-          : null
-      return {
-        allowed: true,
-        status: 'trialing',
-        reason: null,
-        checkedAt: new Date().toISOString(),
-        expiresAt: expiresAtIso,
-        customerEmail: null,
-        subscriptionPlan: 'trial',
-        subscriptionStatus: 'trialing'
-      }
-    }
-
-    const reason = trialSnapshot.started
-      ? `Trial remaining: ${trialSnapshot.remaining} of ${trialSnapshot.total}. Subscribe to continue using Atropos.`
-      : 'Active subscription required to continue using Atropos.'
-
-    return {
-      allowed: false,
-      status: subscriptionStatus,
-      reason,
-      checkedAt: new Date().toISOString(),
-      expiresAt: currentPeriodEndIso,
-      customerEmail: null,
-      subscriptionPlan: null,
-      subscriptionStatus
-    }
+    const result = buildDeniedResult(
+      'none',
+      'Subscription required',
+      {
+        status: subscriptionStatus,
+        cancel_at_period_end: cancelAtPeriodEnd,
+        remaining: trialSnapshot?.remaining ?? null
+      },
+      currentPeriodEndIso
+    )
+    logAccessResolution(baseUrl, result)
+    return result
   }
 
   let license = loadLicenseCache()
@@ -619,14 +683,59 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
   if (!license) {
     const deviceHash = getOrCreateDeviceHash()
     const licenseUrl = new URL('/license/issue', baseUrl)
-    const issueResponse = await fetch(licenseUrl.toString(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: config.clientId, device_hash: deviceHash })
-    })
+    let issueResponse: Response
+    try {
+      issueResponse = await fetch(licenseUrl.toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: config.clientId, device_hash: deviceHash })
+      })
+    } catch (error) {
+      const result = buildDeniedResult(
+        'subscription',
+        'Unable to verify access',
+        {
+          status: subscriptionStatus,
+          cancel_at_period_end: cancelAtPeriodEnd,
+          remaining: trialSnapshot?.remaining ?? null
+        },
+        currentPeriodEndIso
+      )
+      logAccessResolution(baseUrl, result)
+      return result
+    }
+
+    if (issueResponse.status === 403) {
+      const reason = await extractApiError(issueResponse)
+      const result = buildDeniedResult(
+        'subscription',
+        reason || 'Subscription required',
+        {
+          status: subscriptionStatus,
+          cancel_at_period_end: cancelAtPeriodEnd,
+          remaining: trialSnapshot?.remaining ?? null
+        },
+        currentPeriodEndIso
+      )
+      storeLicenseCache(null)
+      logAccessResolution(baseUrl, result)
+      return result
+    }
 
     if (!issueResponse.ok) {
-      throw new Error(await extractApiError(issueResponse))
+      const reason = await extractApiError(issueResponse)
+      const result = buildDeniedResult(
+        'subscription',
+        reason || 'Unable to verify access',
+        {
+          status: subscriptionStatus,
+          cancel_at_period_end: cancelAtPeriodEnd,
+          remaining: trialSnapshot?.remaining ?? null
+        },
+        currentPeriodEndIso
+      )
+      logAccessResolution(baseUrl, result)
+      return result
     }
 
     const licenseBody = (await issueResponse.json()) as LicenseIssueResponse
@@ -637,7 +746,18 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
         : null
 
     if (!token || !exp) {
-      throw new Error('License issue response was missing required fields.')
+      const result = buildDeniedResult(
+        'subscription',
+        'Unable to verify access',
+        {
+          status: subscriptionStatus,
+          cancel_at_period_end: cancelAtPeriodEnd,
+          remaining: trialSnapshot?.remaining ?? null
+        },
+        currentPeriodEndIso
+      )
+      logAccessResolution(baseUrl, result)
+      return result
     }
 
     license = { token, exp }
@@ -646,15 +766,21 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
 
   const licenseExpiryIso = new Date(license.exp * 1000).toISOString()
 
-  return {
+  const result: AccessCheckResult = {
     allowed: true,
-    status: subscriptionStatus,
+    entitled: true,
+    mode: 'subscription',
     reason: null,
-    checkedAt: new Date().toISOString(),
     expiresAt: currentPeriodEndIso ?? licenseExpiryIso,
-    customerEmail: null,
-    subscriptionPlan: null,
-    subscriptionStatus
+    snapshot: {
+      status: subscriptionStatus,
+      cancel_at_period_end: cancelAtPeriodEnd,
+      remaining: trialSnapshot?.remaining ?? null
+    },
+    customerEmail: null
   }
+
+  logAccessResolution(baseUrl, result)
+  return result
 }
 

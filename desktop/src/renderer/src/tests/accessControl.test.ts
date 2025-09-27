@@ -141,17 +141,22 @@ describe('access control service', () => {
   it('returns an allowed response when using the mock access service', async () => {
     const result = await verifyDesktopAccess()
     expect(result.allowed).toBe(true)
-    expect(result.subscriptionStatus).toBe('active')
+    expect(result.entitled).toBe(true)
+    expect(result.mode).toBe('subscription')
+    expect(result.snapshot?.status).toBe('active')
     expect(result.customerEmail).toBe('demo-user@example.com')
   })
 
-  it('fails when the access API URL is missing and mocks are disabled', async () => {
+  it('returns a denied response when the access API URL is missing and mocks are disabled', async () => {
     mockConfig.useMock = false
     mockConfig.apiUrl = null
 
-    await expect(verifyDesktopAccess()).rejects.toThrow(
-      'Access control API URL is not configured.'
-    )
+    const result = await verifyDesktopAccess()
+
+    expect(result.allowed).toBe(false)
+    expect(result.entitled).toBe(false)
+    expect(result.mode).toBe('none')
+    expect(result.reason).toBe('Unable to verify access')
   })
 
   it('allows access using cached trial state when the access API URL is missing', async () => {
@@ -170,7 +175,10 @@ describe('access control service', () => {
     const result = await verifyDesktopAccess()
 
     expect(result.allowed).toBe(true)
-    expect(result.subscriptionStatus).toBe('trialing')
+    expect(result.entitled).toBe(false)
+    expect(result.mode).toBe('trial')
+    expect(result.snapshot?.status).toBe('trialing')
+    expect(result.snapshot?.remaining).toBe(2)
     expect(result.expiresAt).toBeNull()
   })
 
@@ -187,9 +195,12 @@ describe('access control service', () => {
       deviceHash: 'device-abc'
     })
 
-    await expect(verifyDesktopAccess()).rejects.toThrow(
-      'Access control API URL is not configured.'
-    )
+    const result = await verifyDesktopAccess()
+
+    expect(result.allowed).toBe(false)
+    expect(result.entitled).toBe(false)
+    expect(result.mode).toBe('none')
+    expect(result.reason).toBe('Unable to verify access')
   })
 
   it('throws when the shared secret is missing', async () => {

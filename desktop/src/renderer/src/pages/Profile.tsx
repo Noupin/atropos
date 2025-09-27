@@ -1106,24 +1106,21 @@ const Profile: FC<ProfileProps> = ({
   const authStatusDot = authStatusVariant?.dot ?? 'status-pill__dot status-pill__dot--muted'
 
   const resolvedLifecycleStatus: SubscriptionLifecycleStatus = useMemo(() => {
-    if (accessStatus?.status) {
-      return accessStatus.status
+    if (accessStatus?.snapshot?.status) {
+      return accessStatus.snapshot.status
+    }
+    if (accessStatus?.mode === 'trial' && accessStatus.allowed) {
+      return 'trialing'
     }
     if (subscriptionStatus?.status) {
       return subscriptionStatus.status
     }
     return 'inactive'
-  }, [accessStatus?.status, subscriptionStatus?.status])
+  }, [accessStatus?.allowed, accessStatus?.mode, accessStatus?.snapshot?.status, subscriptionStatus?.status])
 
   const hasEntitledSubscription = useMemo(() => {
     if (accessStatus) {
-      if (!accessStatus.allowed) {
-        return false
-      }
-      if (accessStatus.subscriptionStatus === 'trialing' && accessStatus.subscriptionPlan === 'trial') {
-        return false
-      }
-      return true
+      return accessStatus.entitled
     }
     if (subscriptionStatus?.status) {
       return PORTAL_ELIGIBLE_STATUSES.has(subscriptionStatus.status)
@@ -1133,10 +1130,20 @@ const Profile: FC<ProfileProps> = ({
 
   const effectiveTrialStatus = trialStatus ?? DEFAULT_TRIAL_STATE
   const isTrialAllowed = effectiveTrialStatus.allowed
-  const hasTrialStarted = isTrialAllowed && effectiveTrialStatus.started
-  const trialRemaining = effectiveTrialStatus.remaining
+  const trialSnapshotRemaining =
+    typeof accessStatus?.snapshot?.remaining === 'number'
+      ? accessStatus.snapshot.remaining ?? 0
+      : null
+  const trialRemaining = trialSnapshotRemaining ?? effectiveTrialStatus.remaining
   const trialTotal = effectiveTrialStatus.total
-  const hasTrialAccess = hasTrialStarted && trialRemaining > 0
+  const hasTrialStarted =
+    accessStatus?.mode === 'trial'
+      ? true
+      : isTrialAllowed && effectiveTrialStatus.started
+  const hasTrialAccess =
+    accessStatus?.mode === 'trial'
+      ? accessStatus.allowed && trialRemaining > 0
+      : hasTrialStarted && trialRemaining > 0
   const isTrialExhausted = hasTrialStarted && trialRemaining <= 0
   const shouldShowTrialCta = !hasEntitledSubscription && isTrialAllowed
 
@@ -1177,7 +1184,7 @@ const Profile: FC<ProfileProps> = ({
               ? 'Access error'
               : 'Access required'
 
-  const activePlanLabel = accessStatus?.subscriptionPlan ?? subscriptionStatus?.planName ?? null
+  const activePlanLabel = subscriptionStatus?.planName ?? null
 
   const accessSummaryText = isCheckingAccess
     ? 'Verifying access permissions…'

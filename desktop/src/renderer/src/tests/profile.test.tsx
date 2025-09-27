@@ -114,13 +114,12 @@ const sampleAuthStatus: AuthPingSummary = {
 
 const sampleAccessStatus: AccessCheckResult = {
   allowed: true,
-  status: 'active',
-  subscriptionStatus: 'active',
+  entitled: true,
+  mode: 'subscription',
   reason: null,
-  checkedAt: '2025-05-02T09:05:00Z',
   expiresAt: '2025-06-02T09:05:00Z',
-  customerEmail: 'owner@example.com',
-  subscriptionPlan: 'Pro Monthly'
+  snapshot: { status: 'active', cancel_at_period_end: false },
+  customerEmail: 'owner@example.com'
 }
 
 describe('Profile page', () => {
@@ -414,8 +413,10 @@ describe('Profile page', () => {
       accessStatus: {
         ...sampleAccessStatus,
         allowed: false,
-        status: 'inactive',
-        reason: 'Subscription required to continue using Atropos.'
+        entitled: false,
+        mode: 'none',
+        reason: 'Subscription required to continue using Atropos.',
+        snapshot: { status: 'inactive' }
       }
     })
 
@@ -451,9 +452,11 @@ describe('Profile page', () => {
       accessStatus: {
         ...sampleAccessStatus,
         allowed: false,
-        status: 'inactive',
+        entitled: false,
+        mode: 'none',
         reason: 'Subscription required to continue using Atropos.',
-        customerEmail: null
+        customerEmail: null,
+        snapshot: { status: 'inactive' }
       }
     })
 
@@ -487,13 +490,7 @@ describe('Profile page', () => {
       latestInvoiceUrl: null
     })
 
-    renderProfile({
-      accessStatus: {
-        ...sampleAccessStatus,
-        allowed: true,
-        status: 'active'
-      }
-    })
+    renderProfile({ accessStatus: { ...sampleAccessStatus } })
 
     const manageButton = await screen.findByRole('button', { name: /Manage billing/i })
     expect(manageButton).toBeInTheDocument()
@@ -515,8 +512,10 @@ describe('Profile page', () => {
       accessStatus: {
         ...sampleAccessStatus,
         allowed: false,
-        status: 'inactive',
-        reason: 'Subscription is no longer active.'
+        entitled: false,
+        mode: 'none',
+        reason: 'Subscription is no longer active.',
+        snapshot: { status: 'inactive' }
       }
     })
 
@@ -566,8 +565,10 @@ describe('Profile page', () => {
       accessStatus: {
         ...sampleAccessStatus,
         allowed: false,
-        status: 'inactive',
-        reason: 'Subscription required to continue using Atropos.'
+        entitled: false,
+        mode: 'none',
+        reason: 'Subscription required to continue using Atropos.',
+        snapshot: { status: 'inactive' }
       }
     })
 
@@ -605,13 +606,17 @@ describe('Profile page', () => {
       accessStatus: {
         ...sampleAccessStatus,
         allowed: false,
-        status: 'inactive',
-        reason: 'Subscription required to continue using Atropos.'
+        entitled: false,
+        mode: 'none',
+        reason: 'Subscription required to continue using Atropos.',
+        snapshot: { status: 'inactive' }
       }
     })
 
     expect(await screen.findByRole('button', { name: /^Subscribe$/i })).toBeInTheDocument()
-    expect(screen.queryByText(/Try Atropos free with three renders/i)).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByText(/Try Atropos free with three renders/i)).not.toBeInTheDocument()
+    )
     expect(screen.queryByRole('button', { name: /Start 3-video Trial/i })).not.toBeInTheDocument()
     expect(trialMocks.startTrial).not.toHaveBeenCalled()
   })
@@ -639,11 +644,11 @@ describe('Profile page', () => {
       accessStatus: {
         ...sampleAccessStatus,
         allowed: true,
-        status: 'trialing',
-        subscriptionStatus: 'trialing',
-        subscriptionPlan: 'trial',
+        entitled: false,
+        mode: 'trial',
         expiresAt: null,
-        reason: null
+        reason: null,
+        snapshot: { status: 'trialing', remaining: 2 }
       }
     })
 
@@ -677,8 +682,10 @@ describe('Profile page', () => {
       accessStatus: {
         ...sampleAccessStatus,
         allowed: false,
-        status: 'inactive',
-        reason: 'Trial remaining: 0 of 3. Subscribe to continue using Atropos.'
+        entitled: false,
+        mode: 'none',
+        reason: 'Trial remaining: 0 of 3. Subscribe to continue using Atropos.',
+        snapshot: { status: 'inactive', remaining: 0 }
       }
     })
 

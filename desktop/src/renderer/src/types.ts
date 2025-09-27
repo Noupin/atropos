@@ -181,15 +181,22 @@ export interface BillingPortalSession {
   url: string
 }
 
+export type AccessMode = 'trial' | 'subscription' | 'none'
+
+export type AccessSnapshot = {
+  status: SubscriptionLifecycleStatus
+  cancel_at_period_end?: boolean | null
+  remaining?: number | null
+}
+
 export interface AccessCheckResult {
   allowed: boolean
-  status: SubscriptionLifecycleStatus
+  entitled: boolean
+  mode: AccessMode
   reason: string | null
-  checkedAt: string
-  expiresAt: string | null
-  customerEmail: string | null
-  subscriptionPlan: string | null
-  subscriptionStatus: SubscriptionLifecycleStatus
+  expiresAt?: string | null
+  snapshot?: AccessSnapshot | null
+  customerEmail?: string | null
 }
 
 export interface AccessJwtPayload {

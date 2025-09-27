@@ -89,8 +89,11 @@ describe('App access overlay behaviour', () => {
     pingAuthMock.mockResolvedValue({ message: 'Authenticated', status: 'ok' })
     verifyDesktopAccessMock.mockResolvedValue({
       allowed: false,
-      status: 'inactive',
-      reason: 'Subscription required.'
+      entitled: false,
+      mode: 'none',
+      reason: 'Subscription required.',
+      expiresAt: null,
+      snapshot: { status: 'inactive' }
     })
   })
 
@@ -131,12 +134,11 @@ describe('App access overlay behaviour', () => {
   it('allows navigation when trial renders remain', async () => {
     verifyDesktopAccessMock.mockResolvedValueOnce({
       allowed: true,
-      status: 'trialing',
-      subscriptionStatus: 'trialing',
-      subscriptionPlan: 'trial',
+      entitled: false,
+      mode: 'trial',
       reason: null,
-      checkedAt: new Date().toISOString(),
       expiresAt: null,
+      snapshot: { status: 'trialing', remaining: 2 },
       customerEmail: null
     })
 

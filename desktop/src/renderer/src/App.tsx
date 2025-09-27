@@ -428,6 +428,13 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const isClipEditRoute = /^\/clip\/[^/]+\/edit$/.test(location.pathname)
   const isSettingsRoute = location.pathname.startsWith('/settings')
   const isProfileRoute = location.pathname.startsWith('/profile')
+  const hasVerifiedAccess = accessStatus?.allowed === true || accessStatus?.entitled === true
+  const showOverlay =
+    !isProfileRoute &&
+    !hasVerifiedAccess &&
+    (isCheckingAccess ||
+      (!!accessStatus && accessStatus.allowed === false) ||
+      (!accessStatus && !!accessCheckError))
   const showBackButton = location.pathname.startsWith('/clip/')
 
   const accountSelectOptions = useMemo(() => {
@@ -467,25 +474,23 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   return (
     <div className="flex min-h-full flex-col bg-[var(--bg)] text-[var(--fg)]">
-      {!isProfileRoute &&
-        (isCheckingAccess ||
-          (!isCheckingAccess && ((accessStatus && !accessStatus.allowed) || (!accessStatus && accessCheckError)))) && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 backdrop-blur">
-            <div className="max-w-md rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_75%,transparent)] p-6 text-center shadow-[0_18px_40px_rgba(0,0,0,0.45)]">
+      {showOverlay && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 backdrop-blur">
+          <div className="max-w-md rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_75%,transparent)] p-6 text-center shadow-[0_18px_40px_rgba(0,0,0,0.45)]">
             <h2 className="text-xl font-semibold text-[var(--fg)]">
               {isCheckingAccess
                 ? 'Verifying access…'
-                : accessStatus && !accessStatus.allowed
-                  ? 'Subscription required'
+                : accessStatus?.allowed === false
+                  ? accessStatus?.mode === 'subscription'
+                    ? 'Subscription required'
+                    : 'Trial unavailable'
                   : 'Unable to verify access'}
             </h2>
             <p className="mt-3 text-sm text-[var(--muted)]">
               {isCheckingAccess
-                ? 'Hold tight while we confirm your access permissions.'
-                : accessStatus && !accessStatus.allowed
-                  ? accessStatus.reason
-                    ? accessStatus.reason
-                    : 'Your account does not have an active subscription. Update your billing details to continue using Atropos.'
+                ? 'Hang tight while we confirm your permissions.'
+                : accessStatus?.allowed === false
+                  ? accessStatus?.reason ?? 'No active subscription. Open billing to continue.'
                   : accessCheckError ?? 'An unexpected error occurred while validating access.'}
             </p>
             <div className="mt-5 flex flex-wrap justify-center gap-3">
