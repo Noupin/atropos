@@ -1,4 +1,4 @@
-import { getPublicKey, sign, verify } from "@noble/ed25519";
+import { getPublicKey } from "@noble/ed25519";
 import { Env } from "./env";
 import { HttpError } from "./http";
 import { isTokenRevoked, markTokenRevoked } from "./kv";
@@ -113,7 +113,17 @@ function extractInnerOctet(bytes: Uint8Array): Uint8Array {
   return bytes.slice(offset, end);
 }
 
-function extractEd25519SeedFromPkcs8(pkcs8: Uint8Array): Uint8Array {
+interface ParsedPrivateKey {
+  format: "pkcs8" | "raw";
+  keyData: Uint8Array;
+  seed: Uint8Array;
+  publicKey?: Uint8Array;
+}
+
+function parseEd25519PrivateKeyFromPkcs8(pkcs8: Uint8Array): {
+  seed: Uint8Array;
+  publicKey?: Uint8Array;
+} {
   let offset = 0;
 
   function expectTag(tag: number): number {
@@ -178,9 +188,14 @@ function extractEd25519SeedFromPkcs8(pkcs8: Uint8Array): Uint8Array {
   const privateKeyBytes = pkcs8.slice(offset, offset + privateKeyLength);
   offset += privateKeyLength;
 
-  const seed = extractInnerOctet(privateKeyBytes);
-  if (seed.length !== 32 && seed.length !== 64) {
-    throw new Error(`Unexpected seed length ${seed.length}`);
+  const seedOrExpanded = extractInnerOctet(privateKeyBytes);
+  if (seedOrExpanded.length !== 32 && seedOrExpanded.length !== 64) {
+    throw new Error(`Unexpected seed length ${seedOrExpanded.length}`);
+  }
+
+  let publicKey: Uint8Array | undefined;
+  if (seedOrExpanded.length === 64) {
+    publicKey = seedOrExpanded.slice(32);
   }
 
   // Skip optional public key (context-specific 1) if present without failing.
@@ -189,10 +204,10 @@ function extractEd25519SeedFromPkcs8(pkcs8: Uint8Array): Uint8Array {
     offset += publicKeyLength;
   }
 
-  return seed.slice(0, 32);
+  return { seed: seedOrExpanded.slice(0, 32), publicKey };
 }
 
-function parsePemSecret(secret: string): Uint8Array {
+function parsePemSecret(secret: string): ParsedPrivateKey {
   const normalized = secret
     .replace(/-----BEGIN ED25519 PRIVATE KEY-----/g, "-----BEGIN PRIVATE KEY-----")
     .replace(/-----END ED25519 PRIVATE KEY-----/g, "-----END PRIVATE KEY-----");
@@ -204,10 +219,16 @@ function parsePemSecret(secret: string): Uint8Array {
 
   const base64Body = match[1].replace(/[^A-Za-z0-9+/=_-]/g, "");
   const pkcs8 = decodeBase64Flexible(base64Body);
-  return extractEd25519SeedFromPkcs8(pkcs8);
+  const { seed, publicKey } = parseEd25519PrivateKeyFromPkcs8(pkcs8);
+  return {
+    format: "pkcs8",
+    keyData: pkcs8,
+    seed,
+    publicKey,
+  };
 }
 
-function parsePrivateKey(raw: string): Uint8Array {
+function parsePrivateKey(raw: string): ParsedPrivateKey {
   const normalized = normalizeSecret(raw);
   if (!normalized) {
     console.error("JWT_PRIVATE_KEY secret is empty or missing");
@@ -242,28 +263,59 @@ function parsePrivateKey(raw: string): Uint8Array {
       console.error(`JWT private key length ${bytes.length} unsupported`);
       throw new HttpError(500, "jwt_key_length_invalid", "JWT private key must be 32 or 64 bytes");
     }
-    return bytes;
+    const seed = bytes.slice(0, 32);
+    const publicKey = bytes.length === 64 ? bytes.slice(32) : undefined;
+    return {
+      format: "raw",
+      keyData: bytes,
+      seed,
+      publicKey,
+    };
   } catch (error) {
     console.error("Failed to decode JWT private key secret", error);
     throw new HttpError(500, "jwt_key_decode_failed", "JWT private key is invalid");
   }
 }
+interface SigningMaterial {
+  privateKey: CryptoKey;
+  publicKey: CryptoKey;
+  publicKeyBytes: Uint8Array;
+}
 
-let signingMaterialPromise: Promise<{ privateKey: Uint8Array; publicKey: Uint8Array }> | null = null;
+function toArrayBuffer(data: Uint8Array): ArrayBuffer {
+  return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+}
 
-async function getSigningMaterial(env: Env): Promise<{
-  privateKey: Uint8Array;
-  publicKey: Uint8Array;
-}> {
+let signingMaterialPromise: Promise<SigningMaterial> | null = null;
+
+async function getSigningMaterial(env: Env): Promise<SigningMaterial> {
   if (!signingMaterialPromise) {
     signingMaterialPromise = (async () => {
-      const privateKey = parsePrivateKey(env.JWT_PRIVATE_KEY);
-      if (privateKey.length !== 32 && privateKey.length !== 64) {
-        console.error(`JWT private key length ${privateKey.length} unsupported after parsing`);
-        throw new HttpError(500, "jwt_key_length_invalid", "JWT private key must be 32 or 64 bytes");
+      const parsed = parsePrivateKey(env.JWT_PRIVATE_KEY);
+      if (parsed.seed.length !== 32) {
+        console.error(`JWT private key seed length ${parsed.seed.length} unsupported after parsing`);
+        throw new HttpError(500, "jwt_key_length_invalid", "JWT private key must be 32 bytes");
       }
-      const publicKey = await getPublicKey(privateKey.slice(0, 32));
-      return { privateKey, publicKey };
+
+      const publicKeyBytes = parsed.publicKey ?? (await getPublicKey(parsed.seed.slice()));
+
+      const privateKey = await crypto.subtle.importKey(
+        parsed.format === "pkcs8" ? "pkcs8" : "raw",
+        toArrayBuffer(parsed.keyData),
+        { name: "Ed25519" },
+        false,
+        ["sign"]
+      );
+
+      const publicKey = await crypto.subtle.importKey(
+        "raw",
+        toArrayBuffer(publicKeyBytes),
+        { name: "Ed25519" },
+        false,
+        ["verify"]
+      );
+
+      return { privateKey, publicKey, publicKeyBytes };
     })();
   }
 
@@ -271,8 +323,8 @@ async function getSigningMaterial(env: Env): Promise<{
 }
 
 export async function derivePublicKey(env: Env): Promise<string> {
-  const { publicKey } = await getSigningMaterial(env);
-  return base64UrlEncode(publicKey);
+  const { publicKeyBytes } = await getSigningMaterial(env);
+  return base64UrlEncode(publicKeyBytes);
 }
 
 export interface IssueLicenseOptions {
@@ -318,8 +370,12 @@ export async function issueLicenseToken(env: Env, options: IssueLicenseOptions):
   const encodedHeader = base64UrlEncodeString(JSON.stringify(header));
   const encodedPayload = base64UrlEncodeString(JSON.stringify(payload));
   const signingInput = `${encodedHeader}.${encodedPayload}`;
-  const signature = await sign(utf8ToUint8(signingInput), privateKey.slice(0, 32));
-  const encodedSignature = base64UrlEncode(signature);
+  const signature = await crypto.subtle.sign(
+    { name: "Ed25519" },
+    privateKey,
+    utf8ToUint8(signingInput)
+  );
+  const encodedSignature = base64UrlEncode(new Uint8Array(signature));
   const token = `${encodedHeader}.${encodedPayload}.${encodedSignature}`;
 
   return { token, exp, jti };
@@ -348,8 +404,12 @@ export async function issueTrialToken(env: Env, userId: string): Promise<License
   const encodedHeader = base64UrlEncodeString(JSON.stringify(header));
   const encodedPayload = base64UrlEncodeString(JSON.stringify(payload));
   const signingInput = `${encodedHeader}.${encodedPayload}`;
-  const signature = await sign(utf8ToUint8(signingInput), privateKey.slice(0, 32));
-  const encodedSignature = base64UrlEncode(signature);
+  const signature = await crypto.subtle.sign(
+    { name: "Ed25519" },
+    privateKey,
+    utf8ToUint8(signingInput)
+  );
+  const encodedSignature = base64UrlEncode(new Uint8Array(signature));
   const token = `${encodedHeader}.${encodedPayload}.${encodedSignature}`;
 
   return { token, exp, jti };
@@ -370,7 +430,12 @@ export async function verifyLicenseToken(env: Env, token: string): Promise<Licen
   const payloadBytes = base64UrlDecode(encodedPayload);
   const signatureBytes = base64UrlDecode(encodedSignature);
   const signingInput = utf8ToUint8(`${encodedHeader}.${encodedPayload}`);
-  const isValid = await verify(signatureBytes, signingInput, publicKey);
+  const isValid = await crypto.subtle.verify(
+    { name: "Ed25519" },
+    publicKey,
+    signatureBytes,
+    signingInput
+  );
   if (!isValid) {
     throw new HttpError(401, "invalid_token", "Token signature is invalid");
   }
@@ -406,7 +471,12 @@ export async function verifyTrialToken(env: Env, token: string): Promise<TrialCl
   const payloadBytes = base64UrlDecode(encodedPayload);
   const signatureBytes = base64UrlDecode(encodedSignature);
   const signingInput = utf8ToUint8(`${encodedHeader}.${encodedPayload}`);
-  const isValid = await verify(signatureBytes, signingInput, publicKey);
+  const isValid = await crypto.subtle.verify(
+    { name: "Ed25519" },
+    publicKey,
+    signatureBytes,
+    signingInput
+  );
   if (!isValid) {
     throw new HttpError(401, "invalid_token", "Token signature is invalid");
   }

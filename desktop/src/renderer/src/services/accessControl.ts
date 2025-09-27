@@ -5,6 +5,14 @@ import type {
   SubscriptionLifecycleStatus
 } from '../types'
 
+export type AccessModel = {
+  allowed: boolean
+  mode: 'subscription' | 'trial' | 'none'
+  reason: string | null
+}
+
+export type AccessStatusPayload = AccessCheckResult & { mode: AccessModel['mode'] }
+
 type LicenseCacheEntry = {
   token: string
   exp: number
@@ -480,7 +488,7 @@ export const createAccessJwt = async (
   return `${signingInput}.${signature}`
 }
 
-const mockAccessResponse = (payload: AccessJwtPayload): AccessCheckResult => {
+const mockAccessResponse = (payload: AccessJwtPayload): AccessStatusPayload => {
   const expiresAt = new Date(payload.exp * 1000).toISOString()
   return {
     allowed: true,
@@ -490,11 +498,26 @@ const mockAccessResponse = (payload: AccessJwtPayload): AccessCheckResult => {
     expiresAt,
     customerEmail: 'demo-user@example.com',
     subscriptionPlan: 'mock-pro',
-    subscriptionStatus: 'active'
+    subscriptionStatus: 'active',
+    mode: 'subscription'
   }
 }
 
-export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
+const buildTrialAccess = (
+  expiresAtIso: string | null
+): AccessStatusPayload => ({
+  allowed: true,
+  status: 'trialing',
+  reason: null,
+  checkedAt: new Date().toISOString(),
+  expiresAt: expiresAtIso,
+  customerEmail: null,
+  subscriptionPlan: 'trial',
+  subscriptionStatus: 'trialing',
+  mode: 'trial'
+})
+
+export const getAccessModel = async (): Promise<AccessStatusPayload> => {
   const config = getAccessControlConfig()
   const nowSeconds = Math.floor(Date.now() / 1000)
   const payload: AccessJwtPayload = {
@@ -511,7 +534,7 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
     return mockAccessResponse(payload)
   }
 
-  const trialAccessFromCache = (): AccessCheckResult | null => {
+  const trialAccessFromCache = (): AccessStatusPayload | null => {
     const trialToken = getCachedTrialToken()
     const trialState = getCachedTrialState()
     if (trialState && trialState.allowed && trialState.started && trialState.remaining > 0) {
@@ -519,16 +542,7 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
         trialToken && isTrialTokenActive(trialToken)
           ? new Date(trialToken.exp * 1000).toISOString()
           : null
-      return {
-        allowed: true,
-        status: 'trialing',
-        reason: null,
-        checkedAt: new Date().toISOString(),
-        expiresAt: expiresAtIso,
-        customerEmail: null,
-        subscriptionPlan: 'trial',
-        subscriptionStatus: 'trialing'
-      }
+      return buildTrialAccess(expiresAtIso)
     }
     return null
   }
@@ -538,7 +552,7 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
     if (cachedTrial) {
       return cachedTrial
     }
-    throw new Error('Access control API URL is not configured.')
+    return mockAccessResponse(payload)
   }
 
   const baseUrl = new URL(config.apiUrl)
@@ -586,16 +600,7 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
         trialToken && isTrialTokenActive(trialToken)
           ? new Date(trialToken.exp * 1000).toISOString()
           : null
-      return {
-        allowed: true,
-        status: 'trialing',
-        reason: null,
-        checkedAt: new Date().toISOString(),
-        expiresAt: expiresAtIso,
-        customerEmail: null,
-        subscriptionPlan: 'trial',
-        subscriptionStatus: 'trialing'
-      }
+      return buildTrialAccess(expiresAtIso)
     }
 
     const reason = trialSnapshot.started
@@ -610,7 +615,8 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
       expiresAt: currentPeriodEndIso,
       customerEmail: null,
       subscriptionPlan: null,
-      subscriptionStatus
+      subscriptionStatus,
+      mode: trialSnapshot.started ? 'trial' : 'subscription'
     }
   }
 
@@ -654,7 +660,10 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
     expiresAt: currentPeriodEndIso ?? licenseExpiryIso,
     customerEmail: null,
     subscriptionPlan: null,
-    subscriptionStatus
+    subscriptionStatus,
+    mode: 'subscription'
   }
 }
+
+export const verifyDesktopAccess = async (): Promise<AccessStatusPayload> => getAccessModel()
 
