@@ -51,8 +51,10 @@ describe('access control service', () => {
     globalThis,
     'localStorage'
   )
+  const originalFetch = globalThis.fetch
 
   let localStorageMock: ReturnType<typeof createLocalStorageMock>
+  let fetchMock: ReturnType<typeof vi.fn>
 
   const applyLocalStorageMock = (): void => {
     localStorageMock = createLocalStorageMock()
@@ -87,6 +89,12 @@ describe('access control service', () => {
     storeTrialState(null)
     storeTrialToken(null)
     clearTrialToken()
+    fetchMock = vi.fn()
+    Object.defineProperty(globalThis, 'fetch', {
+      configurable: true,
+      writable: true,
+      value: fetchMock
+    })
   })
 
   afterEach(() => {
@@ -94,6 +102,7 @@ describe('access control service', () => {
     storeTrialState(null)
     storeTrialToken(null)
     clearTrialToken()
+    fetchMock.mockReset()
   })
 
   afterAll(() => {
@@ -113,6 +122,15 @@ describe('access control service', () => {
     }
     if (originalWindowDescriptor) {
       Object.defineProperty(globalThis, 'window', originalWindowDescriptor)
+    }
+    if (originalFetch) {
+      Object.defineProperty(globalThis, 'fetch', {
+        configurable: true,
+        writable: true,
+        value: originalFetch
+      })
+    } else {
+      Reflect.deleteProperty(globalThis, 'fetch')
     }
   })
 
@@ -143,20 +161,24 @@ describe('access control service', () => {
     expect(result.allowed).toBe(true)
     expect(result.subscriptionStatus).toBe('active')
     expect(result.customerEmail).toBe('demo-user@example.com')
+    expect(result.mode).toBe('subscription')
+    expect(result.plan).toBe('mock-pro')
   })
 
   it('fails when the access API URL is missing and mocks are disabled', async () => {
     mockConfig.useMock = false
     mockConfig.apiUrl = null
+    fetchMock.mockRejectedValue(new Error('Network unreachable'))
 
     await expect(verifyDesktopAccess()).rejects.toThrow(
-      'Access control API URL is not configured.'
+      'Unable to verify subscription status (Network unreachable).'
     )
   })
 
   it('allows access using cached trial state when the access API URL is missing', async () => {
     mockConfig.useMock = false
     mockConfig.apiUrl = null
+    fetchMock.mockRejectedValue(new Error('Network unreachable'))
 
     storeTrialState({
       allowed: true,
@@ -172,6 +194,7 @@ describe('access control service', () => {
     expect(result.allowed).toBe(true)
     expect(result.subscriptionStatus).toBe('trialing')
     expect(result.expiresAt).toBeNull()
+    expect(result.mode).toBe('trial')
   })
 
   it('rejects cached trials when the trial is disallowed', async () => {

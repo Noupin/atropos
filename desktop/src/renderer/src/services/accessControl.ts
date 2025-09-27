@@ -1,6 +1,8 @@
 import { getAccessControlConfig } from '../config/accessControl'
+import { getBillingApiBaseUrl } from '../config/backend'
 import type {
   AccessCheckResult,
+  AccessControlConfig,
   AccessJwtPayload,
   SubscriptionLifecycleStatus
 } from '../types'
@@ -28,6 +30,23 @@ type SubscriptionApiResponse = {
 type LicenseIssueResponse = {
   token?: string
   exp?: number
+}
+
+export type AccessBadgeMode = 'subscription' | 'trial' | 'none'
+
+export interface AccessBadgeModel {
+  allowed: boolean
+  mode: AccessBadgeMode
+  entitled?: boolean
+  reason?: string | null
+  remaining?: number | null
+  expiresAt?: string | null
+  snapshot?: {
+    status?: SubscriptionLifecycleStatus
+    cancel_at_period_end?: boolean | null
+  }
+  plan?: string | null
+  customerEmail?: string | null
 }
 
 const DEVICE_HASH_STORAGE_KEY = 'atropos:device-hash'
@@ -73,6 +92,24 @@ let cachedTrialToken: TrialTokenCacheEntry | null = null
 let cachedTrialState: TrialStateCacheEntry | null = null
 
 const textEncoder = new TextEncoder()
+
+const LOCAL_ACCESS_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '0.0.0.0'])
+
+const resolveAccessServiceBaseUrl = (apiUrl: string | null): string => {
+  if (apiUrl) {
+    try {
+      const url = new URL(apiUrl)
+      const hostname = url.hostname.toLowerCase()
+      if (import.meta.env.PROD && LOCAL_ACCESS_HOSTS.has(hostname)) {
+        return getBillingApiBaseUrl()
+      }
+      return url.toString()
+    } catch (error) {
+      console.warn('Invalid access service URL. Falling back to default billing base.', error)
+    }
+  }
+  return getBillingApiBaseUrl()
+}
 
 const isWindowAvailable = (): boolean => typeof window !== 'undefined'
 
@@ -480,69 +517,53 @@ export const createAccessJwt = async (
   return `${signingInput}.${signature}`
 }
 
-const mockAccessResponse = (payload: AccessJwtPayload): AccessCheckResult => {
-  const expiresAt = new Date(payload.exp * 1000).toISOString()
+const buildMockBadgeModel = (config: AccessControlConfig): AccessBadgeModel => {
+  const expiresAt = new Date(Date.now() + config.tokenTtlSeconds * 1000).toISOString()
   return {
     allowed: true,
-    status: 'active',
+    mode: 'subscription',
+    entitled: true,
     reason: null,
-    checkedAt: new Date().toISOString(),
+    remaining: null,
     expiresAt,
-    customerEmail: 'demo-user@example.com',
-    subscriptionPlan: 'mock-pro',
-    subscriptionStatus: 'active'
+    snapshot: { status: 'active', cancel_at_period_end: false },
+    plan: 'mock-pro',
+    customerEmail: 'demo-user@example.com'
   }
 }
 
-export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
-  const config = getAccessControlConfig()
-  const nowSeconds = Math.floor(Date.now() / 1000)
-  const payload: AccessJwtPayload = {
-    sub: config.clientId,
-    aud: config.audience,
-    iss: 'atropos-desktop',
-    scope: ['app:use'],
-    iat: nowSeconds,
-    exp: nowSeconds + config.tokenTtlSeconds
+const trialAccessFromCache = (): AccessBadgeModel | null => {
+  const trialToken = getCachedTrialToken()
+  const trialState = getCachedTrialState()
+  if (trialState && trialState.allowed && trialState.started && trialState.remaining > 0) {
+    const expiresAtIso =
+      trialToken && isTrialTokenActive(trialToken)
+        ? new Date(trialToken.exp * 1000).toISOString()
+        : null
+    return {
+      allowed: true,
+      mode: 'trial',
+      entitled: false,
+      reason: null,
+      remaining: trialState.remaining,
+      expiresAt: expiresAtIso,
+      snapshot: { status: 'trialing', cancel_at_period_end: null },
+      plan: 'trial',
+      customerEmail: null
+    }
   }
+  return null
+}
+
+export const getAccessBadgeModel = async (): Promise<AccessBadgeModel> => {
+  const config = getAccessControlConfig()
 
   if (config.useMock) {
     await new Promise((resolve) => setTimeout(resolve, 120))
-    return mockAccessResponse(payload)
+    return buildMockBadgeModel(config)
   }
 
-  const trialAccessFromCache = (): AccessCheckResult | null => {
-    const trialToken = getCachedTrialToken()
-    const trialState = getCachedTrialState()
-    if (trialState && trialState.allowed && trialState.started && trialState.remaining > 0) {
-      const expiresAtIso =
-        trialToken && isTrialTokenActive(trialToken)
-          ? new Date(trialToken.exp * 1000).toISOString()
-          : null
-      return {
-        allowed: true,
-        status: 'trialing',
-        reason: null,
-        checkedAt: new Date().toISOString(),
-        expiresAt: expiresAtIso,
-        customerEmail: null,
-        subscriptionPlan: 'trial',
-        subscriptionStatus: 'trialing'
-      }
-    }
-    return null
-  }
-
-  if (!config.apiUrl) {
-    const cachedTrial = trialAccessFromCache()
-    if (cachedTrial) {
-      return cachedTrial
-    }
-    throw new Error('Access control API URL is not configured.')
-  }
-
-  const baseUrl = new URL(config.apiUrl)
-
+  const baseUrl = resolveAccessServiceBaseUrl(config.apiUrl)
   const subscriptionUrl = new URL('/billing/subscription', baseUrl)
   subscriptionUrl.searchParams.set('user_id', config.clientId)
 
@@ -577,6 +598,10 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
     currentPeriodEndSeconds && Number.isFinite(currentPeriodEndSeconds)
       ? new Date(currentPeriodEndSeconds * 1000).toISOString()
       : null
+  const cancelAtPeriodEnd =
+    typeof subscriptionBody.cancel_at_period_end === 'boolean'
+      ? subscriptionBody.cancel_at_period_end
+      : null
 
   if (!entitled) {
     storeLicenseCache(null)
@@ -588,13 +613,14 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
           : null
       return {
         allowed: true,
-        status: 'trialing',
+        mode: 'trial',
+        entitled: false,
         reason: null,
-        checkedAt: new Date().toISOString(),
+        remaining: trialSnapshot.remaining,
         expiresAt: expiresAtIso,
-        customerEmail: null,
-        subscriptionPlan: 'trial',
-        subscriptionStatus: 'trialing'
+        snapshot: { status: 'trialing', cancel_at_period_end: cancelAtPeriodEnd },
+        plan: 'trial',
+        customerEmail: null
       }
     }
 
@@ -602,15 +628,18 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
       ? `Trial remaining: ${trialSnapshot.remaining} of ${trialSnapshot.total}. Subscribe to continue using Atropos.`
       : 'Active subscription required to continue using Atropos.'
 
+    const denialMode: AccessBadgeMode = trialSnapshot.started ? 'trial' : 'subscription'
+
     return {
       allowed: false,
-      status: subscriptionStatus,
+      mode: denialMode,
+      entitled: false,
       reason,
-      checkedAt: new Date().toISOString(),
+      remaining: trialSnapshot.remaining,
       expiresAt: currentPeriodEndIso,
-      customerEmail: null,
-      subscriptionPlan: null,
-      subscriptionStatus
+      snapshot: { status: subscriptionStatus, cancel_at_period_end: cancelAtPeriodEnd },
+      plan: null,
+      customerEmail: null
     }
   }
 
@@ -648,13 +677,43 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
 
   return {
     allowed: true,
-    status: subscriptionStatus,
+    mode: 'subscription',
+    entitled: true,
     reason: null,
-    checkedAt: new Date().toISOString(),
+    remaining: null,
     expiresAt: currentPeriodEndIso ?? licenseExpiryIso,
-    customerEmail: null,
-    subscriptionPlan: null,
-    subscriptionStatus
+    snapshot: { status: subscriptionStatus, cancel_at_period_end: cancelAtPeriodEnd },
+    plan: null,
+    customerEmail: null
+  }
+}
+
+export type DesktopAccessStatus = AccessCheckResult & AccessBadgeModel
+
+export const verifyDesktopAccess = async (): Promise<DesktopAccessStatus> => {
+  const badgeModel = await getAccessBadgeModel()
+  const status = normalizeStatus(badgeModel.snapshot?.status ?? 'inactive')
+  const checkedAt = new Date().toISOString()
+
+  let subscriptionPlan: string | null
+  if (badgeModel.mode === 'trial') {
+    subscriptionPlan = badgeModel.plan ?? 'trial'
+  } else if (badgeModel.mode === 'subscription') {
+    subscriptionPlan = badgeModel.plan ?? (badgeModel.entitled ? null : null)
+  } else {
+    subscriptionPlan = badgeModel.plan ?? null
+  }
+
+  return {
+    allowed: badgeModel.allowed,
+    status,
+    reason: badgeModel.reason ?? null,
+    checkedAt,
+    expiresAt: badgeModel.expiresAt ?? null,
+    customerEmail: badgeModel.customerEmail ?? null,
+    subscriptionPlan,
+    subscriptionStatus: status,
+    ...badgeModel
   }
 }
 

@@ -12,7 +12,6 @@ import Settings, { type SettingsHeaderAction } from './pages/Settings'
 import { createInitialPipelineSteps } from './data/pipeline'
 import useNavigationHistory from './hooks/useNavigationHistory'
 import type {
-  AccessCheckResult,
   AccountSummary,
   AuthPingSummary,
   HomePipelineState,
@@ -30,6 +29,7 @@ import {
   updateAccountPlatform
 } from './services/accountsApi'
 import { verifyDesktopAccess } from './services/accessControl'
+import type { DesktopAccessStatus } from './services/accessControl'
 
 type PlatformPayload = {
   platform: SupportedPlatform
@@ -100,7 +100,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true)
   const [authStatus, setAuthStatus] = useState<AuthPingSummary | null>(null)
   const [authError, setAuthError] = useState<string | null>(null)
-  const [accessStatus, setAccessStatus] = useState<AccessCheckResult | null>(null)
+  const [accessStatus, setAccessStatus] = useState<DesktopAccessStatus | null>(null)
   const [accessCheckError, setAccessCheckError] = useState<string | null>(null)
   const [isCheckingAccess, setIsCheckingAccess] = useState(true)
   const [isDark, setIsDark] = useState(false)
@@ -430,6 +430,26 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const isProfileRoute = location.pathname.startsWith('/profile')
   const showBackButton = location.pathname.startsWith('/clip/')
 
+  const showAccessOverlay =
+    !isProfileRoute &&
+    (isCheckingAccess || accessStatus?.allowed === false || (!accessStatus && !!accessCheckError))
+
+  const overlayTitle = isCheckingAccess
+    ? 'Verifying access…'
+    : accessStatus?.allowed === false
+      ? accessStatus.mode === 'subscription'
+        ? 'Subscription required'
+        : accessStatus.mode === 'trial'
+          ? 'Trial unavailable'
+          : 'Unable to verify access'
+      : 'Unable to verify access'
+
+  const overlayMessage = isCheckingAccess
+    ? 'Hold tight while we confirm your access permissions.'
+    : accessStatus?.allowed === false
+      ? accessStatus.reason ?? 'No active subscription. Open billing to continue.'
+      : accessCheckError ?? 'An unexpected error occurred while validating access.'
+
   const accountSelectOptions = useMemo(() => {
     if (availableAccounts.length === 0) {
       return []
@@ -467,27 +487,11 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   return (
     <div className="flex min-h-full flex-col bg-[var(--bg)] text-[var(--fg)]">
-      {!isProfileRoute &&
-        (isCheckingAccess ||
-          (!isCheckingAccess && ((accessStatus && !accessStatus.allowed) || (!accessStatus && accessCheckError)))) && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 backdrop-blur">
-            <div className="max-w-md rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_75%,transparent)] p-6 text-center shadow-[0_18px_40px_rgba(0,0,0,0.45)]">
-            <h2 className="text-xl font-semibold text-[var(--fg)]">
-              {isCheckingAccess
-                ? 'Verifying access…'
-                : accessStatus && !accessStatus.allowed
-                  ? 'Subscription required'
-                  : 'Unable to verify access'}
-            </h2>
-            <p className="mt-3 text-sm text-[var(--muted)]">
-              {isCheckingAccess
-                ? 'Hold tight while we confirm your access permissions.'
-                : accessStatus && !accessStatus.allowed
-                  ? accessStatus.reason
-                    ? accessStatus.reason
-                    : 'Your account does not have an active subscription. Update your billing details to continue using Atropos.'
-                  : accessCheckError ?? 'An unexpected error occurred while validating access.'}
-            </p>
+      {showAccessOverlay && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 backdrop-blur">
+          <div className="max-w-md rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_75%,transparent)] p-6 text-center shadow-[0_18px_40px_rgba(0,0,0,0.45)]">
+            <h2 className="text-xl font-semibold text-[var(--fg)]">{overlayTitle}</h2>
+            <p className="mt-3 text-sm text-[var(--muted)]">{overlayMessage}</p>
             <div className="mt-5 flex flex-wrap justify-center gap-3">
               <button
                 type="button"
