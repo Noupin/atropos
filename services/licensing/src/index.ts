@@ -991,6 +991,8 @@ async function handleIssue(
     epoch: userRecord.epoch,
   });
 
+  console.log("/license/issue using Ed25519 signing");
+
   return jsonResponse({ token: token.token, exp: token.exp }, 200, corsHeaders);
 }
 
