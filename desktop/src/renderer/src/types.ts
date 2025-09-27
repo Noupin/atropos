@@ -161,6 +161,16 @@ export interface SubscriptionStatus {
   cancelAt: string | null
   trialEndsAt: string | null
   latestInvoiceUrl: string | null
+  trial: SubscriptionTrialState | null
+}
+
+export interface SubscriptionTrialState {
+  allowed: boolean
+  started: boolean
+  total: number
+  remaining: number
+  usedAt: string | null
+  deviceHash: string | null
 }
 
 export interface CheckoutSession {

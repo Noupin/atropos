@@ -127,4 +127,28 @@ describe('App access overlay behaviour', () => {
       screen.queryByRole('button', { name: /Open billing settings/i })
     ).not.toBeInTheDocument()
   })
+
+  it('allows navigation when trial renders remain', async () => {
+    verifyDesktopAccessMock.mockResolvedValueOnce({
+      allowed: true,
+      status: 'trialing',
+      subscriptionStatus: 'trialing',
+      subscriptionPlan: 'trial',
+      reason: null,
+      checkedAt: new Date().toISOString(),
+      expiresAt: null,
+      customerEmail: null
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App searchInputRef={{ current: null }} />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => expect(verifyDesktopAccessMock).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Open billing settings/i })).not.toBeInTheDocument()
+    )
+  })
 })

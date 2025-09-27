@@ -12,9 +12,20 @@ import type {
 } from '../types'
 import type { PipelineEventHandlers } from '../services/pipelineApi'
 
-const { startPipelineJobMock, subscribeToPipelineEventsMock } = vi.hoisted(() => ({
+const {
+  startPipelineJobMock,
+  subscribeToPipelineEventsMock,
+  claimTrialMock,
+  consumeTrialMock,
+  getActiveTrialTokenMock,
+  getCachedTrialStateMock
+} = vi.hoisted(() => ({
   startPipelineJobMock: vi.fn(),
-  subscribeToPipelineEventsMock: vi.fn()
+  subscribeToPipelineEventsMock: vi.fn(),
+  claimTrialMock: vi.fn(),
+  consumeTrialMock: vi.fn(),
+  getActiveTrialTokenMock: vi.fn(),
+  getCachedTrialStateMock: vi.fn()
 }))
 
 vi.mock('../services/pipelineApi', async () => {
@@ -27,6 +38,25 @@ vi.mock('../services/pipelineApi', async () => {
     subscribeToPipelineEvents: subscribeToPipelineEventsMock
   }
 })
+
+vi.mock('../services/trialAccess', () => ({
+  claimTrial: claimTrialMock,
+  consumeTrial: consumeTrialMock,
+  getActiveTrialToken: getActiveTrialTokenMock
+}))
+
+vi.mock('../services/accessControl', () => ({
+  getCachedTrialState: getCachedTrialStateMock,
+  getAccessControlConfig: () => ({
+    apiUrl: null,
+    audience: 'atropos-access',
+    clientId: 'atropos-desktop-dev',
+    clientVersion: '1.0.0',
+    sharedSecret: 'demo-secret',
+    tokenTtlSeconds: 300,
+    useMock: true
+  })
+}))
 
 const createPlatform = (
   overrides: Partial<AccountPlatformConnection> = {}
@@ -117,6 +147,24 @@ describe('Home account selection', () => {
     startPipelineJobMock.mockResolvedValue({ jobId: 'test-job' })
     subscribeToPipelineEventsMock.mockReset()
     subscribeToPipelineEventsMock.mockReturnValue(vi.fn())
+    claimTrialMock.mockReset()
+    claimTrialMock.mockResolvedValue({
+      token: { token: 'trial-token', exp: Math.floor(Date.now() / 1000) + 900 },
+      snapshot: {
+        allowed: true,
+        started: true,
+        total: 3,
+        remaining: 2,
+        usedAt: null,
+        deviceHash: 'device-123'
+      }
+    })
+    consumeTrialMock.mockReset()
+    consumeTrialMock.mockResolvedValue({ remaining: 1 })
+    getActiveTrialTokenMock.mockReset()
+    getActiveTrialTokenMock.mockReturnValue(null)
+    getCachedTrialStateMock.mockReset()
+    getCachedTrialStateMock.mockReturnValue(null)
   })
 
   it('requires an account selection before starting processing', () => {
@@ -181,6 +229,34 @@ describe('Home account selection', () => {
     expect(startPipelineJobMock).toHaveBeenCalledWith(
       expect.objectContaining({ account: accountId, url: videoUrl, tone: null })
     )
+  })
+
+  it('automatically claims a trial token when renders remain', async () => {
+    getCachedTrialStateMock.mockReturnValue({
+      allowed: true,
+      started: true,
+      total: 3,
+      remaining: 2,
+      usedAt: null,
+      deviceHash: 'device-123'
+    })
+    getActiveTrialTokenMock.mockReturnValue(null)
+
+    renderHome({
+      registerSearch: () => {},
+      onStateChange: () => {},
+      accounts: [AVAILABLE_ACCOUNT],
+      initialState: createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })
+    })
+
+    const videoUrlInput = screen.getByLabelText(/video url/i)
+    fireEvent.change(videoUrlInput, {
+      target: { value: 'https://www.youtube.com/watch?v=trial' }
+    })
+    fireEvent.submit(videoUrlInput.closest('form') as HTMLFormElement)
+
+    await waitFor(() => expect(claimTrialMock).toHaveBeenCalledWith('atropos-desktop-dev'))
+    await waitFor(() => expect(startPipelineJobMock).toHaveBeenCalled())
   })
 
   it('surfaces guidance when no active accounts are available', () => {

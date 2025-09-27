@@ -15,6 +15,14 @@ type SubscriptionApiResponse = {
   entitled?: boolean
   current_period_end?: number | null
   cancel_at_period_end?: boolean | null
+  trial?: {
+    allowed?: boolean
+    started?: boolean
+    total?: number
+    remaining?: number
+    used_at?: number | null
+    device_hash?: string | null
+  } | null
 }
 
 type LicenseIssueResponse = {
@@ -24,6 +32,28 @@ type LicenseIssueResponse = {
 
 const DEVICE_HASH_STORAGE_KEY = 'atropos:device-hash'
 const LICENSE_STORAGE_KEY = 'atropos:license-token'
+const TRIAL_TOKEN_STORAGE_KEY = 'atropos:trial-token'
+const TRIAL_STATE_STORAGE_KEY = 'atropos:trial-state'
+
+export type TrialTokenCacheEntry = {
+  token: string
+  exp: number
+}
+
+export type TrialStateSnapshot = {
+  allowed: boolean
+  started: boolean
+  total: number
+  remaining: number
+  usedAt: number | null
+  deviceHash: string | null
+}
+
+type TrialStateCacheEntry = TrialStateSnapshot & {
+  updatedAt: number
+}
+
+const TRIAL_DEFAULT_TOTAL = 3
 
 const allowedStatuses: SubscriptionLifecycleStatus[] = [
   'inactive',
@@ -39,6 +69,8 @@ const allowedStatuses: SubscriptionLifecycleStatus[] = [
 ]
 
 let cachedLicense: LicenseCacheEntry | null = null
+let cachedTrialToken: TrialTokenCacheEntry | null = null
+let cachedTrialState: TrialStateCacheEntry | null = null
 
 const textEncoder = new TextEncoder()
 
@@ -148,6 +180,229 @@ const storeLicenseCache = (entry: LicenseCacheEntry | null): void => {
   }
 }
 
+const isTrialTokenEntryValid = (
+  entry: TrialTokenCacheEntry | null
+): entry is TrialTokenCacheEntry => {
+  if (!entry) {
+    return false
+  }
+  return entry.exp * 1000 > Date.now() + 5000
+}
+
+const loadTrialTokenCache = (): TrialTokenCacheEntry | null => {
+  if (cachedTrialToken && isTrialTokenEntryValid(cachedTrialToken)) {
+    return cachedTrialToken
+  }
+
+  const raw = readStorageValue(TRIAL_TOKEN_STORAGE_KEY)
+  if (!raw) {
+    cachedTrialToken = null
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as TrialTokenCacheEntry
+    if (isTrialTokenEntryValid(parsed)) {
+      cachedTrialToken = parsed
+      return parsed
+    }
+  } catch (error) {
+    console.warn('Unable to parse cached trial token.', error)
+  }
+
+  cachedTrialToken = null
+  writeStorageValue(TRIAL_TOKEN_STORAGE_KEY, null)
+  return null
+}
+
+const storeTrialTokenCache = (entry: TrialTokenCacheEntry | null): void => {
+  cachedTrialToken = entry
+  if (entry) {
+    writeStorageValue(TRIAL_TOKEN_STORAGE_KEY, JSON.stringify(entry))
+  } else {
+    writeStorageValue(TRIAL_TOKEN_STORAGE_KEY, null)
+  }
+}
+
+const normalizeTrialSnapshot = (input: unknown): TrialStateSnapshot => {
+  const snapshot: TrialStateSnapshot = {
+    allowed: true,
+    started: false,
+    total: TRIAL_DEFAULT_TOTAL,
+    remaining: TRIAL_DEFAULT_TOTAL,
+    usedAt: null,
+    deviceHash: null
+  }
+
+  if (!input || typeof input !== 'object') {
+    return snapshot
+  }
+
+  const record = input as Record<string, unknown>
+
+  if (typeof record.allowed === 'boolean') {
+    snapshot.allowed = record.allowed
+  }
+
+  if (typeof record.started === 'boolean') {
+    snapshot.started = record.started
+  }
+
+  const rawTotal = record.total
+  if (typeof rawTotal === 'number' && Number.isFinite(rawTotal) && rawTotal > 0) {
+    snapshot.total = Math.max(1, Math.floor(rawTotal))
+  }
+
+  const rawRemaining = record.remaining
+  if (typeof rawRemaining === 'number' && Number.isFinite(rawRemaining)) {
+    snapshot.remaining = Math.max(0, Math.floor(rawRemaining))
+  } else {
+    snapshot.remaining = snapshot.total
+  }
+
+  if (!snapshot.started) {
+    snapshot.remaining = snapshot.total
+  } else {
+    snapshot.remaining = Math.max(0, Math.min(snapshot.total, snapshot.remaining))
+  }
+
+  const rawUsedAt = (record.used_at ?? record.usedAt) as unknown
+  if (typeof rawUsedAt === 'number' && Number.isFinite(rawUsedAt)) {
+    snapshot.usedAt = rawUsedAt
+  } else if (rawUsedAt === null) {
+    snapshot.usedAt = null
+  }
+
+  const rawDevice = record.device_hash ?? record.deviceHash
+  if (typeof rawDevice === 'string' && rawDevice.trim().length > 0) {
+    snapshot.deviceHash = rawDevice.trim()
+  }
+
+  if (!snapshot.allowed) {
+    snapshot.started = false
+    snapshot.remaining = 0
+  }
+
+  return snapshot
+}
+
+const loadTrialStateCache = (): TrialStateCacheEntry | null => {
+  if (cachedTrialState) {
+    return cachedTrialState
+  }
+
+  const raw = readStorageValue(TRIAL_STATE_STORAGE_KEY)
+  if (!raw) {
+    cachedTrialState = null
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<TrialStateCacheEntry>
+    const normalizedSnapshot = normalizeTrialSnapshot(parsed)
+    const updatedAt =
+      typeof parsed.updatedAt === 'number' && Number.isFinite(parsed.updatedAt)
+        ? parsed.updatedAt
+        : Date.now()
+    const normalized: TrialStateCacheEntry = { ...normalizedSnapshot, updatedAt }
+    cachedTrialState = normalized
+    return normalized
+  } catch (error) {
+    console.warn('Unable to parse cached trial state.', error)
+  }
+
+  cachedTrialState = null
+  writeStorageValue(TRIAL_STATE_STORAGE_KEY, null)
+  return null
+}
+
+const storeTrialStateCache = (entry: TrialStateCacheEntry | null): void => {
+  cachedTrialState = entry
+  if (entry) {
+    writeStorageValue(TRIAL_STATE_STORAGE_KEY, JSON.stringify(entry))
+  } else {
+    writeStorageValue(TRIAL_STATE_STORAGE_KEY, null)
+  }
+}
+
+export const getDeviceHash = (): string => getOrCreateDeviceHash()
+
+const trialStateFromCache = (entry: TrialStateCacheEntry | null): TrialStateSnapshot | null => {
+  if (!entry) {
+    return null
+  }
+  return {
+    allowed: entry.allowed,
+    started: entry.started,
+    total: entry.total,
+    remaining: entry.remaining,
+    usedAt: entry.usedAt,
+    deviceHash: entry.deviceHash
+  }
+}
+
+const writeTrialStateSnapshot = (
+  snapshot: TrialStateSnapshot | null
+): TrialStateSnapshot | null => {
+  if (!snapshot) {
+    storeTrialStateCache(null)
+    return null
+  }
+  const normalized = normalizeTrialSnapshot(snapshot)
+  const previous = loadTrialStateCache()
+  let resolved: TrialStateSnapshot = normalized
+
+  if (previous && previous.started && normalized.started) {
+    const synchronizedRemaining = Math.min(previous.remaining, normalized.remaining)
+    if (synchronizedRemaining !== normalized.remaining) {
+      resolved = { ...normalized, remaining: synchronizedRemaining }
+    }
+  }
+
+  const entry: TrialStateCacheEntry = { ...resolved, updatedAt: Date.now() }
+  storeTrialStateCache(entry)
+  return resolved
+}
+
+export const normalizeTrialFromResponse = (trial: unknown): TrialStateSnapshot =>
+  normalizeTrialSnapshot(trial)
+
+export const updateTrialStateFromApi = (trial: unknown): TrialStateSnapshot => {
+  const normalized = normalizeTrialSnapshot(trial)
+  return writeTrialStateSnapshot(normalized) ?? normalized
+}
+
+export const getCachedTrialState = (): TrialStateSnapshot | null =>
+  trialStateFromCache(loadTrialStateCache())
+
+export const storeTrialState = (snapshot: TrialStateSnapshot | null): TrialStateSnapshot | null =>
+  writeTrialStateSnapshot(snapshot)
+
+export const getCachedTrialToken = (): TrialTokenCacheEntry | null => {
+  const entry = loadTrialTokenCache()
+  if (!isTrialTokenEntryValid(entry)) {
+    storeTrialTokenCache(null)
+    return null
+  }
+  return entry
+}
+
+export const storeTrialToken = (entry: TrialTokenCacheEntry | null): void => {
+  if (entry) {
+    storeTrialTokenCache({ token: entry.token, exp: entry.exp })
+  } else {
+    storeTrialTokenCache(null)
+  }
+}
+
+export const clearTrialToken = (): void => {
+  storeTrialTokenCache(null)
+}
+
+export const isTrialTokenActive = (
+  entry: TrialTokenCacheEntry | null
+): entry is TrialTokenCacheEntry => isTrialTokenEntryValid(entry)
+
 const normalizeStatus = (value: string | null | undefined): SubscriptionLifecycleStatus => {
   if (!value) {
     return 'inactive'
@@ -256,7 +511,33 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
     return mockAccessResponse(payload)
   }
 
+  const trialAccessFromCache = (): AccessCheckResult | null => {
+    const trialToken = getCachedTrialToken()
+    const trialState = getCachedTrialState()
+    if (trialState && trialState.allowed && trialState.started && trialState.remaining > 0) {
+      const expiresAtIso =
+        trialToken && isTrialTokenActive(trialToken)
+          ? new Date(trialToken.exp * 1000).toISOString()
+          : null
+      return {
+        allowed: true,
+        status: 'trialing',
+        reason: null,
+        checkedAt: new Date().toISOString(),
+        expiresAt: expiresAtIso,
+        customerEmail: null,
+        subscriptionPlan: 'trial',
+        subscriptionStatus: 'trialing'
+      }
+    }
+    return null
+  }
+
   if (!config.apiUrl) {
+    const cachedTrial = trialAccessFromCache()
+    if (cachedTrial) {
+      return cachedTrial
+    }
     throw new Error('Access control API URL is not configured.')
   }
 
@@ -265,15 +546,27 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
   const subscriptionUrl = new URL('/billing/subscription', baseUrl)
   subscriptionUrl.searchParams.set('user_id', config.clientId)
 
-  const subscriptionResponse = await fetch(subscriptionUrl.toString(), {
-    headers: { Accept: 'application/json' }
-  })
+  let subscriptionResponse: Response
+  try {
+    subscriptionResponse = await fetch(subscriptionUrl.toString(), {
+      headers: { Accept: 'application/json' }
+    })
+  } catch (error) {
+    const cachedTrial = trialAccessFromCache()
+    if (cachedTrial) {
+      return cachedTrial
+    }
+    const detail = error instanceof Error && error.message ? ` (${error.message})` : ''
+    throw new Error(`Unable to verify subscription status${detail}.`)
+  }
 
   if (!subscriptionResponse.ok) {
     throw new Error(await extractApiError(subscriptionResponse))
   }
 
   const subscriptionBody = (await subscriptionResponse.json()) as SubscriptionApiResponse
+  const trialSnapshot = updateTrialStateFromApi(subscriptionBody.trial ?? null)
+  const trialToken = getCachedTrialToken()
   const subscriptionStatus = normalizeStatus(subscriptionBody.status ?? 'inactive')
   const entitled = Boolean(subscriptionBody.entitled)
   const currentPeriodEndSeconds =
@@ -287,10 +580,32 @@ export const verifyDesktopAccess = async (): Promise<AccessCheckResult> => {
 
   if (!entitled) {
     storeLicenseCache(null)
+
+    if (trialSnapshot.started && trialSnapshot.remaining > 0) {
+      const expiresAtIso =
+        trialToken && isTrialTokenActive(trialToken)
+          ? new Date(trialToken.exp * 1000).toISOString()
+          : null
+      return {
+        allowed: true,
+        status: 'trialing',
+        reason: null,
+        checkedAt: new Date().toISOString(),
+        expiresAt: expiresAtIso,
+        customerEmail: null,
+        subscriptionPlan: 'trial',
+        subscriptionStatus: 'trialing'
+      }
+    }
+
+    const reason = trialSnapshot.started
+      ? `Trial remaining: ${trialSnapshot.remaining} of ${trialSnapshot.total}. Subscribe to continue using Atropos.`
+      : 'Active subscription required to continue using Atropos.'
+
     return {
       allowed: false,
       status: subscriptionStatus,
-      reason: 'Active subscription required to continue using Atropos.',
+      reason,
       checkedAt: new Date().toISOString(),
       expiresAt: currentPeriodEndIso,
       customerEmail: null,

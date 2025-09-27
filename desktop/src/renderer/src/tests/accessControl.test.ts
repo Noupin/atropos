@@ -1,6 +1,22 @@
 import { webcrypto } from 'node:crypto'
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AccessJwtPayload } from '../types'
+
+const createLocalStorageMock = () => {
+  let store: Record<string, string> = {}
+  return {
+    getItem: (key: string) => (key in store ? store[key] : null),
+    setItem: (key: string, value: string) => {
+      store[key] = value
+    },
+    removeItem: (key: string) => {
+      delete store[key]
+    },
+    clear: () => {
+      store = {}
+    }
+  }
+}
 
 const mockConfig = {
   apiUrl: null as string | null,
@@ -16,21 +32,68 @@ vi.mock('../config/accessControl', () => ({
   getAccessControlConfig: () => ({ ...mockConfig })
 }))
 
-const { createAccessJwt, verifyDesktopAccess } = await import('../services/accessControl')
+const {
+  createAccessJwt,
+  verifyDesktopAccess,
+  storeTrialState,
+  storeTrialToken,
+  clearTrialToken,
+  getCachedTrialState,
+  getCachedTrialToken,
+  updateTrialStateFromApi
+} = await import('../services/accessControl')
 
 describe('access control service', () => {
   const originalCrypto = globalThis.crypto
+  const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(window, 'localStorage')
+  const originalGlobalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    'localStorage'
+  )
+
+  let localStorageMock: ReturnType<typeof createLocalStorageMock>
+
+  const applyLocalStorageMock = (): void => {
+    localStorageMock = createLocalStorageMock()
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: localStorageMock
+    })
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: localStorageMock
+    })
+  }
 
   beforeAll(() => {
     Object.defineProperty(globalThis, 'crypto', {
       configurable: true,
       value: webcrypto
     })
+    if (!originalWindowDescriptor) {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: globalThis
+      })
+    }
+    applyLocalStorageMock()
   })
 
   beforeEach(() => {
     mockConfig.useMock = true
     mockConfig.apiUrl = null
+    applyLocalStorageMock()
+    storeTrialState(null)
+    storeTrialToken(null)
+    clearTrialToken()
+  })
+
+  afterEach(() => {
+    localStorageMock.clear()
+    storeTrialState(null)
+    storeTrialToken(null)
+    clearTrialToken()
   })
 
   afterAll(() => {
@@ -38,6 +101,19 @@ describe('access control service', () => {
       configurable: true,
       value: originalCrypto
     })
+    if (originalLocalStorageDescriptor) {
+      Object.defineProperty(window, 'localStorage', originalLocalStorageDescriptor)
+    } else {
+      Reflect.deleteProperty(window, 'localStorage')
+    }
+    if (originalGlobalLocalStorageDescriptor) {
+      Object.defineProperty(globalThis, 'localStorage', originalGlobalLocalStorageDescriptor)
+    } else {
+      Reflect.deleteProperty(globalThis, 'localStorage')
+    }
+    if (originalWindowDescriptor) {
+      Object.defineProperty(globalThis, 'window', originalWindowDescriptor)
+    }
   })
 
   it('creates a signed JWT with the expected payload', async () => {
@@ -78,6 +154,44 @@ describe('access control service', () => {
     )
   })
 
+  it('allows access using cached trial state when the access API URL is missing', async () => {
+    mockConfig.useMock = false
+    mockConfig.apiUrl = null
+
+    storeTrialState({
+      allowed: true,
+      started: true,
+      total: 3,
+      remaining: 2,
+      usedAt: null,
+      deviceHash: 'device-abc'
+    })
+
+    const result = await verifyDesktopAccess()
+
+    expect(result.allowed).toBe(true)
+    expect(result.subscriptionStatus).toBe('trialing')
+    expect(result.expiresAt).toBeNull()
+  })
+
+  it('rejects cached trials when the trial is disallowed', async () => {
+    mockConfig.useMock = false
+    mockConfig.apiUrl = null
+
+    storeTrialState({
+      allowed: false,
+      started: false,
+      total: 3,
+      remaining: 0,
+      usedAt: null,
+      deviceHash: 'device-abc'
+    })
+
+    await expect(verifyDesktopAccess()).rejects.toThrow(
+      'Access control API URL is not configured.'
+    )
+  })
+
   it('throws when the shared secret is missing', async () => {
     await expect(
       createAccessJwt(
@@ -92,6 +206,117 @@ describe('access control service', () => {
         ''
       )
     ).rejects.toThrow('Access control secret is not configured.')
+  })
+
+  it('persists trial state snapshots to localStorage', () => {
+    const snapshot = storeTrialState({
+      allowed: true,
+      started: true,
+      total: 5,
+      remaining: 4,
+      usedAt: 1_700_000_000_000,
+      deviceHash: 'device-123'
+    })
+
+    expect(snapshot).toEqual({
+      allowed: true,
+      started: true,
+      total: 5,
+      remaining: 4,
+      usedAt: 1_700_000_000_000,
+      deviceHash: 'device-123'
+    })
+
+    const cached = getCachedTrialState()
+    expect(cached).toEqual({
+      allowed: true,
+      started: true,
+      total: 5,
+      remaining: 4,
+      usedAt: 1_700_000_000_000,
+      deviceHash: 'device-123'
+    })
+
+    const storedValue = window.localStorage.getItem('atropos:trial-state')
+    expect(storedValue).not.toBeNull()
+    expect(JSON.parse(storedValue ?? '{}')).toMatchObject({ started: true, remaining: 4 })
+  })
+
+  it('keeps the lower remaining count when overwriting cached trial snapshots', () => {
+    storeTrialState({
+      allowed: true,
+      started: true,
+      total: 3,
+      remaining: 1,
+      usedAt: null,
+      deviceHash: 'device-123'
+    })
+
+    const snapshot = storeTrialState({
+      allowed: true,
+      started: true,
+      total: 3,
+      remaining: 3,
+      usedAt: null,
+      deviceHash: 'device-123'
+    })
+
+    expect(snapshot?.remaining).toBe(1)
+    expect(getCachedTrialState()?.remaining).toBe(1)
+  })
+
+  it('synchronizes API trial responses with the cached remaining value', () => {
+    storeTrialState({
+      allowed: true,
+      started: true,
+      total: 3,
+      remaining: 2,
+      usedAt: null,
+      deviceHash: 'device-123'
+    })
+
+    const snapshot = updateTrialStateFromApi({
+      allowed: true,
+      started: true,
+      total: 3,
+      remaining: 3,
+      used_at: null,
+      device_hash: 'device-123'
+    })
+
+    expect(snapshot.remaining).toBe(2)
+    expect(getCachedTrialState()?.remaining).toBe(2)
+  })
+
+  it('clears stored trial state when null is provided', () => {
+    storeTrialState({
+      allowed: true,
+      started: true,
+      total: 3,
+      remaining: 1,
+      usedAt: null,
+      deviceHash: 'device-123'
+    })
+
+    storeTrialState(null)
+
+    expect(window.localStorage.getItem('atropos:trial-state')).toBeNull()
+    expect(getCachedTrialState()).toBeNull()
+  })
+
+  it('stores and clears trial tokens', () => {
+    const exp = Math.floor(Date.now() / 1000) + 900
+    storeTrialToken({ token: 'trial-token', exp })
+
+    expect(getCachedTrialToken()).toEqual({ token: 'trial-token', exp })
+    expect(JSON.parse(window.localStorage.getItem('atropos:trial-token') ?? '{}')).toEqual({
+      token: 'trial-token',
+      exp
+    })
+
+    clearTrialToken()
+    expect(window.localStorage.getItem('atropos:trial-token')).toBeNull()
+    expect(getCachedTrialToken()).toBeNull()
   })
 })
 

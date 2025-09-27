@@ -49,10 +49,21 @@ const paymentsMocks = vi.hoisted(() => ({
   createBillingPortalSession: vi.fn()
 }))
 
+const trialMocks = vi.hoisted(() => ({
+  startTrial: vi.fn(),
+  claimTrial: vi.fn()
+}))
+
 vi.mock('../services/paymentsApi', () => ({
   fetchSubscriptionStatus: paymentsMocks.fetchSubscriptionStatus,
   createCheckoutSession: paymentsMocks.createCheckoutSession,
   createBillingPortalSession: paymentsMocks.createBillingPortalSession
+}))
+
+vi.mock('../services/trialAccess', () => ({
+  startTrial: trialMocks.startTrial,
+  claimTrial: trialMocks.claimTrial,
+  consumeTrial: vi.fn()
 }))
 
 const createPlatform = (
@@ -156,6 +167,28 @@ describe('Profile page', () => {
     paymentsMocks.createCheckoutSession.mockResolvedValue({ url: 'https://stripe.test/checkout' })
     paymentsMocks.createBillingPortalSession.mockReset()
     paymentsMocks.createBillingPortalSession.mockResolvedValue({ url: 'https://stripe.test/portal' })
+
+  trialMocks.startTrial.mockReset()
+  trialMocks.startTrial.mockResolvedValue({
+    allowed: true,
+    started: true,
+    total: 3,
+    remaining: 3,
+    usedAt: null,
+    deviceHash: 'device-123'
+  })
+    trialMocks.claimTrial.mockReset()
+  trialMocks.claimTrial.mockResolvedValue({
+    token: { token: 'trial-token', exp: Math.floor(Date.now() / 1000) + 900 },
+    snapshot: {
+      allowed: true,
+      started: true,
+      total: 3,
+      remaining: 2,
+      usedAt: null,
+      deviceHash: 'device-123'
+      }
+    })
 
     window.open = vi.fn() as typeof window.open
   })
@@ -508,6 +541,153 @@ describe('Profile page', () => {
 
     await waitFor(() => expect(paymentsMocks.fetchSubscriptionStatus).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(refreshAccessStatusMock).toHaveBeenCalledTimes(1))
+  })
+
+  it('shows trial onboarding UI when no subscription is active', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null,
+      trial: {
+        allowed: true,
+        started: false,
+        total: 3,
+        remaining: 3,
+        usedAt: null,
+        deviceHash: null
+      }
+    })
+
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: false,
+        status: 'inactive',
+        reason: 'Subscription required to continue using Atropos.'
+      }
+    })
+
+    expect(
+      await screen.findByText(/Try Atropos free with three renders/i)
+    ).toBeInTheDocument()
+    const startButton = await screen.findByRole('button', { name: /Start 3-video Trial/i })
+    expect(startButton).toBeEnabled()
+    expect(screen.getByRole('button', { name: /^Subscribe$/i })).toBeInTheDocument()
+
+    fireEvent.click(startButton)
+    await waitFor(() => expect(trialMocks.startTrial).toHaveBeenCalledWith('atropos-desktop-dev'))
+  })
+
+  it('hides trial onboarding when the trial is not allowed', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null,
+      trial: {
+        allowed: false,
+        started: false,
+        total: 3,
+        remaining: 0,
+        usedAt: null,
+        deviceHash: null
+      }
+    })
+
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: false,
+        status: 'inactive',
+        reason: 'Subscription required to continue using Atropos.'
+      }
+    })
+
+    expect(await screen.findByRole('button', { name: /^Subscribe$/i })).toBeInTheDocument()
+    expect(screen.queryByText(/Try Atropos free with three renders/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Start 3-video Trial/i })).not.toBeInTheDocument()
+    expect(trialMocks.startTrial).not.toHaveBeenCalled()
+  })
+
+  it('shows remaining trial renders without manual actions once the trial has started', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null,
+      trial: {
+        allowed: true,
+        started: true,
+        total: 3,
+        remaining: 2,
+        usedAt: null,
+        deviceHash: 'device-123'
+      }
+    })
+
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: true,
+        status: 'trialing',
+        subscriptionStatus: 'trialing',
+        subscriptionPlan: 'trial',
+        expiresAt: null,
+        reason: null
+      }
+    })
+
+    expect(await screen.findByText(/Trial mode — 2 of 3 left/i)).toBeInTheDocument()
+    expect(screen.getByText(/Trial access — 2 left/i)).toBeInTheDocument()
+    expect(screen.getByText(/Trial renders are applied automatically/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Use trial/i })).not.toBeInTheDocument()
+    expect(trialMocks.claimTrial).not.toHaveBeenCalled()
+  })
+
+  it('disables the trial action when all renders are exhausted', async () => {
+    paymentsMocks.fetchSubscriptionStatus.mockResolvedValueOnce({
+      status: 'inactive',
+      planId: null,
+      planName: null,
+      renewsAt: null,
+      cancelAt: null,
+      trialEndsAt: null,
+      latestInvoiceUrl: null,
+      trial: {
+        allowed: true,
+        started: true,
+        total: 3,
+        remaining: 0,
+        usedAt: null,
+        deviceHash: 'device-123'
+      }
+    })
+
+    renderProfile({
+      accessStatus: {
+        ...sampleAccessStatus,
+        allowed: false,
+        status: 'inactive',
+        reason: 'Trial remaining: 0 of 3. Subscribe to continue using Atropos.'
+      }
+    })
+
+    expect(await screen.findByText(/Trial mode — 0 of 3 left/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/You have used all trial renders. Subscribe to continue/i)
+    ).toBeInTheDocument()
+    expect(screen.getByText(/Trial exhausted/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Trial exhausted/i })).not.toBeInTheDocument()
   })
 })
 

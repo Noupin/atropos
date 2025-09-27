@@ -9,12 +9,14 @@
     "derive-public-key": "node ./scripts/derive-public-key.mjs",
     "format": "prettier --check \"src/**/*.ts\"",
     "lint": "npm run check",
-    "test": "echo 'No tests for worker'"
+    "test": "vitest run"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240129.0",
+    "@types/node": "^22.9.0",
     "prettier": "^3.2.5",
     "typescript": "^5.3.3",
+    "vitest": "^1.6.0",
     "wrangler": "^4.39.0"
   },
   "dependencies": {

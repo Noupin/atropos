@@ -183,6 +183,21 @@ export const buildBillingPortalUrl = (): string => {
   return url.toString()
 }
 
+export const buildTrialStartUrl = (): string => {
+  const url = new URL('/trial/start', getBillingApiBaseUrl())
+  return url.toString()
+}
+
+export const buildTrialClaimUrl = (): string => {
+  const url = new URL('/trial/claim', getBillingApiBaseUrl())
+  return url.toString()
+}
+
+export const buildTrialConsumeUrl = (): string => {
+  const url = new URL('/trial/consume', getBillingApiBaseUrl())
+  return url.toString()
+}
+
 export const buildConfigUrl = (): string => {
   const url = new URL('/api/config', getApiBaseUrl())
   return url.toString()

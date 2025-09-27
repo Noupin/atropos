@@ -10,6 +10,7 @@ import {
   type SearchBridge,
   type SubscriptionLifecycleStatus,
   type SubscriptionStatus,
+  type SubscriptionTrialState,
   type SupportedPlatform
 } from '../types'
 import { TONE_LABELS, TONE_OPTIONS } from '../constants/tone'
@@ -20,6 +21,8 @@ import {
   createCheckoutSession,
   fetchSubscriptionStatus
 } from '../services/paymentsApi'
+import { startTrial } from '../services/trialAccess'
+import { getCachedTrialState, TrialStateSnapshot } from '../services/accessControl'
 import { getAccessControlConfig } from '../config/accessControl'
 
 const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
@@ -47,6 +50,36 @@ const normalizeBillingError = (value: string): string => {
 
   return `${message}${suffix} Try refreshing or update your billing information below.`
 }
+
+const DEFAULT_TRIAL_TOTAL = 3
+
+const DEFAULT_TRIAL_STATE: SubscriptionTrialState = {
+  allowed: true,
+  started: false,
+  total: DEFAULT_TRIAL_TOTAL,
+  remaining: DEFAULT_TRIAL_TOTAL,
+  usedAt: null,
+  deviceHash: null
+}
+
+const normalizeTrialStateForUi = (
+  snapshot: TrialStateSnapshot | null
+): SubscriptionTrialState | null => {
+  if (!snapshot) {
+    return null
+  }
+  return {
+    allowed: snapshot.allowed,
+    started: snapshot.started,
+    total: snapshot.total,
+    remaining: snapshot.remaining,
+    usedAt: snapshot.usedAt ? new Date(snapshot.usedAt).toISOString() : null,
+    deviceHash: snapshot.deviceHash ?? null
+  }
+}
+
+const getInitialTrialState = (): SubscriptionTrialState | null =>
+  normalizeTrialStateForUi(getCachedTrialState())
 
 const PORTAL_ELIGIBLE_STATUSES = new Set<SubscriptionLifecycleStatus>([
   'active',
@@ -945,6 +978,9 @@ const Profile: FC<ProfileProps> = ({
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false)
   const [isStartingCheckout, setIsStartingCheckout] = useState(false)
   const [isOpeningPortal, setIsOpeningPortal] = useState(false)
+  const [trialStatus, setTrialStatus] = useState<SubscriptionTrialState | null>(getInitialTrialState)
+  const [trialError, setTrialError] = useState<string | null>(null)
+  const [isStartingTrial, setIsStartingTrial] = useState(false)
   const refreshOnFocusRef = useRef(false)
 
   const billingUserId = useMemo(() => getAccessControlConfig().clientId.trim(), [])
@@ -972,6 +1008,12 @@ const Profile: FC<ProfileProps> = ({
     setBillingEmailInput(accessStatus?.customerEmail ?? '')
   }, [accessStatus?.customerEmail])
 
+  useEffect(() => {
+    if (subscriptionStatus?.trial) {
+      setTrialStatus(subscriptionStatus.trial)
+    }
+  }, [subscriptionStatus?.trial])
+
   const loadSubscriptionStatus = useCallback(async () => {
     if (!billingUserId) {
       setSubscriptionStatus(null)
@@ -984,11 +1026,16 @@ const Profile: FC<ProfileProps> = ({
       const status = await fetchSubscriptionStatus(billingUserId)
       setSubscriptionStatus(status)
       setSubscriptionError(null)
+      const snapshot = normalizeTrialStateForUi(getCachedTrialState())
+      setTrialStatus(status.trial ?? snapshot ?? DEFAULT_TRIAL_STATE)
+      setTrialError(null)
       return status
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unable to load billing information from Stripe.'
       setSubscriptionError(normalizeBillingError(message))
+      const snapshot = normalizeTrialStateForUi(getCachedTrialState())
+      setTrialStatus(snapshot ?? DEFAULT_TRIAL_STATE)
       return null
     } finally {
       setIsLoadingSubscription(false)
@@ -997,6 +1044,15 @@ const Profile: FC<ProfileProps> = ({
 
   useEffect(() => {
     void loadSubscriptionStatus()
+    if (typeof window === 'undefined') {
+      return
+    }
+    const intervalId = window.setInterval(() => {
+      void loadSubscriptionStatus()
+    }, 60_000)
+    return () => {
+      window.clearInterval(intervalId)
+    }
   }, [loadSubscriptionStatus])
 
   const handleCreateAccount = useCallback(
@@ -1061,13 +1117,28 @@ const Profile: FC<ProfileProps> = ({
 
   const hasEntitledSubscription = useMemo(() => {
     if (accessStatus) {
-      return accessStatus.allowed
+      if (!accessStatus.allowed) {
+        return false
+      }
+      if (accessStatus.subscriptionStatus === 'trialing' && accessStatus.subscriptionPlan === 'trial') {
+        return false
+      }
+      return true
     }
     if (subscriptionStatus?.status) {
       return PORTAL_ELIGIBLE_STATUSES.has(subscriptionStatus.status)
     }
     return false
   }, [accessStatus, subscriptionStatus?.status])
+
+  const effectiveTrialStatus = trialStatus ?? DEFAULT_TRIAL_STATE
+  const isTrialAllowed = effectiveTrialStatus.allowed
+  const hasTrialStarted = isTrialAllowed && effectiveTrialStatus.started
+  const trialRemaining = effectiveTrialStatus.remaining
+  const trialTotal = effectiveTrialStatus.total
+  const hasTrialAccess = hasTrialStarted && trialRemaining > 0
+  const isTrialExhausted = hasTrialStarted && trialRemaining <= 0
+  const shouldShowTrialCta = !hasEntitledSubscription && isTrialAllowed
 
   const accessVariantKey = isCheckingAccess
     ? 'neutral'
@@ -1079,9 +1150,11 @@ const Profile: FC<ProfileProps> = ({
           : resolvedLifecycleStatus === 'inactive'
             ? 'neutral'
             : 'warning'
-      : accessStatus || subscriptionStatus || accessError
-        ? 'error'
-        : 'neutral'
+      : hasTrialAccess
+        ? 'warning'
+        : accessStatus || subscriptionStatus || accessError
+          ? 'error'
+          : 'neutral'
   const accessVariant = accessBadgeVariants[accessVariantKey] ?? accessBadgeVariants.neutral
 
   const accessBadgeLabel = isCheckingAccess
@@ -1094,11 +1167,15 @@ const Profile: FC<ProfileProps> = ({
           : resolvedLifecycleStatus === 'grace_period'
             ? 'Grace period'
             : 'Subscription attention'
-      : accessStatus
-        ? 'Access disabled'
-        : accessError
-          ? 'Access error'
-          : 'Access required'
+      : hasTrialAccess
+        ? `Trial access — ${trialRemaining} left`
+        : hasTrialStarted
+          ? 'Trial exhausted'
+          : accessStatus
+            ? 'Access disabled'
+            : accessError
+              ? 'Access error'
+              : 'Access required'
 
   const activePlanLabel = accessStatus?.subscriptionPlan ?? subscriptionStatus?.planName ?? null
 
@@ -1108,7 +1185,9 @@ const Profile: FC<ProfileProps> = ({
       ? activePlanLabel
         ? `Access granted – ${activePlanLabel}`
         : 'Access granted.'
-      : accessStatus?.reason ?? accessError ?? 'Subscription required to continue using Atropos.'
+      : hasTrialAccess
+        ? `Trial access active — ${trialRemaining} of ${trialTotal} renders remaining.`
+        : accessStatus?.reason ?? accessError ?? 'Subscription required to continue using Atropos.'
 
   const accessRenewalLabel = accessStatus?.expiresAt
     ? new Date(accessStatus.expiresAt).toLocaleString()
@@ -1227,6 +1306,43 @@ const Profile: FC<ProfileProps> = ({
       setIsOpeningPortal(false)
     }
   }, [billingUserId])
+
+  const handleStartTrial = useCallback(async () => {
+    setTrialError(null)
+    if (!billingUserId) {
+      setTrialError('Billing is not configured for this installation.')
+      return
+    }
+
+    const current = trialStatus ?? DEFAULT_TRIAL_STATE
+    if (!current.allowed) {
+      setTrialError('Trial is no longer available for this account.')
+      return
+    }
+
+    setIsStartingTrial(true)
+    try {
+      const snapshot = await startTrial(billingUserId)
+      const normalized = normalizeTrialStateForUi(snapshot) ?? DEFAULT_TRIAL_STATE
+      setTrialStatus(normalized)
+      setSubscriptionStatus((prev) => (prev ? { ...prev, trial: normalized } : prev))
+      await loadSubscriptionStatus()
+      try {
+        await onRefreshAccessStatus()
+      } catch (accessError) {
+        const message =
+          accessError instanceof Error
+            ? accessError.message
+            : 'Unable to refresh access permissions.'
+        setSubscriptionError(normalizeBillingError(message))
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to start the trial.'
+      setTrialError(message)
+    } finally {
+      setIsStartingTrial(false)
+    }
+  }, [billingUserId, loadSubscriptionStatus, onRefreshAccessStatus])
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
@@ -1473,6 +1589,41 @@ const Profile: FC<ProfileProps> = ({
             {subscriptionError ? (
               <p className="text-xs font-medium text-[color:var(--error-strong)]">{subscriptionError}</p>
             ) : null}
+            {shouldShowTrialCta ? (
+              <div className="flex flex-col gap-2 rounded-lg border border-dashed border-white/15 bg-black/10 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-[var(--fg)]">
+                    {hasTrialStarted
+                      ? `Trial mode — ${trialRemaining} of ${trialTotal} left`
+                      : 'Try Atropos free with three renders'}
+                  </span>
+                </div>
+                {trialError ? (
+                  <p className="text-xs font-medium text-[color:var(--error-strong)]">{trialError}</p>
+            ) : null}
+                <div className="flex flex-wrap gap-2">
+                  {!hasTrialStarted ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleStartTrial()
+                      }}
+                      className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
+                      disabled={isStartingTrial}
+                    >
+                      {isStartingTrial ? 'Starting trial…' : 'Start 3-video Trial'}
+                    </button>
+                  ) : null}
+                </div>
+                <p className="text-[11px] text-[var(--muted)]">
+                  {!hasTrialStarted
+                    ? 'Reserve three single-use renders tied to this device. A subscription unlocks unlimited processing.'
+                    : isTrialExhausted
+                      ? 'You have used all trial renders. Subscribe to continue processing videos without limits.'
+            : 'Trial renders are applied automatically the next time you process a video.'}
+              </p>
+            </div>
+          ) : null}
             <div className="flex flex-col gap-2 pt-1">
               <button
                 type="button"
