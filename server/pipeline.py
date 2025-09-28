@@ -1062,9 +1062,11 @@ def process_video(
             )
             hashtags.extend(["#shorts", "#withatropos"])
             full_video_link = youtube_timestamp_url(yt_url, candidate.start)
+            credited_channel = video_info.get("uploader", "Unknown Channel")
+            credited_title = video_info.get("title") or "Original video"
             description = (
                 f"Full video: {full_video_link}\n\n"
-                f"Credit: {video_info.get('uploader', 'Unknown Channel')}\n"
+                f"Credit: {credited_channel} — {credited_title}\n"
                 "Made by Atropos\n"
             )
             description = maybe_append_website_link(description)

@@ -727,9 +727,10 @@ def _build_description_text(
 
     full_video_link = youtube_timestamp_url(source_url, start_seconds)
     credited_channel = channel or "Unknown Channel"
+    credited_title = source_title or "Original video"
     description = (
         f"Full video: {full_video_link}\n\n"
-        f"Credit: {credited_channel}\n"
+        f"Credit: {credited_channel} — {credited_title}\n"
         "Made by Atropos\n"
     )
     description = maybe_append_website_link(description)
