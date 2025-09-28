@@ -14,42 +14,42 @@ from config import (
 
 FUNNY_PROMPT_DESC = """
 TONE-SPECIFIC:
-- Find one atomic joke: setup -> escalation -> punchline.
-- `reason` must start "funny because ..." and name the device (misdirection, roast, wordplay, escalation, deadpan, callback).
-- `quote` must capture the punchline or exact comedic turn.
-- Exclude hateful or non-consensual content without wit.
+- Identify a provocative or surprising comedic claim/turn that clearly signals the joke or device.
+- `reason` must start "funny because ..." and name the device or claim (misdirection, roast, wordplay, escalation, deadpan, callback) and the logic that makes it land.
+- `quote` captures the core comedic assertion or punchline with just enough setup to stand alone.
+- Exclude hateful or non-consensual targets, or inside-baseball that lacks context.
 """
 
 
 SCIENCE_PROMPT_DESC = """
 TONE-SPECIFIC:
-- Select moments that spark scientific awe or curiosity: clear explanations, surprising discoveries, elegant analogies, or milestone findings across any scientific field (space/astronomy, biology, chemistry, physics, or other disciplines).
-- `reason` must start "science because ..." and specify the key insight, principle, or breakthrough (e.g., scale, counterintuitive result, experiment, explanation, discovery).
-- `quote` must capture the core scientific insight or the most striking line.
-- Exclude rambling fact lists, vague generalizations, or speculation presented as certainty.
+- Identify a clear scientific claim or explanation (principle, mechanism, experiment, discovery) that can stand alone for a layperson.
+- `reason` must start "science because ..." and name the claim or device (mechanism, evidence, analogy) and the logic from setup to implication.
+- `quote` captures the core scientific assertion or result with the minimal context needed.
+- Exclude rambling fact lists or speculation presented as certainty.
 """
 
 HISTORY_PROMPT_DESC = """
 TONE-SPECIFIC:
-- Pick consequential mini-stories: decisions, reversals, firsts/lasts, declassifications, or misconceptions corrected, with clear stakes.
-- `reason` must start "history because ..." and name the stakes and device (turning point, irony, first/last, declassified, misconception). Mark disputed claims as tentative.
-- `quote` captures the twist/decision or the most quotable line.
+- Identify a consequential historical claim (decision, reversal, first/last, declassification) with clear stakes.
+- `reason` must start "history because ..." and name the claim or device (turning point, cause→effect, contested account) and the logic from action to outcome; mark disputed claims as tentative.
+- `quote` captures the core historical assertion or twist with enough context.
 - Exclude trivia lists, myths as facts, or partisan hot takes.
 """
 
 TECH_PROMPT_DESC = """
 TONE-SPECIFIC:
-- Deliver practical tech value: clear how-it-works, actionable tips, or trade-offs.
-- `reason` must start "tech because ..." and name the insight or trade-off.
-- `quote` captures the actionable claim or key takeaway.
-- Exclude vague hype or sales pitches.
+- Identify a practical technical claim or trade-off (how-it-works, constraint, step, pattern) that is reproducible.
+- `reason` must start "tech because ..." and name the claim or device (constraint, trade-off, mechanism) and the logic from setup to consequence.
+- `quote` captures the core technical assertion or actionable line with minimal context.
+- Exclude vague hype, sales pitches, or unverifiable claims.
 """
 
 HEALTH_PROMPT_DESC = """
 TONE-SPECIFIC:
-- Offer evidence-aware, safe guidance or careful myth-busting.
-- `reason` must start "health because ..." and state the takeaway with guardrails (note evidence type if stated).
-- `quote` captures the key advice or myth-busting line.
+- Identify a careful health claim or guidance (myth-bust, risk/benefit, habit) with scope and safety.
+- `reason` must start "health because ..." and name the claim or device (guideline, evidence type, contraindication) and the logic from advice to implication.
+- `quote` captures the key health assertion with necessary context; avoid absolutes.
 - Exclude unsafe claims or overconfident prescriptions.
 """
 
@@ -63,10 +63,10 @@ TONE-SPECIFIC:
 
 POLITICS_PROMPT_DESC = """
 TONE-SPECIFIC:
-- Extract concise, self-contained beats that explain a policy, decision, vote, or outcome with clear stakes and who/what/why.
-- `reason` must start "politics because ..." and name the civic relevance (policy impact, accountability, precedent, process clarified, bipartisan moment).
-- `quote` captures the clearest, non-sensational line that states the claim, decision, or consequence.
-- Exclude campaign slogans, personal attacks, horse‑race chatter, or unverified claims; flag uncertainty if the speaker speculates.
+- Identify a civic claim about a policy, decision, vote, or process with clear stakes and actors.
+- `reason` must start "politics because ..." and name the claim or device (policy impact, accountability, precedent, process clarified) and the logic from decision to consequence.
+- `quote` captures the core civic assertion with sufficient context; avoid sensational framings.
+- Exclude campaign slogans, personal attacks, horse-race chatter, or unverified claims.
 """
 
 def _build_system_instructions(
