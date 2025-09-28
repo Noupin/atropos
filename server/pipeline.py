@@ -1210,10 +1210,8 @@ if __name__ == "__main__":
     # account = "cosmos"
     # # Melodysheep: Water Worlds
     # # yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
-    # # StarTalk
-    # # yt_url = ""
-    # # SEA
-    # yt_url = "https://www.youtube.com/watch?v=Fe6vJU0IV2E"
+    # # General URL
+    # yt_url = ""
 
 
     # tone = Tone.FUNNY 
@@ -1233,27 +1231,28 @@ if __name__ == "__main__":
     # # Matt Lane: Can I Get Fit On Fast Food?
     # # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
     # # Matt Lane: Ask MLFit Show
-    # # start next one at [25:]
+    # # start next one at [50:]
     # yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
 
 
-    # tone = Tone.HISTORY
-    # account = "history"
-    # # Crash Course World History
-    # # yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9"
-    # # World History Battles
-    # # start next one at [18:]
-    # yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
-
-
-    tone = Tone.CONSPIRACY
-    account = "secrets"
-    # Bright Insight: Lost Civilizations
+    tone = Tone.HISTORY
+    account = "history"
+    # Crash Course World History
+    # yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9"
+    # World History Battles
     # start next one at [20:]
-    yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
+    yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
+
+
+    # tone = Tone.CONSPIRACY
+    # account = "secrets"
+    # # Bright Insight: Lost Civilizations
+    # # start next one at [20:]
+    # yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
 
 
     urls = get_video_urls(yt_url)
+    # FUNNYKINDA NEEDS REVERSED
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[10:20]:
+    for url in urls[20:30]:
         process_video(url, account=account, tone=tone)
