@@ -1,0 +1,21 @@
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# Review is required from these owners when matching files change.
+
+*                                   @atropos/core-maintainers
+/docs/**                            @atropos/core-maintainers
+CHANGELOG.md                        @atropos/core-maintainers
+
+# Desktop client
+/desktop/**                         @atropos/desktop-team
+
+# Python services
+/server/**                          @atropos/server-team
+
+# Licensing worker
+/services/licensing/**              @atropos/licensing-team
+
+# Infrastructure & deployment
+/infrastructure/**                  @atropos/infra-team
+
+# GitHub metadata
+.github/**                          @atropos/devx-team
