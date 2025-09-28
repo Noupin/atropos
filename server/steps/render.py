@@ -231,7 +231,7 @@ def render_vertical_with_captions(
     def _current_caption_text(t: float) -> str:
         # Binary search could be added; linear is fine for modest lists
         for (s, e, txt) in captions_norm:
-            if s <= t < e:
+            if (s - time_tolerance) <= t <= (e + time_tolerance):
                 return txt
         return ""
 
@@ -243,6 +243,9 @@ def render_vertical_with_captions(
     fps = cap.get(cv2.CAP_PROP_FPS)
     if not fps or np.isnan(fps) or fps <= 0:
         fps = OUTPUT_FPS
+
+    frame_duration = 1.0 / fps
+    time_tolerance = max(frame_duration / 2.0, 1e-3)
 
     # Prefer H.264 writer; fall back to mp4v if unavailable
     writer = _open_writer(temp_video, fps, (frame_width, frame_height))
@@ -319,11 +322,12 @@ def render_vertical_with_captions(
     _cached_sizes = []
     _cached_total_h = 0
 
+    frame_idx = 0
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        t = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
+        t = (frame_idx + 0.5) * frame_duration
         current_text = _current_caption_text(t)
 
         # --- Build blurred background (cover 9:16) and foreground ---
@@ -456,6 +460,7 @@ def render_vertical_with_captions(
                 y_text += th + spacing
 
         writer.write(canvas)
+        frame_idx += 1
 
     cap.release()
     writer.release()
