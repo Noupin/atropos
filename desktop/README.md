@@ -1,57 +1,61 @@
-# Atropos
+# Desktop Client
 
-Atropos is an Electron application with React and TypeScript.
+Atropos desktop is an Electron + Vite application that orchestrates local video processing and surfaces licensing status fetched from the Cloudflare Worker.
 
-## Recommended IDE Setup
+## Environment variables
 
-- [VSCode](https://code.visualstudio.com/) + [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint) + [Prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
+Create a `.env` file in `desktop/` or export variables before running:
 
-## Project Setup
+| Variable | Purpose | Dev default | Production guidance |
+| --- | --- | --- | --- |
+| `VITE_API_BASE_URL` | Base URL for Python services | `http://127.0.0.1:8787` (FastAPI dev server) | Set to hosted API (`https://api.atropos.dev`/`.com`). Never ship with `localhost`. |
+| `VITE_LICENSE_API_BASE_URL` | Licensing worker host | `https://licensing.dev.atropos.workers.dev` | Use production worker host. |
+| `VITE_BACKEND_MODE` | `api` (default) or `mock` for demo data | `api` | Leave unset in packaged builds. |
+| `VITE_RELEASE_CHANNEL` | `dev`, `beta`, or `stable` channel metadata | `dev` | Set via CI during release pipelines. |
 
-### Install
+The renderer and the access overlay both call the licensing service through the same helper in `src/renderer/src/services/licensing.ts`. Updating entitlement logic here automatically keeps the overlay badge and the UI snapshot in sync—do not fork this logic elsewhere.
+
+## Project setup
 
 ```bash
-$ npm install
+npm install
 ```
 
 ### Development
 
-```bash
-$ npm run dev
-```
-
-### Backend integration
-
-The renderer now targets the FastAPI backend by default. It assumes the API is
-reachable on `http://127.0.0.1:8000` (or the hostname serving the UI, if
-available) and gracefully falls back to that loopback address when the
-application is packaged. Start the backend with:
+Start the renderer with hot reload and the Electron main process:
 
 ```bash
-uvicorn server.app:app --reload --host 127.0.0.1 --port 8000
+npm run dev
 ```
 
-If the service is listening on a different host or port, create a `.env` file
-at the repository root (or export variables in your shell) to override the base
-URL:
+Ensure the Python FastAPI service is running on the host specified by `VITE_API_BASE_URL`. Refer to [server/README.md](../server/README.md) for details.
 
-```env
-VITE_API_BASE_URL=http://localhost:8000
-```
+### Building packages
 
-Set `VITE_BACKEND_MODE=mock` to explore the UI with simulated pipeline events
-when the Python server is unavailable. Remove the variable (or set it to `api`)
-to return to the live backend.
-
-### Build
+Use platform-specific build scripts:
 
 ```bash
-# For windows
-$ npm run build:win
-
-# For macOS
-$ npm run build:mac
-
-# For Linux
-$ npm run build:linux
+npm run build:mac
+npm run build:win
+npm run build:linux
 ```
+
+CI injects the correct `VITE_*` values for production builds. Manual builds should export the same variables to avoid falling back to localhost.
+
+## Adding new UI modules
+
+- Create new pages under `src/renderer/src/pages/FeatureName/` and export a route component.
+- Place shared UI primitives in `src/renderer/src/components/` and hooks in `src/renderer/src/hooks/`.
+- Add service adapters under `src/renderer/src/services/featureName.ts` that encapsulate API calls. Reuse the entitlement helpers from `licensing.ts` for access gating.
+- When introducing cross-cutting state, create a dedicated store module (e.g., `src/renderer/src/stores/featureName.ts`) instead of expanding existing stores beyond a single responsibility.
+
+## Access overlay
+
+The access overlay widget (the badge that reflects entitlement status) reads from the same licensing snapshot used by the renderer. If you introduce new access control states:
+
+1. Extend `src/renderer/src/services/licensing.ts` to expose the new status.
+2. Update the overlay component under `src/renderer/src/components/AccessOverlay` to render it.
+3. Add tests or storybook stories alongside the component.
+
+Avoid duplicating entitlement fetches or caching logic elsewhere.
