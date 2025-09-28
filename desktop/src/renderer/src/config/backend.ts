@@ -38,7 +38,6 @@ const buildDefaultBaseUrls = (): string[] => {
   const hosts = new Set<string>()
   hosts.add('127.0.0.1')
   hosts.add('localhost')
-  hosts.add('[::1]')
   const windowHost = resolveWindowHost()
   if (windowHost) {
     hosts.add(windowHost)
