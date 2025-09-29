@@ -2,6 +2,9 @@ import { handleSubscriptionRequest } from "./billing";
 import { handleCheckoutRequest } from "./billing/checkout";
 import { handlePortalRequest } from "./billing/portal";
 import { handleWebhookRequest } from "./billing/webhook";
+import { handleIssueRequest } from "./license/issue";
+import { handleValidateRequest } from "./license/validate";
+import { handlePublicKeyRequest } from "./license/keys";
 
 const jsonResponse = (body: unknown, init: ResponseInit = {}): Response => {
   return new Response(JSON.stringify(body), {
@@ -38,10 +41,17 @@ export default {
       return handleWebhookRequest(request, env);
     }
 
-    // TODO: route other endpoints
-    // e.g. if path.startsWith("/license") → license handler
-    // else if path.startsWith("/trial") → trial handler
-    // else return 404
+    if (path === "/license/issue" && request.method === "POST") {
+      return handleIssueRequest(request, env);
+    }
+
+    if (path === "/license/validate" && request.method === "GET") {
+      return handleValidateRequest(request, env);
+    }
+
+    if (path === "/license/public-key" && request.method === "GET") {
+      return handlePublicKeyRequest(request, env);
+    }
 
     return jsonResponse({ error: "Not found" }, { status: 404 });
   },
