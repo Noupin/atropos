@@ -50,39 +50,23 @@ resource "cloudflare_workers_kv_namespace" "licensing" {
   # Cloudflare KV is eventually consistent; writes may take time to propagate globally.
 }
 
-resource "cloudflare_worker_script" "license_api" {
-  for_each = local.environments
-
-  account_id = var.cloudflare_account_id
-  name       = each.value.script_name
-  content    = <<"EOT"
-addEventListener("fetch", (event) => {
-  event.respondWith(new Response("OK", { status: 200 }));
-});
-EOT
-
-  lifecycle {
-    ignore_changes = [content]
-  }
-}
-
 resource "cloudflare_record" "license_api" {
   for_each = local.environments
 
   zone_id = var.cloudflare_zone_id
   name    = replace(each.value.hostname, format(".%s", var.zone_name), "")
   type    = "CNAME"
-  value   = "workers.dev.cloudflare.com"
+  content = "workers.dev.cloudflare.com"
   proxied = true
   ttl     = 1
 }
 
-resource "cloudflare_worker_route" "license_api" {
+resource "cloudflare_workers_route" "license_api" {
   for_each = local.environments
 
-  zone_id     = var.cloudflare_zone_id
-  pattern     = "${each.value.hostname}/*"
-  script_name = cloudflare_worker_script.license_api[each.key].name
+  zone_id = var.cloudflare_zone_id
+  pattern = "${each.value.hostname}/*"
+  script_name  = each.value.script_name
 }
 
 output "licensing_dev_kv_namespace_id" {
