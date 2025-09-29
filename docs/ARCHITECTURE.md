@@ -49,6 +49,13 @@ Atropos is composed of three cooperating runtimes:
 - `SERVER_ENV` / `ENVIRONMENT` → Python services → selects credentials in `server/config.py` and toggles webhook hosts.
 - `LICENSING_ENV` → Worker → selects Stripe keys and KV namespace bindings.
 
+### Cloudflare worker environments
+
+- We deploy two fully isolated Cloudflare Worker stacks managed via Wrangler environments ([docs](https://developers.cloudflare.com/workers/platform/environments/)).
+  - `license-api` (prod) handles `api.atropos-video.com/*` requests and binds to the production KV namespace, secrets, DNS records, and route configuration.
+  - `license-api-dev` (dev) serves `dev.api.atropos-video.com/*` with its own KV namespace, secrets, DNS records, and route configuration.
+- Wrangler automatically appends the environment suffix to the worker name (e.g., `license-api-dev`) when deploying with `--env`, so each environment publishes a separate worker instance and route ([routes docs](https://developers.cloudflare.com/workers/configuration/routes/)).
+
 ## Layering guidelines
 
 - Keep UI orchestration in renderer service modules that call into adapters under `desktop/src/renderer/src/services`. Heavy logic should move to new modules rather than expanding component files.
