@@ -1,0 +1,33 @@
+name = "license-api"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+workers_dev = false
+
+# ===== PROD (top-level) =====
+[[kv_namespaces]]
+binding = "LICENSING_KV"
+id = "bc5dd377fd5d4b5a8b3f1ac36444136f"
+preview_id = "bc5dd377fd5d4b5a8b3f1ac36444136f"
+
+[vars]
+TIER = "pro"
+CORS_ALLOW_ORIGINS = "http://localhost:5173,app://atropos,https://atropos-video.com"
+APP_DOWNLOAD_URL = "https://atropos-video.com/download"
+DEEPLINK_SCHEME = "atropos"
+TRANSFER_LINK_TTL_SECONDS = "900"
+
+# ===== DEV env (deploys as license-api-dev) =====
+[env.dev]
+workers_dev = false
+
+[[env.dev.kv_namespaces]]
+binding = "LICENSING_KV"
+id = "cf6aca3d77314a4393d0a3532fbcde16"
+preview_id = "cf6aca3d77314a4393d0a3532fbcde16"
+
+[env.dev.vars]
+TIER = "pro"
+CORS_ALLOW_ORIGINS = "http://localhost:5173,app://atropos,https://atropos-video.com"
+APP_DOWNLOAD_URL = "https://atropos-video.com/download"
+DEEPLINK_SCHEME = "atropos"
+TRANSFER_LINK_TTL_SECONDS = "900"
