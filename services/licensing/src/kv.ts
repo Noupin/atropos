@@ -62,6 +62,27 @@ export interface KVNamespace {
 
 export const userKey = (userId: string): string => `${USER_KEY_PREFIX}${userId}`;
 
+export const isEntitled = (
+  status: string | null | undefined,
+  currentPeriodEnd: number | null | undefined,
+): boolean => {
+  if (!status) {
+    return false;
+  }
+
+  const normalizedStatus = status.toLowerCase();
+  if (normalizedStatus !== "active" && normalizedStatus !== "trialing") {
+    return false;
+  }
+
+  if (typeof currentPeriodEnd !== "number") {
+    return false;
+  }
+
+  const nowInSeconds = Math.floor(Date.now() / 1000);
+  return currentPeriodEnd > nowInSeconds;
+};
+
 export const normalizeTrialState = (trial: Partial<TrialState> | null | undefined): TrialState | null => {
   if (!trial) {
     return null;
