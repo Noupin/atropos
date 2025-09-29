@@ -207,6 +207,17 @@ const handleSubscriptionChange = async (
         updates.epoch = Math.max((current.epoch ?? 0) + 1, now);
       }
 
+      updates.trial = {
+        allowed: 0,
+        total: Math.max(current.trial?.total ?? 0, 0),
+        remaining: 0,
+        started: current.trial?.started ?? null,
+        used_at: current.trial?.used_at ?? null,
+        device_hash: current.trial?.device_hash ?? null,
+        jti: null,
+        exp: null,
+      };
+
       return Object.keys(updates).length > 0 ? updates : null;
     },
     { eventTimestamp: event.created },

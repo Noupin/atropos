@@ -5,6 +5,9 @@ import { handleWebhookRequest } from "./billing/webhook";
 import { handleIssueRequest } from "./license/issue";
 import { handleValidateRequest } from "./license/validate";
 import { handlePublicKeyRequest } from "./license/keys";
+import { handleTrialStartRequest } from "./trial/start";
+import { handleTrialClaimRequest } from "./trial/claim";
+import { handleTrialConsumeRequest } from "./trial/consume";
 
 const jsonResponse = (body: unknown, init: ResponseInit = {}): Response => {
   return new Response(JSON.stringify(body), {
@@ -51,6 +54,18 @@ export default {
 
     if (path === "/license/public-key" && request.method === "GET") {
       return handlePublicKeyRequest(request, env);
+    }
+
+    if (path === "/trial/start" && request.method === "POST") {
+      return handleTrialStartRequest(request, env);
+    }
+
+    if (path === "/trial/claim" && request.method === "POST") {
+      return handleTrialClaimRequest(request, env);
+    }
+
+    if (path === "/trial/consume" && request.method === "POST") {
+      return handleTrialConsumeRequest(request, env);
     }
 
     return jsonResponse({ error: "Not found" }, { status: 404 });
