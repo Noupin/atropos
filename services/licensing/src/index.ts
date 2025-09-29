@@ -1,4 +1,6 @@
 import { handleSubscriptionRequest } from "./billing";
+import { handleCheckoutRequest } from "./billing/checkout";
+import { handlePortalRequest } from "./billing/portal";
 
 const jsonResponse = (body: unknown, init: ResponseInit = {}): Response => {
   return new Response(JSON.stringify(body), {
@@ -17,6 +19,14 @@ export default {
 
     if (path === "/health") {
       return jsonResponse({ status: "ok" }, { status: 200 });
+    }
+
+    if (path === "/billing/checkout" && request.method === "POST") {
+      return handleCheckoutRequest(request, env);
+    }
+
+    if (path === "/billing/portal" && request.method === "POST") {
+      return handlePortalRequest(request, env);
     }
 
     if (path === "/billing/subscription" && request.method === "GET") {
