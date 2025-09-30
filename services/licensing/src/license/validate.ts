@@ -1,4 +1,4 @@
-import { getUserRecord, isEntitled, KVNamespace, UserRecord } from "../kv";
+import { getDeviceRecord, isEntitled, KVNamespace, UserRecord } from "../kv";
 import { getSigningMaterial, verifyJwt } from "../lib/jwt";
 
 interface LicensingEnv extends Record<string, unknown> {
@@ -93,27 +93,31 @@ export const handleValidateRequest = async (
     return jsonResponse({ valid: false, error: "invalid_token" }, { status: 401 });
   }
 
-  if (typeof claims.sub !== "string" || claims.sub.trim().length === 0) {
-    return jsonResponse({ valid: false, error: "invalid_subject" }, { status: 400 });
-  }
-
   const now = Math.floor(Date.now() / 1000);
 
   if (typeof claims.exp !== "number" || Number.isNaN(claims.exp) || claims.exp <= now) {
     return jsonResponse({ valid: false, error: "token_expired" }, { status: 401 });
   }
 
-  const record = await getUserRecord(env.LICENSING_KV, claims.sub);
+  const deviceHashClaim = typeof claims.device_hash === "string" ? claims.device_hash.trim() : "";
+  const subject = typeof claims.sub === "string" ? claims.sub.trim() : "";
+  const deviceHash = deviceHashClaim || subject;
+
+  if (!deviceHash) {
+    return jsonResponse({ valid: false, error: "invalid_subject" }, { status: 400 });
+  }
+
+  const record = await getDeviceRecord(env.LICENSING_KV, deviceHash);
 
   if (!record) {
-    return jsonResponse({ valid: false, error: "user_not_found" }, { status: 404 });
+    return jsonResponse({ valid: false, error: "device_not_found" }, { status: 404 });
   }
 
   if (!isEntitled(record.status, record.current_period_end)) {
     return jsonResponse({ valid: false, error: "not_entitled" }, { status: 403 });
   }
 
-  if (record.device_hash && record.device_hash !== claims.device_hash) {
+  if (record.device_hash && record.device_hash !== deviceHash) {
     return jsonResponse({ valid: false, error: "device_mismatch" }, { status: 409 });
   }
 
@@ -125,10 +129,10 @@ export const handleValidateRequest = async (
     {
       valid: true,
       license: {
-        sub: claims.sub,
+        sub: deviceHash,
         email: claims.email ?? record.email,
         tier: claims.tier ?? determineTier(record),
-        device_hash: claims.device_hash ?? record.device_hash,
+        device_hash: deviceHash,
         epoch: claims.epoch ?? record.epoch,
         iat: claims.iat,
         exp: claims.exp,

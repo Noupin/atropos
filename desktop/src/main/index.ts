@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
 import { registerDeepLinks } from './deeplink'
+import { getDeviceHash, getDeviceId, getDeviceIdentityChannel } from '../lib/deviceId'
 
 type NavigationCommand = 'back' | 'forward'
 
@@ -117,6 +118,19 @@ app.whenReady().then(() => {
   ipcMain.on('ping', () => console.log('pong'))
   ipcMain.on('navigation:state', (_event, state: NavigationState) => {
     navigationState = state
+  })
+  ipcMain.on(getDeviceIdentityChannel(), (event) => {
+    try {
+      const deviceId = getDeviceId()
+      const deviceHash = getDeviceHash()
+      event.returnValue = { deviceId, deviceHash }
+    } catch (error) {
+      console.error('Failed to resolve device identity', error)
+      event.returnValue = {
+        deviceId: '',
+        deviceHash: ''
+      }
+    }
   })
   ipcMain.handle('clips:list', async (_event, accountId: string | null) => {
     try {

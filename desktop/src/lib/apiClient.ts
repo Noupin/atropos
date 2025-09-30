@@ -1,3 +1,5 @@
+import type { App } from 'electron'
+
 const DEFAULT_BASE_URLS = {
   dev: 'https://dev.api.atropos-video.com',
   prod: 'https://api.atropos-video.com'
@@ -23,13 +25,10 @@ export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown
 }
 
-const ENVIRONMENT_KEYS = ['ATROPOS_ENV', 'ENVIRONMENT', 'NODE_ENV', 'VITE_RELEASE_CHANNEL', 'RELEASE_CHANNEL', 'MODE']
 const BASE_OVERRIDE_KEYS = [
   'ATROPOS_API_BASE_URL',
   'ATROPOS_LICENSE_API_BASE_URL',
-  'LICENSE_API_BASE_URL',
-  'VITE_LICENSE_API_BASE_URL',
-  'VITE_ATROPOS_API_BASE_URL'
+  'LICENSE_API_BASE_URL'
 ]
 const FLAG_CANDIDATES = ['--api-base', '--license-api-base', '--atropos-api-base']
 
@@ -62,23 +61,6 @@ const takeFirstEnvValue = (keys: string[]): string | null => {
     if (isNonEmptyString(value)) {
       return value.trim()
     }
-  }
-  return null
-}
-
-const parseEnvironment = (value: string | null | undefined): ApiEnvironment | null => {
-  if (!value) {
-    return null
-  }
-  const normalized = value.trim().toLowerCase()
-  if (!normalized) {
-    return null
-  }
-  if (['prod', 'production', 'release', 'stable', 'beta', 'live'].includes(normalized)) {
-    return 'prod'
-  }
-  if (['dev', 'development', 'local', 'test', 'ci', 'staging', 'preview'].includes(normalized)) {
-    return 'dev'
   }
   return null
 }
@@ -121,6 +103,63 @@ const inferEnvironmentFromUrl = (baseUrl: string | null | undefined): ApiEnviron
   return null
 }
 
+const isElectronRuntime = (): boolean =>
+  typeof process !== 'undefined' && Boolean(process.versions?.electron)
+
+const getRequire = (): NodeRequire | null => {
+  try {
+    if (typeof require === 'function') {
+      return require
+    }
+  } catch (error) {
+    // ignore
+  }
+  try {
+    const globalRequire = (globalThis as { require?: NodeRequire }).require
+    if (typeof globalRequire === 'function') {
+      return globalRequire
+    }
+  } catch (error) {
+    // ignore
+  }
+  return null
+}
+
+const loadElectronApp = (): App | null => {
+  if (!isElectronRuntime()) {
+    return null
+  }
+  const req = getRequire()
+  if (!req) {
+    return null
+  }
+  try {
+    const electron = req('electron') as typeof import('electron')
+    if (electron?.app) {
+      return electron.app
+    }
+    if ((electron as { remote?: { app?: App } }).remote?.app) {
+      return (electron as { remote?: { app?: App } }).remote?.app ?? null
+    }
+  } catch (error) {
+    return null
+  }
+  return null
+}
+
+const shouldUseProductionBase = (): boolean => {
+  if (isElectronRuntime()) {
+    const app = loadElectronApp()
+    if (app) {
+      return app.isPackaged
+    }
+  }
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV) {
+    return process.env.NODE_ENV.trim().toLowerCase() === 'production'
+  }
+  return false
+}
+
 const extractFlagValue = (flag: string, argv: string[]): string | null => {
   const flagWithEquals = `${flag}=`
   for (let index = 0; index < argv.length; index += 1) {
@@ -154,23 +193,15 @@ const readFlagOverride = (): string | null => {
   return null
 }
 
-const resolveEnvironment = (): ApiEnvironment => {
-  const envValue = parseEnvironment(takeFirstEnvValue(ENVIRONMENT_KEYS))
-  if (envValue) {
-    return envValue
-  }
-  return 'dev'
-}
-
 const resolveBaseConfiguration = (): { baseUrl: string; environment: ApiEnvironment } => {
   const override = normaliseBaseUrl(takeFirstEnvValue(BASE_OVERRIDE_KEYS) ?? readFlagOverride())
   if (override) {
     return {
       baseUrl: override,
-      environment: inferEnvironmentFromUrl(override) ?? resolveEnvironment()
+      environment: inferEnvironmentFromUrl(override) ?? (shouldUseProductionBase() ? 'prod' : 'dev')
     }
   }
-  const environment = resolveEnvironment()
+  const environment = shouldUseProductionBase() ? 'prod' : 'dev'
   return {
     baseUrl: DEFAULT_BASE_URLS[environment],
     environment

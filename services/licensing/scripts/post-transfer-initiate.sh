@@ -2,7 +2,6 @@
 set -euo pipefail
 
 BASE_URL=${BASE_URL:-https://dev.api.atropos-video.com}
-USER_ID=${USER_ID:-user_123}
 TOKEN=${TOKEN:-replace-with-paid-license-token}
 DEVICE_HASH=${DEVICE_HASH:-device_hash_example}
 
@@ -11,6 +10,4 @@ curl -sS -X POST "${BASE_URL}/transfer/initiate" \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "X-Atropos-Device-Hash: ${DEVICE_HASH}" \
-  -d "{\
-    \"user_id\": \"${USER_ID}\"\
-  }"
+  -d '{}'

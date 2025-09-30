@@ -1,6 +1,6 @@
 import Stripe from "stripe";
-import { KVNamespace, UserRecord } from "../kv";
-import { findUserIdByStripeCustomerId, mutateUserRecord } from "../kv/user";
+import { getDeviceRecord, KVNamespace, UserRecord } from "../kv";
+import { findDeviceHashByStripeCustomerId, mutateDeviceRecord } from "../kv/user";
 
 const jsonResponse = (body: unknown, init: ResponseInit = {}): Response => {
   return new Response(JSON.stringify(body), {
@@ -39,33 +39,42 @@ const extractCustomerId = (source: { customer?: string | Stripe.Customer | Strip
   return null;
 };
 
-const extractUserIdFromMetadata = (metadata: Stripe.Metadata | null | undefined): string | null => {
+const extractDeviceHashFromMetadata = (metadata: Stripe.Metadata | null | undefined): string | null => {
   if (!metadata) {
     return null;
   }
 
-  return toNonEmptyString(metadata.user_id);
+  return toNonEmptyString(metadata.device_hash);
 };
 
-const resolveUserId = async (
+const extractLegacyUserIdFromMetadata = (metadata: Stripe.Metadata | null | undefined): string | null => {
+  if (!metadata) {
+    return null;
+  }
+
+  return toNonEmptyString(metadata.legacy_user_id ?? metadata.user_id);
+};
+
+const resolveDeviceIdentityFromStripe = async (
   kv: KVNamespace,
   params: {
-    metadataUserId?: string | null;
+    metadataDeviceHash?: string | null;
     customerId?: string | null;
   },
-): Promise<string | null> => {
-  if (params.metadataUserId) {
-    return params.metadataUserId;
+): Promise<{ deviceHash: string | null; record: UserRecord | null }> => {
+  if (params.metadataDeviceHash) {
+    const record = await getDeviceRecord(kv, params.metadataDeviceHash);
+    return { deviceHash: params.metadataDeviceHash, record };
   }
 
   if (params.customerId) {
-    const result = await findUserIdByStripeCustomerId(kv, params.customerId);
+    const result = await findDeviceHashByStripeCustomerId(kv, params.customerId);
     if (result) {
-      return result.userId;
+      return { deviceHash: result.deviceHash, record: result.record };
     }
   }
 
-  return null;
+  return { deviceHash: null, record: null };
 };
 
 const selectPlanPriceId = (subscription: Stripe.Subscription): string | null => {
@@ -109,11 +118,15 @@ const handleCheckoutSessionCompleted = async (
   env: BillingWebhookEnv,
 ): Promise<void> => {
   const customerId = extractCustomerId(session);
-  const metadataUserId = extractUserIdFromMetadata(session.metadata);
-  const userId = await resolveUserId(env.LICENSING_KV, { metadataUserId, customerId });
+  const metadataDeviceHash = extractDeviceHashFromMetadata(session.metadata);
+  const legacyUserId = extractLegacyUserIdFromMetadata(session.metadata);
+  const { deviceHash } = await resolveDeviceIdentityFromStripe(env.LICENSING_KV, {
+    metadataDeviceHash,
+    customerId,
+  });
 
-  if (!userId) {
-    logWarning("checkout_session_completed_user_missing", {
+  if (!deviceHash) {
+    logWarning("checkout_session_completed_device_missing", {
       event_id: event.id,
       customer_id: customerId,
     });
@@ -129,9 +142,9 @@ const handleCheckoutSessionCompleted = async (
 
   const email = emailCandidates.length > 0 ? emailCandidates[0] : null;
 
-  await mutateUserRecord(
+  await mutateDeviceRecord(
     env.LICENSING_KV,
-    userId,
+    deviceHash,
     ({ current }): Partial<UserRecord> | null => {
       const updates: Partial<UserRecord> = {};
 
@@ -145,7 +158,7 @@ const handleCheckoutSessionCompleted = async (
 
       return Object.keys(updates).length > 0 ? updates : null;
     },
-    { eventTimestamp: event.created },
+    { eventTimestamp: event.created, legacyUserId },
   );
 };
 
@@ -155,11 +168,15 @@ const handleSubscriptionChange = async (
   env: BillingWebhookEnv,
 ): Promise<void> => {
   const customerId = extractCustomerId(subscription);
-  const metadataUserId = extractUserIdFromMetadata(subscription.metadata);
-  const userId = await resolveUserId(env.LICENSING_KV, { metadataUserId, customerId });
+  const metadataDeviceHash = extractDeviceHashFromMetadata(subscription.metadata);
+  const legacyUserId = extractLegacyUserIdFromMetadata(subscription.metadata);
+  const { deviceHash } = await resolveDeviceIdentityFromStripe(env.LICENSING_KV, {
+    metadataDeviceHash,
+    customerId,
+  });
 
-  if (!userId) {
-    logWarning("subscription_event_user_missing", {
+  if (!deviceHash) {
+    logWarning("subscription_event_device_missing", {
       event_id: event.id,
       customer_id: customerId,
     });
@@ -172,9 +189,9 @@ const handleSubscriptionChange = async (
   const planPriceId = selectPlanPriceId(subscription);
   const subscriptionEmail = toNonEmptyString(subscription.customer_email ?? null);
 
-  await mutateUserRecord(
+  await mutateDeviceRecord(
     env.LICENSING_KV,
-    userId,
+    deviceHash,
     ({ current }): Partial<UserRecord> | null => {
       const updates: Partial<UserRecord> = {};
 
@@ -220,7 +237,7 @@ const handleSubscriptionChange = async (
 
       return Object.keys(updates).length > 0 ? updates : null;
     },
-    { eventTimestamp: event.created },
+    { eventTimestamp: event.created, legacyUserId },
   );
 };
 

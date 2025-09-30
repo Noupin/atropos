@@ -9,7 +9,7 @@ const reportUnauthorizedMock = vi.fn<[], void>()
 vi.mock('../../../lib/accessStore', () => ({
   accessStore: {
     getSnapshot: () => ({
-      identity: { userId: 'user-123', deviceHash: 'device-abc' },
+      identity: { deviceHash: 'device-abc' },
       subscription: { status: 'entitled', entitled: true, currentPeriodEnd: null, cancelAtPeriodEnd: false, trial: null, fetchedAt: Date.now(), epoch: 1, updatedAt: Date.now() },
       license: null,
       status: 'entitled',

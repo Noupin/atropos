@@ -5,8 +5,17 @@
  * POP. Prefer idempotent retries or delaying dependent reads when possible.
  */
 
-// KV key format: user:<user_id>
+// KV key formats:
+//   - device:<device_hash> (new canonical shape)
+//   - user:<legacy_user_id> (legacy compatibility)
+//   - legacy:<legacy_user_id> -> device hash mapping
 const USER_KEY_PREFIX = "user:";
+const DEVICE_KEY_PREFIX = "device:";
+const LEGACY_MAPPING_PREFIX = "legacy:";
+
+export const userKey = (userId: string): string => `${USER_KEY_PREFIX}${userId}`;
+export const deviceKey = (deviceHash: string): string => `${DEVICE_KEY_PREFIX}${deviceHash}`;
+export const legacyMappingKey = (userId: string): string => `${LEGACY_MAPPING_PREFIX}${userId}`;
 
 export interface TrialState {
   allowed: number;
@@ -59,8 +68,6 @@ export interface KVNamespace {
   delete(key: string): Promise<void>;
   list<T = unknown>(options?: { prefix?: string; limit?: number; cursor?: string }): Promise<KVListResult<T>>;
 }
-
-export const userKey = (userId: string): string => `${USER_KEY_PREFIX}${userId}`;
 
 export const isEntitled = (
   status: string | null | undefined,
@@ -187,20 +194,126 @@ export const mergeUserRecord = (existing: UserRecord, updates: Partial<UserRecor
   return next;
 };
 
+const normaliseRecord = (record: UserRecord): UserRecord => ({
+  ...record,
+  trial: normalizeTrialState(record.trial),
+  transfer: record.transfer ?? null,
+});
+
+const readRecord = async (
+  kv: KVNamespace,
+  key: string,
+): Promise<UserRecord | null> => {
+  const record = await kv.get<UserRecord>(key, { type: "json" });
+  if (!record) {
+    return null;
+  }
+  return normaliseRecord(record);
+};
+
+const writeRecord = async (
+  kv: KVNamespace,
+  key: string,
+  record: UserRecord,
+): Promise<void> => {
+  const payload = normaliseRecord(record);
+  await kv.put(key, JSON.stringify(payload), {
+    metadata: {
+      stripe_customer_id: payload.stripe_customer_id ?? null,
+    },
+  });
+};
+
+const getLegacyMapping = async (kv: KVNamespace, userId: string): Promise<string | null> => {
+  const value = await kv.get<string>(legacyMappingKey(userId), { type: "text" });
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const setLegacyMapping = async (
+  kv: KVNamespace,
+  userId: string,
+  deviceHash: string | null,
+): Promise<void> => {
+  if (!deviceHash) {
+    await kv.delete(legacyMappingKey(userId));
+    return;
+  }
+  await kv.put(legacyMappingKey(userId), deviceHash.trim());
+};
+
+export const getDeviceRecord = async (
+  kv: KVNamespace,
+  deviceHash: string,
+): Promise<UserRecord | null> => {
+  if (!deviceHash) {
+    return null;
+  }
+  return readRecord(kv, deviceKey(deviceHash));
+};
+
+export const putDeviceRecord = async (
+  kv: KVNamespace,
+  deviceHash: string,
+  record: UserRecord,
+): Promise<void> => {
+  await writeRecord(kv, deviceKey(deviceHash), record);
+};
+
+const migrateLegacyRecord = async (
+  kv: KVNamespace,
+  userId: string,
+  record: UserRecord,
+): Promise<UserRecord> => {
+  if (record.device_hash) {
+    await putDeviceRecord(kv, record.device_hash, record);
+    await setLegacyMapping(kv, userId, record.device_hash);
+  }
+  return record;
+};
+
+export const getLegacyUserRecord = async (
+  kv: KVNamespace,
+  userId: string,
+): Promise<UserRecord | null> => {
+  const record = await readRecord(kv, userKey(userId));
+  if (!record) {
+    return null;
+  }
+  await migrateLegacyRecord(kv, userId, record);
+  return record;
+};
+
+export const resolveRecordByLegacyUserId = async (
+  kv: KVNamespace,
+  userId: string,
+): Promise<{ deviceHash: string | null; record: UserRecord | null }> => {
+  const mapped = await getLegacyMapping(kv, userId);
+  if (mapped) {
+    const deviceRecord = await getDeviceRecord(kv, mapped);
+    if (deviceRecord) {
+      return { deviceHash: mapped, record: deviceRecord };
+    }
+  }
+
+  const legacyRecord = await getLegacyUserRecord(kv, userId);
+  if (!legacyRecord) {
+    return { deviceHash: null, record: null };
+  }
+
+  const deviceHash = legacyRecord.device_hash ?? mapped ?? null;
+  return { deviceHash, record: legacyRecord };
+};
+
 export const getUserRecord = async (
   kv: KVNamespace,
   userId: string,
 ): Promise<UserRecord | null> => {
-  const record = await kv.get<UserRecord>(userKey(userId), { type: "json" });
-  if (!record) {
-    return null;
-  }
-
-  return {
-    ...record,
-    trial: normalizeTrialState(record.trial),
-    transfer: record.transfer ?? null,
-  };
+  const { record } = await resolveRecordByLegacyUserId(kv, userId);
+  return record;
 };
 
 export const putUserRecord = async (
@@ -208,37 +321,34 @@ export const putUserRecord = async (
   userId: string,
   record: UserRecord,
 ): Promise<void> => {
-  const payload: UserRecord = {
-    ...record,
-    trial: normalizeTrialState(record.trial),
-    transfer: record.transfer ?? null,
-  };
-
-  await kv.put(userKey(userId), JSON.stringify(payload), {
-    metadata: {
-      stripe_customer_id: record.stripe_customer_id ?? null,
-    },
-  });
+  await writeRecord(kv, userKey(userId), record);
+  if (record.device_hash) {
+    await putDeviceRecord(kv, record.device_hash, record);
+    await setLegacyMapping(kv, userId, record.device_hash);
+  }
 };
 
-export const findUserByStripeCustomerId = async (
+const findByStripeCustomerId = async (
   kv: KVNamespace,
+  prefix: string,
+  formatter: (name: string) => string,
+  resolver: (identifier: string) => Promise<UserRecord | null>,
   stripeCustomerId: string,
-): Promise<{ userId: string; record: UserRecord } | null> => {
+): Promise<{ identifier: string; record: UserRecord } | null> => {
   let cursor: string | undefined;
 
   do {
     const result = await kv.list<{ stripe_customer_id?: string | null }>({
-      prefix: USER_KEY_PREFIX,
+      prefix,
       cursor,
     });
 
     for (const entry of result.keys) {
       if ((entry.metadata as { stripe_customer_id?: string | null } | undefined)?.stripe_customer_id === stripeCustomerId) {
-        const userId = entry.name.replace(USER_KEY_PREFIX, "");
-        const record = await getUserRecord(kv, userId);
+        const identifier = formatter(entry.name);
+        const record = await resolver(identifier);
         if (record) {
-          return { userId, record };
+          return { identifier, record };
         }
       }
     }
@@ -247,4 +357,56 @@ export const findUserByStripeCustomerId = async (
   } while (cursor);
 
   return null;
+};
+
+export const findDeviceByStripeCustomerId = async (
+  kv: KVNamespace,
+  stripeCustomerId: string,
+): Promise<{ deviceHash: string; record: UserRecord } | null> => {
+  const deviceResult = await findByStripeCustomerId(
+    kv,
+    DEVICE_KEY_PREFIX,
+    (name) => name.replace(DEVICE_KEY_PREFIX, ""),
+    (deviceHash) => getDeviceRecord(kv, deviceHash),
+    stripeCustomerId,
+  );
+
+  if (deviceResult) {
+    return { deviceHash: deviceResult.identifier, record: deviceResult.record };
+  }
+
+  const legacyResult = await findByStripeCustomerId(
+    kv,
+    USER_KEY_PREFIX,
+    (name) => name.replace(USER_KEY_PREFIX, ""),
+    async (userId) => {
+      const { deviceHash, record } = await resolveRecordByLegacyUserId(kv, userId);
+      if (record && deviceHash) {
+        return record;
+      }
+      return record;
+    },
+    stripeCustomerId,
+  );
+
+  if (!legacyResult) {
+    return null;
+  }
+
+  const { identifier, record } = legacyResult;
+  const mapping = await getLegacyMapping(kv, identifier);
+  if (mapping) {
+    return { deviceHash: mapping, record };
+  }
+  return record?.device_hash
+    ? { deviceHash: record.device_hash, record }
+    : null;
+};
+
+export const linkLegacyUserId = async (
+  kv: KVNamespace,
+  userId: string,
+  deviceHash: string | null,
+): Promise<void> => {
+  await setLegacyMapping(kv, userId, deviceHash);
 };

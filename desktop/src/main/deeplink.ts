@@ -47,10 +47,10 @@ const handleAcceptTransfer = async (
     return
   }
 
-  const userId = url.searchParams.get('user_id')?.trim() ?? ''
+  const deviceHashFromLink = url.searchParams.get('device_hash')?.trim() ?? ''
   const token = url.searchParams.get('token')?.trim() ?? ''
 
-  if (!userId || !token) {
+  if (!deviceHashFromLink || !token) {
     logger.warn?.('Ignoring accept-transfer deep link missing required parameters: %s', sanitiseUrlForLog(rawUrl))
     return
   }
@@ -63,13 +63,17 @@ const handleAcceptTransfer = async (
     return
   }
 
+  if (deviceHashFromLink && deviceHashFromLink !== deviceHash) {
+    logger.warn?.('Received transfer link for a different device hash. Ignoring request.')
+    return
+  }
+
   try {
     await client.post('/transfer/accept', {
-      user_id: userId,
       token,
       device_hash: deviceHash
     })
-    logger.info?.('Accepted license transfer for user %s.', userId)
+    logger.info?.('Accepted license transfer for device %s.', deviceHash)
     try {
       await accessStore.refresh({ force: true })
     } catch (error) {

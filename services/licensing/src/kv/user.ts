@@ -1,4 +1,13 @@
-import { findUserByStripeCustomerId, getUserRecord, mergeUserRecord, putUserRecord, KVNamespace, UserRecord } from "../kv";
+import {
+  findDeviceByStripeCustomerId,
+  getDeviceRecord,
+  linkLegacyUserId,
+  mergeUserRecord,
+  putDeviceRecord,
+  resolveRecordByLegacyUserId,
+  type KVNamespace,
+  type UserRecord,
+} from "../kv";
 
 export interface UserRecordMutationContext {
   current: UserRecord;
@@ -73,24 +82,45 @@ const normalizeEpoch = (existing: UserRecord, updates: Partial<UserRecord>): num
   return existing.epoch ?? 0;
 };
 
-export const mutateUserRecord = async (
+export const mutateDeviceRecord = async (
   kv: KVNamespace,
-  userId: string,
+  deviceHash: string,
   mutation: UserRecordMutation,
-  options: { eventTimestamp?: number } = {},
+  options: { eventTimestamp?: number; legacyUserId?: string } = {},
 ): Promise<UserRecord> => {
   const now = Math.floor(Date.now() / 1000);
   const eventTimestamp = options.eventTimestamp;
 
-  const existing = (await getUserRecord(kv, userId)) ?? createDefaultUserRecord(now);
+  let existing = await getDeviceRecord(kv, deviceHash);
+
+  if (!existing && options.legacyUserId) {
+    const legacy = await resolveRecordByLegacyUserId(kv, options.legacyUserId);
+    if (legacy.record) {
+      existing = {
+        ...legacy.record,
+        device_hash: legacy.record.device_hash ?? deviceHash,
+      };
+    }
+  }
+
+  if (!existing) {
+    existing = { ...createDefaultUserRecord(now), device_hash: deviceHash };
+  } else if (!existing.device_hash) {
+    existing = { ...existing, device_hash: deviceHash };
+  }
+
   const updates = await mutation({ current: existing, now, eventTimestamp });
 
   if (!updates) {
+    if (options.legacyUserId) {
+      await linkLegacyUserId(kv, options.legacyUserId, deviceHash);
+    }
     return existing;
   }
 
   const normalizedUpdates: Partial<UserRecord> = {
     ...updates,
+    device_hash: deviceHash,
     epoch: normalizeEpoch(existing, updates),
     updated_at: resolveUpdatedAt(existing, updates, now, eventTimestamp),
   };
@@ -98,12 +128,18 @@ export const mutateUserRecord = async (
   const merged = mergeUserRecord(existing, normalizedUpdates);
 
   if (!hasMeaningfulChanges(existing, merged)) {
+    if (options.legacyUserId) {
+      await linkLegacyUserId(kv, options.legacyUserId, deviceHash);
+    }
     return existing;
   }
 
-  await putUserRecord(kv, userId, merged);
+  await putDeviceRecord(kv, deviceHash, merged);
+  if (options.legacyUserId) {
+    await linkLegacyUserId(kv, options.legacyUserId, deviceHash);
+  }
 
   return merged;
 };
 
-export const findUserIdByStripeCustomerId = findUserByStripeCustomerId;
+export const findDeviceHashByStripeCustomerId = findDeviceByStripeCustomerId;

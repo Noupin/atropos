@@ -1,5 +1,5 @@
-import { getUserRecord, isEntitled, KVNamespace, TransferState, UserRecord } from "../kv";
-import { mutateUserRecord } from "../kv/user";
+import { getDeviceRecord, isEntitled, KVNamespace, TransferState, UserRecord } from "../kv";
+import { mutateDeviceRecord } from "../kv/user";
 import { getSigningMaterial, verifyJwt } from "../lib/jwt";
 import { EmailDeliveryError, sendEmail } from "../email/sender";
 import { createTransferEmailTemplate } from "../email/templates";
@@ -88,7 +88,11 @@ export const handleTransferInitiateRequest = async (
     return jsonResponse({ error: "invalid_token" }, { status: 401 });
   }
 
-  if (typeof claims.sub !== "string" || claims.sub.trim().length === 0) {
+  const subjectClaim = typeof claims.sub === "string" ? claims.sub.trim() : "";
+  const claimedDeviceHash = typeof claims.device_hash === "string" ? claims.device_hash.trim() : "";
+  const deviceHash = claimedDeviceHash || subjectClaim;
+
+  if (!deviceHash) {
     return jsonResponse({ error: "invalid_subject" }, { status: 400 });
   }
 
@@ -98,11 +102,10 @@ export const handleTransferInitiateRequest = async (
     return jsonResponse({ error: "token_expired" }, { status: 401 });
   }
 
-  const userId = claims.sub;
-  const record = await getUserRecord(env.LICENSING_KV, userId);
+  const record = await getDeviceRecord(env.LICENSING_KV, deviceHash);
 
   if (!record) {
-    return jsonResponse({ error: "user_not_found" }, { status: 404 });
+    return jsonResponse({ error: "device_not_found" }, { status: 404 });
   }
 
   let jti: string | null = null;
@@ -112,7 +115,7 @@ export const handleTransferInitiateRequest = async (
 
   const ttlSeconds = resolveTransferTtlSeconds(env);
 
-  await mutateUserRecord(env.LICENSING_KV, userId, ({ current, now: mutationNow }) => {
+  await mutateDeviceRecord(env.LICENSING_KV, deviceHash, ({ current, now: mutationNow }) => {
     if (!isEntitled(current.status, current.current_period_end)) {
       errorResponse = jsonResponse({ error: "not_entitled" }, { status: 403 });
       return null;
@@ -123,7 +126,7 @@ export const handleTransferInitiateRequest = async (
       return null;
     }
 
-    if (!current.device_hash || current.device_hash !== claims.device_hash) {
+    if (!current.device_hash || current.device_hash !== deviceHash) {
       errorResponse = jsonResponse({ error: "device_mismatch" }, { status: 409 });
       return null;
     }
@@ -172,9 +175,9 @@ export const handleTransferInitiateRequest = async (
   }
 
   const origin = new URL(request.url).origin;
-  const acceptUrl = `${origin}/transfer/accept?user_id=${encodeURIComponent(userId)}&token=${encodeURIComponent(jti)}`;
+  const acceptUrl = `${origin}/transfer/accept?device_hash=${encodeURIComponent(deviceHash)}&token=${encodeURIComponent(jti)}`;
   const deepLinkScheme = resolveDeepLinkScheme(env);
-  const deepLinkUrl = `${deepLinkScheme}://accept-transfer?user_id=${encodeURIComponent(userId)}&token=${encodeURIComponent(
+  const deepLinkUrl = `${deepLinkScheme}://accept-transfer?device_hash=${encodeURIComponent(deviceHash)}&token=${encodeURIComponent(
     jti,
   )}`;
   const downloadUrl = resolveDownloadUrl(env);
@@ -194,7 +197,7 @@ export const handleTransferInitiateRequest = async (
     });
   } catch (error) {
     console.error("Failed to send transfer email", error);
-    await mutateUserRecord(env.LICENSING_KV, userId, () => ({ transfer: clearedTransferState() }));
+    await mutateDeviceRecord(env.LICENSING_KV, deviceHash, () => ({ transfer: clearedTransferState() }));
 
     const status = error instanceof EmailDeliveryError ? 502 : 500;
     const detail = error instanceof EmailDeliveryError ? error.message : "email_failed";

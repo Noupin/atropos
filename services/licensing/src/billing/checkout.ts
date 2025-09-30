@@ -1,6 +1,8 @@
 import Stripe from "stripe";
 import { ensureCustomer, getStripeClient } from "./client";
 import { createPortalSession } from "./portal";
+import { resolveIdentity } from "../lib/identity";
+import type { KVNamespace } from "../kv";
 import { BillingEnv, CheckoutRequestBody, CheckoutResponseBody } from "./types";
 
 const jsonResponse = (body: unknown, init: ResponseInit = {}): Response => {
@@ -17,8 +19,8 @@ const isNonEmptyString = (value: unknown): value is string => {
   return typeof value === "string" && value.trim().length > 0;
 };
 
-const buildIdempotencyKey = (request: Request, userId: string): string => {
-  return request.headers.get("Idempotency-Key") ?? `checkout:${userId}:${crypto.randomUUID()}`;
+const buildIdempotencyKey = (request: Request, deviceHash: string): string => {
+  return request.headers.get("Idempotency-Key") ?? `checkout:${deviceHash}:${crypto.randomUUID()}`;
 };
 
 const normalizeErrorDetails = (error: unknown): Record<string, string> => {
@@ -100,7 +102,7 @@ const resolvePriceId = (env: BillingEnv, payload: CheckoutRequestBody): string |
 
 export const handleCheckoutRequest = async (
   request: Request,
-  env: BillingEnv,
+  env: BillingEnv & { LICENSING_KV: KVNamespace },
 ): Promise<Response> => {
   let payload: CheckoutRequestBody;
 
@@ -110,10 +112,13 @@ export const handleCheckoutRequest = async (
     return jsonResponse({ error: "invalid_json" }, { status: 400 });
   }
 
-  const userId = isNonEmptyString(payload.user_id) ? payload.user_id.trim() : null;
+  const identity = await resolveIdentity(env.LICENSING_KV, {
+    deviceHash: payload.device_hash,
+    legacyUserId: payload.user_id,
+  });
 
-  if (!userId) {
-    return jsonResponse({ error: "user_id_required" }, { status: 400 });
+  if (!identity.deviceHash) {
+    return jsonResponse({ error: "device_hash_required" }, { status: 400 });
   }
 
   const successUrl = resolveSuccessUrl(env, payload);
@@ -131,7 +136,12 @@ export const handleCheckoutRequest = async (
 
   try {
     const stripe = getStripeClient(env);
-    const customer = await ensureCustomer(stripe, userId, email);
+    const customer = await ensureCustomer(stripe, {
+      deviceHash: identity.deviceHash,
+      email,
+      legacyUserId: identity.legacyUserId,
+      existingCustomerId: identity.record?.stripe_customer_id ?? null,
+    });
 
     const hasBillable = await customerHasBillableSubscription(stripe, customer.id);
 
@@ -139,7 +149,7 @@ export const handleCheckoutRequest = async (
       const portalSession = await createPortalSession(stripe, {
         customerId: customer.id,
         returnUrl: successUrl,
-        idempotencyKey: buildIdempotencyKey(request, userId).replace("checkout:", "portal:"),
+        idempotencyKey: buildIdempotencyKey(request, identity.deviceHash).replace("checkout:", "portal:"),
       });
 
       const responseBody: CheckoutResponseBody = {
@@ -165,14 +175,16 @@ export const handleCheckoutRequest = async (
         cancel_url: cancelUrl,
         subscription_data: {
           metadata: {
-            user_id: userId,
+            device_hash: identity.deviceHash,
+            ...(identity.legacyUserId ? { legacy_user_id: identity.legacyUserId } : {}),
           },
         },
         metadata: {
-          user_id: userId,
+          device_hash: identity.deviceHash,
+          ...(identity.legacyUserId ? { legacy_user_id: identity.legacyUserId } : {}),
         },
       },
-      { idempotencyKey: buildIdempotencyKey(request, userId) },
+      { idempotencyKey: buildIdempotencyKey(request, identity.deviceHash) },
     );
 
     if (!session.url) {
