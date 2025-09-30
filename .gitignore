@@ -12,6 +12,7 @@ env
 /upload
 
 **/node_modules
+**/package-lock.json
 
 .env
 upload_config.json

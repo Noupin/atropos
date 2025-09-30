@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import type { App } from 'electron'
 
-import { createHash, randomUUID } from 'node:crypto'
-import { dirname, join } from 'node:path'
+// NOTE: Do NOT import Node modules at top-level in renderer code.
+// We only require them inside Node-only branches to avoid Vite externalization errors.
 
 type FileSystem = typeof import('node:fs')
 
@@ -17,15 +17,14 @@ let cachedDeviceHash: string | null = null
 const isElectronRuntime = (): boolean =>
   typeof process !== 'undefined' && Boolean(process.versions?.electron)
 
-const isRendererProcess = (): boolean =>
-  isElectronRuntime() && process.type === 'renderer'
+const isRendererProcess = (): boolean => isElectronRuntime() && process.type === 'renderer'
 
 const getRequire = (): NodeRequire | null => {
   try {
     if (typeof require === 'function') {
       return require
     }
-  } catch (error) {
+  } catch (_) {
     // ignore
   }
   try {
@@ -33,29 +32,23 @@ const getRequire = (): NodeRequire | null => {
     if (typeof globalRequire === 'function') {
       return globalRequire
     }
-  } catch (error) {
+  } catch (_) {
     // ignore
   }
   return null
 }
 
 const loadElectronApp = (): App | null => {
-  if (!isElectronRuntime()) {
-    return null
-  }
+  if (!isElectronRuntime()) return null
   const req = getRequire()
-  if (!req) {
-    return null
-  }
+  if (!req) return null
   try {
     const electron = req('electron') as typeof import('electron')
-    if (electron?.app) {
-      return electron.app
-    }
+    if (electron?.app) return electron.app
     if ((electron as { remote?: { app?: App } }).remote?.app) {
       return (electron as { remote?: { app?: App } }).remote?.app ?? null
     }
-  } catch (error) {
+  } catch (_) {
     return null
   }
   return null
@@ -63,17 +56,17 @@ const loadElectronApp = (): App | null => {
 
 const loadFs = (): FileSystem | null => {
   const req = getRequire()
-  if (!req) {
-    return null
-  }
+  if (!req) return null
   try {
     return req('node:fs') as FileSystem
-  } catch (error) {
+  } catch (_) {
     return null
   }
 }
 
 const ensureDirectory = (fs: FileSystem, filePath: string): void => {
+  const req = getRequire()
+  const { dirname } = req?.('node:path') as typeof import('node:path')
   const directory = dirname(filePath)
   try {
     fs.mkdirSync(directory, { recursive: true })
@@ -88,9 +81,7 @@ const readDeviceIdFromDisk = (fs: FileSystem, filePath: string): string | null =
   try {
     const contents = fs.readFileSync(filePath, 'utf8')
     const trimmed = contents.trim()
-    if (trimmed) {
-      return trimmed
-    }
+    if (trimmed) return trimmed
   } catch (error) {
     if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
       throw error
@@ -104,62 +95,70 @@ const writeDeviceIdToDisk = (fs: FileSystem, filePath: string, value: string): v
   fs.writeFileSync(filePath, `${value}\n`, 'utf8')
 }
 
-const computeHash = (value: string): string => {
+// Node-only hash (main/preload)
+const computeHashNode = (value: string): string => {
+  const req = getRequire()
+  const { createHash } = req?.('node:crypto') as typeof import('node:crypto')
   const hash = createHash('sha256')
   hash.update(value)
   return hash.digest('hex')
 }
 
+// Browser/WebCrypto hash (renderer)
+const computeHashBrowser = async (value: string): Promise<string> => {
+  const enc = new TextEncoder()
+  const data = enc.encode(value)
+  const digest = await crypto.subtle.digest('SHA-256', data)
+  const bytes = new Uint8Array(digest)
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+}
+
 const resolveIdentityFromMainProcess = (): { deviceId: string; deviceHash: string } | null => {
   const app = loadElectronApp()
   const fs = loadFs()
+  if (!app || !fs) return null
 
-  if (!app || !fs) {
-    return null
-  }
+  const req = getRequire()
+  const { join } = req?.('node:path') as typeof import('node:path')
 
   const userDataPath = app.getPath('userData')
   const filePath = join(userDataPath, ID_FILE_NAME)
 
+  // Use Node crypto APIs in main
+  const { randomUUID } = req?.('node:crypto') as typeof import('node:crypto')
+
   let deviceId = readDeviceIdFromDisk(fs, filePath)
   if (!deviceId) {
-    deviceId = randomUUID()
+    deviceId = typeof randomUUID === 'function' ? randomUUID() : `${Date.now()}.${Math.random()}`
     writeDeviceIdToDisk(fs, filePath, deviceId)
   }
 
-  const deviceHash = computeHash(deviceId)
+  const deviceHash = computeHashNode(deviceId)
   return { deviceId, deviceHash }
 }
 
 const resolveIdentityFromRendererProcess = (): { deviceId: string; deviceHash: string } | null => {
-  if (typeof window === 'undefined') {
-    return null
-  }
+  if (typeof window === 'undefined') return null
 
-  const electronApi = (window as typeof window & {
-    electron?: {
-      ipcRenderer?: { sendSync: (channel: string, ...args: unknown[]) => unknown }
+  const electronApi = (
+    window as typeof window & {
+      electron?: { ipcRenderer?: { sendSync: (channel: string, ...args: unknown[]) => unknown } }
     }
-  }).electron
+  ).electron
 
   const payload = electronApi?.ipcRenderer?.sendSync(CHANNEL_IDENTITY)
-  if (!payload || typeof payload !== 'object') {
-    return null
-  }
+  if (!payload || typeof payload !== 'object') return null
 
-  const { deviceId, deviceHash } = payload as {
-    deviceId?: unknown
-    deviceHash?: unknown
-  }
-
+  const { deviceId, deviceHash } = payload as { deviceId?: unknown; deviceHash?: unknown }
   if (typeof deviceId === 'string' && typeof deviceHash === 'string') {
     return { deviceId, deviceHash }
   }
-
   return null
 }
 
-const resolveIdentity = (): { deviceId: string; deviceHash: string } => {
+const resolveIdentity = async (): Promise<{ deviceId: string; deviceHash: string }> => {
   if (cachedDeviceId && cachedDeviceHash) {
     return { deviceId: cachedDeviceId, deviceHash: cachedDeviceHash }
   }
@@ -173,11 +172,24 @@ const resolveIdentity = (): { deviceId: string; deviceHash: string } => {
   }
 
   if (!identity) {
-    const fallbackId = cachedDeviceId ?? randomUUID()
-    const fallbackHash = computeHash(fallbackId)
-    cachedDeviceId = fallbackId
-    cachedDeviceHash = fallbackHash
-    return { deviceId: fallbackId, deviceHash: fallbackHash }
+    // Fallback: generate ephemeral id and hash using the appropriate runtime
+    if (isRendererProcess() && typeof crypto?.subtle?.digest === 'function') {
+      const deviceId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}.${Math.random()}`
+      const deviceHash = await computeHashBrowser(deviceId)
+      cachedDeviceId = deviceId
+      cachedDeviceHash = deviceHash
+      return { deviceId, deviceHash }
+    }
+
+    // Node context fallback
+    const req = getRequire()
+    const { randomUUID } = req?.('node:crypto') as typeof import('node:crypto')
+    const deviceId =
+      typeof randomUUID === 'function' ? randomUUID() : `${Date.now()}.${Math.random()}`
+    const deviceHash = computeHashNode(deviceId)
+    cachedDeviceId = deviceId
+    cachedDeviceHash = deviceHash
+    return { deviceId, deviceHash }
   }
 
   cachedDeviceId = identity.deviceId
@@ -185,12 +197,12 @@ const resolveIdentity = (): { deviceId: string; deviceHash: string } => {
   return identity
 }
 
-export const getDeviceId = (): string => {
-  return resolveIdentity().deviceId
+export const getDeviceId = async (): Promise<string> => {
+  return (await resolveIdentity()).deviceId
 }
 
-export const getDeviceHash = (): string => {
-  return resolveIdentity().deviceHash
+export const getDeviceHash = async (): Promise<string> => {
+  return (await resolveIdentity()).deviceHash
 }
 
 export const getDeviceIdentityChannel = (): string => CHANNEL_IDENTITY

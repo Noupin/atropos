@@ -2,6 +2,7 @@ name = "license-api"
 main = "src/index.ts"
 compatibility_date = "2025-09-01"
 workers_dev = false
+account_id = "9e279d41ad97ded8ad023a9ce9c51b5f"
 
 # ===== PROD (top-level) =====
 [[kv_namespaces]]
@@ -18,6 +19,7 @@ TRANSFER_LINK_TTL_SECONDS = "900"
 
 # ===== DEV env (deploys as license-api-dev) =====
 [env.dev]
+account_id = "9e279d41ad97ded8ad023a9ce9c51b5f"
 workers_dev = false
 
 [[env.dev.kv_namespaces]]
