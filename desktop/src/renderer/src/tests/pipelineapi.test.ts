@@ -10,12 +10,26 @@ vi.mock('../../../lib/accessStore', () => ({
   accessStore: {
     getSnapshot: () => ({
       identity: { deviceHash: 'device-abc' },
-      subscription: { status: 'entitled', entitled: true, currentPeriodEnd: null, cancelAtPeriodEnd: false, trial: null, fetchedAt: Date.now(), epoch: 1, updatedAt: Date.now() },
+      entitlement: {
+        status: 'active',
+        entitled: true,
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+        trial: null,
+        fetchedAt: Date.now(),
+        epoch: 1,
+        updatedAt: Date.now(),
+        email: null
+      },
       license: null,
       status: 'entitled',
       lastError: null,
       lastCheckedAt: null,
-      isRefreshing: false
+      isRefreshing: false,
+      isEntitled: true,
+      isTrial: false,
+      isTrialExhausted: true,
+      uiMode: 'paid'
     }),
     ensureLicenseToken: ensureLicenseTokenMock,
     reportUnauthorized: reportUnauthorizedMock

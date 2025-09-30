@@ -12,12 +12,16 @@ import {
 import { TONE_LABELS, TONE_OPTIONS } from '../constants/tone'
 import { timeAgo } from '../lib/format'
 import MarbleSelect from '../components/MarbleSelect'
+import { accessStore } from '../../../lib/accessStore'
+import { useAccess } from '../hooks/useAccess'
 
 const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
   tiktok: 'tiktok.json',
   youtube: 'youtube.json',
   instagram: 'instagram_session.json'
 }
+
+const PRICING_URL = 'https://atropos.video/pricing'
 
 const formatTimestamp = (value: string | null | undefined): string => {
   if (!value) {
@@ -826,11 +830,126 @@ const Profile: FC<ProfileProps> = ({
   const [newAccountError, setNewAccountError] = useState<string | null>(null)
   const [newAccountSuccess, setNewAccountSuccess] = useState<string | null>(null)
   const [isCreatingAccount, setIsCreatingAccount] = useState(false)
+  const access = useAccess()
+  const [isPrimaryActionPending, setIsPrimaryActionPending] = useState(false)
+  const [primaryActionError, setPrimaryActionError] = useState<string | null>(null)
+  const [isTrialPending, setIsTrialPending] = useState(false)
+  const [trialMessage, setTrialMessage] = useState<string | null>(null)
+  const [trialError, setTrialError] = useState<string | null>(null)
 
   useEffect(() => {
     registerSearch(null)
     return () => registerSearch(null)
   }, [registerSearch])
+
+  const trialSnapshot = access.entitlement?.trial ?? null
+  const trialRemaining = Math.max(0, trialSnapshot?.remaining ?? 0)
+  const trialTotal = Math.max(trialSnapshot?.total ?? trialSnapshot?.allowed ?? 0, trialRemaining)
+  const isAccessLoading = access.status === 'loading' || access.isRefreshing
+
+  const badgeLabel = useMemo(() => {
+    if (access.isEntitled) {
+      return access.uiMode === 'paid' ? 'Access active' : `Trial · ${trialRemaining} left`
+    }
+    if (!access.isTrialExhausted || trialRemaining > 0) {
+      return `Trial · ${trialRemaining} left`
+    }
+    return 'Access required'
+  }, [access.isEntitled, access.isTrialExhausted, access.uiMode, trialRemaining])
+
+  const badgeClasses = useMemo(() => {
+    if (access.isEntitled || (!access.isTrialExhausted && trialRemaining > 0)) {
+      return 'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent)_12%,transparent)] text-[color:var(--accent)]'
+    }
+    return 'border-[color:var(--error-strong)] bg-[color:color-mix(in_srgb,var(--error-soft)_50%,transparent)] text-[color:var(--error-strong)]'
+  }, [access.isEntitled, access.isTrialExhausted, trialRemaining])
+
+  const primaryButtonLabel = access.isEntitled ? 'Manage subscription' : 'Subscribe'
+  const primaryButtonText = isPrimaryActionPending
+    ? access.isEntitled
+      ? 'Opening portal…'
+      : 'Opening checkout…'
+    : isAccessLoading
+      ? 'Checking access…'
+      : primaryButtonLabel
+  const primaryButtonDisabled = isPrimaryActionPending || isAccessLoading
+
+  const showTrialAction = !access.isEntitled && !access.isTrialExhausted
+  const trialButtonText = isTrialPending ? 'Activating trial…' : 'Use trial on next run'
+  const trialButtonDisabled = isTrialPending || isAccessLoading
+
+  const accessError = !primaryActionError && !trialError ? access.lastError : null
+
+  const handlePrimaryAction = useCallback(async () => {
+    setPrimaryActionError(null)
+    setTrialError(null)
+    setTrialMessage(null)
+    setIsPrimaryActionPending(true)
+    try {
+      if (access.isEntitled) {
+        await accessStore.openPortal()
+      } else {
+        await accessStore.openCheckout()
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to open the billing flow. Please try again later.'
+      setPrimaryActionError(message)
+    } finally {
+      setIsPrimaryActionPending(false)
+    }
+  }, [access.isEntitled])
+
+  const handleUseTrial = useCallback(async () => {
+    setTrialError(null)
+    setPrimaryActionError(null)
+    setTrialMessage(null)
+    setIsTrialPending(true)
+    try {
+      await accessStore.startTrial()
+      const updatedTrial = accessStore.getSnapshot().entitlement?.trial ?? null
+      if (updatedTrial) {
+        const remainingRuns = Math.max(0, updatedTrial.remaining ?? 0)
+        const label = remainingRuns === 1 ? 'run' : 'runs'
+        setTrialMessage(
+          remainingRuns > 0
+            ? `Trial activated. ${remainingRuns} ${label} remaining.`
+            : 'Trial activated.'
+        )
+      } else {
+        setTrialMessage('Trial activated.')
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to activate the trial. Please try again later.'
+      setTrialError(message)
+    } finally {
+      setIsTrialPending(false)
+    }
+  }, [])
+
+  const openBenefitsPage = useCallback(() => {
+    const electronWindow = window as typeof window & {
+      electron?: { shell?: { openExternal: (url: string) => void } }
+    }
+    try {
+      if (electronWindow.electron?.shell?.openExternal) {
+        electronWindow.electron.shell.openExternal(PRICING_URL)
+        return
+      }
+    } catch (error) {
+      console.warn('Unable to open pricing page via shell.', error)
+    }
+    try {
+      window.open(PRICING_URL, '_blank', 'noopener')
+    } catch (error) {
+      console.warn('Unable to open pricing page.', error)
+    }
+  }, [])
 
   const handleCreateAccount = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -883,12 +1002,72 @@ const Profile: FC<ProfileProps> = ({
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold text-[var(--fg)]">Profile</h1>
-        <p className="text-sm text-[var(--muted)]">
-          Manage authenticated accounts and connect platforms for publishing. Accounts determine
-          where processed videos will be delivered.
-        </p>
+      <header className="flex flex-col gap-6">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-semibold text-[var(--fg)]">Profile</h1>
+          <p className="text-sm text-[var(--muted)]">
+            Manage authenticated accounts and connect platforms for publishing. Accounts determine
+            where processed videos will be delivered.
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span
+              className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${badgeClasses}`}
+            >
+              {badgeLabel}
+            </span>
+            {isAccessLoading ? (
+              <span className="text-xs text-[var(--muted)]">Checking status…</span>
+            ) : null}
+          </div>
+          {access.entitlement?.email ? (
+            <p className="text-xs text-[var(--muted)]">Plan owner: {access.entitlement.email}</p>
+          ) : null}
+          <button
+            type="button"
+            onClick={handlePrimaryAction}
+            className="inline-flex items-center justify-center rounded-[14px] bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-[color:var(--accent-contrast)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] transition hover:-translate-y-0.5 hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)] disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={primaryButtonDisabled}
+          >
+            {primaryButtonText}
+          </button>
+          {showTrialAction ? (
+            <button
+              type="button"
+              onClick={handleUseTrial}
+              className="inline-flex items-center justify-center rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_55%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--fg)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_70%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={trialButtonDisabled}
+            >
+              {trialButtonText}
+            </button>
+          ) : null}
+          {trialSnapshot ? (
+            <p className="text-xs text-[var(--muted)]">
+              Trial runs remaining: {trialRemaining}
+              {trialTotal > 0 ? ` of ${trialTotal}` : ''}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            onClick={openBenefitsPage}
+            className="self-start text-xs font-semibold text-[color:var(--accent)] underline-offset-4 transition hover:underline"
+          >
+            What do I get?
+          </button>
+          {trialMessage ? (
+            <p className="text-xs font-medium text-[color:var(--accent)]">{trialMessage}</p>
+          ) : null}
+          {primaryActionError ? (
+            <p className="text-xs font-medium text-[color:var(--error-strong)]">{primaryActionError}</p>
+          ) : null}
+          {trialError ? (
+            <p className="text-xs font-medium text-[color:var(--error-strong)]">{trialError}</p>
+          ) : null}
+          {accessError ? (
+            <p className="text-xs font-medium text-[color:var(--error-strong)]">{accessError}</p>
+          ) : null}
+        </div>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
