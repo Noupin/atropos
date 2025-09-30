@@ -66,6 +66,7 @@ from auth.accounts import (
 )
 import config as pipeline_config
 from upload_all import run as run_uploads
+from middleware import WorkerTokenMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,14 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+app.add_middleware(
+    WorkerTokenMiddleware,
+    protected_paths=(
+        "/api/jobs",
+        "/api/jobs/",
+    ),
 )
 
 
