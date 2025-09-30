@@ -1,6 +1,8 @@
-import { advanceApiBaseUrl, buildJobUrl, buildWebSocketUrl, getApiBaseUrl } from '../config/backend'
+import { accessStore } from '../../../lib/accessStore'
+import { advanceApiBaseUrl, buildJobUrl, getApiBaseUrl } from '../config/backend'
 import { parseClipTimestamp } from '../lib/clipMetadata'
 import type { Clip, PipelineEventType } from '../types'
+import { authorizedFetch, LicenseTokenUnavailableError } from './http'
 
 type UnknownRecord = Record<string, unknown>
 
@@ -39,7 +41,7 @@ export const startPipelineJob = async (request: PipelineJobRequest): Promise<Pip
   while (true) {
     const url = buildJobUrl()
     try {
-      response = await fetch(url, {
+      response = await authorizedFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -53,6 +55,9 @@ export const startPipelineJob = async (request: PipelineJobRequest): Promise<Pip
       })
       break
     } catch (error) {
+      if (error instanceof LicenseTokenUnavailableError) {
+        throw error
+      }
       const fallback = advanceApiBaseUrl()
       if (fallback) {
         continue
@@ -183,7 +188,7 @@ export type ClipAdjustmentPayload = {
 
 export const fetchJobClip = async (jobId: string, clipId: string): Promise<Clip> => {
   const url = new URL(`/api/jobs/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}`, getApiBaseUrl())
-  const response = await fetch(url.toString())
+  const response = await authorizedFetch(url.toString())
   if (!response.ok) {
     throw new Error(`Request failed with status ${response.status}`)
   }
@@ -205,7 +210,7 @@ export const adjustJobClip = async (
     `/api/jobs/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/adjust`,
     getApiBaseUrl()
   )
-  const response = await fetch(url.toString(), {
+  const response = await authorizedFetch(url.toString(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -230,7 +235,7 @@ export const adjustJobClip = async (
 
 export const resumePipelineJob = async (jobId: string): Promise<void> => {
   const url = new URL(`/api/jobs/${encodeURIComponent(jobId)}/resume`, getApiBaseUrl())
-  const response = await fetch(url.toString(), { method: 'POST' })
+  const response = await authorizedFetch(url.toString(), { method: 'POST' })
   if (!response.ok) {
     throw new Error(`Unable to resume pipeline job (status ${response.status}).`)
   }
@@ -240,38 +245,84 @@ export const subscribeToPipelineEvents = (
   jobId: string,
   handlers: PipelineEventHandlers
 ): (() => void) => {
-  const wsUrl = buildWebSocketUrl(jobId)
-  const socket = new WebSocket(wsUrl)
+  let socket: WebSocket | null = null
+  let removeListeners: (() => void) | null = null
+  let disposed = false
 
-  const handleMessage = (event: MessageEvent<string>) => {
-    try {
-      const payload = JSON.parse(event.data) as UnknownRecord
-      if (payload && typeof payload === 'object' && typeof payload.type === 'string') {
-        handlers.onEvent(payload as PipelineEventMessage)
-      }
-    } catch (error) {
-      handlers.onError?.(new Error('Received an invalid pipeline event payload.'))
+  const cleanup = () => {
+    disposed = true
+    if (removeListeners) {
+      removeListeners()
+      removeListeners = null
     }
-  }
-
-  const handleError = () => {
-    handlers.onError?.(new Error(`WebSocket connection error for job ${jobId}`))
-  }
-
-  const handleClose = () => {
-    handlers.onClose?.()
-  }
-
-  socket.addEventListener('message', handleMessage)
-  socket.addEventListener('error', handleError)
-  socket.addEventListener('close', handleClose)
-
-  return () => {
-    socket.removeEventListener('message', handleMessage)
-    socket.removeEventListener('error', handleError)
-    socket.removeEventListener('close', handleClose)
-    if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
       socket.close()
     }
+    socket = null
   }
+
+  const attach = async (): Promise<void> => {
+    try {
+      const identity = accessStore.getSnapshot().identity
+      if (!identity || !identity.deviceHash) {
+        throw new LicenseTokenUnavailableError('Licensing identity is not configured.')
+      }
+      const token = await accessStore.ensureLicenseToken()
+      if (!token) {
+        throw new LicenseTokenUnavailableError('An active Atropos subscription is required to use the pipeline.')
+      }
+
+      if (disposed) {
+        return
+      }
+
+      const url = new URL(`/ws/jobs/${encodeURIComponent(jobId)}`, getApiBaseUrl())
+      url.searchParams.set('token', token)
+      url.searchParams.set('device_hash', identity.deviceHash)
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+
+      const ws = new WebSocket(url.toString())
+      socket = ws
+
+      const handleMessage = (event: MessageEvent<string>) => {
+        try {
+          const payload = JSON.parse(event.data) as UnknownRecord
+          if (payload && typeof payload === 'object' && typeof payload.type === 'string') {
+            handlers.onEvent(payload as PipelineEventMessage)
+          }
+        } catch (error) {
+          handlers.onError?.(new Error('Received an invalid pipeline event payload.'))
+        }
+      }
+
+      const handleError = () => {
+        handlers.onError?.(new Error(`WebSocket connection error for job ${jobId}`))
+      }
+
+      const handleClose = () => {
+        handlers.onClose?.()
+      }
+
+      ws.addEventListener('message', handleMessage)
+      ws.addEventListener('error', handleError)
+      ws.addEventListener('close', handleClose)
+
+      removeListeners = () => {
+        ws.removeEventListener('message', handleMessage)
+        ws.removeEventListener('error', handleError)
+        ws.removeEventListener('close', handleClose)
+      }
+
+      if (disposed) {
+        cleanup()
+      }
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unable to subscribe to pipeline events.')
+      handlers.onError?.(err)
+    }
+  }
+
+  void attach()
+
+  return cleanup
 }

@@ -33,6 +33,8 @@ Key settings reside in `server/config.py`:
 - `DELETE_UPLOADED_CLIPS` – auto-delete rendered clips after successful uploads.
 - Legacy LLM options (`MAX_LLM_CHARS`, etc.) remain for backward compatibility and are deprecated.
 
+Licensing middleware reads the Worker public key from either the `WORKER_JWT_PUBLIC_KEY` environment variable (containing the Ed25519 JWK) or by fetching `https://api.atropos-video.com/license/public-key`. Override the host with `LICENSE_API_BASE_URL`, `ATROPOS_LICENSE_API_BASE_URL`, or `VITE_LICENSE_API_BASE_URL` when pointing to non-production workers.
+
 ## Running the FastAPI service
 
 ```bash
@@ -57,7 +59,8 @@ Multiple account support expects the structure `out/<account>/<project>`. Tokens
 ## Desktop integration
 
 - `server/app.py` exposes REST and websocket endpoints for job management.
-- Real-time progress updates stream over `ws://<host>/ws/jobs/<job_id>`.
+- Requests to `/api/jobs*` must include the Worker-signed JWT (`Authorization: Bearer <token>`) and the matching device hash header (`X-Atropos-Device-Hash`). The middleware rejects invalid signatures, expired tokens, or device mismatches.
+- Real-time progress updates stream over `ws://<host>/ws/jobs/<job_id>?token=<jwt>&device_hash=<hash>`.
 - Jobs can also be polled via `GET /api/jobs/<job_id>` for completion status.
 
 ## Extending services

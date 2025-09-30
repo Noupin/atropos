@@ -25,6 +25,8 @@ export interface SubscriptionSnapshot {
   cancelAtPeriodEnd: boolean
   trial: TrialSnapshot | null
   fetchedAt: number
+  epoch: number
+  updatedAt: number | null
 }
 
 export interface LicenseTokenSnapshot {
@@ -63,6 +65,8 @@ interface SubscriptionResponseBody {
   current_period_end?: number | null
   cancel_at_period_end?: boolean
   trial?: TrialResponseBody | null
+  epoch?: number
+  updated_at?: number | null
 }
 
 interface TrialResponseBody {
@@ -289,11 +293,11 @@ export class AccessStore {
             force: options?.force ? 'true' : undefined
           }
         })
-        const subscription = this.mapSubscription(response)
-        this.updateSnapshot({
-          subscription,
-          lastCheckedAt: subscription?.fetchedAt ?? this.now(),
-          status: subscription?.entitled ? 'entitled' : 'not_entitled',
+    const subscription = this.mapSubscription(response)
+    this.updateSnapshot({
+      subscription,
+      lastCheckedAt: subscription?.fetchedAt ?? this.now(),
+      status: subscription?.entitled ? 'entitled' : 'not_entitled',
           lastError: null,
           isRefreshing: false
         })
@@ -336,7 +340,14 @@ export class AccessStore {
 
     const license = this.snapshot.license
     const now = nowSeconds(this.now)
-    if (license && license.expiresAt > now) {
+    if (license && license.epoch !== subscription.epoch) {
+      this.logger.info?.(
+        'Cached license epoch %d does not match subscription epoch %d; requesting a new token.',
+        license.epoch,
+        subscription.epoch
+      )
+      this.clearLicenseToken()
+    } else if (license && license.expiresAt > now) {
       return license.token
     }
 
@@ -399,7 +410,9 @@ export class AccessStore {
       currentPeriodEnd: typeof body.current_period_end === 'number' ? body.current_period_end : null,
       cancelAtPeriodEnd: Boolean(body.cancel_at_period_end),
       trial: mapTrial(body.trial),
-      fetchedAt
+      fetchedAt,
+      epoch: typeof body.epoch === 'number' ? body.epoch : 0,
+      updatedAt: typeof body.updated_at === 'number' ? body.updated_at : null
     }
   }
 

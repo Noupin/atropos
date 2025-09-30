@@ -3,6 +3,25 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 let urlSequence: string[] = []
 let currentIndex = 0
 
+const ensureLicenseTokenMock = vi.fn<[], Promise<string | null>>()
+const reportUnauthorizedMock = vi.fn<[], void>()
+
+vi.mock('../../../lib/accessStore', () => ({
+  accessStore: {
+    getSnapshot: () => ({
+      identity: { userId: 'user-123', deviceHash: 'device-abc' },
+      subscription: { status: 'entitled', entitled: true, currentPeriodEnd: null, cancelAtPeriodEnd: false, trial: null, fetchedAt: Date.now(), epoch: 1, updatedAt: Date.now() },
+      license: null,
+      status: 'entitled',
+      lastError: null,
+      lastCheckedAt: null,
+      isRefreshing: false
+    }),
+    ensureLicenseToken: ensureLicenseTokenMock,
+    reportUnauthorized: reportUnauthorizedMock
+  }
+}))
+
 vi.mock('../config/backend', () => ({
   buildJobUrl: vi.fn(() => {
     return urlSequence[currentIndex]
@@ -31,6 +50,9 @@ describe('startPipelineJob', () => {
     ]
     currentIndex = 0
     vi.clearAllMocks()
+    ensureLicenseTokenMock.mockReset()
+    ensureLicenseTokenMock.mockResolvedValue('mock-license-token')
+    reportUnauthorizedMock.mockReset()
   })
 
   afterEach(() => {
@@ -62,6 +84,12 @@ describe('startPipelineJob', () => {
       'http://localhost:8000/api/jobs',
       expect.objectContaining({ method: 'POST' })
     )
+    const firstHeaders = fetchMock.mock.calls[0]?.[1]?.headers as Headers
+    const secondHeaders = fetchMock.mock.calls[1]?.[1]?.headers as Headers
+    expect(firstHeaders.get('Authorization')).toBe('Bearer mock-license-token')
+    expect(firstHeaders.get('X-Atropos-Device-Hash')).toBe('device-abc')
+    expect(secondHeaders.get('Authorization')).toBe('Bearer mock-license-token')
+    expect(secondHeaders.get('X-Atropos-Device-Hash')).toBe('device-abc')
     expect(mockedBuildJobUrl).toHaveBeenCalledTimes(2)
     expect(mockedAdvanceApiBaseUrl).toHaveBeenCalledTimes(1)
   })
