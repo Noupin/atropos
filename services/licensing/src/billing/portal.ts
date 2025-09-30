@@ -1,5 +1,7 @@
 import Stripe from "stripe";
 import { ensureCustomer, getStripeClient } from "./client";
+import { resolveIdentity } from "../lib/identity";
+import type { KVNamespace } from "../kv";
 import { BillingEnv, PortalRequestBody, PortalResponseBody } from "./types";
 
 const jsonResponse = (body: unknown, init: ResponseInit = {}): Response => {
@@ -16,8 +18,8 @@ const isNonEmptyString = (value: unknown): value is string => {
   return typeof value === "string" && value.trim().length > 0;
 };
 
-const buildIdempotencyKey = (request: Request, userId: string): string => {
-  return request.headers.get("Idempotency-Key") ?? `portal:${userId}:${crypto.randomUUID()}`;
+const buildIdempotencyKey = (request: Request, deviceHash: string): string => {
+  return request.headers.get("Idempotency-Key") ?? `portal:${deviceHash}:${crypto.randomUUID()}`;
 };
 
 const normalizeErrorDetails = (error: unknown): Record<string, string> => {
@@ -49,7 +51,7 @@ export const createPortalSession = async (
 
 export const handlePortalRequest = async (
   request: Request,
-  env: BillingEnv,
+  env: BillingEnv & { LICENSING_KV: KVNamespace },
 ): Promise<Response> => {
   let payload: PortalRequestBody;
 
@@ -59,17 +61,24 @@ export const handlePortalRequest = async (
     return jsonResponse({ error: "invalid_json" }, { status: 400 });
   }
 
-  const userId = isNonEmptyString(payload.user_id) ? payload.user_id.trim() : null;
+  const identity = await resolveIdentity(env.LICENSING_KV, {
+    deviceHash: payload.device_hash,
+    legacyUserId: payload.user_id,
+  });
 
-  if (!userId) {
-    return jsonResponse({ error: "user_id_required" }, { status: 400 });
+  if (!identity.deviceHash) {
+    return jsonResponse({ error: "device_hash_required" }, { status: 400 });
   }
 
   try {
     const stripe = getStripeClient(env);
-    const customer = await ensureCustomer(stripe, userId);
+    const customer = await ensureCustomer(stripe, {
+      deviceHash: identity.deviceHash,
+      legacyUserId: identity.legacyUserId,
+      existingCustomerId: identity.record?.stripe_customer_id ?? null,
+    });
     const returnUrl = isNonEmptyString(payload.return_url) ? payload.return_url : undefined;
-    const idempotencyKey = buildIdempotencyKey(request, userId);
+    const idempotencyKey = buildIdempotencyKey(request, identity.deviceHash);
 
     const session = await createPortalSession(stripe, {
       customerId: customer.id,

@@ -1,5 +1,5 @@
 import { isEntitled, KVNamespace, UserRecord } from "../kv";
-import { mutateUserRecord } from "../kv/user";
+import { mutateDeviceRecord } from "../kv/user";
 import { getSigningMaterial, signJwt } from "../lib/jwt";
 import { clearedTransferState, jsonResponse, TransferEnvConfig } from "./common";
 
@@ -9,9 +9,8 @@ interface TransferCompleteEnv extends TransferEnvConfig {
 }
 
 interface TransferCompleteRequestBody {
-  user_id?: unknown;
-  token?: unknown;
   device_hash?: unknown;
+  token?: unknown;
 }
 
 const determineTier = (record: UserRecord): string => {
@@ -44,21 +43,17 @@ export const handleTransferCompleteRequest = async (
     return jsonResponse({ error: "invalid_request", detail: "Body must be valid JSON" }, { status: 400 });
   }
 
-  const userId = typeof body.user_id === "string" ? body.user_id.trim() : "";
   const token = typeof body.token === "string" ? body.token.trim() : "";
   const deviceHash = typeof body.device_hash === "string" ? body.device_hash.trim() : "";
 
-  if (!userId || !token || !deviceHash) {
-    return jsonResponse(
-      { error: "invalid_request", detail: "user_id, token, and device_hash are required" },
-      { status: 400 },
-    );
+  if (!deviceHash || !token) {
+    return jsonResponse({ error: "invalid_request", detail: "device_hash and token are required" }, { status: 400 });
   }
 
   let nextEpoch: number | null = null;
   let errorResponse: Response | null = null;
 
-  const record = await mutateUserRecord(env.LICENSING_KV, userId, ({ current, now }) => {
+  const record = await mutateDeviceRecord(env.LICENSING_KV, deviceHash, ({ current, now }) => {
     const transfer = current.transfer;
 
     if (!transfer?.pending) {
@@ -111,7 +106,7 @@ export const handleTransferCompleteRequest = async (
   }
 
   const payload = {
-    sub: userId,
+    sub: deviceHash,
     email: record.email,
     tier: determineTier(record),
     device_hash: record.device_hash,

@@ -1,4 +1,5 @@
-import { getUserRecord, isEntitled, KVNamespace, TrialState } from "./kv";
+import { getDeviceRecord, isEntitled, KVNamespace, TrialState } from "./kv";
+import { resolveIdentity } from "./lib/identity";
 
 interface BillingResponseBody {
   status: string | null;
@@ -42,18 +43,28 @@ export const handleSubscriptionRequest = async (
   env: { LICENSING_KV: KVNamespace } & Record<string, unknown>,
 ): Promise<Response> => {
   const url = new URL(request.url);
-  const userId = url.searchParams.get("user_id");
+  const deviceHashParam = url.searchParams.get("device_hash");
+  const legacyUserId = url.searchParams.get("user_id");
   const forceRefresh = url.searchParams.get("force")?.toLowerCase() === "true";
 
-  if (!userId) {
-    return jsonResponse({ error: "user_id is required" }, { status: 400 });
+  const identity = await resolveIdentity(env.LICENSING_KV, {
+    deviceHash: deviceHashParam,
+    legacyUserId,
+  });
+
+  if (!identity.deviceHash) {
+    const body: Record<string, unknown> = { error: "device_hash_required", code: "device_hash_required" };
+    if (!isDevEnvironment(env)) {
+      delete body.code;
+    }
+    return jsonResponse(body, { status: 400 });
   }
 
   if (forceRefresh && !isDevEnvironment(env)) {
     return jsonResponse({ error: "force refresh is only available in dev" }, { status: 403 });
   }
 
-  const record = await getUserRecord(env.LICENSING_KV, userId);
+  const record = identity.record ?? (await getDeviceRecord(env.LICENSING_KV, identity.deviceHash));
 
   if (!record) {
     return jsonResponse({ error: "subscription not found" }, { status: 404 });

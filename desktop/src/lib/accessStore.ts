@@ -1,9 +1,9 @@
 import { ApiClient, ApiError, getDefaultApiClient, type Logger } from './apiClient'
+import { getDeviceHash } from './deviceId'
 
 export type AccessStatus = 'idle' | 'loading' | 'entitled' | 'not_entitled' | 'error'
 
 export interface AccessIdentity {
-  userId: string
   deviceHash: string
 }
 
@@ -98,43 +98,8 @@ const DEFAULT_SNAPSHOT: AccessSnapshot = {
   isRefreshing: false
 }
 
-const IDENTITY_USER_KEYS = ['ATROPOS_USER_ID', 'VITE_USER_ID', 'USER_ID']
-const IDENTITY_DEVICE_KEYS = ['ATROPOS_DEVICE_HASH', 'VITE_DEVICE_HASH', 'DEVICE_HASH']
-
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0
-
-const readImportMetaEnv = (key: string): string | undefined => {
-  if (typeof import.meta === 'undefined') {
-    return undefined
-  }
-  try {
-    const meta = import.meta as unknown as { env?: Record<string, unknown> }
-    const candidate = meta?.env?.[key]
-    return isNonEmptyString(candidate) ? candidate : undefined
-  } catch (error) {
-    return undefined
-  }
-}
-
-const readEnv = (key: string): string | undefined => {
-  if (typeof process !== 'undefined' && process.env && isNonEmptyString(process.env[key])) {
-    return process.env[key]
-  }
-  return readImportMetaEnv(key)
-}
-
-const resolveIdentityFromEnvironment = (): AccessIdentity | null => {
-  const userIdCandidate = IDENTITY_USER_KEYS.map(readEnv).find(isNonEmptyString)
-  const deviceHashCandidate = IDENTITY_DEVICE_KEYS.map(readEnv).find(isNonEmptyString)
-  if (!userIdCandidate || !deviceHashCandidate) {
-    return null
-  }
-  return {
-    userId: userIdCandidate.trim(),
-    deviceHash: deviceHashCandidate.trim()
-  }
-}
 
 const cloneIdentity = (identity: AccessIdentity | null): AccessIdentity | null => {
   if (!identity) {
@@ -214,15 +179,39 @@ export class AccessStore {
 
   constructor(options?: AccessStoreOptions) {
     this.client = options?.client ?? getDefaultApiClient()
-    this.identity = cloneIdentity(options?.identity ?? resolveIdentityFromEnvironment())
     this.logger = options?.logger ?? console
     this.now = options?.now ?? Date.now
-    this.snapshot = {
-      ...DEFAULT_SNAPSHOT,
-      identity: cloneIdentity(this.identity),
-      status: this.identity ? 'idle' : 'error',
-      lastError: this.identity ? null : 'Licensing identity is not configured.'
+    this.identity = cloneIdentity(options?.identity ?? null)
+    this.snapshot = { ...DEFAULT_SNAPSHOT }
+
+    if (!this.identity) {
+      try {
+        const deviceHash = getDeviceHash()
+        this.identity = { deviceHash }
+      } catch (error) {
+        this.logger.error?.('Failed to resolve device identity', error)
+      }
     }
+
+    if (this.identity) {
+      this.snapshot = {
+        ...DEFAULT_SNAPSHOT,
+        identity: cloneIdentity(this.identity),
+        status: 'idle',
+        lastError: null
+      }
+    } else {
+      this.snapshot = {
+        ...DEFAULT_SNAPSHOT,
+        status: 'error',
+        lastError: 'Licensing identity is not configured.'
+      }
+    }
+
+    if (this.identity) {
+      this.setIdentity(this.identity, { refresh: false, invalidateLicense: false })
+    }
+
     if (options?.autoStart ?? true) {
       void this.refresh()
     }
@@ -289,7 +278,7 @@ export class AccessStore {
       try {
         const response = await this.client.get<SubscriptionResponseBody>('/billing/subscription', {
           query: {
-            user_id: this.identity?.userId ?? '',
+            device_hash: this.identity?.deviceHash ?? '',
             force: options?.force ? 'true' : undefined
           }
         })
@@ -432,7 +421,6 @@ export class AccessStore {
     const promise = (async (): Promise<string | null> => {
       try {
         const response = await this.client.post<LicenseIssueResponseBody>('/license/issue', {
-          user_id: this.identity?.userId ?? '',
           device_hash: this.identity?.deviceHash ?? ''
         })
         const license: LicenseTokenSnapshot = {

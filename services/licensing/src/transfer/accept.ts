@@ -16,15 +16,15 @@ export const handleTransferAcceptView = (
   env: TransferAcceptEnv,
 ): Response => {
   const url = new URL(request.url);
-  const userId = url.searchParams.get("user_id")?.trim();
+  const deviceHash = url.searchParams.get("device_hash")?.trim();
   const token = url.searchParams.get("token")?.trim();
 
-  if (!userId || !token) {
+  if (!deviceHash || !token) {
     return htmlResponse("<h1>Missing transfer parameters</h1>", 400);
   }
 
   const scheme = resolveDeepLinkScheme(env);
-  const deepLink = `${scheme}://accept-transfer?user_id=${encodeURIComponent(userId)}&token=${encodeURIComponent(token)}`;
+  const deepLink = `${scheme}://accept-transfer?device_hash=${encodeURIComponent(deviceHash)}&token=${encodeURIComponent(token)}`;
   const downloadUrl = resolveDownloadUrl(env);
 
   const escapeHtml = (value: string): string =>

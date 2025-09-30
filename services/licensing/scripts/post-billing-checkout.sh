@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BASE_URL=${BASE_URL:-https://dev.api.atropos-video.com}
-USER_ID=${USER_ID:-user_123}
+DEVICE_HASH=${DEVICE_HASH:-device_hash_example}
 EMAIL=${EMAIL:-user@example.com}
 PRICE_ID=${PRICE_ID:-price_dev_monthly}
 SUCCESS_URL=${SUCCESS_URL:-https://app.atropos.dev/billing/success}
@@ -12,7 +12,7 @@ curl -sS -X POST "${BASE_URL}/billing/checkout" \
   -H 'Accept: application/json' \
   -H 'Content-Type: application/json' \
   -d "{\
-    \"user_id\": \"${USER_ID}\",\
+    \"device_hash\": \"${DEVICE_HASH}\",\
     \"email\": \"${EMAIL}\",\
     \"price_id\": \"${PRICE_ID}\",\
     \"success_url\": \"${SUCCESS_URL}\",\

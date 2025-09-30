@@ -6,6 +6,7 @@ export interface BillingEnv {
 }
 
 export interface CheckoutRequestBody {
+  device_hash?: unknown;
   user_id?: unknown;
   email?: unknown;
   price_id?: unknown;
@@ -19,6 +20,7 @@ export interface CheckoutResponseBody {
 }
 
 export interface PortalRequestBody {
+  device_hash?: unknown;
   user_id?: unknown;
   return_url?: unknown;
 }

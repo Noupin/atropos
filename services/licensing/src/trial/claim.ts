@@ -1,5 +1,6 @@
 import { isEntitled, KVNamespace, TrialState } from "../kv";
-import { mutateUserRecord } from "../kv/user";
+import { mutateDeviceRecord } from "../kv/user";
+import { resolveIdentity } from "../lib/identity";
 import { encodeTrialToken, generateTrialJti, TrialTokenPayload } from "./token";
 
 interface TrialClaimRequestBody {
@@ -36,65 +37,72 @@ export const handleTrialClaimRequest = async (
     );
   }
 
-  const userId = typeof body.user_id === "string" ? body.user_id.trim() : "";
-  const deviceHash = typeof body.device_hash === "string" ? body.device_hash.trim() : "";
-
-  if (!userId || !deviceHash) {
-    return jsonResponse(
-      { error: "invalid_request", detail: "user_id and device_hash are required" },
-      { status: 400 },
-    );
-  }
-
   if (!env.LICENSING_KV) {
     return jsonResponse({ error: "kv_unavailable" }, { status: 500 });
+  }
+
+  const identity = await resolveIdentity(env.LICENSING_KV, {
+    deviceHash: body.device_hash,
+    legacyUserId: body.user_id,
+  });
+
+  if (!identity.deviceHash) {
+    return jsonResponse(
+      { error: "invalid_request", detail: "device_hash is required" },
+      { status: 400 },
+    );
   }
 
   let tokenPayload: TrialTokenPayload | null = null;
   let errorResponse: Response | null = null;
 
-  const record = await mutateUserRecord(env.LICENSING_KV, userId, ({ current, now }) => {
-    if (isEntitled(current.status, current.current_period_end)) {
-      errorResponse = jsonResponse({ error: "already_entitled" }, { status: 409 });
-      return null;
-    }
+  const record = await mutateDeviceRecord(
+    env.LICENSING_KV,
+    identity.deviceHash,
+    ({ current, now }) => {
+      if (isEntitled(current.status, current.current_period_end)) {
+        errorResponse = jsonResponse({ error: "already_entitled" }, { status: 409 });
+        return null;
+      }
 
-    const trial = current.trial;
-    if (!trial) {
-      errorResponse = jsonResponse({ error: "trial_not_started" }, { status: 400 });
-      return null;
-    }
+      const trial = current.trial;
+      if (!trial) {
+        errorResponse = jsonResponse({ error: "trial_not_started" }, { status: 400 });
+        return null;
+      }
 
-    if (trial.allowed <= 0) {
-      errorResponse = jsonResponse({ error: "trial_not_allowed" }, { status: 403 });
-      return null;
-    }
+      if (trial.allowed <= 0) {
+        errorResponse = jsonResponse({ error: "trial_not_allowed" }, { status: 403 });
+        return null;
+      }
 
-    if (trial.remaining <= 0) {
-      errorResponse = jsonResponse({ error: "trial_exhausted" }, { status: 403 });
-      return null;
-    }
+      if (trial.remaining <= 0) {
+        errorResponse = jsonResponse({ error: "trial_exhausted" }, { status: 403 });
+        return null;
+      }
 
-    if (trial.device_hash && trial.device_hash !== deviceHash) {
-      errorResponse = jsonResponse({ error: "device_conflict" }, { status: 409 });
-      return null;
-    }
+      if (trial.device_hash && trial.device_hash !== identity.deviceHash) {
+        errorResponse = jsonResponse({ error: "device_conflict" }, { status: 409 });
+        return null;
+      }
 
-    const jti = generateTrialJti();
-    const exp = now + 15 * 60;
+      const jti = generateTrialJti();
+      const exp = now + 15 * 60;
 
-    tokenPayload = { trial: true, jti, exp };
+      tokenPayload = { trial: true, jti, exp };
 
-    const nextTrial: TrialState = {
-      ...trial,
-      device_hash: trial.device_hash ?? deviceHash,
-      started: trial.started ?? now,
-      jti,
-      exp,
-    };
+      const nextTrial: TrialState = {
+        ...trial,
+        device_hash: trial.device_hash ?? identity.deviceHash,
+        started: trial.started ?? now,
+        jti,
+        exp,
+      };
 
-    return { trial: nextTrial };
-  });
+      return { trial: nextTrial };
+    },
+    { legacyUserId: identity.legacyUserId ?? undefined },
+  );
 
   if (errorResponse) {
     return errorResponse;

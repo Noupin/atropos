@@ -10,6 +10,9 @@ const escapeSearchValue = (value: string): string => {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 };
 
+const DEVICE_METADATA_KEY = "device_hash";
+const LEGACY_USER_METADATA_KEY = "user_id";
+
 export const getStripeClient = (env: BillingEnv): Stripe => {
   const secretKey = env.STRIPE_SECRET_KEY;
 
@@ -29,11 +32,12 @@ export const getStripeClient = (env: BillingEnv): Stripe => {
   return cachedStripe;
 };
 
-export const findCustomerByUserId = async (
+const findCustomerByMetadata = async (
   stripe: Stripe,
-  userId: string,
+  key: string,
+  value: string,
 ): Promise<Stripe.Customer | null> => {
-  const query = `metadata['user_id']:'${escapeSearchValue(userId)}'`;
+  const query = `metadata['${key}']:'${escapeSearchValue(value)}'`;
   const result = await stripe.customers.search({ query, limit: 1 });
 
   if (!result.data.length) {
@@ -49,41 +53,74 @@ export const findCustomerByUserId = async (
   return customer as Stripe.Customer;
 };
 
-export const ensureCustomer = async (
+export const findCustomerByDeviceHash = async (
+  stripe: Stripe,
+  deviceHash: string,
+): Promise<Stripe.Customer | null> => {
+  return findCustomerByMetadata(stripe, DEVICE_METADATA_KEY, deviceHash);
+};
+
+export const findCustomerByLegacyUserId = async (
   stripe: Stripe,
   userId: string,
-  email?: string,
+): Promise<Stripe.Customer | null> => {
+  return findCustomerByMetadata(stripe, LEGACY_USER_METADATA_KEY, userId);
+};
+
+export const ensureCustomer = async (
+  stripe: Stripe,
+  options: { deviceHash: string; email?: string; legacyUserId?: string | null; existingCustomerId?: string | null },
 ): Promise<Stripe.Customer> => {
-  const existing = await findCustomerByUserId(stripe, userId);
+  const { deviceHash, email, legacyUserId, existingCustomerId } = options;
 
-  if (existing) {
-    if (email && typeof email === "string" && email.length > 0 && existing.email !== email) {
-      const updated = await stripe.customers.update(existing.id, {
+  if (existingCustomerId) {
+    const existing = await stripe.customers.retrieve(existingCustomerId);
+    if (!(existing as Stripe.DeletedCustomer).deleted) {
+      return existing as Stripe.Customer;
+    }
+  }
+
+  let customer = await findCustomerByDeviceHash(stripe, deviceHash);
+
+  if (!customer && legacyUserId) {
+    customer = await findCustomerByLegacyUserId(stripe, legacyUserId);
+  }
+
+  if (customer) {
+    const metadata = {
+      ...customer.metadata,
+      [DEVICE_METADATA_KEY]: deviceHash,
+    };
+
+    if (legacyUserId) {
+      metadata[LEGACY_USER_METADATA_KEY] = legacyUserId;
+    }
+
+    if (email && typeof email === "string" && email.length > 0 && customer.email !== email) {
+      const updated = await stripe.customers.update(customer.id, {
         email,
-        metadata: {
-          ...existing.metadata,
-          user_id: userId,
-        },
+        metadata,
       });
-
       return updated as Stripe.Customer;
     }
 
-    if (!existing.metadata?.user_id) {
-      await stripe.customers.update(existing.id, {
-        metadata: {
-          ...existing.metadata,
-          user_id: userId,
-        },
-      });
+    const needsMetadataUpdate =
+      customer.metadata?.[DEVICE_METADATA_KEY] !== deviceHash ||
+      (legacyUserId && customer.metadata?.[LEGACY_USER_METADATA_KEY] !== legacyUserId);
+
+    if (needsMetadataUpdate) {
+      await stripe.customers.update(customer.id, { metadata });
     }
 
-    return existing;
+    return customer;
   }
 
   const created = await stripe.customers.create({
     email: email && typeof email === "string" && email.length > 0 ? email : undefined,
-    metadata: { user_id: userId },
+    metadata: {
+      [DEVICE_METADATA_KEY]: deviceHash,
+      ...(legacyUserId ? { [LEGACY_USER_METADATA_KEY]: legacyUserId } : {}),
+    },
   });
 
   return created;

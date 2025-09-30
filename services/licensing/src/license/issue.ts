@@ -1,5 +1,6 @@
-import { getUserRecord, isEntitled, KVNamespace, UserRecord } from "../kv";
-import { mutateUserRecord } from "../kv/user";
+import { getDeviceRecord, isEntitled, KVNamespace, UserRecord } from "../kv";
+import { mutateDeviceRecord } from "../kv/user";
+import { resolveIdentity } from "../lib/identity";
 import { getSigningMaterial, signJwt } from "../lib/jwt";
 
 interface LicensingEnv extends Record<string, unknown> {
@@ -52,31 +53,40 @@ export const handleIssueRequest = async (
     return jsonResponse({ error: "invalid_request", detail: "Body must be valid JSON" }, { status: 400 });
   }
 
-  const userId = typeof body.user_id === "string" ? body.user_id.trim() : "";
-  const deviceHash = typeof body.device_hash === "string" ? body.device_hash.trim() : "";
+  const identity = await resolveIdentity(env.LICENSING_KV, {
+    deviceHash: body.device_hash,
+    legacyUserId: body.user_id,
+  });
 
-  if (!userId || !deviceHash) {
-    return jsonResponse({ error: "invalid_request", detail: "user_id and device_hash are required" }, { status: 400 });
+  if (!identity.deviceHash) {
+    return jsonResponse({ error: "invalid_request", detail: "device_hash is required" }, { status: 400 });
   }
 
-  if (!(await getUserRecord(env.LICENSING_KV, userId))) {
-    return jsonResponse({ error: "user_not_found" }, { status: 404 });
+  const existingRecord = identity.record ?? (await getDeviceRecord(env.LICENSING_KV, identity.deviceHash));
+
+  if (!existingRecord) {
+    return jsonResponse({ error: "device_not_found" }, { status: 404 });
   }
 
   let deviceMismatch = false;
 
-  const record = await mutateUserRecord(env.LICENSING_KV, userId, ({ current }) => {
-    if (current.device_hash && current.device_hash !== deviceHash) {
-      deviceMismatch = true;
+  const record = await mutateDeviceRecord(
+    env.LICENSING_KV,
+    identity.deviceHash,
+    ({ current }) => {
+      if (current.device_hash && current.device_hash !== identity.deviceHash) {
+        deviceMismatch = true;
+        return null;
+      }
+
+      if (!current.device_hash) {
+        return { device_hash: identity.deviceHash };
+      }
+
       return null;
-    }
-
-    if (!current.device_hash) {
-      return { device_hash: deviceHash };
-    }
-
-    return null;
-  });
+    },
+    { legacyUserId: identity.legacyUserId ?? undefined },
+  );
 
   if (deviceMismatch) {
     return jsonResponse({ error: "device_conflict", detail: "license already bound to another device" }, { status: 409 });
@@ -101,7 +111,7 @@ export const handleIssueRequest = async (
   const issuedAt = Math.floor(Date.now() / 1000);
   const expiresAt = issuedAt + 15 * 60;
   const payload = {
-    sub: userId,
+    sub: identity.deviceHash,
     email: record.email,
     tier: determineTier(record),
     device_hash: record.device_hash,
