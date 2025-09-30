@@ -8,6 +8,9 @@ import { handlePublicKeyRequest } from "./license/keys";
 import { handleTrialStartRequest } from "./trial/start";
 import { handleTrialClaimRequest } from "./trial/claim";
 import { handleTrialConsumeRequest } from "./trial/consume";
+import { handleTransferInitiateRequest } from "./transfer/initiate";
+import { handleTransferAcceptView } from "./transfer/accept";
+import { handleTransferCompleteRequest } from "./transfer/complete";
 import { createRouter } from "./http/router";
 
 const jsonResponse = (body: unknown, init: ResponseInit = {}): Response => {
@@ -33,6 +36,9 @@ router.get("/license/public-key", handlePublicKeyRequest);
 router.post("/trial/start", handleTrialStartRequest);
 router.post("/trial/claim", handleTrialClaimRequest);
 router.post("/trial/consume", handleTrialConsumeRequest);
+router.post("/transfer/initiate", handleTransferInitiateRequest);
+router.get("/transfer/accept", handleTransferAcceptView);
+router.post("/transfer/accept", handleTransferCompleteRequest);
 
 export default {
   async fetch(request: Request, env: Record<string, unknown>, ctx: ExecutionContext) {
