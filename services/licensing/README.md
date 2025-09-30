@@ -7,6 +7,10 @@ The licensing service is a Cloudflare Worker that verifies device entitlements, 
 | Path | Method | Description |
 | --- | --- | --- |
 | `/license/verify` | `POST` | Validates a device + license token, returning a signed entitlement JWT. |
+| `/license/issue` | `POST` | Issues a short-lived license token bound to a device fingerprint. |
+| `/transfer/initiate` | `POST` | Starts a paid license transfer by emailing a one-time approval link. |
+| `/transfer/accept` | `GET` | HTML shim that launches the desktop deep link for approving a transfer. |
+| `/transfer/accept` | `POST` | Completes an approved transfer, rebinding the license to a new device. |
 | `/trial/consume` | `POST` | Consumes one trial credit for a device and returns remaining quota. |
 | `/billing/webhook` | `POST` | Stripe webhook endpoint that updates subscription status and KV state. |
 | `/billing/portal` | `GET` | Generates a Stripe customer portal link for account management. |
@@ -21,6 +25,10 @@ Configure secrets via `wrangler secret` or environment variables in CI:
 - `KV_LICENSE_NAMESPACE` (Workers KV binding name)
 - `TRIAL_MAX_PER_DEVICE` (default `3`)
 - `CORS_ALLOW_ORIGINS` (comma-separated list of allowed origins for CORS responses; defaults to `*`)
+- `RESEND_API_KEY` (Resend email API token used for transfer notifications)
+- `APP_DOWNLOAD_URL` (desktop download URL surfaced in transfer shims and emails)
+- `DEEPLINK_SCHEME` (custom deep link scheme for launching the desktop client; defaults to `atropos`)
+- `TRANSFER_LINK_TTL_SECONDS` (lifetime for transfer approval links; defaults to 900 seconds)
 
 ## Development vs production
 

@@ -49,6 +49,10 @@ Atropos is composed of three cooperating runtimes:
 - `SERVER_ENV` / `ENVIRONMENT` → Python services → selects credentials in `server/config.py` and toggles webhook hosts.
 - `LICENSING_ENV` → Worker → selects Stripe keys and KV namespace bindings.
 - `CORS_ALLOW_ORIGINS` → Worker → comma-separated origins allowed for CORS responses (defaults to `*`).
+- `RESEND_API_KEY` → Worker → Resend credential used when emailing license transfer approvals.
+- `APP_DOWNLOAD_URL` → Worker → Download page shown in license transfer flows (defaults to the production marketing URL).
+- `DEEPLINK_SCHEME` → Worker → Desktop deep link scheme used for transfer acceptance (defaults to `atropos`).
+- `TRANSFER_LINK_TTL_SECONDS` → Worker → Expiration window for transfer approval tokens (defaults to 900 seconds).
 
 ### Cloudflare worker environments
 
