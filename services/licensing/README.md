@@ -20,6 +20,7 @@ Configure secrets via `wrangler secret` or environment variables in CI:
 - `ED25519_PRIVATE_KEY` (base64-encoded seed used for signing entitlements)
 - `KV_LICENSE_NAMESPACE` (Workers KV binding name)
 - `TRIAL_MAX_PER_DEVICE` (default `3`)
+- `CORS_ALLOW_ORIGINS` (comma-separated list of allowed origins for CORS responses; defaults to `*`)
 
 ## Development vs production
 

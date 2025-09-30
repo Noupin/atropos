@@ -48,6 +48,7 @@ Atropos is composed of three cooperating runtimes:
 - `VITE_LICENSE_API_BASE_URL` → Desktop → Cloudflare Worker host (dev: `https://licensing.dev.atropos.workers.dev`, prod: `https://licensing.atropos.app`).
 - `SERVER_ENV` / `ENVIRONMENT` → Python services → selects credentials in `server/config.py` and toggles webhook hosts.
 - `LICENSING_ENV` → Worker → selects Stripe keys and KV namespace bindings.
+- `CORS_ALLOW_ORIGINS` → Worker → comma-separated origins allowed for CORS responses (defaults to `*`).
 
 ### Cloudflare worker environments
 
