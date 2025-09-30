@@ -6,6 +6,8 @@ interface BillingResponseBody {
   current_period_end: number | null;
   cancel_at_period_end: boolean;
   trial: TrialState | null;
+  epoch: number;
+  updated_at: number | null;
 }
 
 const jsonResponse = (body: unknown, init: ResponseInit = {}): Response => {
@@ -63,6 +65,8 @@ export const handleSubscriptionRequest = async (
     current_period_end: record.current_period_end ?? null,
     cancel_at_period_end: Boolean(record.cancel_at_period_end),
     trial: record.trial,
+    epoch: record.epoch ?? 0,
+    updated_at: typeof record.updated_at === "number" ? record.updated_at : null,
   };
 
   return jsonResponse(responseBody, { status: 200 });

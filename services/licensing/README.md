@@ -6,14 +6,32 @@ The licensing service is a Cloudflare Worker that verifies device entitlements, 
 
 | Path | Method | Description |
 | --- | --- | --- |
-| `/license/verify` | `POST` | Validates a device + license token, returning a signed entitlement JWT. |
-| `/license/issue` | `POST` | Issues a short-lived license token bound to a device fingerprint. |
-| `/transfer/initiate` | `POST` | Starts a paid license transfer by emailing a one-time approval link. |
-| `/transfer/accept` | `GET` | HTML shim that launches the desktop deep link for approving a transfer. |
-| `/transfer/accept` | `POST` | Completes an approved transfer, rebinding the license to a new device. |
-| `/trial/consume` | `POST` | Consumes one trial credit for a device and returns remaining quota. |
-| `/billing/webhook` | `POST` | Stripe webhook endpoint that updates subscription status and KV state. |
-| `/billing/portal` | `GET` | Generates a Stripe customer portal link for account management. |
+| `/health` | `GET` | Returns `{ "status": "ok" }` for monitoring and readiness checks. |
+| `/billing/subscription` | `GET` | Reads the cached subscription snapshot from KV, including entitlement state, epoch, and `updated_at`. |
+| `/billing/checkout` | `POST` | Creates a Stripe Checkout session (or returns the portal URL if already billable). |
+| `/billing/portal` | `POST` | Creates a Stripe billing-portal session for the given user. |
+| `/billing/webhook` | `POST` | Stripe webhook receiver that keeps the KV subscription snapshot authoritative. |
+| `/license/issue` | `POST` | Issues a short-lived Ed25519 JWT bound to a device hash for entitled users. |
+| `/license/validate` | `GET` | Validates a Worker-issued license token and returns the embedded claims. |
+| `/license/public-key` | `GET` | Returns the Ed25519 public JWK used to verify issued license tokens. |
+| `/trial/start` | `POST` | Starts an automatic trial for an eligible user/device pair. |
+| `/trial/claim` | `POST` | Issues a single-use trial claim token for manual redemption. |
+| `/trial/consume` | `POST` | Consumes a claimed trial token and decrements remaining allowance. |
+| `/transfer/initiate` | `POST` | Begins a paid license transfer and emails the recipient a deep link. |
+| `/transfer/accept` | `GET` | HTML shim that launches the desktop client to approve a pending transfer. |
+| `/transfer/accept` | `POST` | Completes a transfer, rebinds the device hash, bumps the epoch, and returns a fresh paid token. |
+
+## How Desktop integrates
+
+The Electron desktop app uses the Worker as the single source of truth for billing, trials, and license issuance. The flow is:
+
+1. **Startup** – `accessStore` loads the configured `user_id`/`device_hash` and calls `GET /billing/subscription`.
+2. **License acquisition** – When the subscription response reports `entitled: true`, the app immediately calls `POST /license/issue` to mint a 10–15 minute Ed25519 JWT. The Python localhost API receives that token on every request.
+3. **Token refresh** – If the issued JWT expires or the localhost API responds with `401`, the desktop client automatically re-issues via `POST /license/issue`. The `epoch` returned by `/billing/subscription` ensures stale tokens are discarded after billing changes.
+4. **Trials** – When no active subscription exists, the desktop client can start or claim trials via `/trial/start`, `/trial/claim`, and `/trial/consume` before running local pipelines.
+5. **Transfers** – Approving a transfer deep link triggers `POST /transfer/accept` with the new device hash and returns a fresh paid token for continued use.
+
+All other Stripe, email, and KV interactions remain inside the Worker under `services/licensing/src/**`.
 
 ## Environment variables & secrets
 
@@ -47,17 +65,7 @@ Set `VITE_LICENSE_API_BASE_URL` in the desktop `.env` to select the host. The wo
 
 ## Curl examples
 
-```bash
-# Verify a license and retrieve entitlement JWT
-curl -X POST "$VITE_LICENSE_API_BASE_URL/license/verify" \
-  -H "Content-Type: application/json" \
-  -d '{"deviceFingerprint":"abc123","licenseKey":"LIC-XXXX"}'
-
-# Consume a trial credit
-curl -X POST "$VITE_LICENSE_API_BASE_URL/trial/consume" \
-  -H "Content-Type: application/json" \
-  -d '{"deviceFingerprint":"abc123"}'
-```
+Executable snippets for every endpoint live under [`services/licensing/scripts/`](scripts/). Set `BASE_URL=https://dev.api.atropos-video.com` (or another host) and run the desired script, e.g. `./scripts/get-billing-subscription.sh USER_ID=user_123`.
 
 ## Related files
 
