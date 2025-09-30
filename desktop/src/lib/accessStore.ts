@@ -327,6 +327,8 @@ export class AccessStore {
 
   private issuePromise: Promise<string | null> | null = null
 
+  private autoTrialPromise: Promise<void> | null = null
+
   private readonly now: () => number
 
   constructor(options?: AccessStoreOptions) {
@@ -448,6 +450,8 @@ export class AccessStore {
         identity
       })
 
+      let autoTrialCandidate: EntitlementSnapshot | null = null
+
       try {
         const response = await this.client.get<EntitlementResponseBody>('/billing/subscription', {
           query: {
@@ -457,6 +461,9 @@ export class AccessStore {
         })
         const entitlement = this.mapEntitlement(response)
         const status = computeStatusFromEntitlement(entitlement)
+        if (this.shouldAutoStartTrial(entitlement)) {
+          autoTrialCandidate = entitlement
+        }
         this.updateSnapshot({
           entitlement,
           lastCheckedAt: entitlement?.fetchedAt ?? this.now(),
@@ -474,6 +481,9 @@ export class AccessStore {
       } finally {
         this.refreshPromise = null
         this.updateSnapshot({ isRefreshing: false })
+        if (autoTrialCandidate) {
+          this.maybeAutoStartTrial(autoTrialCandidate)
+        }
       }
     }
 
@@ -538,19 +548,38 @@ export class AccessStore {
   }
 
   async startTrial(): Promise<void> {
+    await this.performStartTrial({ silent: false })
+  }
+
+  private async performStartTrial(options: { silent: boolean }): Promise<void> {
     const identity = await this.ensureIdentity()
     if (!identity) {
       const message = 'Licensing identity is not configured.'
-      this.updateSnapshot({ lastError: message })
-      throw new Error(message)
+      if (!options.silent) {
+        this.updateSnapshot({ lastError: message })
+        throw new Error(message)
+      }
+      this.logger.warn?.('Unable to start trial without a device identity.')
+      return
     }
     try {
       await this.client.post('/trial/start', {
         device_hash: identity.deviceHash
       })
+      if (this.refreshPromise) {
+        try {
+          await this.refreshPromise
+        } catch (error) {
+          this.logger.warn?.('Previous entitlement refresh failed before starting trial.', error)
+        }
+      }
       await this.refresh({ force: true })
     } catch (error) {
       const message = describeError(error, 'Unable to start trial. Please try again later.')
+      if (options.silent) {
+        this.logger.warn?.('Automatic trial activation failed: %s', message)
+        return
+      }
       this.logger.error?.('Failed to start trial', error)
       this.updateSnapshot({ lastError: message })
       throw error instanceof Error ? error : new Error(message)
@@ -775,6 +804,39 @@ export class AccessStore {
       status: 'error',
       lastError: message
     })
+  }
+
+  private shouldAutoStartTrial(entitlement: EntitlementSnapshot | null): boolean {
+    if (!entitlement || entitlement.entitled) {
+      return false
+    }
+    const trial = entitlement.trial
+    if (!trial) {
+      return false
+    }
+    if (trial.remaining > 0) {
+      return false
+    }
+    if (trial.startedAt) {
+      return false
+    }
+    return trial.allowed > 0 || trial.total > 0
+  }
+
+  private maybeAutoStartTrial(entitlement: EntitlementSnapshot | null): void {
+    if (!this.shouldAutoStartTrial(entitlement)) {
+      return
+    }
+    if (this.autoTrialPromise) {
+      return
+    }
+    this.autoTrialPromise = (async () => {
+      try {
+        await this.performStartTrial({ silent: true })
+      } finally {
+        this.autoTrialPromise = null
+      }
+    })()
   }
 }
 

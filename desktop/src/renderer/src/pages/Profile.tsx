@@ -847,22 +847,31 @@ const Profile: FC<ProfileProps> = ({
   const trialTotal = Math.max(trialSnapshot?.total ?? trialSnapshot?.allowed ?? 0, trialRemaining)
   const isAccessLoading = access.status === 'loading' || access.isRefreshing
 
-  const badgeLabel = useMemo(() => {
-    if (access.isEntitled) {
-      return access.uiMode === 'paid' ? 'Access active' : `Trial · ${trialRemaining} left`
+  const accessStatus = useMemo(() => {
+    if (isAccessLoading) {
+      return { label: 'Checking status…', tone: 'muted' as const }
     }
-    if (!access.isTrialExhausted || trialRemaining > 0) {
-      return `Trial · ${trialRemaining} left`
+    if (access.uiMode === 'paid') {
+      return { label: 'Access active', tone: 'success' as const }
     }
-    return 'Access required'
-  }, [access.isEntitled, access.isTrialExhausted, access.uiMode, trialRemaining])
+    if (access.uiMode === 'trial') {
+      return { label: `Trial · ${trialRemaining} left`, tone: 'accent' as const }
+    }
+    return { label: 'Access required', tone: 'error' as const }
+  }, [access.uiMode, isAccessLoading, trialRemaining])
 
-  const badgeClasses = useMemo(() => {
-    if (access.isEntitled || (!access.isTrialExhausted && trialRemaining > 0)) {
-      return 'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent)_12%,transparent)] text-[color:var(--accent)]'
+  const accessStatusClasses = useMemo(() => {
+    switch (accessStatus.tone) {
+      case 'success':
+        return 'border-[color:var(--success-strong)] bg-[color:color-mix(in_srgb,var(--success-soft)_55%,transparent)] text-[color:var(--success-strong)]'
+      case 'accent':
+        return 'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent)_18%,transparent)] text-[color:var(--accent)]'
+      case 'error':
+        return 'border-[color:var(--error-strong)] bg-[color:color-mix(in_srgb,var(--error-soft)_55%,transparent)] text-[color:var(--error-strong)]'
+      default:
+        return 'border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_55%,transparent)] text-[color:var(--muted)]'
     }
-    return 'border-[color:var(--error-strong)] bg-[color:color-mix(in_srgb,var(--error-soft)_50%,transparent)] text-[color:var(--error-strong)]'
-  }, [access.isEntitled, access.isTrialExhausted, trialRemaining])
+  }, [accessStatus.tone])
 
   const primaryButtonLabel = access.isEntitled ? 'Manage subscription' : 'Subscribe'
   const primaryButtonText = isPrimaryActionPending
@@ -878,7 +887,19 @@ const Profile: FC<ProfileProps> = ({
   const trialButtonText = isTrialPending ? 'Activating trial…' : 'Use trial on next run'
   const trialButtonDisabled = isTrialPending || isAccessLoading
 
-  const accessError = !primaryActionError && !trialError ? access.lastError : null
+  const errorMessages = useMemo(() => {
+    const messages: string[] = []
+    if (primaryActionError && !messages.includes(primaryActionError)) {
+      messages.push(primaryActionError)
+    }
+    if (trialError && !messages.includes(trialError)) {
+      messages.push(trialError)
+    }
+    if (access.lastError && !messages.includes(access.lastError)) {
+      messages.push(access.lastError)
+    }
+    return messages
+  }, [access.lastError, primaryActionError, trialError])
 
   const handlePrimaryAction = useCallback(async () => {
     setPrimaryActionError(null)
@@ -1010,64 +1031,6 @@ const Profile: FC<ProfileProps> = ({
             where processed videos will be delivered.
           </p>
         </div>
-        <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span
-              className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${badgeClasses}`}
-            >
-              {badgeLabel}
-            </span>
-            {isAccessLoading ? (
-              <span className="text-xs text-[var(--muted)]">Checking status…</span>
-            ) : null}
-          </div>
-          {access.entitlement?.email ? (
-            <p className="text-xs text-[var(--muted)]">Plan owner: {access.entitlement.email}</p>
-          ) : null}
-          <button
-            type="button"
-            onClick={handlePrimaryAction}
-            className="inline-flex items-center justify-center rounded-[14px] bg-[color:var(--accent)] px-4 py-2 text-sm font-semibold text-[color:var(--accent-contrast)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] transition hover:-translate-y-0.5 hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)] disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={primaryButtonDisabled}
-          >
-            {primaryButtonText}
-          </button>
-          {showTrialAction ? (
-            <button
-              type="button"
-              onClick={handleUseTrial}
-              className="inline-flex items-center justify-center rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_55%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--fg)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_70%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)] disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={trialButtonDisabled}
-            >
-              {trialButtonText}
-            </button>
-          ) : null}
-          {trialSnapshot ? (
-            <p className="text-xs text-[var(--muted)]">
-              Trial runs remaining: {trialRemaining}
-              {trialTotal > 0 ? ` of ${trialTotal}` : ''}
-            </p>
-          ) : null}
-          <button
-            type="button"
-            onClick={openBenefitsPage}
-            className="self-start text-xs font-semibold text-[color:var(--accent)] underline-offset-4 transition hover:underline"
-          >
-            What do I get?
-          </button>
-          {trialMessage ? (
-            <p className="text-xs font-medium text-[color:var(--accent)]">{trialMessage}</p>
-          ) : null}
-          {primaryActionError ? (
-            <p className="text-xs font-medium text-[color:var(--error-strong)]">{primaryActionError}</p>
-          ) : null}
-          {trialError ? (
-            <p className="text-xs font-medium text-[color:var(--error-strong)]">{trialError}</p>
-          ) : null}
-          {accessError ? (
-            <p className="text-xs font-medium text-[color:var(--error-strong)]">{accessError}</p>
-          ) : null}
-        </div>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
@@ -1179,28 +1142,89 @@ const Profile: FC<ProfileProps> = ({
           </div>
         </div>
 
-        <aside className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_50%,transparent)] p-6 text-sm text-[var(--muted)]">
-          <h3 className="text-base font-semibold text-[var(--fg)]">Supported platforms</h3>
-          <ul className="flex flex-col gap-3">
-            {SUPPORTED_PLATFORMS.map((platform) => (
-              <li
-                key={platform}
-                className="flex flex-col gap-1 rounded-lg border border-white/10 bg-black/20 p-3"
-              >
-                <span className="text-sm font-medium text-[var(--fg)]">
-                  {PLATFORM_LABELS[platform]}
-                </span>
-                <p>
-                  Tokens are stored under{' '}
-                  <code className="font-mono text-xs text-[var(--fg)]">
-                    tokens/&lt;account&gt;/{PLATFORM_TOKEN_FILES[platform]}
-                  </code>
-                  {'. '}
-                  Ensure credentials remain valid to publish successfully.
+        <aside className="flex flex-col gap-6">
+          <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_55%,transparent)] p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-base font-semibold text-[var(--fg)]">Access</h3>
+                <p className="text-xs text-[var(--muted)]">
+                  Activate your plan or use trial runs to keep pipelines publishing.
                 </p>
-              </li>
+              </div>
+              <span
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${accessStatusClasses}`}
+              >
+                {accessStatus.label}
+              </span>
+            </div>
+            {access.entitlement?.email ? (
+              <p className="text-xs text-[var(--muted)]">Plan owner: {access.entitlement.email}</p>
+            ) : null}
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handlePrimaryAction}
+                className="marble-button marble-button--primary justify-center px-4 py-2 text-sm font-semibold"
+                disabled={primaryButtonDisabled}
+              >
+                {primaryButtonText}
+              </button>
+              {showTrialAction ? (
+                <button
+                  type="button"
+                  onClick={handleUseTrial}
+                  className="marble-button marble-button--outline justify-center px-4 py-1.5 text-sm font-semibold"
+                  disabled={trialButtonDisabled}
+                >
+                  {trialButtonText}
+                </button>
+              ) : null}
+            </div>
+            {trialSnapshot ? (
+              <p className="text-xs text-[var(--muted)]">
+                Trial runs remaining: {trialRemaining}
+                {trialTotal > 0 ? ` of ${trialTotal}` : ''}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              onClick={openBenefitsPage}
+              className="self-start text-xs font-semibold text-[color:var(--accent)] underline-offset-4 transition hover:underline"
+            >
+              What do I get?
+            </button>
+            {trialMessage ? (
+              <p className="text-xs font-medium text-[color:var(--accent)]">{trialMessage}</p>
+            ) : null}
+            {errorMessages.map((message) => (
+              <p key={message} className="text-xs font-medium text-[color:var(--error-strong)]">
+                {message}
+              </p>
             ))}
-          </ul>
+          </div>
+          <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_50%,transparent)] p-6 text-sm text-[var(--muted)]">
+            <h3 className="text-base font-semibold text-[var(--fg)]">Supported platforms</h3>
+            <ul className="flex flex-col gap-3">
+              {SUPPORTED_PLATFORMS.map((platform) => (
+                <li
+                  key={platform}
+                  className="flex flex-col gap-1 rounded-lg border border-white/10 bg-black/20 p-3"
+                >
+                  <span className="text-sm font-medium text-[var(--fg)]">
+                    {PLATFORM_LABELS[platform]}
+                  </span>
+                  <p>
+                    Tokens are stored under{' '}
+                    <code className="font-mono text-xs text-[var(--fg)]">
+                      tokens/&lt;account&gt;/{PLATFORM_TOKEN_FILES[platform]}
+                    </code>
+                    {'. '}
+                    Ensure credentials remain valid to publish successfully.
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
         </aside>
       </div>
     </section>
