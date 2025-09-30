@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
+import { registerDeepLinks } from './deeplink'
 
 type NavigationCommand = 'back' | 'forward'
 
@@ -144,6 +145,8 @@ app.whenReady().then(() => {
   })
 
   createWindow()
+
+  registerDeepLinks()
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
