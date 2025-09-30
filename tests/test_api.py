@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import os
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,10 +17,67 @@ import pytest
 
 from fastapi.testclient import TestClient
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "server"))
+
+
+def _base64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+_TEST_PRIVATE_KEY = Ed25519PrivateKey.generate()
+_TEST_PUBLIC_KEY = _TEST_PRIVATE_KEY.public_key()
+_TEST_PUBLIC_BYTES = _TEST_PUBLIC_KEY.public_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PublicFormat.Raw,
+)
+
+os.environ.setdefault(
+    "WORKER_JWT_PUBLIC_KEY",
+    json.dumps({"kty": "OKP", "crv": "Ed25519", "x": _base64url(_TEST_PUBLIC_BYTES)}),
+)
+
+
+def _issue_worker_token(expiration_seconds: int = 3600) -> str:
+    header = {"alg": "EdDSA", "typ": "JWT"}
+    payload = {"sub": "test-user", "exp": int(time.time()) + expiration_seconds}
+    header_segment = _base64url(
+        json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    )
+    payload_segment = _base64url(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    )
+    signing_input = f"{header_segment}.{payload_segment}".encode("utf-8")
+    signature = _TEST_PRIVATE_KEY.sign(signing_input)
+    signature_segment = _base64url(signature)
+    return f"{header_segment}.{payload_segment}.{signature_segment}"
+
+
+def _auth_headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {_issue_worker_token()}"}
+
+
+def _make_authenticated_client() -> tuple[TestClient, dict[str, str]]:
+    headers = _auth_headers()
+    client = TestClient(server.app.app)
+    client.headers.update(headers)
+    return client, headers
+
 import server.app
 import server.config as pipeline_config
 import server.library
 from interfaces.progress import PipelineEvent, PipelineEventType
+
+
+def test_pipeline_requires_worker_token() -> None:
+    client = TestClient(server.app.app)
+    response = client.post("/api/jobs", json={"url": "https://example.com/video"})
+    assert response.status_code == 401
 
 
 def test_job_lifecycle(monkeypatch) -> None:
@@ -45,13 +105,13 @@ def test_job_lifecycle(monkeypatch) -> None:
 
     monkeypatch.setattr(server.app, "process_video", _fake_process)
 
-    client = TestClient(server.app.app)
+    client, headers = _make_authenticated_client()
     response = client.post("/api/jobs", json={"url": "https://example.com/video"})
     assert response.status_code == 202
     job_id = response.json()["job_id"]
 
     received: List[dict] = []
-    with client.websocket_connect(f"/ws/jobs/{job_id}") as websocket:
+    with client.websocket_connect(f"/ws/jobs/{job_id}", headers=headers) as websocket:
         while True:
             payload = websocket.receive_json()
             received.append(payload)
@@ -98,7 +158,7 @@ def test_job_resume_unblocks_review_mode(monkeypatch) -> None:
 
     monkeypatch.setattr(server.app, "process_video", _fake_process)
 
-    client = TestClient(server.app.app)
+    client, _ = _make_authenticated_client()
     response = client.post(
         "/api/jobs",
         json={"url": "https://example.com/video", "review_mode": True},
@@ -197,7 +257,7 @@ def test_clip_endpoints_expose_rendered_clips(
 
     monkeypatch.setattr(server.app, "process_video", _fake_process)
 
-    client = TestClient(server.app.app)
+    client, _ = _make_authenticated_client()
     response = client.post("/api/jobs", json={"url": "https://example.com/video"})
     assert response.status_code == 202
     job_id = response.json()["job_id"]
@@ -316,7 +376,7 @@ def test_adjust_job_clip_rebuilds_assets(monkeypatch, tmp_path: Path) -> None:
     with server.app._jobs_lock:
         server.app._jobs[job_id] = state
 
-    client = TestClient(server.app.app)
+    client, _ = _make_authenticated_client()
     payload = {"start_seconds": 7.0, "end_seconds": 18.0}
     response = client.post(
         f"/api/jobs/{job_id}/clips/{clip_id}/adjust",
@@ -412,7 +472,7 @@ def test_adjust_library_clip_updates_files(monkeypatch, tmp_path: Path) -> None:
     assert len(clips) == 1
     clip_id = clips[0].clip_id
 
-    client = TestClient(server.app.app)
+    client, _ = _make_authenticated_client()
     response = client.post(
         f"/api/accounts/account-1/clips/{clip_id}/adjust",
         json={"start_seconds": 6.0, "end_seconds": 20.0},
@@ -446,7 +506,7 @@ def test_adjust_library_clip_updates_files(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_config_endpoint_lists_and_updates_values() -> None:
-    client = TestClient(server.app.app)
+    client, _ = _make_authenticated_client()
 
     response = client.get("/api/config")
     assert response.status_code == 200
