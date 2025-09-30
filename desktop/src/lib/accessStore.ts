@@ -126,28 +126,28 @@ const cloneIdentity = (identity: AccessIdentity | null): AccessIdentity | null =
   if (!identity) {
     return null
   }
-  return { ...identity }
+  return Object.freeze({ ...identity }) as AccessIdentity
 }
 
 const cloneTrial = (trial: TrialSnapshot | null): TrialSnapshot | null => {
   if (!trial) {
     return null
   }
-  return { ...trial }
+  return Object.freeze({ ...trial }) as TrialSnapshot
 }
 
 const cloneEntitlement = (entitlement: EntitlementSnapshot | null): EntitlementSnapshot | null => {
   if (!entitlement) {
     return null
   }
-  return { ...entitlement, trial: cloneTrial(entitlement.trial) }
+  return Object.freeze({ ...entitlement, trial: cloneTrial(entitlement.trial) }) as EntitlementSnapshot
 }
 
 const cloneLicense = (license: LicenseTokenSnapshot | null): LicenseTokenSnapshot | null => {
   if (!license) {
     return null
   }
-  return { ...license }
+  return Object.freeze({ ...license }) as LicenseTokenSnapshot
 }
 
 const mapTrial = (trial: TrialResponseBody | null | undefined): TrialSnapshot | null => {
@@ -319,6 +319,8 @@ export class AccessStore {
 
   private identity: AccessIdentity | null
 
+  private identityPromise: Promise<AccessIdentity | null> | null = null
+
   private readonly logger: Logger
 
   private refreshPromise: Promise<void> | null = null
@@ -334,27 +336,14 @@ export class AccessStore {
     this.identity = cloneIdentity(options?.identity ?? null)
     this.snapshot = { ...DEFAULT_SNAPSHOT }
 
-    if (!this.identity) {
-      try {
-        const deviceHash = getDeviceHash()
-        this.identity = { deviceHash }
-      } catch (error) {
-        this.logger.error?.('Failed to resolve device identity', error)
-      }
-    }
-
     if (this.identity) {
-      this.snapshot = {
+      this.snapshot = Object.freeze({
         ...DEFAULT_SNAPSHOT,
         identity: cloneIdentity(this.identity),
         status: 'loading'
-      }
+      }) as AccessSnapshot
     } else {
-      this.snapshot = {
-        ...DEFAULT_SNAPSHOT,
-        status: 'error',
-        lastError: 'Licensing identity is not configured.'
-      }
+      this.snapshot = Object.freeze({ ...DEFAULT_SNAPSHOT }) as AccessSnapshot
     }
 
     if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
@@ -365,6 +354,8 @@ export class AccessStore {
 
     if (this.identity) {
       this.setIdentity(this.identity, { refresh: false, invalidateLicense: false })
+    } else {
+      void this.ensureIdentity()
     }
 
     if (options?.autoStart ?? true) {
@@ -373,18 +364,13 @@ export class AccessStore {
   }
 
   getSnapshot(): AccessSnapshot {
-    return {
-      ...this.snapshot,
-      identity: cloneIdentity(this.snapshot.identity),
-      entitlement: cloneEntitlement(this.snapshot.entitlement),
-      license: cloneLicense(this.snapshot.license)
-    }
+    return this.snapshot
   }
 
   subscribe(listener: AccessStoreListener): () => void {
     this.listeners.add(listener)
     try {
-      listener(this.getSnapshot())
+      listener(this.snapshot)
     } catch (error) {
       this.logger.error?.('Access store listener threw during initial emit', error)
     }
@@ -409,32 +395,63 @@ export class AccessStore {
     }
   }
 
+  private ensureIdentity(): Promise<AccessIdentity | null> {
+    if (this.identity) {
+      return Promise.resolve(cloneIdentity(this.identity))
+    }
+    if (this.identityPromise) {
+      return this.identityPromise
+    }
+
+    const promise = (async (): Promise<AccessIdentity | null> => {
+      try {
+        const deviceHash = await getDeviceHash()
+        if (!isNonEmptyString(deviceHash)) {
+          throw new Error('Received empty device hash from identity provider.')
+        }
+        const identity: AccessIdentity = { deviceHash }
+        this.setIdentity(identity, { refresh: false, invalidateLicense: false })
+        return cloneIdentity(this.identity)
+      } catch (error) {
+        this.logger.error?.('Failed to resolve device identity', error)
+        this.setIdentity(null, { refresh: false, invalidateLicense: true })
+        return null
+      } finally {
+        this.identityPromise = null
+      }
+    })()
+
+    this.identityPromise = promise
+    return promise
+  }
+
   async refresh(options?: { force?: boolean }): Promise<void> {
     if (this.refreshPromise) {
       return this.refreshPromise
     }
-    if (!this.identity) {
-      this.updateSnapshot({
-        status: 'error',
-        lastError: 'Licensing identity is not configured.',
-        isRefreshing: false,
-        identity: null
-      })
-      return
-    }
-
-    this.updateSnapshot({
-      isRefreshing: true,
-      status: 'loading',
-      lastError: null,
-      identity: cloneIdentity(this.identity)
-    })
-
     const performRefresh = async (): Promise<void> => {
+      const identity = await this.ensureIdentity()
+      if (!identity) {
+        this.updateSnapshot({
+          status: 'error',
+          lastError: 'Licensing identity is not configured.',
+          isRefreshing: false,
+          identity: null
+        })
+        return
+      }
+
+      this.updateSnapshot({
+        isRefreshing: true,
+        status: 'loading',
+        lastError: null,
+        identity
+      })
+
       try {
         const response = await this.client.get<EntitlementResponseBody>('/billing/subscription', {
           query: {
-            device_hash: this.identity?.deviceHash ?? '',
+            device_hash: identity.deviceHash,
             force: options?.force ? 'true' : undefined
           }
         })
@@ -474,7 +491,8 @@ export class AccessStore {
       }
     }
 
-    if (!this.identity) {
+    const identity = await this.ensureIdentity()
+    if (!identity) {
       this.logger.warn?.('Cannot issue license token without identity.')
       return null
     }
@@ -520,14 +538,15 @@ export class AccessStore {
   }
 
   async startTrial(): Promise<void> {
-    if (!this.identity) {
+    const identity = await this.ensureIdentity()
+    if (!identity) {
       const message = 'Licensing identity is not configured.'
       this.updateSnapshot({ lastError: message })
       throw new Error(message)
     }
     try {
       await this.client.post('/trial/start', {
-        device_hash: this.identity.deviceHash
+        device_hash: identity.deviceHash
       })
       await this.refresh({ force: true })
     } catch (error) {
@@ -539,14 +558,15 @@ export class AccessStore {
   }
 
   async openCheckout(): Promise<void> {
-    if (!this.identity) {
+    const identity = await this.ensureIdentity()
+    if (!identity) {
       const message = 'Licensing identity is not configured.'
       this.updateSnapshot({ lastError: message })
       throw new Error(message)
     }
     try {
       const response = await this.client.post<CheckoutResponseBody>('/billing/checkout', {
-        device_hash: this.identity.deviceHash
+        device_hash: identity.deviceHash
       })
       if (!isNonEmptyString(response?.url)) {
         throw new Error('Checkout session URL is missing from the response.')
@@ -561,7 +581,8 @@ export class AccessStore {
   }
 
   async openPortal(): Promise<void> {
-    if (!this.identity) {
+    const identity = await this.ensureIdentity()
+    if (!identity) {
       const message = 'Licensing identity is not configured.'
       this.updateSnapshot({ lastError: message })
       throw new Error(message)
@@ -569,7 +590,7 @@ export class AccessStore {
     try {
       const returnUrl = resolveReturnUrl()
       const payload: Record<string, string> = {
-        device_hash: this.identity.deviceHash
+        device_hash: identity.deviceHash
       }
       if (isNonEmptyString(returnUrl)) {
         payload.return_url = returnUrl
@@ -615,7 +636,7 @@ export class AccessStore {
     const isTrialExhausted = computeIsTrialExhausted(base.entitlement)
     const uiMode = computeUiMode(base.entitlement)
 
-    this.snapshot = {
+    const nextSnapshot: AccessSnapshot = {
       ...base,
       isEntitled,
       isTrial,
@@ -623,9 +644,11 @@ export class AccessStore {
       uiMode
     }
 
+    this.snapshot = Object.freeze(nextSnapshot) as AccessSnapshot
+
     for (const listener of this.listeners) {
       try {
-        listener(this.getSnapshot())
+        listener(this.snapshot)
       } catch (error) {
         this.logger.error?.('Access store listener threw during update', error)
       }
@@ -658,12 +681,13 @@ export class AccessStore {
   }
 
   private async issueLicenseToken(options?: { reason?: string }): Promise<string | null> {
-    if (!this.identity) {
-      this.logger.warn?.('Cannot issue license token without identity.')
-      return null
-    }
     if (this.issuePromise) {
       return this.issuePromise
+    }
+    const identity = await this.ensureIdentity()
+    if (!identity) {
+      this.logger.warn?.('Cannot issue license token without identity.')
+      return null
     }
     if (!this.snapshot.isEntitled) {
       return null
@@ -672,7 +696,7 @@ export class AccessStore {
     const promise = (async (): Promise<string | null> => {
       try {
         const response = await this.client.post<LicenseIssueResponseBody>('/license/issue', {
-          device_hash: this.identity?.deviceHash ?? ''
+          device_hash: identity.deviceHash
         })
         const license: LicenseTokenSnapshot = {
           token: response.token,
