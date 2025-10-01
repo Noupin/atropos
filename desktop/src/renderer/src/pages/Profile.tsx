@@ -852,13 +852,18 @@ const Profile: FC<ProfileProps> = ({
       return { label: 'Checking status…', tone: 'muted' as const }
     }
     if (access.uiMode === 'paid') {
-      return { label: 'Access active', tone: 'success' as const }
+      return { label: 'Full access', tone: 'success' as const }
     }
     if (access.uiMode === 'trial') {
-      return { label: `Trial · ${trialRemaining} left`, tone: 'accent' as const }
+      const runLabel = trialRemaining === 1 ? 'run' : 'runs'
+      const totalSuffix = trialTotal > 0 ? `/${trialTotal}` : ''
+      return {
+        label: `Trial access · ${trialRemaining}${totalSuffix} ${runLabel} left`,
+        tone: 'accent' as const
+      }
     }
-    return { label: 'Access required', tone: 'error' as const }
-  }, [access.uiMode, isAccessLoading, trialRemaining])
+    return { label: 'Core features locked', tone: 'error' as const }
+  }, [access.uiMode, isAccessLoading, trialRemaining, trialTotal])
 
   const accessStatusClasses = useMemo(() => {
     switch (accessStatus.tone) {
@@ -933,14 +938,16 @@ const Profile: FC<ProfileProps> = ({
       const updatedTrial = accessStore.getSnapshot().entitlement?.trial ?? null
       if (updatedTrial) {
         const remainingRuns = Math.max(0, updatedTrial.remaining ?? 0)
-        const label = remainingRuns === 1 ? 'run' : 'runs'
+        const runLabel = remainingRuns === 1 ? 'run' : 'runs'
+        const totalRuns = Math.max(updatedTrial.total ?? updatedTrial.allowed ?? 0, remainingRuns)
+        const totalSuffix = totalRuns > 0 ? `/${totalRuns}` : ''
         setTrialMessage(
           remainingRuns > 0
-            ? `Trial activated. ${remainingRuns} ${label} remaining.`
-            : 'Trial activated.'
+            ? `Trial ready. ${remainingRuns}${totalSuffix} ${runLabel} left.`
+            : 'Trial ready.'
         )
       } else {
-        setTrialMessage('Trial activated.')
+        setTrialMessage('Trial ready.')
       }
     } catch (error) {
       const message =
@@ -1143,20 +1150,20 @@ const Profile: FC<ProfileProps> = ({
         </div>
 
         <aside className="flex flex-col gap-6">
-          <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_55%,transparent)] p-6">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex flex-col gap-1">
-                <h3 className="text-base font-semibold text-[var(--fg)]">Access</h3>
-                <p className="text-xs text-[var(--muted)]">
-                  Activate your plan or use trial runs to keep pipelines publishing.
-                </p>
+            <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_55%,transparent)] p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex flex-col gap-1">
+                  <h3 className="text-base font-semibold text-[var(--fg)]">Access</h3>
+                  <p className="text-xs text-[var(--muted)]">
+                    Pipelines stay locked until you subscribe or use your trial runs, but you can still browse the app.
+                  </p>
+                </div>
+                <span
+                  className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${accessStatusClasses}`}
+                >
+                  {accessStatus.label}
+                </span>
               </div>
-              <span
-                className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${accessStatusClasses}`}
-              >
-                {accessStatus.label}
-              </span>
-            </div>
             {access.entitlement?.email ? (
               <p className="text-xs text-[var(--muted)]">Plan owner: {access.entitlement.email}</p>
             ) : null}
@@ -1182,8 +1189,8 @@ const Profile: FC<ProfileProps> = ({
             </div>
             {trialSnapshot ? (
               <p className="text-xs text-[var(--muted)]">
-                Trial runs remaining: {trialRemaining}
-                {trialTotal > 0 ? ` of ${trialTotal}` : ''}
+                Trial usage: {trialRemaining}
+                {trialTotal > 0 ? `/${trialTotal}` : ''} {trialRemaining === 1 ? 'run' : 'runs'} left
               </p>
             ) : null}
             <button

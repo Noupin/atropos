@@ -429,19 +429,28 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const isGatedProfile = access.uiMode === 'gated_profile'
 
   const trialRunsRemaining = Math.max(0, access.entitlement?.trial?.remaining ?? 0)
+  const trialRunsTotal = Math.max(
+    access.entitlement?.trial?.total ?? access.entitlement?.trial?.allowed ?? 0,
+    trialRunsRemaining
+  )
 
   const navStatus = useMemo(() => {
     if (access.status === 'loading') {
       return { label: 'Checking plan…', tone: 'muted' as const }
     }
     if (access.uiMode === 'paid') {
-      return { label: 'Subscribed', tone: 'success' as const }
+      return { label: 'Full access', tone: 'success' as const }
     }
     if (access.uiMode === 'trial') {
-      return { label: `Trial · ${trialRunsRemaining} left`, tone: 'accent' as const }
+      const runLabel = trialRunsRemaining === 1 ? 'run' : 'runs'
+      const totalSuffix = trialRunsTotal > 0 ? `/${trialRunsTotal}` : ''
+      return {
+        label: `Trial access · ${trialRunsRemaining}${totalSuffix} ${runLabel} left`,
+        tone: 'accent' as const
+      }
     }
-    return { label: 'Access required', tone: 'error' as const }
-  }, [access.status, access.uiMode, trialRunsRemaining])
+    return { label: 'Core features locked', tone: 'error' as const }
+  }, [access.status, access.uiMode, trialRunsRemaining, trialRunsTotal])
 
   const navStatusClass = useMemo(() => {
     switch (navStatus.tone) {
@@ -455,29 +464,6 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
         return 'border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_55%,transparent)] text-[color:var(--muted)]'
     }
   }, [navStatus.tone])
-
-  const accessOverlay = useMemo(() => {
-    if (access.status === 'loading') {
-      return { message: 'Checking your plan…', variant: 'info' as const }
-    }
-    if (access.status === 'error') {
-      return {
-        message: access.lastError ?? 'Unable to verify access.',
-        variant: 'error' as const
-      }
-    }
-    if (
-      isGatedProfile &&
-      !location.pathname.startsWith('/profile') &&
-      !location.pathname.startsWith('/settings')
-    ) {
-      return {
-        message: 'Access required. Visit Profile to activate your plan.',
-        variant: 'warning' as const
-      }
-    }
-    return null
-  }, [access.lastError, access.status, isGatedProfile, location.pathname])
 
   const accountSelectOptions = useMemo(() => {
     if (availableAccounts.length === 0) {
@@ -564,7 +550,11 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                         aria-disabled={isDisabled ? 'true' : undefined}
                         onClick={handleClick}
                         onKeyDown={handleKeyDown}
-                        title={isDisabled ? 'Available after activating your plan' : undefined}
+                        title={
+                          isDisabled
+                            ? 'Unlock your plan or use trial runs to enable pipelines'
+                            : undefined
+                        }
                       >
                         {({ isActive }) => (
                           <NavItemLabel
@@ -709,23 +699,6 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
           />
         </Routes>
       </main>
-      {accessOverlay ? (
-        <div className="pointer-events-none fixed inset-0 z-[80] flex items-start justify-center px-6 pt-28">
-          <div
-            role="status"
-            aria-live="polite"
-            className={`pointer-events-auto max-w-md rounded-2xl border px-5 py-4 text-sm font-semibold shadow-[0_20px_40px_rgba(43,42,40,0.18)] ${
-              accessOverlay.variant === 'error'
-                ? 'border-[color:var(--error-strong)] bg-[color:color-mix(in_srgb,var(--error-soft)_70%,transparent)] text-[color:var(--error-strong)]'
-                : accessOverlay.variant === 'warning'
-                  ? 'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent)_18%,transparent)] text-[var(--fg)]'
-                  : 'border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_75%,transparent)] text-[var(--fg)]'
-            }`}
-          >
-            {accessOverlay.message}
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }
