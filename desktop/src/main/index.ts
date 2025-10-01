@@ -96,26 +96,44 @@ const ensureTrial = async (): Promise<void> => {
       }
 
       const client = getDefaultApiClient()
-      let ensureCompleted = false
 
+      let subscription: SubscriptionResponseBody | null = null
       try {
-        const response = await client.get<SubscriptionResponseBody>('/billing/subscription', {
+        subscription = await client.get<SubscriptionResponseBody>('/billing/subscription', {
           query: { device_hash: deviceHash }
         })
-        const status = response?.status
-        const entitled = response?.entitled === true
-        if (entitled || (status !== undefined && status !== null)) {
-          ensureCompleted = true
-        } else {
-          await client.post('/trial/start', { device_hash: deviceHash })
-          ensureCompleted = true
-        }
       } catch (error) {
         if (error instanceof ApiError && error.status === 404) {
-          await client.post('/trial/start', { device_hash: deviceHash })
-          ensureCompleted = true
+          subscription = null
         } else {
           throw error
+        }
+      }
+
+      const hasSubscriptionStatus =
+        subscription !== null &&
+        subscription.status !== undefined &&
+        subscription.status !== null
+      const isEntitled = subscription?.entitled === true
+
+      let ensureCompleted = false
+
+      if (isEntitled || hasSubscriptionStatus) {
+        ensureCompleted = true
+      } else {
+        try {
+          await client.post('/trial/start', { device_hash: deviceHash })
+          ensureCompleted = true
+        } catch (error) {
+          if (error instanceof ApiError) {
+            if (error.status === 409 || error.status === 403) {
+              ensureCompleted = true
+            } else {
+              throw error
+            }
+          } else {
+            throw error
+          }
         }
       }
 
