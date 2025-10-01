@@ -1,7 +1,16 @@
-import { ApiClient, ApiError, getDefaultApiClient, type Logger } from './apiClient'
+import type { Shell } from 'electron'
+import {
+  ApiClient,
+  ApiError,
+  getDefaultApiClient,
+  type ApiEnvironment,
+  type Logger
+} from './apiClient'
 import { getDeviceHash } from './deviceId'
 
-export type AccessStatus = 'idle' | 'loading' | 'entitled' | 'not_entitled' | 'error'
+export type AccessStatus = 'loading' | 'entitled' | 'not_entitled' | 'error'
+
+export type UiMode = 'gated_profile' | 'trial' | 'paid'
 
 export interface AccessIdentity {
   deviceHash: string
@@ -18,7 +27,7 @@ export interface TrialSnapshot {
   expiresAt: number | null
 }
 
-export interface SubscriptionSnapshot {
+export interface EntitlementSnapshot {
   status: string | null
   entitled: boolean
   currentPeriodEnd: number | null
@@ -27,6 +36,7 @@ export interface SubscriptionSnapshot {
   fetchedAt: number
   epoch: number
   updatedAt: number | null
+  email: string | null
 }
 
 export interface LicenseTokenSnapshot {
@@ -39,12 +49,16 @@ export interface LicenseTokenSnapshot {
 
 export interface AccessSnapshot {
   status: AccessStatus
-  subscription: SubscriptionSnapshot | null
+  entitlement: EntitlementSnapshot | null
   license: LicenseTokenSnapshot | null
   identity: AccessIdentity | null
   lastError: string | null
   lastCheckedAt: number | null
   isRefreshing: boolean
+  isEntitled: boolean
+  isTrial: boolean
+  isTrialExhausted: boolean
+  uiMode: UiMode
 }
 
 export interface AccessStoreListener {
@@ -59,7 +73,7 @@ export interface AccessStoreOptions {
   now?: () => number
 }
 
-interface SubscriptionResponseBody {
+interface EntitlementResponseBody {
   status?: string | null
   entitled?: boolean
   current_period_end?: number | null
@@ -67,6 +81,7 @@ interface SubscriptionResponseBody {
   trial?: TrialResponseBody | null
   epoch?: number
   updated_at?: number | null
+  email?: string | null
 }
 
 interface TrialResponseBody {
@@ -88,14 +103,26 @@ interface LicenseIssueResponseBody {
   device_hash: string
 }
 
+interface CheckoutResponseBody {
+  url?: string | null
+}
+
+interface PortalResponseBody {
+  url?: string | null
+}
+
 const DEFAULT_SNAPSHOT: AccessSnapshot = {
-  status: 'idle',
-  subscription: null,
+  status: 'loading',
+  entitlement: null,
   license: null,
   identity: null,
   lastError: null,
   lastCheckedAt: null,
-  isRefreshing: false
+  isRefreshing: false,
+  isEntitled: false,
+  isTrial: false,
+  isTrialExhausted: true,
+  uiMode: 'gated_profile'
 }
 
 const isNonEmptyString = (value: unknown): value is string =>
@@ -105,32 +132,44 @@ const cloneIdentity = (identity: AccessIdentity | null): AccessIdentity | null =
   if (!identity) {
     return null
   }
-  return { ...identity }
+  return Object.freeze({ ...identity }) as AccessIdentity
 }
 
 const cloneTrial = (trial: TrialSnapshot | null): TrialSnapshot | null => {
   if (!trial) {
     return null
   }
-  return { ...trial }
+  return Object.freeze({ ...trial }) as TrialSnapshot
+}
+
+const cloneEntitlement = (entitlement: EntitlementSnapshot | null): EntitlementSnapshot | null => {
+  if (!entitlement) {
+    return null
+  }
+  return Object.freeze({ ...entitlement, trial: cloneTrial(entitlement.trial) }) as EntitlementSnapshot
 }
 
 const cloneLicense = (license: LicenseTokenSnapshot | null): LicenseTokenSnapshot | null => {
   if (!license) {
     return null
   }
-  return { ...license }
+  return Object.freeze({ ...license }) as LicenseTokenSnapshot
 }
 
 const mapTrial = (trial: TrialResponseBody | null | undefined): TrialSnapshot | null => {
   if (!trial) {
     return null
   }
+
+  const allowed = Math.max(0, trial.allowed ?? 0)
+  const remaining = Math.max(0, trial.remaining ?? trial.total ?? allowed)
+  const total = Math.max(trial.total ?? allowed, allowed)
+
   return {
-    allowed: Math.max(0, trial.allowed ?? 0),
+    allowed,
     startedAt: trial.started ?? null,
-    total: Math.max(trial.total ?? trial.allowed ?? 0, trial.allowed ?? 0),
-    remaining: Math.max(0, trial.remaining ?? trial.total ?? trial.allowed ?? 0),
+    total,
+    remaining,
     usedAt: trial.used_at ?? null,
     deviceHash: trial.device_hash ?? null,
     tokenId: trial.jti ?? null,
@@ -160,6 +199,166 @@ const describeError = (error: unknown, fallback: string): string => {
 
 const nowSeconds = (now: () => number): number => Math.floor(now() / 1000)
 
+const isElectronRuntime = (): boolean =>
+  typeof process !== 'undefined' && Boolean(process.versions?.electron)
+
+const getRequire = (): NodeRequire | null => {
+  try {
+    if (typeof require === 'function') {
+      return require
+    }
+  } catch (error) {
+    // ignore
+  }
+  try {
+    const globalRequire = (globalThis as { require?: NodeRequire }).require
+    if (typeof globalRequire === 'function') {
+      return globalRequire
+    }
+  } catch (error) {
+    // ignore
+  }
+  return null
+}
+
+const loadElectronShell = (): Shell | null => {
+  if (!isElectronRuntime()) {
+    return null
+  }
+  const req = getRequire()
+  if (!req) {
+    return null
+  }
+  try {
+    const electron = req('electron') as typeof import('electron')
+    return electron?.shell ?? null
+  } catch (error) {
+    return null
+  }
+}
+
+const openExternalUrl = (url: string, logger: Logger): void => {
+  if (!isNonEmptyString(url)) {
+    logger.warn?.('Received empty checkout URL. Nothing to open.')
+    return
+  }
+
+  try {
+    const parsed = new URL(url)
+    const sanitised = parsed.toString()
+    const shell = loadElectronShell()
+    if (shell) {
+      void shell.openExternal(sanitised)
+      return
+    }
+    if (typeof window !== 'undefined' && typeof window.open === 'function') {
+      window.open(sanitised, '_blank', 'noopener')
+    }
+  } catch (error) {
+    logger.error?.('Unable to open external URL: %s', url, error)
+  }
+}
+
+const DEFAULT_APP_BASE_URLS: Record<ApiEnvironment, string> = {
+  dev: 'https://app.atropos.dev',
+  prod: 'https://app.atropos.video'
+}
+
+const resolveReturnUrl = (): string | null => {
+  if (typeof window === 'undefined' || !window.location) {
+    return null
+  }
+  try {
+    const current = new URL(window.location.href)
+    current.hash = ''
+    current.search = ''
+    return current.origin
+  } catch (error) {
+    return null
+  }
+}
+
+const normaliseHttpOrigin = (value: string | null): string | null => {
+  if (!isNonEmptyString(value)) {
+    return null
+  }
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return null
+    }
+    return url.origin
+  } catch (error) {
+    return null
+  }
+}
+
+const resolveAppBaseUrl = (client: ApiClient): string => {
+  const runtimeOrigin = normaliseHttpOrigin(resolveReturnUrl())
+  if (runtimeOrigin) {
+    return runtimeOrigin
+  }
+  const environment = client.getEnvironment()
+  return DEFAULT_APP_BASE_URLS[environment] ?? DEFAULT_APP_BASE_URLS.prod
+}
+
+const buildCheckoutRedirects = (
+  client: ApiClient
+): { successUrl: string; cancelUrl: string } => {
+  const baseUrl = resolveAppBaseUrl(client)
+  const successUrl = new URL('/profile?billing=success', baseUrl).toString()
+  const cancelUrl = new URL('/profile?billing=cancel', baseUrl).toString()
+  return { successUrl, cancelUrl }
+}
+
+const buildPortalReturnUrl = (client: ApiClient): string => {
+  const baseUrl = resolveAppBaseUrl(client)
+  return new URL('/settings', baseUrl).toString()
+}
+
+const computeIsEntitled = (entitlement: EntitlementSnapshot | null): boolean =>
+  Boolean(entitlement?.entitled)
+
+const computeIsTrial = (entitlement: EntitlementSnapshot | null): boolean => {
+  if (!entitlement?.trial) {
+    return false
+  }
+  if (entitlement.trial.remaining <= 0) {
+    return false
+  }
+  if (!entitlement.entitled) {
+    return true
+  }
+  const status = entitlement.status?.toLowerCase() ?? ''
+  return status.includes('trial')
+}
+
+const computeIsTrialExhausted = (entitlement: EntitlementSnapshot | null): boolean => {
+  if (!entitlement?.trial) {
+    return true
+  }
+  return entitlement.trial.remaining <= 0
+}
+
+const computeUiMode = (entitlement: EntitlementSnapshot | null): UiMode => {
+  const isEntitled = computeIsEntitled(entitlement)
+  const isTrial = computeIsTrial(entitlement)
+  const isTrialExhausted = computeIsTrialExhausted(entitlement)
+
+  if (!isEntitled) {
+    return isTrialExhausted ? 'gated_profile' : 'trial'
+  }
+
+  if (isTrial) {
+    return 'trial'
+  }
+
+  return 'paid'
+}
+
+const computeStatusFromEntitlement = (entitlement: EntitlementSnapshot | null): AccessStatus =>
+  computeIsEntitled(entitlement) ? 'entitled' : 'not_entitled'
+
 export class AccessStore {
   private snapshot: AccessSnapshot
 
@@ -169,11 +368,15 @@ export class AccessStore {
 
   private identity: AccessIdentity | null
 
+  private identityPromise: Promise<AccessIdentity | null> | null = null
+
   private readonly logger: Logger
 
   private refreshPromise: Promise<void> | null = null
 
   private issuePromise: Promise<string | null> | null = null
+
+  private autoTrialPromise: Promise<void> | null = null
 
   private readonly now: () => number
 
@@ -184,32 +387,26 @@ export class AccessStore {
     this.identity = cloneIdentity(options?.identity ?? null)
     this.snapshot = { ...DEFAULT_SNAPSHOT }
 
-    if (!this.identity) {
-      try {
-        const deviceHash = getDeviceHash()
-        this.identity = { deviceHash }
-      } catch (error) {
-        this.logger.error?.('Failed to resolve device identity', error)
-      }
-    }
-
     if (this.identity) {
-      this.snapshot = {
+      this.snapshot = Object.freeze({
         ...DEFAULT_SNAPSHOT,
         identity: cloneIdentity(this.identity),
-        status: 'idle',
-        lastError: null
-      }
+        status: 'loading'
+      }) as AccessSnapshot
     } else {
-      this.snapshot = {
-        ...DEFAULT_SNAPSHOT,
-        status: 'error',
-        lastError: 'Licensing identity is not configured.'
-      }
+      this.snapshot = Object.freeze({ ...DEFAULT_SNAPSHOT }) as AccessSnapshot
+    }
+
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('focus', () => {
+        void this.refresh()
+      })
     }
 
     if (this.identity) {
       this.setIdentity(this.identity, { refresh: false, invalidateLicense: false })
+    } else {
+      void this.ensureIdentity()
     }
 
     if (options?.autoStart ?? true) {
@@ -218,18 +415,13 @@ export class AccessStore {
   }
 
   getSnapshot(): AccessSnapshot {
-    return {
-      ...this.snapshot,
-      identity: cloneIdentity(this.snapshot.identity),
-      subscription: this.snapshot.subscription ? { ...this.snapshot.subscription, trial: cloneTrial(this.snapshot.subscription.trial) } : null,
-      license: cloneLicense(this.snapshot.license)
-    }
+    return this.snapshot
   }
 
   subscribe(listener: AccessStoreListener): () => void {
     this.listeners.add(listener)
     try {
-      listener(this.getSnapshot())
+      listener(this.snapshot)
     } catch (error) {
       this.logger.error?.('Access store listener threw during initial emit', error)
     }
@@ -243,7 +435,7 @@ export class AccessStore {
     const hasIdentity = Boolean(this.identity)
     this.updateSnapshot({
       identity: cloneIdentity(this.identity),
-      status: hasIdentity ? (this.snapshot.status === 'error' ? 'idle' : this.snapshot.status) : 'error',
+      status: hasIdentity ? this.snapshot.status : 'error',
       lastError: hasIdentity ? null : 'Licensing identity is not configured.'
     })
     if (!hasIdentity && (options?.invalidateLicense ?? true)) {
@@ -254,52 +446,93 @@ export class AccessStore {
     }
   }
 
+  private ensureIdentity(): Promise<AccessIdentity | null> {
+    if (this.identity) {
+      return Promise.resolve(cloneIdentity(this.identity))
+    }
+    if (this.identityPromise) {
+      return this.identityPromise
+    }
+
+    const promise = (async (): Promise<AccessIdentity | null> => {
+      try {
+        const deviceHash = await getDeviceHash()
+        if (!isNonEmptyString(deviceHash)) {
+          throw new Error('Received empty device hash from identity provider.')
+        }
+        const identity: AccessIdentity = { deviceHash }
+        this.setIdentity(identity, { refresh: false, invalidateLicense: false })
+        return cloneIdentity(this.identity)
+      } catch (error) {
+        this.logger.error?.('Failed to resolve device identity', error)
+        this.setIdentity(null, { refresh: false, invalidateLicense: true })
+        return null
+      } finally {
+        this.identityPromise = null
+      }
+    })()
+
+    this.identityPromise = promise
+    return promise
+  }
+
   async refresh(options?: { force?: boolean }): Promise<void> {
     if (this.refreshPromise) {
       return this.refreshPromise
     }
-    if (!this.identity) {
-      this.updateSnapshot({
-        status: 'error',
-        lastError: 'Licensing identity is not configured.',
-        isRefreshing: false,
-        identity: null
-      })
-      return
-    }
-    this.updateSnapshot({
-      isRefreshing: true,
-      status: this.snapshot.status === 'idle' ? 'loading' : this.snapshot.status,
-      lastError: null,
-      identity: cloneIdentity(this.identity)
-    })
-
     const performRefresh = async (): Promise<void> => {
+      const identity = await this.ensureIdentity()
+      if (!identity) {
+        this.updateSnapshot({
+          status: 'error',
+          lastError: 'Licensing identity is not configured.',
+          isRefreshing: false,
+          identity: null
+        })
+        return
+      }
+
+      this.updateSnapshot({
+        isRefreshing: true,
+        status: 'loading',
+        lastError: null,
+        identity
+      })
+
+      let autoTrialCandidate: EntitlementSnapshot | null = null
+
       try {
-        const response = await this.client.get<SubscriptionResponseBody>('/billing/subscription', {
+        const response = await this.client.get<EntitlementResponseBody>('/billing/subscription', {
           query: {
-            device_hash: this.identity?.deviceHash ?? '',
+            device_hash: identity.deviceHash,
             force: options?.force ? 'true' : undefined
           }
         })
-    const subscription = this.mapSubscription(response)
-    this.updateSnapshot({
-      subscription,
-      lastCheckedAt: subscription?.fetchedAt ?? this.now(),
-      status: subscription?.entitled ? 'entitled' : 'not_entitled',
+        const entitlement = this.mapEntitlement(response)
+        const status = computeStatusFromEntitlement(entitlement)
+        if (this.shouldAutoStartTrial(entitlement)) {
+          autoTrialCandidate = entitlement
+        }
+        this.updateSnapshot({
+          entitlement,
+          lastCheckedAt: entitlement?.fetchedAt ?? this.now(),
+          status,
           lastError: null,
           isRefreshing: false
         })
-        if (!subscription?.entitled) {
+        if (!this.snapshot.isEntitled) {
           this.clearLicenseToken()
           return
         }
         await this.issueLicenseToken({ reason: 'subscription_refresh' })
       } catch (error) {
-        this.handleSubscriptionError(error, options)
+        this.handleEntitlementError(error, options)
       } finally {
         this.refreshPromise = null
         this.updateSnapshot({ isRefreshing: false })
+        if (autoTrialCandidate) {
+          this.maybeAutoStartTrial(autoTrialCandidate)
+        }
       }
     }
 
@@ -317,64 +550,188 @@ export class AccessStore {
       }
     }
 
-    if (!this.identity) {
+    const identity = await this.ensureIdentity()
+    if (!identity) {
       this.logger.warn?.('Cannot issue license token without identity.')
       return null
     }
 
-    const subscription = this.snapshot.subscription
-    if (!subscription || !subscription.entitled) {
+    if (!this.snapshot.isEntitled) {
       return null
     }
 
+    const entitlementEpoch = this.snapshot.entitlement?.epoch ?? 0
     const license = this.snapshot.license
     const now = nowSeconds(this.now)
-    if (license && license.epoch !== subscription.epoch) {
+
+    if (license && license.epoch !== entitlementEpoch) {
       this.logger.info?.(
-        'Cached license epoch %d does not match subscription epoch %d; requesting a new token.',
+        'Cached license epoch %d does not match entitlement epoch %d; refreshing snapshot.',
         license.epoch,
-        subscription.epoch
+        entitlementEpoch
       )
       this.clearLicenseToken()
-    } else if (license && license.expiresAt > now) {
-      return license.token
+      await this.refresh()
+      return this.snapshot.license?.token ?? null
     }
 
-    if (license && license.expiresAt <= now) {
-      this.logger.info?.('License token expired; requesting a new token.')
-      this.clearLicenseToken()
+    if (!license || license.expiresAt <= now) {
+      if (license) {
+        this.logger.info?.('License token expired; refreshing entitlement snapshot.')
+        this.clearLicenseToken()
+      }
+      await this.refresh()
+      return this.snapshot.license?.token ?? null
     }
 
-    return this.issueLicenseToken({ reason: 'ensure_token' })
+    return license.token
   }
 
   reportUnauthorized(): void {
-    if (!this.snapshot.subscription || !this.snapshot.subscription.entitled) {
+    if (!this.snapshot.isEntitled) {
       return
     }
-    this.logger.warn?.('License token rejected by the API. Attempting to refresh.')
+    this.logger.warn?.('License token rejected by the API. Refreshing entitlement snapshot.')
     this.clearLicenseToken()
-    void this.issueLicenseToken({ reason: 'unauthorized' })
+    void this.refresh()
+  }
+
+  async startTrial(): Promise<void> {
+    await this.performStartTrial({ silent: false })
+  }
+
+  private async performStartTrial(options: { silent: boolean }): Promise<void> {
+    const identity = await this.ensureIdentity()
+    if (!identity) {
+      const message = 'Licensing identity is not configured.'
+      if (!options.silent) {
+        this.updateSnapshot({ lastError: message })
+        throw new Error(message)
+      }
+      this.logger.warn?.('Unable to start trial without a device identity.')
+      return
+    }
+    try {
+      await this.client.post('/trial/start', {
+        device_hash: identity.deviceHash
+      })
+      if (this.refreshPromise) {
+        try {
+          await this.refreshPromise
+        } catch (error) {
+          this.logger.warn?.('Previous entitlement refresh failed before starting trial.', error)
+        }
+      }
+      await this.refresh({ force: true })
+    } catch (error) {
+      const message = describeError(error, 'Unable to start trial. Please try again later.')
+      if (options.silent) {
+        this.logger.warn?.('Automatic trial activation failed: %s', message)
+        return
+      }
+      this.logger.error?.('Failed to start trial', error)
+      this.updateSnapshot({ lastError: message })
+      throw error instanceof Error ? error : new Error(message)
+    }
+  }
+
+  async openCheckout(): Promise<void> {
+    const identity = await this.ensureIdentity()
+    if (!identity) {
+      const message = 'Licensing identity is not configured.'
+      this.updateSnapshot({ lastError: message })
+      throw new Error(message)
+    }
+    try {
+      const { successUrl, cancelUrl } = buildCheckoutRedirects(this.client)
+      const payload: Record<string, string> = {
+        device_hash: identity.deviceHash,
+        success_url: successUrl,
+        cancel_url: cancelUrl
+      }
+      const email = this.snapshot.entitlement?.email
+      if (isNonEmptyString(email)) {
+        payload.email = email
+      }
+      const response = await this.client.post<CheckoutResponseBody>('/billing/checkout', payload)
+      if (!isNonEmptyString(response?.url)) {
+        throw new Error('Checkout session URL is missing from the response.')
+      }
+      openExternalUrl(response.url, this.logger)
+    } catch (error) {
+      const message = describeError(error, 'Unable to open checkout session.')
+      this.logger.error?.('Failed to open checkout session', error)
+      this.updateSnapshot({ lastError: message })
+      throw error instanceof Error ? error : new Error(message)
+    }
+  }
+
+  async openPortal(): Promise<void> {
+    const identity = await this.ensureIdentity()
+    if (!identity) {
+      const message = 'Licensing identity is not configured.'
+      this.updateSnapshot({ lastError: message })
+      throw new Error(message)
+    }
+    try {
+      const payload: Record<string, string> = {
+        device_hash: identity.deviceHash,
+        return_url: buildPortalReturnUrl(this.client)
+      }
+      const response = await this.client.post<PortalResponseBody>('/billing/portal', payload)
+      if (!isNonEmptyString(response?.url)) {
+        throw new Error('Portal session URL is missing from the response.')
+      }
+      openExternalUrl(response.url, this.logger)
+    } catch (error) {
+      const message = describeError(error, 'Unable to open subscription management portal.')
+      this.logger.error?.('Failed to open billing portal', error)
+      this.updateSnapshot({ lastError: message })
+      throw error instanceof Error ? error : new Error(message)
+    }
   }
 
   private updateSnapshot(partial: Partial<AccessSnapshot>): void {
-    this.snapshot = {
+    const nextEntitlement =
+      partial.entitlement !== undefined
+        ? cloneEntitlement(partial.entitlement)
+        : cloneEntitlement(this.snapshot.entitlement)
+
+    const base: AccessSnapshot = {
       ...this.snapshot,
       ...partial,
-      identity: partial.identity !== undefined ? cloneIdentity(partial.identity) : cloneIdentity(this.snapshot.identity),
-      subscription:
-        partial.subscription !== undefined
-          ? partial.subscription
-            ? { ...partial.subscription, trial: cloneTrial(partial.subscription.trial) }
-            : null
-          : this.snapshot.subscription
-          ? { ...this.snapshot.subscription, trial: cloneTrial(this.snapshot.subscription.trial) }
-          : null,
-      license: partial.license !== undefined ? cloneLicense(partial.license) : cloneLicense(this.snapshot.license)
+      entitlement: nextEntitlement,
+      identity:
+        partial.identity !== undefined ? cloneIdentity(partial.identity) : cloneIdentity(this.snapshot.identity),
+      license: partial.license !== undefined ? cloneLicense(partial.license) : cloneLicense(this.snapshot.license),
+      status: partial.status ?? this.snapshot.status,
+      lastError: partial.lastError ?? this.snapshot.lastError,
+      lastCheckedAt: partial.lastCheckedAt ?? this.snapshot.lastCheckedAt,
+      isRefreshing: partial.isRefreshing ?? this.snapshot.isRefreshing,
+      isEntitled: false,
+      isTrial: false,
+      isTrialExhausted: true,
+      uiMode: 'gated_profile'
     }
+
+    const isEntitled = computeIsEntitled(base.entitlement)
+    const isTrial = computeIsTrial(base.entitlement)
+    const isTrialExhausted = computeIsTrialExhausted(base.entitlement)
+    const uiMode = computeUiMode(base.entitlement)
+
+    const nextSnapshot: AccessSnapshot = {
+      ...base,
+      isEntitled,
+      isTrial,
+      isTrialExhausted,
+      uiMode
+    }
+
+    this.snapshot = Object.freeze(nextSnapshot) as AccessSnapshot
+
     for (const listener of this.listeners) {
       try {
-        listener(this.getSnapshot())
+        listener(this.snapshot)
       } catch (error) {
         this.logger.error?.('Access store listener threw during update', error)
       }
@@ -388,7 +745,7 @@ export class AccessStore {
     this.updateSnapshot({ license: null })
   }
 
-  private mapSubscription(body: SubscriptionResponseBody | null | undefined): SubscriptionSnapshot | null {
+  private mapEntitlement(body: EntitlementResponseBody | null | undefined): EntitlementSnapshot | null {
     if (!body) {
       return null
     }
@@ -401,27 +758,28 @@ export class AccessStore {
       trial: mapTrial(body.trial),
       fetchedAt,
       epoch: typeof body.epoch === 'number' ? body.epoch : 0,
-      updatedAt: typeof body.updated_at === 'number' ? body.updated_at : null
+      updatedAt: typeof body.updated_at === 'number' ? body.updated_at : null,
+      email: body.email ?? null
     }
   }
 
   private async issueLicenseToken(options?: { reason?: string }): Promise<string | null> {
-    if (!this.identity) {
-      this.logger.warn?.('Cannot issue license token without identity.')
-      return null
-    }
     if (this.issuePromise) {
       return this.issuePromise
     }
-    const subscription = this.snapshot.subscription
-    if (!subscription || !subscription.entitled) {
+    const identity = await this.ensureIdentity()
+    if (!identity) {
+      this.logger.warn?.('Cannot issue license token without identity.')
+      return null
+    }
+    if (!this.snapshot.isEntitled) {
       return null
     }
 
     const promise = (async (): Promise<string | null> => {
       try {
         const response = await this.client.post<LicenseIssueResponseBody>('/license/issue', {
-          device_hash: this.identity?.deviceHash ?? ''
+          device_hash: identity.deviceHash
         })
         const license: LicenseTokenSnapshot = {
           token: response.token,
@@ -444,12 +802,12 @@ export class AccessStore {
     return promise
   }
 
-  private handleSubscriptionError(error: unknown, options?: { force?: boolean }): void {
+  private handleEntitlementError(error: unknown, options?: { force?: boolean }): void {
     if (error instanceof ApiError && error.status === 404) {
-      this.logger.info?.('No active subscription found for the current user.')
+      this.logger.info?.('No active entitlement found for the current device.')
       this.clearLicenseToken()
       this.updateSnapshot({
-        subscription: null,
+        entitlement: null,
         status: 'not_entitled',
         lastError: null
       })
@@ -462,11 +820,11 @@ export class AccessStore {
       })
       return
     }
-    const message = describeError(error, 'Unable to load subscription details.')
-    this.logger.error?.('Failed to refresh subscription', error)
+    const message = describeError(error, 'Unable to load entitlement details.')
+    this.logger.error?.('Failed to refresh entitlement', error)
     this.updateSnapshot({
       lastError: message,
-      status: this.snapshot.status === 'idle' ? 'error' : this.snapshot.status
+      status: 'error'
     })
   }
 
@@ -500,6 +858,39 @@ export class AccessStore {
       status: 'error',
       lastError: message
     })
+  }
+
+  private shouldAutoStartTrial(entitlement: EntitlementSnapshot | null): boolean {
+    if (!entitlement || entitlement.entitled) {
+      return false
+    }
+    const trial = entitlement.trial
+    if (!trial) {
+      return false
+    }
+    if (trial.remaining > 0) {
+      return false
+    }
+    if (trial.startedAt) {
+      return false
+    }
+    return trial.allowed > 0 || trial.total > 0
+  }
+
+  private maybeAutoStartTrial(entitlement: EntitlementSnapshot | null): void {
+    if (!this.shouldAutoStartTrial(entitlement)) {
+      return
+    }
+    if (this.autoTrialPromise) {
+      return
+    }
+    this.autoTrialPromise = (async () => {
+      try {
+        await this.performStartTrial({ silent: true })
+      } finally {
+        this.autoTrialPromise = null
+      }
+    })()
   }
 }
 

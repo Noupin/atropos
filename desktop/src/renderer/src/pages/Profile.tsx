@@ -12,12 +12,16 @@ import {
 import { TONE_LABELS, TONE_OPTIONS } from '../constants/tone'
 import { timeAgo } from '../lib/format'
 import MarbleSelect from '../components/MarbleSelect'
+import { accessStore } from '../../../lib/accessStore'
+import { useAccess } from '../hooks/useAccess'
 
 const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
   tiktok: 'tiktok.json',
   youtube: 'youtube.json',
   instagram: 'instagram_session.json'
 }
+
+const PRICING_URL = 'https://atropos.video/pricing'
 
 const formatTimestamp = (value: string | null | undefined): string => {
   if (!value) {
@@ -826,11 +830,154 @@ const Profile: FC<ProfileProps> = ({
   const [newAccountError, setNewAccountError] = useState<string | null>(null)
   const [newAccountSuccess, setNewAccountSuccess] = useState<string | null>(null)
   const [isCreatingAccount, setIsCreatingAccount] = useState(false)
+  const access = useAccess()
+  const [isPrimaryActionPending, setIsPrimaryActionPending] = useState(false)
+  const [primaryActionError, setPrimaryActionError] = useState<string | null>(null)
+  const [isTrialPending, setIsTrialPending] = useState(false)
+  const [trialMessage, setTrialMessage] = useState<string | null>(null)
+  const [trialError, setTrialError] = useState<string | null>(null)
 
   useEffect(() => {
     registerSearch(null)
     return () => registerSearch(null)
   }, [registerSearch])
+
+  const trialSnapshot = access.entitlement?.trial ?? null
+  const trialRemaining = Math.max(0, trialSnapshot?.remaining ?? 0)
+  const trialTotal = Math.max(trialSnapshot?.total ?? trialSnapshot?.allowed ?? 0, trialRemaining)
+  const isAccessLoading = access.status === 'loading' || access.isRefreshing
+
+  const accessStatus = useMemo(() => {
+    if (isAccessLoading) {
+      return { label: 'Checking status…', tone: 'muted' as const }
+    }
+    if (access.uiMode === 'paid') {
+      return { label: 'Full access', tone: 'success' as const }
+    }
+    if (access.uiMode === 'trial') {
+      const runLabel = trialRemaining === 1 ? 'run' : 'runs'
+      const totalSuffix = trialTotal > 0 ? `/${trialTotal}` : ''
+      return {
+        label: `Trial access · ${trialRemaining}${totalSuffix} ${runLabel} left`,
+        tone: 'accent' as const
+      }
+    }
+    return { label: 'Core features locked', tone: 'error' as const }
+  }, [access.uiMode, isAccessLoading, trialRemaining, trialTotal])
+
+  const accessStatusClasses = useMemo(() => {
+    switch (accessStatus.tone) {
+      case 'success':
+        return 'border-[color:var(--success-strong)] bg-[color:color-mix(in_srgb,var(--success-soft)_55%,transparent)] text-[color:var(--success-strong)]'
+      case 'accent':
+        return 'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent)_18%,transparent)] text-[color:var(--accent)]'
+      case 'error':
+        return 'border-[color:var(--error-strong)] bg-[color:color-mix(in_srgb,var(--error-soft)_55%,transparent)] text-[color:var(--error-strong)]'
+      default:
+        return 'border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_55%,transparent)] text-[color:var(--muted)]'
+    }
+  }, [accessStatus.tone])
+
+  const primaryButtonLabel = access.isEntitled ? 'Manage subscription' : 'Subscribe'
+  const primaryButtonText = isPrimaryActionPending
+    ? access.isEntitled
+      ? 'Opening portal…'
+      : 'Opening checkout…'
+    : isAccessLoading
+      ? 'Checking access…'
+      : primaryButtonLabel
+  const primaryButtonDisabled = isPrimaryActionPending || isAccessLoading
+
+  const showTrialAction = !access.isEntitled && !access.isTrialExhausted
+  const trialButtonText = isTrialPending ? 'Activating trial…' : 'Use trial on next run'
+  const trialButtonDisabled = isTrialPending || isAccessLoading
+
+  const errorMessages = useMemo(() => {
+    const messages: string[] = []
+    if (primaryActionError && !messages.includes(primaryActionError)) {
+      messages.push(primaryActionError)
+    }
+    if (trialError && !messages.includes(trialError)) {
+      messages.push(trialError)
+    }
+    if (access.lastError && !messages.includes(access.lastError)) {
+      messages.push(access.lastError)
+    }
+    return messages
+  }, [access.lastError, primaryActionError, trialError])
+
+  const handlePrimaryAction = useCallback(async () => {
+    setPrimaryActionError(null)
+    setTrialError(null)
+    setTrialMessage(null)
+    setIsPrimaryActionPending(true)
+    try {
+      if (access.isEntitled) {
+        await accessStore.openPortal()
+      } else {
+        await accessStore.openCheckout()
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to open the billing flow. Please try again later.'
+      setPrimaryActionError(message)
+    } finally {
+      setIsPrimaryActionPending(false)
+    }
+  }, [access.isEntitled])
+
+  const handleUseTrial = useCallback(async () => {
+    setTrialError(null)
+    setPrimaryActionError(null)
+    setTrialMessage(null)
+    setIsTrialPending(true)
+    try {
+      await accessStore.startTrial()
+      const updatedTrial = accessStore.getSnapshot().entitlement?.trial ?? null
+      if (updatedTrial) {
+        const remainingRuns = Math.max(0, updatedTrial.remaining ?? 0)
+        const runLabel = remainingRuns === 1 ? 'run' : 'runs'
+        const totalRuns = Math.max(updatedTrial.total ?? updatedTrial.allowed ?? 0, remainingRuns)
+        const totalSuffix = totalRuns > 0 ? `/${totalRuns}` : ''
+        setTrialMessage(
+          remainingRuns > 0
+            ? `Trial ready. ${remainingRuns}${totalSuffix} ${runLabel} left.`
+            : 'Trial ready.'
+        )
+      } else {
+        setTrialMessage('Trial ready.')
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to activate the trial. Please try again later.'
+      setTrialError(message)
+    } finally {
+      setIsTrialPending(false)
+    }
+  }, [])
+
+  const openBenefitsPage = useCallback(() => {
+    const electronWindow = window as typeof window & {
+      electron?: { shell?: { openExternal: (url: string) => void } }
+    }
+    try {
+      if (electronWindow.electron?.shell?.openExternal) {
+        electronWindow.electron.shell.openExternal(PRICING_URL)
+        return
+      }
+    } catch (error) {
+      console.warn('Unable to open pricing page via shell.', error)
+    }
+    try {
+      window.open(PRICING_URL, '_blank', 'noopener')
+    } catch (error) {
+      console.warn('Unable to open pricing page.', error)
+    }
+  }, [])
 
   const handleCreateAccount = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -883,48 +1030,18 @@ const Profile: FC<ProfileProps> = ({
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold text-[var(--fg)]">Profile</h1>
-        <p className="text-sm text-[var(--muted)]">
-          Manage authenticated accounts and connect platforms for publishing. Accounts determine
-          where processed videos will be delivered.
-        </p>
+      <header className="flex flex-col gap-6">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-semibold text-[var(--fg)]">Profile</h1>
+          <p className="text-sm text-[var(--muted)]">
+            Manage authenticated accounts and connect platforms for publishing. Accounts determine
+            where processed videos will be delivered.
+          </p>
+        </div>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-6">
-          <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className={authStatusPill}>
-                  <span className={authStatusDot} aria-hidden="true" />
-                  {authStatus
-                    ? authStatus.message
-                    : (authError ?? 'Checking authentication status…')}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  void onRefreshAccounts()
-                }}
-                className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
-              >
-                Refresh
-              </button>
-            </div>
-            <div className="text-xs text-[var(--muted)]">
-              Connected platforms across {totalAccounts} {accountLabel}: {connectedPlatforms}/
-              {totalPlatforms}
-            </div>
-            {authError && !authStatus ? (
-              <p className="text-xs font-medium text-[color:var(--error-strong)]">{authError}</p>
-            ) : null}
-            {accountsError ? (
-              <p className="text-xs font-medium text-[color:var(--error-strong)]">{accountsError}</p>
-            ) : null}
-          </div>
-
           <form
             onSubmit={handleCreateAccount}
             className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6"
@@ -1000,28 +1117,124 @@ const Profile: FC<ProfileProps> = ({
           </div>
         </div>
 
-        <aside className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_50%,transparent)] p-6 text-sm text-[var(--muted)]">
-          <h3 className="text-base font-semibold text-[var(--fg)]">Supported platforms</h3>
-          <ul className="flex flex-col gap-3">
-            {SUPPORTED_PLATFORMS.map((platform) => (
-              <li
-                key={platform}
-                className="flex flex-col gap-1 rounded-lg border border-white/10 bg-black/20 p-3"
-              >
-                <span className="text-sm font-medium text-[var(--fg)]">
-                  {PLATFORM_LABELS[platform]}
-                </span>
-                <p>
-                  Tokens are stored under{' '}
-                  <code className="font-mono text-xs text-[var(--fg)]">
-                    tokens/&lt;account&gt;/{PLATFORM_TOKEN_FILES[platform]}
-                  </code>
-                  {'. '}
-                  Ensure credentials remain valid to publish successfully.
+        <aside className="flex flex-col gap-6">
+          <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_55%,transparent)] p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-base font-semibold text-[var(--fg)]">Access</h3>
+                <p className="text-xs text-[var(--muted)]">
+                  Pipelines stay locked until you subscribe or use your trial runs, but you can still browse the app.
                 </p>
-              </li>
+              </div>
+              <span
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${accessStatusClasses}`}
+              >
+                {accessStatus.label}
+              </span>
+            </div>
+            {access.entitlement?.email ? (
+              <p className="text-xs text-[var(--muted)]">Plan owner: {access.entitlement.email}</p>
+            ) : null}
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handlePrimaryAction}
+                className="marble-button marble-button--primary justify-center px-4 py-2 text-sm font-semibold"
+                disabled={primaryButtonDisabled}
+              >
+                {primaryButtonText}
+              </button>
+              {showTrialAction ? (
+                <button
+                  type="button"
+                  onClick={handleUseTrial}
+                  className="marble-button marble-button--outline justify-center px-4 py-1.5 text-sm font-semibold"
+                  disabled={trialButtonDisabled}
+                >
+                  {trialButtonText}
+                </button>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={openBenefitsPage}
+              className="self-start text-xs font-semibold text-[color:var(--accent)] underline-offset-4 transition hover:underline"
+            >
+              What do I get?
+            </button>
+            {trialSnapshot ? (
+              <p className="text-xs text-[var(--muted)]">
+                Trial usage: {trialRemaining}
+                {trialTotal > 0 ? `/${trialTotal}` : ''} {trialRemaining === 1 ? 'run' : 'runs'} left
+              </p>
+            ) : null}
+            {trialMessage ? (
+              <p className="text-xs font-medium text-[color:var(--accent)]">{trialMessage}</p>
+            ) : null}
+            {errorMessages.map((message) => (
+              <p key={message} className="text-xs font-medium text-[color:var(--error-strong)]">
+                {message}
+              </p>
             ))}
-          </ul>
+            <div className="h-px bg-white/10" />
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+                  {authStatus ? (
+                    <span className={authStatusPill}>
+                      <span className={authStatusDot} aria-hidden="true" />
+                      {authStatus.message}
+                    </span>
+                  ) : null}
+                  <span>
+                    Connected platforms across {totalAccounts} {accountLabel}: {connectedPlatforms}/
+                    {totalPlatforms}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onRefreshAccounts()
+                  }}
+                  className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
+                >
+                  Refresh
+                </button>
+              </div>
+              {authStatus ? null : (
+                <p className="text-xs text-[var(--muted)]">Checking authentication status…</p>
+              )}
+              {authError && authError !== access.lastError ? (
+                <p className="text-xs font-medium text-[color:var(--error-strong)]">{authError}</p>
+              ) : null}
+              {accountsError && accountsError !== authError && accountsError !== access.lastError ? (
+                <p className="text-xs font-medium text-[color:var(--error-strong)]">{accountsError}</p>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_50%,transparent)] p-6 text-sm text-[var(--muted)]">
+            <h3 className="text-base font-semibold text-[var(--fg)]">Supported platforms</h3>
+            <ul className="flex flex-col gap-3">
+              {SUPPORTED_PLATFORMS.map((platform) => (
+                <li
+                  key={platform}
+                  className="flex flex-col gap-1 rounded-lg border border-white/10 bg-black/20 p-3"
+                >
+                  <span className="text-sm font-medium text-[var(--fg)]">
+                    {PLATFORM_LABELS[platform]}
+                  </span>
+                  <p>
+                    Tokens are stored under{' '}
+                    <code className="font-mono text-xs text-[var(--fg)]">
+                      tokens/&lt;account&gt;/{PLATFORM_TOKEN_FILES[platform]}
+                    </code>
+                    {'. '}
+                    Ensure credentials remain valid to publish successfully.
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
         </aside>
       </div>
     </section>

@@ -5,6 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
 import { registerDeepLinks } from './deeplink'
 import { getDeviceHash, getDeviceId, getDeviceIdentityChannel } from '../lib/deviceId'
+import { accessStore } from '../lib/accessStore'
 
 type NavigationCommand = 'back' | 'forward'
 
@@ -112,6 +113,10 @@ app.whenReady().then(() => {
   // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
+  })
+
+  app.on('browser-window-focus', () => {
+    void accessStore.refresh()
   })
 
   // IPC test

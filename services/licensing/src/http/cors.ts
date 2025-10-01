@@ -23,17 +23,20 @@ export const parseAllowedOrigins = (
 };
 
 const resolveAllowedOrigin = (request: Request, allowedOrigins: string[]): string => {
+  const origin = request.headers.get("Origin");
+
   if (allowedOrigins.includes("*")) {
+    if (origin) {
+      return origin;
+    }
     return "*";
   }
-
-  const origin = request.headers.get("Origin");
 
   if (origin && allowedOrigins.includes(origin)) {
     return origin;
   }
 
-  return allowedOrigins[0] ?? "*";
+  return allowedOrigins[0] ?? (origin ?? "*");
 };
 
 const ensureVaryIncludesOrigin = (headers: Headers, allowOrigin: string): void => {

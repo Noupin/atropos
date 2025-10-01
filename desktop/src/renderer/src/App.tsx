@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { FC, RefObject } from 'react'
+import type { FC, RefObject, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import Search from './components/Search'
 import MarbleSelect from './components/MarbleSelect'
@@ -11,6 +11,7 @@ import Profile from './pages/Profile'
 import Settings, { type SettingsHeaderAction } from './pages/Settings'
 import { createInitialPipelineSteps } from './data/pipeline'
 import useNavigationHistory from './hooks/useNavigationHistory'
+import { useAccess } from './hooks/useAccess'
 import type {
   AccountSummary,
   AuthPingSummary,
@@ -101,8 +102,23 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [settingsHeaderAction, setSettingsHeaderAction] = useState<SettingsHeaderAction | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
+  const access = useAccess()
 
   useNavigationHistory()
+
+  useEffect(() => {
+    if (access.uiMode !== 'gated_profile') {
+      return
+    }
+    if (
+      location.pathname.startsWith('/profile') ||
+      location.pathname.startsWith('/settings') ||
+      location.pathname.startsWith('/library')
+    ) {
+      return
+    }
+    navigate('/profile', { replace: true })
+  }, [access.uiMode, location.pathname, navigate])
   const availableAccounts = useMemo(
     () =>
       accounts.filter(
@@ -376,12 +392,20 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   }, [])
 
   const navLinkClassName = useCallback(
-    ({ isActive }: { isActive: boolean }) =>
-      `group relative inline-flex h-10 items-center justify-center rounded-[14px] px-4 text-sm font-medium transition ${
-        isActive
-          ? 'bg-[color:color-mix(in_srgb,var(--panel-strong)_70%,transparent)] text-[var(--fg)] shadow-[0_10px_24px_rgba(43,42,40,0.12)]'
-          : 'text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_55%,transparent)] hover:text-[var(--fg)]'
-      }`,
+    ({ isActive, disabled }: { isActive: boolean; disabled?: boolean }) => {
+      const baseClasses =
+        'group relative inline-flex h-10 items-center justify-center rounded-[14px] px-4 text-sm font-medium transition'
+
+      if (disabled) {
+        return `${baseClasses} cursor-not-allowed text-[color:var(--muted)] opacity-60`
+      }
+
+      if (isActive) {
+        return `${baseClasses} bg-[color:color-mix(in_srgb,var(--panel-strong)_70%,transparent)] text-[var(--fg)] shadow-[0_10px_24px_rgba(43,42,40,0.12)]`
+      }
+
+      return `${baseClasses} text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_55%,transparent)] hover:text-[var(--fg)]`
+    },
     []
   )
 
@@ -389,6 +413,61 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const isClipEditRoute = /^\/clip\/[^/]+\/edit$/.test(location.pathname)
   const isSettingsRoute = location.pathname.startsWith('/settings')
   const showBackButton = location.pathname.startsWith('/clip/')
+
+  const navItems = useMemo(
+    () => [
+      { key: 'home', to: '/', label: 'Home', end: true, badge: null, requiresEntitlement: true },
+      {
+        key: 'library',
+        to: '/library',
+        label: 'Library',
+        badge: isClipEditRoute ? 'Edit mode' : null,
+        requiresEntitlement: false
+      },
+      { key: 'profile', to: '/profile', label: 'Profile', badge: null, requiresEntitlement: false },
+      { key: 'settings', to: '/settings', label: 'Settings', badge: null, requiresEntitlement: false }
+    ],
+    [isClipEditRoute]
+  )
+
+  const isGatedProfile = access.uiMode === 'gated_profile'
+
+  const trialRunsRemaining = Math.max(0, access.entitlement?.trial?.remaining ?? 0)
+  const trialRunsTotal = Math.max(
+    access.entitlement?.trial?.total ?? access.entitlement?.trial?.allowed ?? 0,
+    trialRunsRemaining
+  )
+
+  const navStatus = useMemo(() => {
+    if (access.status === 'loading') {
+      return { label: 'Checking plan…', tone: 'muted' as const }
+    }
+    if (access.uiMode === 'paid') {
+      return { label: 'Full access', tone: 'success' as const }
+    }
+    if (access.uiMode === 'trial') {
+      const runLabel = trialRunsRemaining === 1 ? 'run' : 'runs'
+      const totalSuffix = trialRunsTotal > 0 ? `/${trialRunsTotal}` : ''
+      return {
+        label: `Trial access · ${trialRunsRemaining}${totalSuffix} ${runLabel} left`,
+        tone: 'accent' as const
+      }
+    }
+    return { label: 'Core features locked', tone: 'error' as const }
+  }, [access.status, access.uiMode, trialRunsRemaining, trialRunsTotal])
+
+  const navStatusClass = useMemo(() => {
+    switch (navStatus.tone) {
+      case 'success':
+        return 'border-[color:var(--success-strong)] bg-[color:color-mix(in_srgb,var(--success-soft)_55%,transparent)] text-[color:var(--success-strong)]'
+      case 'accent':
+        return 'border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent)_18%,transparent)] text-[color:var(--accent)]'
+      case 'error':
+        return 'border-[color:var(--error-strong)] bg-[color:color-mix(in_srgb,var(--error-soft)_55%,transparent)] text-[color:var(--error-strong)]'
+      default:
+        return 'border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_55%,transparent)] text-[color:var(--muted)]'
+    }
+  }, [navStatus.tone])
 
   const accountSelectOptions = useMemo(() => {
     if (availableAccounts.length === 0) {
@@ -443,29 +522,63 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
               <h1 className="inline-flex items-center text-3xl font-semibold leading-none tracking-tight text-[var(--fg)]">
                 Atropos
               </h1>
-              <nav
-                aria-label="Primary navigation"
-                className="inline-flex h-12 items-center gap-2 rounded-[18px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] p-1 shadow-[0_18px_34px_rgba(43,42,40,0.16)] backdrop-blur"
-              >
-                <NavLink to="/" end className={navLinkClassName}>
-                  {({ isActive }) => <NavItemLabel label="Home" isActive={isActive} />}
-                </NavLink>
-                <NavLink to="/library" className={navLinkClassName}>
-                  {({ isActive }) => (
-                    <NavItemLabel
-                      label="Library"
-                      isActive={isActive}
-                      badge={isClipEditRoute ? 'Edit mode' : null}
-                    />
-                  )}
-                </NavLink>
-                <NavLink to="/profile" className={navLinkClassName}>
-                  {({ isActive }) => <NavItemLabel label="Profile" isActive={isActive} />}
-                </NavLink>
-                <NavLink to="/settings" className={navLinkClassName}>
-                  {({ isActive }) => <NavItemLabel label="Settings" isActive={isActive} />}
-                </NavLink>
-              </nav>
+              <div className="flex items-center gap-3">
+                <nav
+                  aria-label="Primary navigation"
+                  role="tablist"
+                  className="inline-flex h-12 items-center gap-2 rounded-[18px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] p-1 shadow-[0_18px_34px_rgba(43,42,40,0.16)] backdrop-blur"
+                >
+                  {navItems.map((item) => {
+                    const isDisabled = isGatedProfile && item.requiresEntitlement
+                    const handleClick = isDisabled
+                      ? (event: ReactMouseEvent<HTMLAnchorElement>) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                        }
+                      : undefined
+                    const handleKeyDown = isDisabled
+                      ? (event: ReactKeyboardEvent<HTMLAnchorElement>) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                          }
+                        }
+                      : undefined
+
+                    return (
+                      <NavLink
+                        key={item.key}
+                        to={item.to}
+                        end={Boolean(item.end)}
+                        className={({ isActive }) => navLinkClassName({ isActive, disabled: isDisabled })}
+                        role="tab"
+                        aria-disabled={isDisabled ? 'true' : undefined}
+                        onClick={handleClick}
+                        onKeyDown={handleKeyDown}
+                        title={
+                          isDisabled
+                            ? 'Unlock your plan or use trial runs to enable pipelines'
+                            : undefined
+                        }
+                      >
+                        {({ isActive }) => (
+                          <NavItemLabel
+                            label={item.label}
+                            isActive={isActive}
+                            badge={item.badge ?? null}
+                          />
+                        )}
+                      </NavLink>
+                    )
+                  })}
+                </nav>
+                <span
+                  role="status"
+                  aria-live="polite"
+                  className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${navStatusClass}`}
+                >
+                  {navStatus.label}
+                </span>
+              </div>
             </div>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
               {isLibraryRoute ? (
