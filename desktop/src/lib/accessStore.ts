@@ -1,5 +1,11 @@
 import type { Shell } from 'electron'
-import { ApiClient, ApiError, getDefaultApiClient, type Logger } from './apiClient'
+import {
+  ApiClient,
+  ApiError,
+  getDefaultApiClient,
+  type ApiEnvironment,
+  type Logger
+} from './apiClient'
 import { getDeviceHash } from './deviceId'
 
 export type AccessStatus = 'loading' | 'entitled' | 'not_entitled' | 'error'
@@ -253,6 +259,11 @@ const openExternalUrl = (url: string, logger: Logger): void => {
   }
 }
 
+const DEFAULT_APP_BASE_URLS: Record<ApiEnvironment, string> = {
+  dev: 'https://app.atropos.dev',
+  prod: 'https://app.atropos.video'
+}
+
 const resolveReturnUrl = (): string | null => {
   if (typeof window === 'undefined' || !window.location) {
     return null
@@ -265,6 +276,44 @@ const resolveReturnUrl = (): string | null => {
   } catch (error) {
     return null
   }
+}
+
+const normaliseHttpOrigin = (value: string | null): string | null => {
+  if (!isNonEmptyString(value)) {
+    return null
+  }
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return null
+    }
+    return url.origin
+  } catch (error) {
+    return null
+  }
+}
+
+const resolveAppBaseUrl = (client: ApiClient): string => {
+  const runtimeOrigin = normaliseHttpOrigin(resolveReturnUrl())
+  if (runtimeOrigin) {
+    return runtimeOrigin
+  }
+  const environment = client.getEnvironment()
+  return DEFAULT_APP_BASE_URLS[environment] ?? DEFAULT_APP_BASE_URLS.prod
+}
+
+const buildCheckoutRedirects = (
+  client: ApiClient
+): { successUrl: string; cancelUrl: string } => {
+  const baseUrl = resolveAppBaseUrl(client)
+  const successUrl = new URL('/profile?billing=success', baseUrl).toString()
+  const cancelUrl = new URL('/profile?billing=cancel', baseUrl).toString()
+  return { successUrl, cancelUrl }
+}
+
+const buildPortalReturnUrl = (client: ApiClient): string => {
+  const baseUrl = resolveAppBaseUrl(client)
+  return new URL('/settings', baseUrl).toString()
 }
 
 const computeIsEntitled = (entitlement: EntitlementSnapshot | null): boolean =>
@@ -594,9 +643,17 @@ export class AccessStore {
       throw new Error(message)
     }
     try {
-      const response = await this.client.post<CheckoutResponseBody>('/billing/checkout', {
-        device_hash: identity.deviceHash
-      })
+      const { successUrl, cancelUrl } = buildCheckoutRedirects(this.client)
+      const payload: Record<string, string> = {
+        device_hash: identity.deviceHash,
+        success_url: successUrl,
+        cancel_url: cancelUrl
+      }
+      const email = this.snapshot.entitlement?.email
+      if (isNonEmptyString(email)) {
+        payload.email = email
+      }
+      const response = await this.client.post<CheckoutResponseBody>('/billing/checkout', payload)
       if (!isNonEmptyString(response?.url)) {
         throw new Error('Checkout session URL is missing from the response.')
       }
@@ -617,12 +674,9 @@ export class AccessStore {
       throw new Error(message)
     }
     try {
-      const returnUrl = resolveReturnUrl()
       const payload: Record<string, string> = {
-        device_hash: identity.deviceHash
-      }
-      if (isNonEmptyString(returnUrl)) {
-        payload.return_url = returnUrl
+        device_hash: identity.deviceHash,
+        return_url: buildPortalReturnUrl(this.client)
       }
       const response = await this.client.post<PortalResponseBody>('/billing/portal', payload)
       if (!isNonEmptyString(response?.url)) {

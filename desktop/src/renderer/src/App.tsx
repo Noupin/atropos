@@ -110,7 +110,11 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     if (access.uiMode !== 'gated_profile') {
       return
     }
-    if (location.pathname.startsWith('/profile') || location.pathname.startsWith('/settings')) {
+    if (
+      location.pathname.startsWith('/profile') ||
+      location.pathname.startsWith('/settings') ||
+      location.pathname.startsWith('/library')
+    ) {
       return
     }
     navigate('/profile', { replace: true })
@@ -418,7 +422,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
         to: '/library',
         label: 'Library',
         badge: isClipEditRoute ? 'Edit mode' : null,
-        requiresEntitlement: true
+        requiresEntitlement: false
       },
       { key: 'profile', to: '/profile', label: 'Profile', badge: null, requiresEntitlement: false },
       { key: 'settings', to: '/settings', label: 'Settings', badge: null, requiresEntitlement: false }
