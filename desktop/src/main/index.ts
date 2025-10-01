@@ -1,5 +1,4 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
-import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -19,52 +18,13 @@ type NavigationState = {
 let mainWindow: BrowserWindow | null = null
 let navigationState: NavigationState = { canGoBack: false, canGoForward: false }
 
-interface TrialAutostartState {
-  deviceHash: string
-  completedAt: number
-}
-
 interface SubscriptionResponseBody {
   status?: string | null
   entitled?: boolean
 }
 
-const TRIAL_AUTOSTART_FILE = 'trial-autostart.json'
-
 let trialEnsured = false
 let trialEnsurePromise: Promise<void> | null = null
-
-const readTrialAutostartState = async (filePath: string): Promise<TrialAutostartState | null> => {
-  try {
-    const contents = await readFile(filePath, 'utf8')
-    if (!contents) {
-      return null
-    }
-    const payload = JSON.parse(contents) as {
-      deviceHash?: unknown
-      completedAt?: unknown
-    }
-    if (payload && typeof payload === 'object' && typeof payload.deviceHash === 'string') {
-      return {
-        deviceHash: payload.deviceHash,
-        completedAt: typeof payload.completedAt === 'number' ? payload.completedAt : Date.now()
-      }
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-      console.warn('Failed to read trial auto-start marker', error)
-    }
-  }
-  return null
-}
-
-const persistTrialAutostartState = async (filePath: string, state: TrialAutostartState): Promise<void> => {
-  try {
-    await writeFile(filePath, `${JSON.stringify(state)}\n`, 'utf8')
-  } catch (error) {
-    console.warn('Failed to persist trial auto-start marker', error)
-  }
-}
 
 const ensureTrial = async (): Promise<void> => {
   if (trialEnsured) {
@@ -79,19 +39,6 @@ const ensureTrial = async (): Promise<void> => {
       const deviceHash = await getDeviceHash()
       if (!deviceHash) {
         console.warn('Device hash is unavailable; skipping automatic trial start.')
-        return
-      }
-
-      const userDataPath = app.getPath('userData')
-      const markerPath = join(userDataPath, TRIAL_AUTOSTART_FILE)
-      const existingMarker = await readTrialAutostartState(markerPath)
-      if (existingMarker?.deviceHash === deviceHash) {
-        trialEnsured = true
-        try {
-          await accessStore.refresh({ force: true })
-        } catch (error) {
-          console.warn('Failed to refresh access store after loading trial marker', error)
-        }
         return
       }
 
@@ -116,18 +63,13 @@ const ensureTrial = async (): Promise<void> => {
         subscription.status !== null
       const isEntitled = subscription?.entitled === true
 
-      let ensureCompleted = false
-
-      if (isEntitled || hasSubscriptionStatus) {
-        ensureCompleted = true
-      } else {
+      if (!isEntitled && !hasSubscriptionStatus) {
         try {
           await client.post('/trial/start', { device_hash: deviceHash })
-          ensureCompleted = true
         } catch (error) {
           if (error instanceof ApiError) {
             if (error.status === 409 || error.status === 403) {
-              ensureCompleted = true
+              // Trial already exists or forbidden; treat as completion
             } else {
               throw error
             }
@@ -137,20 +79,12 @@ const ensureTrial = async (): Promise<void> => {
         }
       }
 
-      if (!ensureCompleted) {
-        return
-      }
-
       try {
         await accessStore.refresh({ force: true })
       } catch (error) {
         console.warn('Failed to refresh access store after ensuring trial', error)
       }
 
-      await persistTrialAutostartState(markerPath, {
-        deviceHash,
-        completedAt: Date.now()
-      })
       trialEnsured = true
     } catch (error) {
       console.warn('Unable to ensure trial entitlement on startup', error)
