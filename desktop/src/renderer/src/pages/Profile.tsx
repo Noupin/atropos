@@ -1042,41 +1042,6 @@ const Profile: FC<ProfileProps> = ({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-6">
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
-                {authStatus ? (
-                  <span className={authStatusPill}>
-                    <span className={authStatusDot} aria-hidden="true" />
-                    {authStatus.message}
-                  </span>
-                ) : null}
-                <span>
-                  Connected platforms across {totalAccounts} {accountLabel}: {connectedPlatforms}/
-                  {totalPlatforms}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  void onRefreshAccounts()
-                }}
-                className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
-              >
-                Refresh
-              </button>
-            </div>
-            {authStatus ? null : (
-              <p className="text-xs text-[var(--muted)]">Checking authentication status…</p>
-            )}
-            {authError && authError !== access.lastError ? (
-              <p className="text-xs font-medium text-[color:var(--error-strong)]">{authError}</p>
-            ) : null}
-            {accountsError && accountsError !== access.lastError ? (
-              <p className="text-xs font-medium text-[color:var(--error-strong)]">{accountsError}</p>
-            ) : null}
-          </div>
-
           <form
             onSubmit={handleCreateAccount}
             className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6"
@@ -1153,20 +1118,20 @@ const Profile: FC<ProfileProps> = ({
         </div>
 
         <aside className="flex flex-col gap-6">
-            <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_55%,transparent)] p-6">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex flex-col gap-1">
-                  <h3 className="text-base font-semibold text-[var(--fg)]">Access</h3>
-                  <p className="text-xs text-[var(--muted)]">
-                    Pipelines stay locked until you subscribe or use your trial runs, but you can still browse the app.
-                  </p>
-                </div>
-                <span
-                  className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${accessStatusClasses}`}
-                >
-                  {accessStatus.label}
-                </span>
+          <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_55%,transparent)] p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-base font-semibold text-[var(--fg)]">Access</h3>
+                <p className="text-xs text-[var(--muted)]">
+                  Pipelines stay locked until you subscribe or use your trial runs, but you can still browse the app.
+                </p>
               </div>
+              <span
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${accessStatusClasses}`}
+              >
+                {accessStatus.label}
+              </span>
+            </div>
             {access.entitlement?.email ? (
               <p className="text-xs text-[var(--muted)]">Plan owner: {access.entitlement.email}</p>
             ) : null}
@@ -1190,12 +1155,6 @@ const Profile: FC<ProfileProps> = ({
                 </button>
               ) : null}
             </div>
-            {trialSnapshot ? (
-              <p className="text-xs text-[var(--muted)]">
-                Trial usage: {trialRemaining}
-                {trialTotal > 0 ? `/${trialTotal}` : ''} {trialRemaining === 1 ? 'run' : 'runs'} left
-              </p>
-            ) : null}
             <button
               type="button"
               onClick={openBenefitsPage}
@@ -1203,6 +1162,12 @@ const Profile: FC<ProfileProps> = ({
             >
               What do I get?
             </button>
+            {trialSnapshot ? (
+              <p className="text-xs text-[var(--muted)]">
+                Trial usage: {trialRemaining}
+                {trialTotal > 0 ? `/${trialTotal}` : ''} {trialRemaining === 1 ? 'run' : 'runs'} left
+              </p>
+            ) : null}
             {trialMessage ? (
               <p className="text-xs font-medium text-[color:var(--accent)]">{trialMessage}</p>
             ) : null}
@@ -1211,6 +1176,41 @@ const Profile: FC<ProfileProps> = ({
                 {message}
               </p>
             ))}
+            <div className="h-px bg-white/10" />
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+                  {authStatus ? (
+                    <span className={authStatusPill}>
+                      <span className={authStatusDot} aria-hidden="true" />
+                      {authStatus.message}
+                    </span>
+                  ) : null}
+                  <span>
+                    Connected platforms across {totalAccounts} {accountLabel}: {connectedPlatforms}/
+                    {totalPlatforms}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onRefreshAccounts()
+                  }}
+                  className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
+                >
+                  Refresh
+                </button>
+              </div>
+              {authStatus ? null : (
+                <p className="text-xs text-[var(--muted)]">Checking authentication status…</p>
+              )}
+              {authError && authError !== access.lastError ? (
+                <p className="text-xs font-medium text-[color:var(--error-strong)]">{authError}</p>
+              ) : null}
+              {accountsError && accountsError !== authError && accountsError !== access.lastError ? (
+                <p className="text-xs font-medium text-[color:var(--error-strong)]">{accountsError}</p>
+              ) : null}
+            </div>
           </div>
           <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_50%,transparent)] p-6 text-sm text-[var(--muted)]">
             <h3 className="text-base font-semibold text-[var(--fg)]">Supported platforms</h3>
