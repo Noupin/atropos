@@ -54,19 +54,43 @@ const loadElectronApp = (): App | null => {
   return null
 }
 
-const loadFs = (): FileSystem | null => {
+const loadModule = <T>(specifiers: string[], loader: (req: NodeRequire, specifier: string) => T): T | null => {
   const req = getRequire()
   if (!req) return null
-  try {
-    return req('node:fs') as FileSystem
-  } catch (_) {
-    return null
+
+  for (const specifier of specifiers) {
+    try {
+      const module = loader(req, specifier)
+      if (module) {
+        return module
+      }
+    } catch (_) {
+      // Continue trying the remaining specifiers.
+    }
   }
+
+  return null
 }
 
+const loadFs = (): FileSystem | null =>
+  loadModule<FileSystem>(['node:fs', 'fs'], (req, specifier) => req(specifier) as FileSystem)
+
+const loadNodeCrypto = (): (typeof import('node:crypto')) | null =>
+  loadModule<typeof import('node:crypto')>(['node:crypto', 'crypto'], (req, specifier) => {
+    const module = req(specifier) as typeof import('node:crypto')
+    return module ?? null
+  })
+
 const ensureDirectory = (fs: FileSystem, filePath: string): void => {
-  const req = getRequire()
-  const { dirname } = req?.('node:path') as typeof import('node:path')
+  const pathModule = loadModule<typeof import('node:path')>(['node:path', 'path'], (req, specifier) =>
+    req(specifier) as typeof import('node:path')
+  )
+  const dirname =
+    pathModule?.dirname ??
+    ((value: string): string => {
+      const match = value.match(/^(.*)[/\\][^/\\]*$/)
+      return match ? match[1] : ''
+    })
   const directory = dirname(filePath)
   try {
     fs.mkdirSync(directory, { recursive: true })
@@ -97,11 +121,22 @@ const writeDeviceIdToDisk = (fs: FileSystem, filePath: string, value: string): v
 
 // Node-only hash (main/preload)
 const computeHashNode = (value: string): string => {
-  const req = getRequire()
-  const { createHash } = req?.('node:crypto') as typeof import('node:crypto')
-  const hash = createHash('sha256')
-  hash.update(value)
-  return hash.digest('hex')
+  const nodeCrypto = loadNodeCrypto()
+  if (nodeCrypto?.createHash) {
+    const hash = nodeCrypto.createHash('sha256')
+    hash.update(value)
+    return hash.digest('hex')
+  }
+
+  // Fallback: return a deterministic-but-weak hash to avoid crashes when `node:crypto`
+  // is unavailable (e.g., during tests running in sandboxed contexts).
+  let hash = 0
+  for (let i = 0; i < value.length; i += 1) {
+    const char = value.charCodeAt(i)
+    hash = (hash << 5) - hash + char
+    hash |= 0 // Convert to 32-bit integer
+  }
+  return Math.abs(hash).toString(16)
 }
 
 // Browser/WebCrypto hash (renderer)
@@ -120,18 +155,25 @@ const resolveIdentityFromMainProcess = (): { deviceId: string; deviceHash: strin
   const fs = loadFs()
   if (!app || !fs) return null
 
-  const req = getRequire()
-  const { join } = req?.('node:path') as typeof import('node:path')
+  const pathModule = loadModule<typeof import('node:path')>(['node:path', 'path'], (req, specifier) =>
+    req(specifier) as typeof import('node:path')
+  )
+  const join = pathModule?.join ?? ((...segments: string[]): string => segments.join('/'))
 
   const userDataPath = app.getPath('userData')
   const filePath = join(userDataPath, ID_FILE_NAME)
 
   // Use Node crypto APIs in main
-  const { randomUUID } = req?.('node:crypto') as typeof import('node:crypto')
+  const nodeCrypto = loadNodeCrypto()
+  const fallbackRandomUUID = (): string =>
+    typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now()}.${Math.random()}`
 
   let deviceId = readDeviceIdFromDisk(fs, filePath)
   if (!deviceId) {
-    deviceId = typeof randomUUID === 'function' ? randomUUID() : `${Date.now()}.${Math.random()}`
+    const random = nodeCrypto?.randomUUID ?? fallbackRandomUUID
+    deviceId = random()
     writeDeviceIdToDisk(fs, filePath, deviceId)
   }
 
@@ -182,10 +224,13 @@ const resolveIdentity = async (): Promise<{ deviceId: string; deviceHash: string
     }
 
     // Node context fallback
-    const req = getRequire()
-    const { randomUUID } = req?.('node:crypto') as typeof import('node:crypto')
-    const deviceId =
-      typeof randomUUID === 'function' ? randomUUID() : `${Date.now()}.${Math.random()}`
+    const nodeCrypto = loadNodeCrypto()
+    const random = nodeCrypto?.randomUUID ??
+      (() =>
+        typeof globalThis.crypto?.randomUUID === 'function'
+          ? globalThis.crypto.randomUUID()
+          : `${Date.now()}.${Math.random()}`)
+    const deviceId = random()
     const deviceHash = computeHashNode(deviceId)
     cachedDeviceId = deviceId
     cachedDeviceHash = deviceHash
