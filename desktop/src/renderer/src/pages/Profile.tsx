@@ -1042,14 +1042,18 @@ const Profile: FC<ProfileProps> = ({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-6">
-          <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6">
+          <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className={authStatusPill}>
-                  <span className={authStatusDot} aria-hidden="true" />
-                  {authStatus
-                    ? authStatus.message
-                    : (authError ?? 'Checking authentication status…')}
+              <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+                {authStatus ? (
+                  <span className={authStatusPill}>
+                    <span className={authStatusDot} aria-hidden="true" />
+                    {authStatus.message}
+                  </span>
+                ) : null}
+                <span>
+                  Connected platforms across {totalAccounts} {accountLabel}: {connectedPlatforms}/
+                  {totalPlatforms}
                 </span>
               </div>
               <button
@@ -1062,14 +1066,13 @@ const Profile: FC<ProfileProps> = ({
                 Refresh
               </button>
             </div>
-            <div className="text-xs text-[var(--muted)]">
-              Connected platforms across {totalAccounts} {accountLabel}: {connectedPlatforms}/
-              {totalPlatforms}
-            </div>
-            {authError && !authStatus ? (
+            {authStatus ? null : (
+              <p className="text-xs text-[var(--muted)]">Checking authentication status…</p>
+            )}
+            {authError && authError !== access.lastError ? (
               <p className="text-xs font-medium text-[color:var(--error-strong)]">{authError}</p>
             ) : null}
-            {accountsError ? (
+            {accountsError && accountsError !== access.lastError ? (
               <p className="text-xs font-medium text-[color:var(--error-strong)]">{accountsError}</p>
             ) : null}
           </div>
