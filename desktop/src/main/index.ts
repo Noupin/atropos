@@ -6,6 +6,7 @@ import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
 import { registerDeepLinks } from './deeplink'
 import { getDeviceHash, getDeviceId, getDeviceIdentityChannel } from '../lib/deviceId'
 import { accessStore } from '../lib/accessStore'
+import { ApiError, getDefaultApiClient } from '../lib/apiClient'
 
 type NavigationCommand = 'back' | 'forward'
 
@@ -16,6 +17,84 @@ type NavigationState = {
 
 let mainWindow: BrowserWindow | null = null
 let navigationState: NavigationState = { canGoBack: false, canGoForward: false }
+
+interface SubscriptionResponseBody {
+  status?: string | null
+  entitled?: boolean
+}
+
+let trialEnsured = false
+let trialEnsurePromise: Promise<void> | null = null
+
+const ensureTrial = async (): Promise<void> => {
+  if (trialEnsured) {
+    return
+  }
+  if (trialEnsurePromise) {
+    return trialEnsurePromise
+  }
+
+  trialEnsurePromise = (async () => {
+    try {
+      const deviceHash = await getDeviceHash()
+      if (!deviceHash) {
+        console.warn('Device hash is unavailable; skipping automatic trial start.')
+        return
+      }
+
+      const client = getDefaultApiClient()
+
+      let subscription: SubscriptionResponseBody | null = null
+      try {
+        subscription = await client.get<SubscriptionResponseBody>('/billing/subscription', {
+          query: { device_hash: deviceHash }
+        })
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          subscription = null
+        } else {
+          throw error
+        }
+      }
+
+      const hasSubscriptionStatus =
+        subscription !== null &&
+        subscription.status !== undefined &&
+        subscription.status !== null
+      const isEntitled = subscription?.entitled === true
+
+      if (!isEntitled && !hasSubscriptionStatus) {
+        try {
+          await client.post('/trial/start', { device_hash: deviceHash })
+        } catch (error) {
+          if (error instanceof ApiError) {
+            if (error.status === 409 || error.status === 403) {
+              // Trial already exists or forbidden; treat as completion
+            } else {
+              throw error
+            }
+          } else {
+            throw error
+          }
+        }
+      }
+
+      try {
+        await accessStore.refresh({ force: true })
+      } catch (error) {
+        console.warn('Failed to refresh access store after ensuring trial', error)
+      }
+
+      trialEnsured = true
+    } catch (error) {
+      console.warn('Unable to ensure trial entitlement on startup', error)
+    }
+  })().finally(() => {
+    trialEnsurePromise = null
+  })
+
+  return trialEnsurePromise
+}
 
 const sendNavigationCommand = (direction: NavigationCommand): void => {
   if (!mainWindow) {
@@ -103,7 +182,7 @@ function createWindow(): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Set app user model id for windows
   app.setName('Atropos')
   electronApp.setAppUserModelId('com.atropos.app')
@@ -162,6 +241,8 @@ app.whenReady().then(() => {
       return false
     }
   })
+
+  await ensureTrial()
 
   createWindow()
 

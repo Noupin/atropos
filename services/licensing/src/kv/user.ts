@@ -92,6 +92,7 @@ export const mutateDeviceRecord = async (
   const eventTimestamp = options.eventTimestamp;
 
   let existing = await getDeviceRecord(kv, deviceHash);
+  let shouldPersistBaseline = false;
 
   if (!existing && options.legacyUserId) {
     const legacy = await resolveRecordByLegacyUserId(kv, options.legacyUserId);
@@ -105,13 +106,18 @@ export const mutateDeviceRecord = async (
 
   if (!existing) {
     existing = { ...createDefaultUserRecord(now), device_hash: deviceHash };
+    shouldPersistBaseline = true;
   } else if (!existing.device_hash) {
     existing = { ...existing, device_hash: deviceHash };
+    shouldPersistBaseline = true;
   }
 
   const updates = await mutation({ current: existing, now, eventTimestamp });
 
   if (!updates) {
+    if (shouldPersistBaseline) {
+      await putDeviceRecord(kv, deviceHash, existing);
+    }
     if (options.legacyUserId) {
       await linkLegacyUserId(kv, options.legacyUserId, deviceHash);
     }
@@ -127,19 +133,21 @@ export const mutateDeviceRecord = async (
 
   const merged = mergeUserRecord(existing, normalizedUpdates);
 
-  if (!hasMeaningfulChanges(existing, merged)) {
+  const hasChanges = hasMeaningfulChanges(existing, merged);
+
+  if (!hasChanges && !shouldPersistBaseline) {
     if (options.legacyUserId) {
       await linkLegacyUserId(kv, options.legacyUserId, deviceHash);
     }
     return existing;
   }
 
-  await putDeviceRecord(kv, deviceHash, merged);
+  await putDeviceRecord(kv, deviceHash, hasChanges ? merged : existing);
   if (options.legacyUserId) {
     await linkLegacyUserId(kv, options.legacyUserId, deviceHash);
   }
 
-  return merged;
+  return hasChanges ? merged : existing;
 };
 
 export const findDeviceHashByStripeCustomerId = findDeviceByStripeCustomerId;
