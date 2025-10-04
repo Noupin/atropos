@@ -51,7 +51,8 @@ Set `VITE_LICENSE_API_BASE_URL` in the desktop `.env` to select the host. The wo
 
 - Run unit tests with `npm test` inside `services/licensing` (todo: add coverage harness).
 - Use `wrangler dev` for local testing; provide mock secrets via `.dev.vars`.
-- Deploy with `wrangler deploy --env dev` or `--env production` depending on the target workspace.
+- Deploy with `npx wrangler deploy --env dev` or `--env production` from `services/licensing/`.
+- When invoking Wrangler from the repository root, pass `--config services/licensing/wrangler.toml` so it loads the entrypoint and `[env.dev]` configuration instead of falling back to defaults (which triggers "Missing entry-point" errors).
 
 ## Curl examples
 

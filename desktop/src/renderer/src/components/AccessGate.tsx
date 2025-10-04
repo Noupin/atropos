@@ -5,9 +5,10 @@ type AccessGateProps = {
   status: AccessStatus
   error?: string | null
   onRetry?: () => void
+  onSubscribe?: () => void
 }
 
-const AccessGate: FC<AccessGateProps> = ({ status, error, onRetry }) => {
+const AccessGate: FC<AccessGateProps> = ({ status, error, onRetry, onSubscribe }) => {
   if (status === 'loading') {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -31,15 +32,26 @@ const AccessGate: FC<AccessGateProps> = ({ status, error, onRetry }) => {
         {error ? (
           <p className="mt-4 text-xs text-[color:var(--warning-strong)]">{error}</p>
         ) : null}
-        {onRetry ? (
-          <button
-            type="button"
-            onClick={onRetry}
-            className="mt-6 inline-flex items-center justify-center rounded-[14px] bg-[color:var(--accent)] px-5 py-2 text-sm font-semibold text-[color:var(--accent-contrast)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] transition hover:-translate-y-0.5 hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)]"
-          >
-            Retry access check
-          </button>
-        ) : null}
+        <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+          {onSubscribe ? (
+            <button
+              type="button"
+              onClick={onSubscribe}
+              className="inline-flex items-center justify-center rounded-[14px] bg-[color:var(--accent)] px-5 py-2 text-sm font-semibold text-[color:var(--accent-contrast)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] transition hover:-translate-y-0.5 hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)]"
+            >
+              Subscribe now
+            </button>
+          ) : null}
+          {onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex items-center justify-center rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:var(--panel)] px-5 py-2 text-sm font-semibold text-[var(--fg)] shadow-[0_12px_22px_rgba(43,42,40,0.1)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_80%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)]"
+            >
+              Retry access check
+            </button>
+          ) : null}
+        </div>
       </div>
     </div>
   )

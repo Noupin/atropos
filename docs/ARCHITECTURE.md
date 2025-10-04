@@ -46,6 +46,7 @@ Atropos is composed of three cooperating runtimes:
 
 - `VITE_API_BASE_URL` → Desktop → Python HTTP target (default dev: `http://127.0.0.1:8787`, packaged: `https://api.atropos.dev`/`.com`).
 - `VITE_LICENSE_API_BASE_URL` → Desktop → Cloudflare Worker host (dev: `https://licensing.dev.atropos.workers.dev`, prod: `https://licensing.atropos.app`).
+- `VITE_SUBSCRIPTION_URL` → Desktop → External purchase or billing portal link surfaced when access lapses.
 - `SERVER_ENV` / `ENVIRONMENT` → Python services → selects credentials in `server/config.py` and toggles webhook hosts.
 - `LICENSING_ENV` → Worker → selects Stripe keys and KV namespace bindings.
 

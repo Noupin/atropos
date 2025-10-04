@@ -10,6 +10,7 @@ Create a `.env` file in `desktop/` or export variables before running:
 | --- | --- | --- | --- |
 | `VITE_API_BASE_URL` | Base URL for Python services | `http://127.0.0.1:8787` (FastAPI dev server) | Set to hosted API (`https://api.atropos.dev`/`.com`). Never ship with `localhost`. |
 | `VITE_LICENSE_API_BASE_URL` | Licensing worker host | `https://licensing.dev.atropos.workers.dev` | Use production worker host. |
+| `VITE_SUBSCRIPTION_URL` | Subscription management or checkout link | `https://atropos-video.com/subscribe` | Point to your live billing or sales page. |
 | `VITE_BACKEND_MODE` | `api` (default) or `mock` for demo data | `api` | Leave unset in packaged builds. |
 | `VITE_RELEASE_CHANNEL` | `dev`, `beta`, or `stable` channel metadata | `dev` | Set via CI during release pipelines. |
 

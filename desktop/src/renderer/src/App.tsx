@@ -14,6 +14,7 @@ import Settings, { type SettingsHeaderAction } from './pages/Settings'
 import { createInitialPipelineSteps } from './data/pipeline'
 import useNavigationHistory from './hooks/useNavigationHistory'
 import { useAccess } from './hooks/useAccess'
+import { getSubscriptionUrl } from './config/subscription'
 import type {
   AccountSummary,
   AuthPingSummary,
@@ -39,6 +40,7 @@ type PlatformPayload = {
 }
 
 const THEME_STORAGE_KEY = 'atropos:theme'
+const ACCESS_ALLOWLIST_PREFIXES = ['/library', '/profile', '/settings']
 
 const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
@@ -106,6 +108,20 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const navigate = useNavigate()
   const { status: accessStatus, remainingRuns, loading: isAccessLoading, error: accessError, refresh: refreshAccess } =
     useAccess()
+  const subscriptionUrl = useMemo(() => getSubscriptionUrl(), [])
+  const handleSubscribe = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    window.open(subscriptionUrl, '_blank', 'noopener,noreferrer')
+  }, [subscriptionUrl])
+  const canNavigateWithoutAccess = useCallback(
+    (targetPath: string) =>
+      ACCESS_ALLOWLIST_PREFIXES.some(
+        (prefix) => targetPath === prefix || targetPath.startsWith(prefix.endsWith('/') ? prefix : `${prefix}/`)
+      ),
+    []
+  )
 
   useNavigationHistory()
   const availableAccounts = useMemo(
@@ -391,12 +407,33 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   )
 
   const isAccessAllowed = accessStatus === 'active' || accessStatus === 'trial'
-  const shouldDisableNavigation = !isAccessAllowed
+  const isAccessRestricted = !isAccessAllowed
+  const shouldBlockAccessControlledUi = isAccessLoading || isAccessRestricted
+  const shouldDisableNav = useCallback(
+    (targetPath: string) => isAccessLoading || (isAccessRestricted && !canNavigateWithoutAccess(targetPath)),
+    [canNavigateWithoutAccess, isAccessLoading, isAccessRestricted]
+  )
 
   const isLibraryRoute = location.pathname.startsWith('/library')
   const isClipEditRoute = /^\/clip\/[^/]+\/edit$/.test(location.pathname)
   const isSettingsRoute = location.pathname.startsWith('/settings')
   const showBackButton = location.pathname.startsWith('/clip/')
+  const disableHomeNav = shouldDisableNav('/')
+  const disableLibraryNav = shouldDisableNav('/library')
+  const disableProfileNav = shouldDisableNav('/profile')
+  const disableSettingsNav = shouldDisableNav('/settings')
+  const showSubscribeCta = !isAccessLoading && accessStatus === 'required'
+  const renderRestrictedAccess = useCallback(
+    () => (
+      <AccessGate
+        status="required"
+        error={accessError}
+        onRetry={refreshAccess}
+        onSubscribe={handleSubscribe}
+      />
+    ),
+    [accessError, handleSubscribe, refreshAccess]
+  )
 
   const accountSelectOptions = useMemo(() => {
     if (availableAccounts.length === 0) {
@@ -460,12 +497,12 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                   end
                   className={({ isActive }) =>
                     `${navLinkClassName({ isActive })} ${
-                      shouldDisableNavigation ? 'pointer-events-none opacity-60' : ''
+                      disableHomeNav ? 'pointer-events-none opacity-60' : ''
                     }`
                   }
-                  onClick={shouldDisableNavigation ? (event) => event.preventDefault() : undefined}
-                  aria-disabled={shouldDisableNavigation}
-                  tabIndex={shouldDisableNavigation ? -1 : undefined}
+                  onClick={disableHomeNav ? (event) => event.preventDefault() : undefined}
+                  aria-disabled={disableHomeNav}
+                  tabIndex={disableHomeNav ? -1 : undefined}
                 >
                   {({ isActive }) => <NavItemLabel label="Home" isActive={isActive} />}
                 </NavLink>
@@ -473,12 +510,12 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                   to="/library"
                   className={({ isActive }) =>
                     `${navLinkClassName({ isActive })} ${
-                      shouldDisableNavigation ? 'pointer-events-none opacity-60' : ''
+                      disableLibraryNav ? 'pointer-events-none opacity-60' : ''
                     }`
                   }
-                  onClick={shouldDisableNavigation ? (event) => event.preventDefault() : undefined}
-                  aria-disabled={shouldDisableNavigation}
-                  tabIndex={shouldDisableNavigation ? -1 : undefined}
+                  onClick={disableLibraryNav ? (event) => event.preventDefault() : undefined}
+                  aria-disabled={disableLibraryNav}
+                  tabIndex={disableLibraryNav ? -1 : undefined}
                 >
                   {({ isActive }) => (
                     <NavItemLabel
@@ -492,12 +529,12 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                   to="/profile"
                   className={({ isActive }) =>
                     `${navLinkClassName({ isActive })} ${
-                      shouldDisableNavigation ? 'pointer-events-none opacity-60' : ''
+                      disableProfileNav ? 'pointer-events-none opacity-60' : ''
                     }`
                   }
-                  onClick={shouldDisableNavigation ? (event) => event.preventDefault() : undefined}
-                  aria-disabled={shouldDisableNavigation}
-                  tabIndex={shouldDisableNavigation ? -1 : undefined}
+                  onClick={disableProfileNav ? (event) => event.preventDefault() : undefined}
+                  aria-disabled={disableProfileNav}
+                  tabIndex={disableProfileNav ? -1 : undefined}
                 >
                   {({ isActive }) => <NavItemLabel label="Profile" isActive={isActive} />}
                 </NavLink>
@@ -505,17 +542,28 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                   to="/settings"
                   className={({ isActive }) =>
                     `${navLinkClassName({ isActive })} ${
-                      shouldDisableNavigation ? 'pointer-events-none opacity-60' : ''
+                      disableSettingsNav ? 'pointer-events-none opacity-60' : ''
                     }`
                   }
-                  onClick={shouldDisableNavigation ? (event) => event.preventDefault() : undefined}
-                  aria-disabled={shouldDisableNavigation}
-                  tabIndex={shouldDisableNavigation ? -1 : undefined}
+                  onClick={disableSettingsNav ? (event) => event.preventDefault() : undefined}
+                  aria-disabled={disableSettingsNav}
+                  tabIndex={disableSettingsNav ? -1 : undefined}
                 >
                   {({ isActive }) => <NavItemLabel label="Settings" isActive={isActive} />}
                 </NavLink>
               </nav>
-              <AccessBadge status={accessStatus} remainingRuns={remainingRuns} />
+              <div className="flex items-center gap-2">
+                <AccessBadge status={accessStatus} remainingRuns={remainingRuns} />
+                {showSubscribeCta ? (
+                  <button
+                    type="button"
+                    onClick={handleSubscribe}
+                    className="inline-flex items-center justify-center rounded-[14px] bg-[color:var(--accent)] px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[color:var(--accent-contrast)] shadow-[0_10px_18px_rgba(43,42,40,0.16)] transition hover:-translate-y-0.5 hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)]"
+                  >
+                    Subscribe
+                  </button>
+                ) : null}
+              </div>
             </div>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
               {isLibraryRoute ? (
@@ -524,7 +572,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                     ref={searchInputRef}
                     value={searchValue}
                     onChange={handleSearchChange}
-                    disabled={!searchBridge || shouldDisableNavigation}
+                    disabled={!searchBridge || isAccessLoading}
                   />
                 </div>
               ) : null}
@@ -557,7 +605,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                           : 'Select an account'
                     }
                     disabled={
-                      isLoadingAccounts || accountSelectOptions.length === 0 || shouldDisableNavigation
+                      isLoadingAccounts || accountSelectOptions.length === 0 || shouldBlockAccessControlledUi
                     }
                   />
                 </div>
@@ -577,21 +625,25 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       <main className="flex-1 bg-[var(--bg)] text-[var(--fg)]">
         {isAccessLoading ? (
           <AccessGate status="loading" />
-        ) : isAccessAllowed ? (
+        ) : (
           <Routes>
             <Route
               path="/"
               element={
-                <Home
-                  registerSearch={registerSearch}
-                  initialState={homeState}
-                  onStateChange={setHomeState}
-                  accounts={accounts}
-                />
+                isAccessAllowed ? (
+                  <Home
+                    registerSearch={registerSearch}
+                    initialState={homeState}
+                    onStateChange={setHomeState}
+                    accounts={accounts}
+                  />
+                ) : (
+                  renderRestrictedAccess()
+                )
               }
             />
             <Route
-              path="/library"
+              path="/library/*"
               element={
                 <Library
                   registerSearch={registerSearch}
@@ -600,10 +652,20 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 />
               }
             />
-            <Route path="/clip/:id" element={<ClipPage registerSearch={registerSearch} />} />
-            <Route path="/clip/:id/edit" element={<ClipEdit registerSearch={registerSearch} />} />
             <Route
-              path="/settings"
+              path="/clip/:id"
+              element={
+                isAccessAllowed ? <ClipPage registerSearch={registerSearch} /> : renderRestrictedAccess()
+              }
+            />
+            <Route
+              path="/clip/:id/edit"
+              element={
+                isAccessAllowed ? <ClipEdit registerSearch={registerSearch} /> : renderRestrictedAccess()
+              }
+            />
+            <Route
+              path="/settings/*"
               element={
                 <Settings
                   registerSearch={registerSearch}
@@ -613,7 +675,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
               }
             />
             <Route
-              path="/profile"
+              path="/profile/*"
               element={
                 <Profile
                   registerSearch={registerSearch}
@@ -635,17 +697,19 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
             <Route
               path="*"
               element={
-                <Home
-                  registerSearch={registerSearch}
-                  initialState={homeState}
-                  onStateChange={setHomeState}
-                  accounts={accounts}
-                />
+                isAccessAllowed ? (
+                  <Home
+                    registerSearch={registerSearch}
+                    initialState={homeState}
+                    onStateChange={setHomeState}
+                    accounts={accounts}
+                  />
+                ) : (
+                  renderRestrictedAccess()
+                )
               }
             />
           </Routes>
-        ) : (
-          <AccessGate status="required" error={accessError} onRetry={refreshAccess} />
         )}
       </main>
     </div>
