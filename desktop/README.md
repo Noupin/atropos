@@ -13,7 +13,7 @@ Create a `.env` file in `desktop/` or export variables before running:
 | `VITE_BACKEND_MODE` | `api` (default) or `mock` for demo data | `api` | Leave unset in packaged builds. |
 | `VITE_RELEASE_CHANNEL` | `dev`, `beta`, or `stable` channel metadata | `dev` | Set via CI during release pipelines. |
 
-The renderer and the access overlay both call the licensing service through the same helper in `src/renderer/src/services/licensing.ts`. Updating entitlement logic here automatically keeps the overlay badge and the UI snapshot in sync—do not fork this logic elsewhere.
+The renderer and the global access store both call the licensing service through the helpers in `src/renderer/src/services/accessApi.ts`, which are consumed by `src/renderer/src/providers/AccessProvider.tsx`. Updating entitlement logic there automatically keeps the badge, navigation state, and gated routes in sync—do not fork this logic elsewhere.
 
 ## Project setup
 
@@ -50,12 +50,12 @@ CI injects the correct `VITE_*` values for production builds. Manual builds shou
 - Add service adapters under `src/renderer/src/services/featureName.ts` that encapsulate API calls. Reuse the entitlement helpers from `licensing.ts` for access gating.
 - When introducing cross-cutting state, create a dedicated store module (e.g., `src/renderer/src/stores/featureName.ts`) instead of expanding existing stores beyond a single responsibility.
 
-## Access overlay
+## Access indicator
 
-The access overlay widget (the badge that reflects entitlement status) reads from the same licensing snapshot used by the renderer. If you introduce new access control states:
+The access badge pinned in the header and the gated route wrapper derive their state from `AccessProvider`. If you introduce new access control states:
 
-1. Extend `src/renderer/src/services/licensing.ts` to expose the new status.
-2. Update the overlay component under `src/renderer/src/components/AccessOverlay` to render it.
-3. Add tests or storybook stories alongside the component.
+1. Extend `src/renderer/src/services/accessApi.ts` and `src/renderer/src/providers/AccessProvider.tsx` with the new fields.
+2. Update the badge (`src/renderer/src/components/AccessBadge.tsx`) and gate (`src/renderer/src/components/AccessGate.tsx`) to display the state.
+3. Add tests or storybook stories alongside the new UI states.
 
-Avoid duplicating entitlement fetches or caching logic elsewhere.
+Avoid duplicating licensing fetches or caching logic outside of the provider.

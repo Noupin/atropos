@@ -3,6 +3,8 @@ import type { FC, RefObject } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import Search from './components/Search'
 import MarbleSelect from './components/MarbleSelect'
+import AccessBadge from './components/AccessBadge'
+import AccessGate from './components/AccessGate'
 import ClipPage from './pages/Clip'
 import ClipEdit from './pages/ClipEdit'
 import Home from './pages/Home'
@@ -11,6 +13,7 @@ import Profile from './pages/Profile'
 import Settings, { type SettingsHeaderAction } from './pages/Settings'
 import { createInitialPipelineSteps } from './data/pipeline'
 import useNavigationHistory from './hooks/useNavigationHistory'
+import { useAccess } from './hooks/useAccess'
 import type {
   AccountSummary,
   AuthPingSummary,
@@ -101,6 +104,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [settingsHeaderAction, setSettingsHeaderAction] = useState<SettingsHeaderAction | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
+  const { status: accessStatus, remainingRuns, loading: isAccessLoading, error: accessError, refresh: refreshAccess } =
+    useAccess()
 
   useNavigationHistory()
   const availableAccounts = useMemo(
@@ -385,6 +390,9 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     []
   )
 
+  const isAccessAllowed = accessStatus === 'active' || accessStatus === 'trial'
+  const shouldDisableNavigation = !isAccessAllowed
+
   const isLibraryRoute = location.pathname.startsWith('/library')
   const isClipEditRoute = /^\/clip\/[^/]+\/edit$/.test(location.pathname)
   const isSettingsRoute = location.pathname.startsWith('/settings')
@@ -447,10 +455,31 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 aria-label="Primary navigation"
                 className="inline-flex h-12 items-center gap-2 rounded-[18px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] p-1 shadow-[0_18px_34px_rgba(43,42,40,0.16)] backdrop-blur"
               >
-                <NavLink to="/" end className={navLinkClassName}>
+                <NavLink
+                  to="/"
+                  end
+                  className={({ isActive }) =>
+                    `${navLinkClassName({ isActive })} ${
+                      shouldDisableNavigation ? 'pointer-events-none opacity-60' : ''
+                    }`
+                  }
+                  onClick={shouldDisableNavigation ? (event) => event.preventDefault() : undefined}
+                  aria-disabled={shouldDisableNavigation}
+                  tabIndex={shouldDisableNavigation ? -1 : undefined}
+                >
                   {({ isActive }) => <NavItemLabel label="Home" isActive={isActive} />}
                 </NavLink>
-                <NavLink to="/library" className={navLinkClassName}>
+                <NavLink
+                  to="/library"
+                  className={({ isActive }) =>
+                    `${navLinkClassName({ isActive })} ${
+                      shouldDisableNavigation ? 'pointer-events-none opacity-60' : ''
+                    }`
+                  }
+                  onClick={shouldDisableNavigation ? (event) => event.preventDefault() : undefined}
+                  aria-disabled={shouldDisableNavigation}
+                  tabIndex={shouldDisableNavigation ? -1 : undefined}
+                >
                   {({ isActive }) => (
                     <NavItemLabel
                       label="Library"
@@ -459,13 +488,34 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                     />
                   )}
                 </NavLink>
-                <NavLink to="/profile" className={navLinkClassName}>
+                <NavLink
+                  to="/profile"
+                  className={({ isActive }) =>
+                    `${navLinkClassName({ isActive })} ${
+                      shouldDisableNavigation ? 'pointer-events-none opacity-60' : ''
+                    }`
+                  }
+                  onClick={shouldDisableNavigation ? (event) => event.preventDefault() : undefined}
+                  aria-disabled={shouldDisableNavigation}
+                  tabIndex={shouldDisableNavigation ? -1 : undefined}
+                >
                   {({ isActive }) => <NavItemLabel label="Profile" isActive={isActive} />}
                 </NavLink>
-                <NavLink to="/settings" className={navLinkClassName}>
+                <NavLink
+                  to="/settings"
+                  className={({ isActive }) =>
+                    `${navLinkClassName({ isActive })} ${
+                      shouldDisableNavigation ? 'pointer-events-none opacity-60' : ''
+                    }`
+                  }
+                  onClick={shouldDisableNavigation ? (event) => event.preventDefault() : undefined}
+                  aria-disabled={shouldDisableNavigation}
+                  tabIndex={shouldDisableNavigation ? -1 : undefined}
+                >
                   {({ isActive }) => <NavItemLabel label="Settings" isActive={isActive} />}
                 </NavLink>
               </nav>
+              <AccessBadge status={accessStatus} remainingRuns={remainingRuns} />
             </div>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
               {isLibraryRoute ? (
@@ -474,7 +524,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                     ref={searchInputRef}
                     value={searchValue}
                     onChange={handleSearchChange}
-                    disabled={!searchBridge}
+                    disabled={!searchBridge || shouldDisableNavigation}
                   />
                 </div>
               ) : null}
@@ -506,7 +556,9 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                           ? 'No available accounts'
                           : 'Select an account'
                     }
-                    disabled={isLoadingAccounts || accountSelectOptions.length === 0}
+                    disabled={
+                      isLoadingAccounts || accountSelectOptions.length === 0 || shouldDisableNavigation
+                    }
                   />
                 </div>
                 <button
@@ -523,72 +575,78 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
         </div>
       </header>
       <main className="flex-1 bg-[var(--bg)] text-[var(--fg)]">
-        <Routes>
-          <Route
-            path="/"
-            element={
-              <Home
-                registerSearch={registerSearch}
-                initialState={homeState}
-                onStateChange={setHomeState}
-                accounts={accounts}
-              />
-            }
-          />
-          <Route
-            path="/library"
-            element={
-              <Library
-                registerSearch={registerSearch}
-                accounts={accounts}
-                isLoadingAccounts={isLoadingAccounts}
-              />
-            }
-          />
-          <Route path="/clip/:id" element={<ClipPage registerSearch={registerSearch} />} />
-          <Route path="/clip/:id/edit" element={<ClipEdit registerSearch={registerSearch} />} />
-          <Route
-            path="/settings"
-            element={
-              <Settings
-                registerSearch={registerSearch}
-                accounts={accounts}
-                onRegisterHeaderAction={setSettingsHeaderAction}
-              />
-            }
-          />
-          <Route
-            path="/profile"
-            element={
-              <Profile
-                registerSearch={registerSearch}
-                accounts={accounts}
-                accountsError={accountsError}
-                authStatus={authStatus}
-                authError={authError}
-                isLoadingAccounts={isLoadingAccounts}
-                onCreateAccount={handleCreateAccount}
-                onAddPlatform={handleAddPlatform}
-                onUpdateAccount={handleUpdateAccount}
-                onDeleteAccount={handleDeleteAccount}
-                onUpdatePlatform={handleUpdatePlatform}
-                onDeletePlatform={handleDeletePlatform}
-                onRefreshAccounts={refreshAccounts}
-              />
-            }
-          />
-          <Route
-            path="*"
-            element={
-              <Home
-                registerSearch={registerSearch}
-                initialState={homeState}
-                onStateChange={setHomeState}
-                accounts={accounts}
-              />
-            }
-          />
-        </Routes>
+        {isAccessLoading ? (
+          <AccessGate status="loading" />
+        ) : isAccessAllowed ? (
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <Home
+                  registerSearch={registerSearch}
+                  initialState={homeState}
+                  onStateChange={setHomeState}
+                  accounts={accounts}
+                />
+              }
+            />
+            <Route
+              path="/library"
+              element={
+                <Library
+                  registerSearch={registerSearch}
+                  accounts={accounts}
+                  isLoadingAccounts={isLoadingAccounts}
+                />
+              }
+            />
+            <Route path="/clip/:id" element={<ClipPage registerSearch={registerSearch} />} />
+            <Route path="/clip/:id/edit" element={<ClipEdit registerSearch={registerSearch} />} />
+            <Route
+              path="/settings"
+              element={
+                <Settings
+                  registerSearch={registerSearch}
+                  accounts={accounts}
+                  onRegisterHeaderAction={setSettingsHeaderAction}
+                />
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <Profile
+                  registerSearch={registerSearch}
+                  accounts={accounts}
+                  accountsError={accountsError}
+                  authStatus={authStatus}
+                  authError={authError}
+                  isLoadingAccounts={isLoadingAccounts}
+                  onCreateAccount={handleCreateAccount}
+                  onAddPlatform={handleAddPlatform}
+                  onUpdateAccount={handleUpdateAccount}
+                  onDeleteAccount={handleDeleteAccount}
+                  onUpdatePlatform={handleUpdatePlatform}
+                  onDeletePlatform={handleDeletePlatform}
+                  onRefreshAccounts={refreshAccounts}
+                />
+              }
+            />
+            <Route
+              path="*"
+              element={
+                <Home
+                  registerSearch={registerSearch}
+                  initialState={homeState}
+                  onStateChange={setHomeState}
+                  accounts={accounts}
+                />
+              }
+            />
+          </Routes>
+        ) : (
+          <AccessGate status="required" error={accessError} onRetry={refreshAccess} />
+        )}
       </main>
     </div>
   )

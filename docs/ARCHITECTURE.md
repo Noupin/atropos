@@ -29,7 +29,7 @@ Atropos is composed of three cooperating runtimes:
 
 | Layer | Responsibilities | Key artifacts |
 | --- | --- | --- |
-| Desktop UI | Auth UX, device fingerprinting, job orchestration UI, streaming progress | `desktop/src/main`, `desktop/src/renderer`, `desktop/src/renderer/src/services/licensing.ts` |
+| Desktop UI | Auth UX, device fingerprinting, job orchestration UI, streaming progress | `desktop/src/main`, `desktop/src/renderer`, `desktop/src/renderer/src/providers/AccessProvider.tsx` |
 | Python services | Media normalization, upload scheduling, provider integrations, websocket progress | `server/app.py`, `server/common`, `server/integrations` |
 | Licensing worker | Key management, license validation, entitlement issuance, billing webhooks | `services/licensing/src`, `services/licensing/wrangler.toml`, `infrastructure/terraform` |
 | Infrastructure | Provision Workers KV, secret rotation, Stripe webhook endpoints, release automation | `infrastructure/terraform`, `infrastructure/wrangler`, GitHub Actions |

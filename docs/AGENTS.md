@@ -47,7 +47,7 @@
 | Trial storage schema | `services/licensing/src/lib/kv.ts` |
 | License JWT shape | `services/licensing/src/lib/jwt.ts` and `server/common/security/jwt.py` |
 | Billing + Stripe flows | `services/licensing/src/lib/stripe.ts` |
-| Desktop entitlement caching | `desktop/src/renderer/src/services/licensing.ts` |
+| Desktop entitlement caching | `desktop/src/renderer/src/providers/AccessProvider.tsx` |
 | Device fingerprint logic | `desktop/src/renderer/src/services/device.ts` |
 | Upload orchestration | `server/pipeline.py` and `server/interfaces/jobs.py` |
 

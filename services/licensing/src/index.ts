@@ -1,24 +1,25 @@
-export default {
-  async fetch(request: Request, env: any, ctx: ExecutionContext) {
-    const url = new URL(request.url);
-    const path = url.pathname;
+import { jsonResponse, errorResponse } from './lib/http'
+import type { LicensingEnv } from './lib/kv'
+import { handleTrialStatus } from './routes/trial/status'
+import { handleTrialConsume } from './routes/trial/consume'
 
-    if (path === "/health") {
-      return new Response(JSON.stringify({ status: "ok" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+export default {
+  async fetch(request: Request, env: LicensingEnv) {
+    const url = new URL(request.url)
+    const path = url.pathname
+
+    if (path === '/health') {
+      return jsonResponse({ status: 'ok' })
     }
 
-    // TODO: route other endpoints
-    // e.g. if path.startsWith("/billing") → billing handler
-    // else if path.startsWith("/license") → license handler
-    // else if path.startsWith("/trial") → trial handler
-    // else return 404
+    if (path === '/trial/status') {
+      return handleTrialStatus(request, env)
+    }
 
-    return new Response(JSON.stringify({ error: "Not found" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
-    });
-  },
-};
+    if (path === '/trial/consume') {
+      return handleTrialConsume(request, env)
+    }
+
+    return errorResponse(404, 'Not found')
+  }
+}

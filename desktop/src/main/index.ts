@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
+import { getDeviceHash } from './device'
 
 type NavigationCommand = 'back' | 'forward'
 
@@ -116,6 +117,14 @@ app.whenReady().then(() => {
   ipcMain.on('ping', () => console.log('pong'))
   ipcMain.on('navigation:state', (_event, state: NavigationState) => {
     navigationState = state
+  })
+  ipcMain.handle('device:hash', async () => {
+    try {
+      return getDeviceHash()
+    } catch (error) {
+      console.error('Failed to compute device hash', error)
+      throw error instanceof Error ? error : new Error('Unable to compute device hash')
+    }
   })
   ipcMain.handle('clips:list', async (_event, accountId: string | null) => {
     try {
