@@ -22,7 +22,6 @@ const normaliseBaseUrl = (value: string | undefined): string | null => {
 }
 
 const resolvedBaseUrl =
-  normaliseBaseUrl(import.meta.env.VITE_LICENSE_API_BASE_URL) ?? DEFAULT_LICENSE_BASE_URL
+  normaliseBaseUrl(process.env.VITE_LICENSE_API_BASE_URL) ?? DEFAULT_LICENSE_BASE_URL
 
 export const getLicenseApiBaseUrl = (): string => resolvedBaseUrl
-

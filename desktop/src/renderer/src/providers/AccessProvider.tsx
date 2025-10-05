@@ -8,7 +8,8 @@ import {
   useRef,
   useState
 } from 'react'
-import { consumeTrialCredit, fetchAccessStatus, type AccessEnvelope } from '../services/accessApi'
+import type { AccessEnvelope } from '../../../common/access/schema'
+import { consumeTrialCredit, fetchAccessStatus } from '../services/accessApi'
 import { getDeviceHash as getRendererDeviceHash } from '../services/device'
 
 export type AccessStatus = 'loading' | 'trial' | 'active' | 'required'

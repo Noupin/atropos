@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
 import { getDeviceHash } from './device'
+import { consumeTrialRun, fetchTrialStatus } from './access'
 
 type NavigationCommand = 'back' | 'forward'
 
@@ -124,6 +125,22 @@ app.whenReady().then(() => {
     } catch (error) {
       console.error('Failed to compute device hash', error)
       throw error instanceof Error ? error : new Error('Unable to compute device hash')
+    }
+  })
+  ipcMain.handle('access:status', async (_event, deviceHash: string) => {
+    try {
+      return await fetchTrialStatus(deviceHash)
+    } catch (error) {
+      console.error('Failed to fetch trial status', error)
+      throw error instanceof Error ? error : new Error('Unable to fetch trial status')
+    }
+  })
+  ipcMain.handle('access:consume', async (_event, deviceHash: string) => {
+    try {
+      return await consumeTrialRun(deviceHash)
+    } catch (error) {
+      console.error('Failed to consume trial run', error)
+      throw error instanceof Error ? error : new Error('Unable to consume trial run')
     }
   })
   ipcMain.handle('clips:list', async (_event, accountId: string | null) => {

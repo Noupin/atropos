@@ -4,6 +4,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
 type Clip = import('../renderer/src/types').Clip
+type AccessEnvelope = import('../common/access/schema').AccessEnvelope
 
 const api = {
   listAccountClips: (accountId: string | null): Promise<Clip[]> =>
@@ -11,6 +12,10 @@ const api = {
   openAccountClipsFolder: (accountId: string): Promise<boolean> =>
     ipcRenderer.invoke('clips:open-folder', accountId),
   getDeviceHash: (): Promise<string> => ipcRenderer.invoke('device:hash'),
+  fetchAccessStatus: (deviceHash: string): Promise<AccessEnvelope> =>
+    ipcRenderer.invoke('access:status', deviceHash),
+  consumeTrialCredit: (deviceHash: string): Promise<AccessEnvelope> =>
+    ipcRenderer.invoke('access:consume', deviceHash),
   onNavigationCommand: (callback: (direction: 'back' | 'forward') => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, direction: 'back' | 'forward') => {
       callback(direction)
