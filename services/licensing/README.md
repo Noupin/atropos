@@ -21,6 +21,7 @@ Configure secrets via `wrangler secret` or environment variables in CI:
 - `ED25519_PRIVATE_KEY` (base64-encoded seed used for signing entitlements)
 - `KV_LICENSE_NAMESPACE` (Workers KV binding name)
 - `TRIAL_MAX_PER_DEVICE` (default `3`)
+- `CLOUDFLARE_ACCOUNT_ID` (used by Wrangler to populate the `account_id` field during deploys)
 
 ### Trial record schema
 
@@ -35,7 +36,7 @@ Trial state is stored in Workers KV keyed by `device_hash` with the following pa
 ```
 
 - `allowed` — indicates whether the device can currently start a run (set to `false` when the quota is exhausted).
-- `remaining_runs` — remaining trial credits for the device (initialised from `TRIAL_MAX_PER_DEVICE`).
+- `remaining_runs` — remaining trial credits for the device (initialized from `TRIAL_MAX_PER_DEVICE`).
 - `started_at` — ISO-8601 timestamp capturing when the trial was first created.
 
 ## Development vs production
@@ -51,6 +52,12 @@ Set `VITE_LICENSE_API_BASE_URL` in the desktop `.env` to select the host. The wo
 
 - Run unit tests with `npm test` inside `services/licensing` (todo: add coverage harness).
 - Use `wrangler dev` for local testing; provide mock secrets via `.dev.vars`.
+- Before deploying, export your Cloudflare account identifier so Wrangler can resolve the `account_id` placeholder:
+
+  ```bash
+  export CLOUDFLARE_ACCOUNT_ID="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  ```
+
 - Deploy with `npx wrangler deploy --env dev` or `--env production` from `services/licensing/`.
 - When invoking Wrangler from the repository root, pass `--config services/licensing/wrangler.toml` so it loads the entrypoint and `[env.dev]` configuration instead of falling back to defaults (which triggers "Missing entry-point" errors).
 

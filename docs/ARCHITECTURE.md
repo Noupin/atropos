@@ -49,6 +49,7 @@ Atropos is composed of three cooperating runtimes:
 - `VITE_SUBSCRIPTION_URL` → Desktop → External purchase or billing portal link surfaced when access lapses.
 - `SERVER_ENV` / `ENVIRONMENT` → Python services → selects credentials in `server/config.py` and toggles webhook hosts.
 - `LICENSING_ENV` → Worker → selects Stripe keys and KV namespace bindings.
+- `CLOUDFLARE_ACCOUNT_ID` → Deployment tooling → populates Wrangler's `account_id` placeholder so `wrangler deploy --env <env>` resolves the correct Cloudflare account.
 
 ### Cloudflare worker environments
 
