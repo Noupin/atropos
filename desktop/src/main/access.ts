@@ -1,5 +1,4 @@
-import { request as httpRequest } from 'node:http'
-import { request as httpsRequest } from 'node:https'
+import { net } from 'electron'
 import { URL } from 'node:url'
 import { getLicenseApiBaseUrl } from './config/licensing'
 import {
@@ -52,28 +51,39 @@ const performRequest = async (
 ): Promise<AccessEnvelope> => {
   const url = resolveUrl(endpoint)
   const body = JSON.stringify(payload)
-  const requestOptions = {
-    protocol: url.protocol,
-    hostname: url.hostname,
-    port: url.port ? Number(url.port) : undefined,
-    path: `${url.pathname}${url.search}`,
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(body).toString()
-    },
-    timeout: REQUEST_TIMEOUT_MS,
-    // Allow TLS stacks that only offer legacy cipher suites to connect while
-    // keeping modern maximums so production traffic remains secure.
-    minVersion: 'TLSv1',
-    maxVersion: 'TLSv1.3',
-    servername: url.hostname
-  } as const
-
-  const transport = url.protocol === 'https:' ? httpsRequest : httpRequest
 
   return await new Promise<AccessEnvelope>((resolve, reject) => {
-    const request = transport(requestOptions, (response) => {
+    let settled = false
+    let timeout: NodeJS.Timeout | undefined
+
+    const finalizeSuccess = (envelope: AccessEnvelope): void => {
+      if (settled) return
+      settled = true
+      if (timeout) {
+        clearTimeout(timeout)
+        timeout = undefined
+      }
+      resolve(envelope)
+    }
+
+    const finalizeFailure = (error: Error): void => {
+      if (settled) return
+      settled = true
+      if (timeout) {
+        clearTimeout(timeout)
+        timeout = undefined
+      }
+      reject(error)
+    }
+
+    const request = net.request({
+      method: 'POST',
+      url: url.toString()
+    })
+
+    request.setHeader('Content-Type', 'application/json')
+
+    request.on('response', (response) => {
       const statusCode = response.statusCode ?? 0
       const statusMessage = response.statusMessage ?? 'Licensing request failed.'
       const chunks: Buffer[] = []
@@ -87,22 +97,25 @@ const performRequest = async (
 
         if (statusCode < 200 || statusCode >= 300) {
           const detail = readErrorDetail(rawBody, statusMessage)
-          reject(new Error(detail))
+          finalizeFailure(new Error(detail))
           return
         }
 
         try {
-          resolve(parseEnvelope(rawBody))
+          finalizeSuccess(parseEnvelope(rawBody))
         } catch (error) {
-          reject(error instanceof Error ? error : new Error('Licensing response invalid.'))
+          finalizeFailure(error instanceof Error ? error : new Error('Licensing response invalid.'))
         }
       })
     })
 
     request.on('error', (error) => {
-      const code = (error as NodeJS.ErrnoException).code
-      if (code && code.startsWith('ERR_SSL')) {
-        reject(
+      const code = (error as NodeJS.ErrnoException).code ?? ''
+      const message = error instanceof Error ? error.message : ''
+      const isTlsFailure = code.startsWith('ERR_SSL') || message.toLowerCase().includes('ssl')
+
+      if (isTlsFailure) {
+        finalizeFailure(
           new Error(
             'Unable to establish a secure connection to the licensing service. Check your TLS interception or network middleware.'
           )
@@ -110,7 +123,7 @@ const performRequest = async (
         return
       }
 
-      reject(
+      finalizeFailure(
         new Error(
           error instanceof Error
             ? `Unable to reach the licensing service: ${error.message}`
@@ -119,11 +132,13 @@ const performRequest = async (
       )
     })
 
-    request.setTimeout(REQUEST_TIMEOUT_MS, () => {
-      request.destroy(new Error('Licensing request timed out.'))
-    })
+    timeout = setTimeout(() => {
+      request.abort()
+      finalizeFailure(new Error('Licensing request timed out.'))
+    }, REQUEST_TIMEOUT_MS)
 
-    request.end(body)
+    request.write(body)
+    request.end()
   })
 }
 
