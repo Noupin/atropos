@@ -5,6 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
 import { getDeviceHash } from './device'
 import { consumeTrialRun, fetchTrialStatus } from './access'
+import { initializeSecurity } from './security'
 
 type NavigationCommand = 'back' | 'forward'
 
@@ -103,6 +104,8 @@ function createWindow(): void {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
+  initializeSecurity()
+
   // Set app user model id for windows
   app.setName('Atropos')
   electronApp.setAppUserModelId('com.atropos.app')
