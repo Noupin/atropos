@@ -2,6 +2,8 @@ name = "license-api"
 main = "src/index.ts"
 compatibility_date = "2025-09-01"
 workers_dev = false
+account_id = "9e279d41ad97ded8ad023a9ce9c51b5f"
+
 
 # ===== PROD (top-level) =====
 [[kv_namespaces]]
