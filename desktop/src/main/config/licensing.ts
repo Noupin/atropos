@@ -1,4 +1,4 @@
-const DEFAULT_LICENSE_BASE_URL = 'https://licensing.dev.atropos.workers.dev'
+const DEFAULT_LICENSE_BASE_URL = 'https://dev.api.atropos-video.com'
 
 const normaliseBaseUrl = (value: string | undefined): string | null => {
   if (!value) {

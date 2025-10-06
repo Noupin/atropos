@@ -1,4 +1,4 @@
-import { net } from 'electron'
+import { net, type ClientRequest } from 'electron'
 import { URL } from 'node:url'
 import { getLicenseApiBaseUrl } from './config/licensing'
 import {
@@ -14,8 +14,10 @@ type RequestPayload = {
 
 const REQUEST_TIMEOUT_MS = 15000
 
-const resolveUrl = (endpoint: LicensingEndpoint): URL =>
-  new URL(endpoint, getLicenseApiBaseUrl())
+const resolveUrl = (endpoint: LicensingEndpoint): { url: URL; baseUrl: string } => {
+  const baseUrl = getLicenseApiBaseUrl()
+  return { url: new URL(endpoint, baseUrl), baseUrl }
+}
 
 const readErrorDetail = (body: string, fallback: string): string => {
   try {
@@ -49,8 +51,10 @@ const performRequest = async (
   endpoint: LicensingEndpoint,
   payload: RequestPayload
 ): Promise<AccessEnvelope> => {
-  const url = resolveUrl(endpoint)
+  const { url, baseUrl } = resolveUrl(endpoint)
   const body = JSON.stringify(payload)
+
+  console.info(`[Licensing] Requesting ${url.toString()} (base: ${baseUrl})`)
 
   return await new Promise<AccessEnvelope>((resolve, reject) => {
     let settled = false
@@ -76,10 +80,18 @@ const performRequest = async (
       reject(error)
     }
 
-    const request = net.request({
-      method: 'POST',
-      url: url.toString()
-    })
+    let request: ClientRequest
+
+    try {
+      request = net.request({
+        method: 'POST',
+        url: url.toString()
+      })
+    } catch (error) {
+      console.error(`[Licensing] Failed to create request to ${url.toString()}`, error)
+      finalizeFailure(new Error('Unable to prepare licensing request.'))
+      return
+    }
 
     request.setHeader('Content-Type', 'application/json')
 
@@ -115,6 +127,7 @@ const performRequest = async (
       const isTlsFailure = code.startsWith('ERR_SSL') || message.toLowerCase().includes('ssl')
 
       if (isTlsFailure) {
+        console.error(`[Licensing] SSL handshake failed connecting to ${url.toString()}`, error)
         finalizeFailure(
           new Error(
             'Unable to establish a secure connection to the licensing service. Check your TLS interception or network middleware.'
@@ -123,6 +136,7 @@ const performRequest = async (
         return
       }
 
+      console.error(`[Licensing] Request to ${url.toString()} failed`, error)
       finalizeFailure(
         new Error(
           error instanceof Error

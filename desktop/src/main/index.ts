@@ -17,6 +17,13 @@ type NavigationState = {
 let mainWindow: BrowserWindow | null = null
 let navigationState: NavigationState = { canGoBack: false, canGoForward: false }
 
+const isProduction = process.env.NODE_ENV === 'production'
+
+if (!isProduction) {
+  app.commandLine.appendSwitch('ignore-certificate-errors')
+  console.info('Ignoring certificate errors for development environment.')
+}
+
 const sendNavigationCommand = (direction: NavigationCommand): void => {
   if (!mainWindow) {
     return
