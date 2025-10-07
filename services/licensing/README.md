@@ -1,34 +1,33 @@
 # Licensing Worker
 
-The licensing service is a Cloudflare Worker that verifies device entitlements, manages trials, and synchronizes billing with Stripe.
+The licensing service is a Cloudflare Worker that tracks device trials and coordinates license transfers between machines.
 
 ## Endpoints
 
 | Path | Method | Description |
 | --- | --- | --- |
-| `/license/verify` | `POST` | Validates a device + license token, returning a signed entitlement JWT. |
-| `/trial/consume` | `POST` | Consumes one trial credit for a device and returns remaining quota. |
-| `/billing/webhook` | `POST` | Stripe webhook endpoint that updates subscription status and KV state. |
-| `/billing/portal` | `GET` | Generates a Stripe customer portal link for account management. |
+| `/health` | `GET` | Simple health check endpoint. |
+| `/trial/status` | `GET` | Returns trial usage details for the provided `device_hash`. |
+| `/trial/start` | `POST` | Initializes a trial record for a device if one does not exist. |
+| `/trial/consume` | `POST` | Consumes one trial run for the device and returns the updated quota. |
+| `/transfer/initiate` | `POST` | Creates a one-time transfer token for moving a device record to a new machine. |
+| `/transfer/accept` | `POST` | Applies a valid transfer token to the requesting device, reassigning the trial record. |
 
 ## Environment variables & secrets
 
 Configure secrets via `wrangler secret` or environment variables in CI:
 
-- `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET`
 - `LICENSING_ENV` (`dev` or `prod`)
-- `ED25519_PRIVATE_KEY` (base64-encoded seed used for signing entitlements)
-- `KV_LICENSE_NAMESPACE` (Workers KV binding name)
-- `TRIAL_MAX_PER_DEVICE` (default `3`)
+- `LICENSING_KV` (Workers KV namespace binding for trial and transfer records)
 
 ## Development vs production
 
 | Mode | Host | Notes |
 | --- | --- | --- |
-| Dev | `https://licensing.dev.atropos.workers.dev` | Uses test Stripe keys and a dev KV namespace. |
-| Prod | `https://licensing.atropos.app` | Uses live Stripe keys and production KV namespace. |
+| Dev | `https://licensing.dev.atropos.workers.dev` | Uses the development KV namespace. |
+| Prod | `https://licensing.atropos.app` | Uses the production KV namespace. |
 
-Set `VITE_LICENSE_API_BASE_URL` in the desktop `.env` to select the host. The worker reads `LICENSING_ENV` to bind to the correct KV namespace and Stripe credentials.
+Set `VITE_LICENSE_API_BASE_URL` in the desktop `.env` to select the host. The worker reads `LICENSING_ENV` to bind to the correct KV namespace.
 
 ## Testing & deployment
 
@@ -39,20 +38,29 @@ Set `VITE_LICENSE_API_BASE_URL` in the desktop `.env` to select the host. The wo
 ## Curl examples
 
 ```bash
-# Verify a license and retrieve entitlement JWT
-curl -X POST "$VITE_LICENSE_API_BASE_URL/license/verify" \
-  -H "Content-Type: application/json" \
-  -d '{"deviceFingerprint":"abc123","licenseKey":"LIC-XXXX"}'
+# Fetch trial status
+curl "$VITE_LICENSE_API_BASE_URL/trial/status?device_hash=abc123"
 
-# Consume a trial credit
+# Start a trial for a new device
+curl -X POST "$VITE_LICENSE_API_BASE_URL/trial/start" \
+  -H "Content-Type: application/json" \
+  -d '{"device_hash":"abc123"}'
+
+# Consume one trial run
 curl -X POST "$VITE_LICENSE_API_BASE_URL/trial/consume" \
   -H "Content-Type: application/json" \
-  -d '{"deviceFingerprint":"abc123"}'
+  -d '{"device_hash":"abc123"}'
+
+# Initiate a transfer to another device
+curl -X POST "$VITE_LICENSE_API_BASE_URL/transfer/initiate" \
+  -H "Content-Type: application/json" \
+  -d '{"device_hash":"abc123","email":"user@example.com"}'
 ```
 
 ## Related files
 
-- Worker routes: `services/licensing/src/routes`
-- Stripe helpers: `services/licensing/src/lib/stripe.ts`
+- Worker entrypoint: `services/licensing/src/index.ts`
+- Trial routes: `services/licensing/src/routes/trial.ts`
+- Transfer routes: `services/licensing/src/routes/transfer.ts`
+- Shared HTTP helpers: `services/licensing/src/lib/http.ts`
 - KV utilities: `services/licensing/src/lib/kv.ts`
-- JWT signing: `services/licensing/src/lib/jwt.ts`

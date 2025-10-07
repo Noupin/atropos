@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { FC, RefObject } from 'react'
+import type { FC, MouseEvent, RefObject } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import Search from './components/Search'
 import MarbleSelect from './components/MarbleSelect'
+import TrialBadge from './components/TrialBadge'
 import ClipPage from './pages/Clip'
 import ClipEdit from './pages/ClipEdit'
 import Home from './pages/Home'
@@ -11,6 +12,7 @@ import Profile from './pages/Profile'
 import Settings, { type SettingsHeaderAction } from './pages/Settings'
 import { createInitialPipelineSteps } from './data/pipeline'
 import useNavigationHistory from './hooks/useNavigationHistory'
+import { useTrialAccess } from './state/trialAccess'
 import type {
   AccountSummary,
   AuthPingSummary,
@@ -101,8 +103,25 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [settingsHeaderAction, setSettingsHeaderAction] = useState<SettingsHeaderAction | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
+  const { state: trialState } = useTrialAccess()
+  const navigationDisabled = !trialState.isTrialActive
+
+  const preventDisabledNavigation = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault()
+  }, [])
 
   useNavigationHistory()
+  useEffect(() => {
+    if (trialState.isLoading || trialState.isTrialActive) {
+      return
+    }
+    const allowedPrefixes = ['/profile', '/settings']
+    const isAllowed = allowedPrefixes.some((prefix) => location.pathname.startsWith(prefix))
+    if (!isAllowed) {
+      navigate('/profile', { replace: true })
+    }
+  }, [location.pathname, navigate, trialState.isLoading, trialState.isTrialActive])
+
   const availableAccounts = useMemo(
     () =>
       accounts.filter(
@@ -376,12 +395,17 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   }, [])
 
   const navLinkClassName = useCallback(
-    ({ isActive }: { isActive: boolean }) =>
-      `group relative inline-flex h-10 items-center justify-center rounded-[14px] px-4 text-sm font-medium transition ${
-        isActive
-          ? 'bg-[color:color-mix(in_srgb,var(--panel-strong)_70%,transparent)] text-[var(--fg)] shadow-[0_10px_24px_rgba(43,42,40,0.12)]'
-          : 'text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_55%,transparent)] hover:text-[var(--fg)]'
-      }`,
+    ({ isActive, disabled = false }: { isActive: boolean; disabled?: boolean }) => {
+      const baseClass =
+        'group relative inline-flex h-10 items-center justify-center rounded-[14px] px-4 text-sm font-medium transition'
+      const activeClass = isActive
+        ? ' bg-[color:color-mix(in_srgb,var(--panel-strong)_70%,transparent)] text-[var(--fg)] shadow-[0_10px_24px_rgba(43,42,40,0.12)]'
+        : ' text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_55%,transparent)] hover:text-[var(--fg)]'
+      const disabledClass = disabled
+        ? ' pointer-events-none cursor-not-allowed opacity-60 hover:bg-transparent hover:text-[var(--muted)]'
+        : ''
+      return `${baseClass}${activeClass}${disabledClass}`
+    },
     []
   )
 
@@ -447,10 +471,27 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 aria-label="Primary navigation"
                 className="inline-flex h-12 items-center gap-2 rounded-[18px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] p-1 shadow-[0_18px_34px_rgba(43,42,40,0.16)] backdrop-blur"
               >
-                <NavLink to="/" end className={navLinkClassName}>
+                <NavLink
+                  to="/"
+                  end
+                  className={({ isActive }) =>
+                    navLinkClassName({ isActive, disabled: navigationDisabled })
+                  }
+                  aria-disabled={navigationDisabled ? true : undefined}
+                  tabIndex={navigationDisabled ? -1 : undefined}
+                  onClick={navigationDisabled ? preventDisabledNavigation : undefined}
+                >
                   {({ isActive }) => <NavItemLabel label="Home" isActive={isActive} />}
                 </NavLink>
-                <NavLink to="/library" className={navLinkClassName}>
+                <NavLink
+                  to="/library"
+                  className={({ isActive }) =>
+                    navLinkClassName({ isActive, disabled: navigationDisabled })
+                  }
+                  aria-disabled={navigationDisabled ? true : undefined}
+                  tabIndex={navigationDisabled ? -1 : undefined}
+                  onClick={navigationDisabled ? preventDisabledNavigation : undefined}
+                >
                   {({ isActive }) => (
                     <NavItemLabel
                       label="Library"
@@ -466,6 +507,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                   {({ isActive }) => <NavItemLabel label="Settings" isActive={isActive} />}
                 </NavLink>
               </nav>
+              <TrialBadge />
             </div>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
               {isLibraryRoute ? (
