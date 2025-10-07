@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 from typing import Iterable, List, Tuple
 from concurrent.futures import TimeoutError as FuturesTimeout
+from typing import Callable
 
 import config
 from helpers.ai import local_llm_call_json
@@ -107,6 +108,7 @@ def _llm_dialog_ranges(
     *,
     model: str = config.LOCAL_LLM_MODEL,
     timeout: int = config.LLM_API_TIMEOUT,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> List[Tuple[float, float]]:
     """Detect dialog ranges using an LLM with chunked prompts and parallelism.
     Uses only per-chunk timeout (config.LLM_PER_CHUNK_TIMEOUT). If that is 0/None,
@@ -186,7 +188,11 @@ def _llm_dialog_ranges(
         max_workers=config.LLM_MAX_WORKERS,
         timeout=config.LLM_PER_CHUNK_TIMEOUT,
         on_error=_on_error,
+        on_progress=progress_callback,
     )
+
+    if progress_callback and not chunks:
+        progress_callback(0, 0)
     for spans in results:
         all_ranges.extend(spans)
 
@@ -196,7 +202,10 @@ def _llm_dialog_ranges(
 
 
 def detect_dialog_ranges(
-    transcript_path: str | Path, *, gap: float = 1.0
+    transcript_path: str | Path,
+    *,
+    gap: float = 1.0,
+    progress_callback: Callable[[float], None] | None = None,
 ) -> List[Tuple[float, float]]:
     """Detect dialog ranges in ``transcript_path``.
 
@@ -210,7 +219,16 @@ def detect_dialog_ranges(
     if config.DETECT_DIALOG_WITH_LLM:
         try:
             print("[dialog] Using LLM path…")
-            ranges = _llm_dialog_ranges(items)
+            def track_progress(processed: int, total: int) -> None:
+                if not progress_callback:
+                    return
+                if total <= 0:
+                    progress_callback(1.0)
+                else:
+                    fraction = max(0.0, min(1.0, processed / total))
+                    progress_callback(fraction)
+
+            ranges = _llm_dialog_ranges(items, progress_callback=track_progress)
             if ranges:
                 first_start, last_end = items[0][0], items[-1][1]
                 if not (len(ranges) == 1 and ranges[0] == (first_start, last_end)):
@@ -220,6 +238,8 @@ def detect_dialog_ranges(
             print(f"[dialog] LLM exception -> {e}; falling back to heuristic")
 
     print("[dialog] Fallback to heuristic")
+    if progress_callback:
+        progress_callback(1.0)
     return _heuristic_dialog_ranges(items, gap)
 
 

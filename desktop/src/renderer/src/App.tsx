@@ -11,8 +11,15 @@ import Library from './pages/Library'
 import Profile from './pages/Profile'
 import Settings, { type SettingsHeaderAction } from './pages/Settings'
 import { createInitialPipelineSteps } from './data/pipeline'
+import { BACKEND_MODE } from './config/backend'
 import useNavigationHistory from './hooks/useNavigationHistory'
+import usePipelineProgress from './state/usePipelineProgress'
 import { useTrialAccess } from './state/trialAccess'
+import {
+  clamp01,
+  summarisePipelineProgress,
+  type PipelineOverallStatus
+} from './lib/pipelineProgress'
 import type {
   AccountSummary,
   AuthPingSummary,
@@ -42,36 +49,98 @@ const THEME_STORAGE_KEY = 'atropos:theme'
 const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
 
+type NavItemBadgeVariant = 'accent' | 'info' | 'success' | 'error'
+
+type NavItemBadge = {
+  label: string
+  variant?: NavItemBadgeVariant
+}
+
+type NavItemProgress = {
+  fraction: number
+  status: PipelineOverallStatus
+  srLabel?: string
+}
+
 type NavItemLabelProps = {
   label: string
   isActive: boolean
-  badge?: string | null
+  badge?: NavItemBadge | null
+  progress?: NavItemProgress | null
 }
 
-const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge }) => (
-  <span className="relative flex h-full items-center justify-center">
-    {badge ? (
-      <span
-        aria-hidden
-        className="pointer-events-none absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--accent)_80%,transparent)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--accent-contrast)] shadow-[0_10px_18px_rgba(43,42,40,0.18)]"
-      >
-        {badge}
+const badgeVariantClasses: Record<NavItemBadgeVariant, string> = {
+  accent:
+    'border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--accent)_80%,transparent)] text-[color:var(--accent-contrast)]',
+  info:
+    'border-[color:color-mix(in_srgb,var(--info-strong)_55%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--info-soft)_78%,transparent)] text-[color:color-mix(in_srgb,var(--info-strong)_88%,var(--accent-contrast))]',
+  success:
+    'border-[color:color-mix(in_srgb,var(--success-strong)_55%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--success-soft)_80%,transparent)] text-[color:color-mix(in_srgb,var(--success-strong)_90%,var(--accent-contrast))]',
+  error:
+    'border-[color:color-mix(in_srgb,var(--error-strong)_55%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--error-soft)_78%,transparent)] text-[color:color-mix(in_srgb,var(--error-strong)_90%,var(--accent-contrast))]'
+}
+
+const progressStatusClasses: Record<PipelineOverallStatus, string> = {
+  idle: 'bg-[color:var(--edge-soft)]',
+  active: 'bg-[color:var(--info-strong)]',
+  completed: 'bg-[color:var(--success-strong)]',
+  failed: 'bg-[color:var(--error-strong)]'
+}
+
+const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge, progress }) => {
+  const resolvedBadge = badge ? { label: badge.label, variant: badge.variant ?? 'accent' } : null
+  const srProgressLabel = progress?.srLabel
+    ?? (progress
+        ? progress.status === 'completed'
+          ? `${label} pipeline complete`
+          : progress.status === 'failed'
+            ? `${label} pipeline failed`
+            : `${label} pipeline progress ${Math.round(clamp01(progress.fraction) * 100)}%`
+        : null)
+  const showProgress = progress && progress.status !== 'idle'
+  const percent = showProgress ? Math.round(clamp01(progress.fraction) * 100) : 0
+  const progressClass = progress ? progressStatusClasses[progress.status] : progressStatusClasses.idle
+
+  return (
+    <span className="relative flex h-full min-w-[72px] flex-col items-center justify-center px-2 text-center">
+      {resolvedBadge ? (
+        <span
+          aria-hidden
+          className={`pointer-events-none absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] shadow-[0_10px_18px_rgba(43,42,40,0.18)] ${
+            badgeVariantClasses[resolvedBadge.variant]
+          }`}
+        >
+          {resolvedBadge.label}
+        </span>
+      ) : null}
+      <span className="leading-none">
+        {label}
+        {resolvedBadge ? <span className="sr-only"> ({resolvedBadge.label})</span> : null}
       </span>
-    ) : null}
-    <span className="leading-none">
-      {label}
-      {badge ? <span className="sr-only"> ({badge})</span> : null}
+      {srProgressLabel ? <span className="sr-only">{srProgressLabel}</span> : null}
+      {showProgress ? (
+        <span
+          aria-hidden
+          className="pointer-events-none mt-1 flex h-1 w-12 items-center overflow-hidden rounded-full bg-[color:var(--edge-soft)]"
+        >
+          <span
+            className={`block h-full ${progressClass} transition-all duration-300 ease-out`}
+            style={{ width: `${percent}%` }}
+          />
+        </span>
+      ) : (
+        <span
+          aria-hidden
+          className={`pointer-events-none mt-1 block h-0.5 w-8 rounded-full transition ${
+            isActive
+              ? 'bg-[color:var(--accent)] opacity-100'
+              : 'bg-[color:var(--edge-soft)] opacity-0 group-hover:opacity-60'
+          }`}
+        />
+      )}
     </span>
-    <span
-      aria-hidden
-      className={`pointer-events-none absolute left-1/2 bottom-1 h-0.5 w-8 -translate-x-1/2 rounded-full transition ${
-        isActive
-          ? 'bg-[color:var(--accent)] opacity-100'
-          : 'bg-[color:var(--edge-soft)] opacity-0 group-hover:opacity-60'
-      }`}
-    />
-  </span>
-)
+  )
+}
 
 type AppProps = {
   searchInputRef: RefObject<HTMLInputElement | null>
@@ -103,7 +172,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [settingsHeaderAction, setSettingsHeaderAction] = useState<SettingsHeaderAction | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
-  const { state: trialState } = useTrialAccess()
+  const { state: trialState, consumeTrialRun } = useTrialAccess()
   const homeNavigationDisabled = !trialState.isTrialActive
 
   const preventDisabledNavigation = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
@@ -129,6 +198,54 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       ),
     [accounts]
   )
+
+  const isMockBackend = BACKEND_MODE === 'mock'
+
+  const homeProgressSummary = useMemo(
+    () => summarisePipelineProgress(homeState.steps),
+    [homeState.steps]
+  )
+
+  const homeNavProgress = useMemo(() => {
+    if (homeProgressSummary.status === 'idle') {
+      return null
+    }
+    const fraction = homeProgressSummary.status === 'completed' ? 1 : clamp01(homeProgressSummary.fraction)
+    const percent = Math.round(fraction * 100)
+    const srLabel =
+      homeProgressSummary.status === 'completed'
+        ? 'Pipeline run complete'
+        : homeProgressSummary.status === 'failed'
+          ? `Pipeline run failed at ${percent}%`
+          : `Pipeline progress ${percent}%`
+    return {
+      fraction,
+      status: homeProgressSummary.status,
+      srLabel
+    }
+  }, [homeProgressSummary])
+
+  const homeNavBadge = useMemo(() => {
+    if (homeProgressSummary.status === 'completed') {
+      return { label: 'Done', variant: 'success' } satisfies NavItemBadge
+    }
+    if (homeProgressSummary.status === 'failed') {
+      return { label: 'Failed', variant: 'error' } satisfies NavItemBadge
+    }
+    if (homeState.awaitingReview) {
+      return { label: 'Needs review', variant: 'info' } satisfies NavItemBadge
+    }
+    return null
+  }, [homeProgressSummary.status, homeState.awaitingReview])
+
+  const { startPipeline, resumePipeline } = usePipelineProgress({
+    state: homeState,
+    setState: setHomeState,
+    availableAccounts,
+    consumeTrialRun,
+    isTrialActive: trialState.isTrialActive,
+    isMockBackend
+  })
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -481,7 +598,14 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                   tabIndex={homeNavigationDisabled ? -1 : undefined}
                   onClick={homeNavigationDisabled ? preventDisabledNavigation : undefined}
                 >
-                  {({ isActive }) => <NavItemLabel label="Home" isActive={isActive} />}
+                  {({ isActive }) => (
+                    <NavItemLabel
+                      label="Home"
+                      isActive={isActive}
+                      badge={homeNavBadge}
+                      progress={homeNavProgress}
+                    />
+                  )}
                 </NavLink>
                 <NavLink
                   to="/library"
@@ -491,7 +615,11 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                     <NavItemLabel
                       label="Library"
                       isActive={isActive}
-                      badge={isClipEditRoute ? 'Edit mode' : null}
+                      badge={
+                        isClipEditRoute
+                          ? ({ label: 'Edit mode', variant: 'info' } satisfies NavItemBadge)
+                          : null
+                      }
                     />
                   )}
                 </NavLink>
@@ -569,6 +697,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 initialState={homeState}
                 onStateChange={setHomeState}
                 accounts={accounts}
+                onStartPipeline={startPipeline}
+                onResumePipeline={resumePipeline}
               />
             }
           />
@@ -622,6 +752,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 initialState={homeState}
                 onStateChange={setHomeState}
                 accounts={accounts}
+                onStartPipeline={startPipeline}
+                onResumePipeline={resumePipeline}
               />
             }
           />

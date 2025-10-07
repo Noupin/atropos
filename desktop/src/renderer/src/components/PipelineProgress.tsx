@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FC } from 'react'
 import type { PipelineStep, PipelineStepStatus, PipelineSubstep } from '../types'
 import { formatEta } from '../lib/format'
+import { clamp01, computeStepProgressValue } from '../lib/pipelineProgress'
 
 type PipelineProgressProps = {
   steps: PipelineStep[]
@@ -38,62 +39,7 @@ const multiStepBadgeSizeClasses = {
   compact: 'px-1.5 py-px text-[9px] font-semibold'
 } as const
 
-const clamp01 = (value: number): number => Math.min(1, Math.max(0, value))
-
 const buildSubstepKey = (stepId: string, substepId: string): string => `${stepId}:${substepId}`
-
-const computeStepProgressValue = (step: PipelineStep): number => {
-  if (step.status === 'completed' || step.status === 'failed') {
-    return 1
-  }
-
-  if (step.status === 'pending') {
-    return 0
-  }
-
-  if (step.id === 'produce-clips') {
-    const totalClips = step.substeps.reduce(
-      (max, substep) => Math.max(max, substep.totalClips),
-      step.clipProgress?.total ?? 0
-    )
-    const substepCount = step.substeps.length
-
-    if (totalClips === 0 || substepCount === 0) {
-      if (step.clipProgress && step.clipProgress.total === 0) {
-        return 1
-      }
-      return clamp01(step.progress)
-    }
-
-    const totalUnits = totalClips * substepCount
-    let completedUnits = 0
-    let inFlightUnits = 0
-
-    step.substeps.forEach((substep) => {
-      const boundedCompleted = Math.min(totalClips, Math.max(0, substep.completedClips))
-      completedUnits += boundedCompleted
-      if (substep.status === 'running' && boundedCompleted < totalClips) {
-        inFlightUnits += clamp01(substep.progress)
-      } else if (substep.status === 'failed') {
-        inFlightUnits += clamp01(substep.progress)
-      }
-    })
-
-    const aggregate = (completedUnits + inFlightUnits) / Math.max(1, totalUnits)
-    return clamp01(aggregate)
-  }
-
-  if (step.clipStage && step.clipProgress) {
-    const total = Math.max(0, step.clipProgress.total)
-    if (total > 0) {
-      const completed = Math.min(total, Math.max(0, step.clipProgress.completed)) / total
-      const inFlight = clamp01(step.progress) / total
-      return clamp01(completed + inFlight)
-    }
-  }
-
-  return clamp01(step.progress)
-}
 
 const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(() => new Set())
