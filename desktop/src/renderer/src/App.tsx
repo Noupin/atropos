@@ -11,7 +11,9 @@ import Library from './pages/Library'
 import Profile from './pages/Profile'
 import Settings, { type SettingsHeaderAction } from './pages/Settings'
 import { createInitialPipelineSteps } from './data/pipeline'
+import { BACKEND_MODE } from './config/backend'
 import useNavigationHistory from './hooks/useNavigationHistory'
+import usePipelineProgress from './state/usePipelineProgress'
 import { useTrialAccess } from './state/trialAccess'
 import type {
   AccountSummary,
@@ -103,7 +105,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [settingsHeaderAction, setSettingsHeaderAction] = useState<SettingsHeaderAction | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
-  const { state: trialState } = useTrialAccess()
+  const { state: trialState, consumeTrialRun } = useTrialAccess()
   const homeNavigationDisabled = !trialState.isTrialActive
 
   const preventDisabledNavigation = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
@@ -129,6 +131,17 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       ),
     [accounts]
   )
+
+  const isMockBackend = BACKEND_MODE === 'mock'
+
+  const { startPipeline, resumePipeline } = usePipelineProgress({
+    state: homeState,
+    setState: setHomeState,
+    availableAccounts,
+    consumeTrialRun,
+    isTrialActive: trialState.isTrialActive,
+    isMockBackend
+  })
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -569,6 +582,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 initialState={homeState}
                 onStateChange={setHomeState}
                 accounts={accounts}
+                onStartPipeline={startPipeline}
+                onResumePipeline={resumePipeline}
               />
             }
           />
@@ -622,6 +637,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 initialState={homeState}
                 onStateChange={setHomeState}
                 accounts={accounts}
+                onStartPipeline={startPipeline}
+                onResumePipeline={resumePipeline}
               />
             }
           />

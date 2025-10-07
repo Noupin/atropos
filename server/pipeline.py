@@ -567,88 +567,53 @@ def process_video(
     # ----------------------
     # STEP 5: Build Transcript Structure
     # ----------------------
-    segments_path = project_dir / "segments.json"
+    DETECTION_WEIGHT = 0.4
+    REFINEMENT_WEIGHT = 1.0 - DETECTION_WEIGHT
 
-    if should_run(5):
-        if segments_path.exists() and not (FORCE_REBUILD or FORCE_REBUILD_SEGMENTS):
-            segments_data = json.loads(segments_path.read_text(encoding="utf-8"))
-            segments = [(d["start"], d["end"], d["text"]) for d in segments_data]
-        else:
-            def step_segments() -> list[tuple[float, float, str]]:
-                notify_progress(
-                    "step_5_segments",
-                    0.05,
-                    message="Parsing transcript for segmentation",
-                )
-                items = parse_transcript(transcript_output_path)
-                notify_progress(
-                    "step_5_segments",
-                    0.35,
-                    message="Building segment windows",
-                )
-                segs = segment_transcript_items(items)
-                text = transcript_output_path.read_text(encoding="utf-8")
-                if USE_LLM_FOR_SEGMENTS:
-                    segs = maybe_refine_segments_with_llm(segs)
-                notify_progress(
-                    "step_5_segments",
-                    0.75,
-                    message="Saving structured transcript",
-                )
-                write_segments_json(segs, segments_path)
-                notify_progress(
-                    "step_5_segments",
-                    1.0,
-                    message="Transcript structure ready",
-                )
-                return segs
+    def detection_progress(fraction: float, *, message: str | None = None) -> None:
+        clamped = max(0.0, min(1.0, fraction))
+        notify_progress(
+            "step_5_dialog_ranges",
+            DETECTION_WEIGHT * clamped,
+            message=message,
+        )
 
-            segments = run_pipeline_step(
-                f"STEP 5: Segmenting transcript -> {segments_path}",
-                step_segments,
-                step_key="step_5_segments",
-            )
-            if segments_path.exists():
-                segments_data = json.loads(segments_path.read_text(encoding="utf-8"))
-                segments = [(d["start"], d["end"], d["text"]) for d in segments_data]
-                emit_log(
-                    f"{Fore.YELLOW}Skipping STEP 5: loaded segments from {segments_path}{Style.RESET_ALL}",
-                    level="warning",
-                )
-                notify_progress(
-                    "step_5_segments",
-                    1.0,
-                    message="Transcript structure ready",
-                )
-            else:
-                segments = []
-            emit_log(
-                f"{Fore.YELLOW}Skipping STEP 5: no existing segments at {segments_path}{Style.RESET_ALL}",
-                level="warning",
-            )
-    emit_log(f"[Pipeline] Loaded {len(segments)} segments")
+    def refinement_progress(fraction: float, *, message: str | None = None) -> None:
+        clamped = max(0.0, min(1.0, fraction))
+        notify_progress(
+            "step_5_dialog_ranges",
+            DETECTION_WEIGHT + REFINEMENT_WEIGHT * clamped,
+            message=message,
+        )
 
     dialog_ranges_path = project_dir / "dialog_ranges.json"
     if should_run(5):
         if dialog_ranges_path.exists() and not (FORCE_REBUILD or FORCE_REBUILD_DIALOG):
             dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
+            emit_log(
+                f"{Fore.YELLOW}Skipping STEP 5: loaded dialog ranges from {dialog_ranges_path}{Style.RESET_ALL}",
+                level="warning",
+            )
+            detection_progress(1.0, message="Dialog metadata already available")
         else:
             def step_dialog_ranges() -> list[tuple[float, float]]:
                 emit_log(
                     f"[Pipeline] Starting dialog detection using transcript: {transcript_output_path}"
                 )
-                notify_progress(
-                    "step_5_dialog_ranges",
-                    0.1,
-                    message="Detecting dialog-heavy regions",
+                detection_progress(0.0, message="Detecting dialog-heavy regions")
+
+                def handle_detection_progress(local_fraction: float) -> None:
+                    detection_progress(
+                        local_fraction,
+                        message="Detecting dialog-heavy regions",
+                    )
+
+                ranges = detect_dialog_ranges(
+                    transcript_output_path,
+                    progress_callback=handle_detection_progress,
                 )
-                ranges = detect_dialog_ranges(transcript_output_path)
                 write_dialog_ranges_json(ranges, dialog_ranges_path)
-                notify_progress(
-                    "step_5_dialog_ranges",
-                    1.0,
-                    message="Dialog analysis complete",
-                )
+                detection_progress(1.0, message="Dialog analysis complete")
                 return ranges
 
             dialog_ranges = run_pipeline_step(
@@ -656,24 +621,87 @@ def process_video(
                 step_dialog_ranges,
                 step_key="step_5_dialog_ranges",
             )
-            if dialog_ranges_path.exists():
-                dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
-                emit_log(
-                    f"{Fore.YELLOW}Skipping STEP 5: loaded dialog ranges from {dialog_ranges_path}{Style.RESET_ALL}",
-                    level="warning",
-                )
-                notify_progress(
-                    "step_5_dialog_ranges",
-                    1.0,
-                    message="Dialog analysis complete",
-                )
-            else:
-                dialog_ranges = []
+    else:
+        if dialog_ranges_path.exists():
+            dialog_ranges = load_dialog_ranges_json(dialog_ranges_path)
+            emit_log(
+                f"{Fore.YELLOW}Skipping STEP 5: loaded dialog ranges from {dialog_ranges_path}{Style.RESET_ALL}",
+                level="warning",
+            )
+            detection_progress(1.0, message="Dialog metadata already available")
+        else:
+            dialog_ranges = []
             emit_log(
                 f"{Fore.YELLOW}Skipping STEP 5: no existing dialog ranges at {dialog_ranges_path}{Style.RESET_ALL}",
                 level="warning",
             )
+            detection_progress(1.0, message="Dialog analysis skipped")
     emit_log(f"[Pipeline] Loaded {len(dialog_ranges)} dialog ranges")
+
+    segments_path = project_dir / "segments.json"
+
+    if should_run(5):
+        if segments_path.exists() and not (FORCE_REBUILD or FORCE_REBUILD_SEGMENTS):
+            segments_data = json.loads(segments_path.read_text(encoding="utf-8"))
+            segments = [(d["start"], d["end"], d["text"]) for d in segments_data]
+            emit_log(
+                f"{Fore.YELLOW}Skipping STEP 5: loaded segments from {segments_path}{Style.RESET_ALL}",
+                level="warning",
+            )
+            refinement_progress(1.0, message="Transcript structure already available")
+        else:
+            def step_segments() -> list[tuple[float, float, str]]:
+                refinement_progress(0.0, message="Parsing transcript for segmentation")
+                items = parse_transcript(transcript_output_path)
+                refinement_progress(0.2, message="Building segment windows")
+                segs = segment_transcript_items(items)
+                if USE_LLM_FOR_SEGMENTS:
+                    refinement_progress(0.3, message="Refining segments with language model")
+
+                    def handle_refine_progress(processed: int, total: int) -> None:
+                        if total <= 0:
+                            local_fraction = 0.8
+                        else:
+                            span = 0.5
+                            progress = processed / total
+                            local_fraction = 0.3 + span * max(0.0, min(1.0, progress))
+                        refinement_progress(
+                            local_fraction,
+                            message="Refining segments with language model",
+                        )
+
+                    segs = maybe_refine_segments_with_llm(
+                        segs,
+                        progress_callback=handle_refine_progress,
+                    )
+                else:
+                    refinement_progress(0.8, message="Saving structured transcript")
+
+                write_segments_json(segs, segments_path)
+                refinement_progress(1.0, message="Transcript structure ready")
+                return segs
+
+            segments = run_pipeline_step(
+                f"STEP 5: Segmenting transcript -> {segments_path}",
+                step_segments,
+                step_key="step_5_segments",
+            )
+    else:
+        if segments_path.exists():
+            segments_data = json.loads(segments_path.read_text(encoding="utf-8"))
+            segments = [(d["start"], d["end"], d["text"]) for d in segments_data]
+            emit_log(
+                f"{Fore.YELLOW}Skipping STEP 5: loaded segments from {segments_path}{Style.RESET_ALL}",
+                level="warning",
+            )
+        else:
+            segments = []
+            emit_log(
+                f"{Fore.YELLOW}Skipping STEP 5: no existing segments at {segments_path}{Style.RESET_ALL}",
+                level="warning",
+            )
+        refinement_progress(1.0, message="Transcript structure skipped")
+    emit_log(f"[Pipeline] Loaded {len(segments)} segments")
 
     # ----------------------
     # STEP 6: Find Clip Candidates

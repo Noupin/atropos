@@ -4,7 +4,7 @@ import json
 import re
 from concurrent.futures import TimeoutError as FuturesTimeout
 from pathlib import Path
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 import config
 from helpers.ai import local_llm_call_json, local_llm_generate
@@ -54,6 +54,7 @@ def refine_segments_with_llm(
     *,
     model: str = config.LOCAL_LLM_MODEL,
     timeout: int = config.LLM_API_TIMEOUT,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> List[Tuple[float, float, str]]:
     """Use an LLM to merge or split segments into complete sentences.
 
@@ -136,7 +137,11 @@ def refine_segments_with_llm(
         max_workers=config.LLM_MAX_WORKERS,
         timeout=config.LLM_PER_CHUNK_TIMEOUT,
         on_error=_on_error,
+        on_progress=progress_callback,
     )
+
+    if progress_callback and not chunks:
+        progress_callback(0, 0)
 
     for chunk_out in results:
         for s, e, t in chunk_out:

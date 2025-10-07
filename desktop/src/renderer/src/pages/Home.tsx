@@ -10,19 +10,8 @@ import {
 import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PipelineProgress from '../components/PipelineProgress'
-import { BACKEND_MODE, buildJobClipVideoUrl } from '../config/backend'
-import {
-  createInitialPipelineSteps,
-  PIPELINE_STEP_DEFINITIONS,
-  resolvePipelineLocation
-} from '../data/pipeline'
-import {
-  normaliseJobClip,
-  resumePipelineJob,
-  startPipelineJob,
-  subscribeToPipelineEvents,
-  type PipelineEventMessage
-} from '../services/pipelineApi'
+import { BACKEND_MODE } from '../config/backend'
+import { createInitialPipelineSteps, PIPELINE_STEP_DEFINITIONS } from '../data/pipeline'
 import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
 import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
@@ -47,9 +36,18 @@ type HomeProps = {
   initialState: HomePipelineState
   onStateChange: (state: HomePipelineState) => void
   accounts: AccountSummary[]
+  onStartPipeline: (url: string, accountId: string, reviewMode: boolean) => Promise<void> | void
+  onResumePipeline: () => Promise<void> | void
 }
 
-const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, accounts }) => {
+const Home: FC<HomeProps> = ({
+  registerSearch,
+  initialState,
+  onStateChange,
+  accounts,
+  onStartPipeline,
+  onResumePipeline
+}) => {
   const navigate = useNavigate()
   const [state, setState] = useState<HomePipelineState>(initialState)
   const [folderMessage, setFolderMessage] = useState<string | null>(null)
@@ -115,8 +113,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
 
   const timersRef = useRef<number[]>([])
   const runStepRef = useRef<(index: number) => void>(() => {})
-  const connectionCleanupRef = useRef<(() => void) | null>(null)
-  const activeJobIdRef = useRef<string | null>(initialState.activeJobId ?? null)
 
   const isMockBackend = BACKEND_MODE === 'mock'
 
@@ -127,22 +123,13 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     timersRef.current = []
   }, [])
 
-  const cleanupConnection = useCallback(() => {
-    const cleanup = connectionCleanupRef.current
-    if (cleanup) {
-      cleanup()
-      connectionCleanupRef.current = null
-    }
-  }, [])
-
   useEffect(() => {
     registerSearch(null)
     return () => {
       registerSearch(null)
       clearTimers()
-      cleanupConnection()
     }
-  }, [cleanupConnection, clearTimers, registerSearch])
+  }, [clearTimers, registerSearch])
 
   useEffect(() => {
     if (!isMockBackend) {
@@ -220,465 +207,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
     }
   }, [clearTimers, isMockBackend, updateState])
 
-  const handlePipelineEvent = useCallback(
-    (event: PipelineEventMessage) => {
-      if (event.type === 'pipeline_started') {
-        updateState((prev) => ({
-          ...prev,
-          steps: createInitialPipelineSteps(),
-          pipelineError: null,
-          isProcessing: true
-        }))
-        return
-      }
-
-      if (event.type === 'step_progress') {
-        const location = resolvePipelineLocation(event.step)
-        if (!location || typeof event.data?.progress !== 'number') {
-          return
-        }
-        const progressValue = clamp01(event.data.progress)
-        const completedValue =
-          typeof event.data.completed === 'number' ? Math.max(0, event.data.completed) : null
-        const totalValue =
-          typeof event.data.total === 'number' ? Math.max(0, event.data.total) : null
-        const rawEta =
-          typeof event.data.eta_seconds === 'number'
-            ? event.data.eta_seconds
-            : typeof event.data.eta === 'number'
-              ? event.data.eta
-              : null
-        const etaValue =
-          rawEta !== null && Number.isFinite(rawEta) && rawEta >= 0 ? rawEta : null
-
-        updateState((prev) => ({
-          ...prev,
-          steps: prev.steps.map((step) => {
-            if (location.kind === 'step') {
-              if (step.id !== location.stepId) {
-                return step
-              }
-
-              const nextClipProgress = step.clipStage
-                ? {
-                    completed:
-                      completedValue !== null
-                        ? completedValue
-                        : step.clipProgress?.completed ?? 0,
-                    total:
-                      totalValue !== null ? totalValue : step.clipProgress?.total ?? 0
-                  }
-                : step.clipProgress
-
-              if (step.status === 'completed') {
-                return { ...step, clipProgress: nextClipProgress, etaSeconds: null }
-              }
-
-              return {
-                ...step,
-                status: 'running',
-                progress: progressValue,
-                clipProgress: nextClipProgress,
-                etaSeconds: etaValue
-              }
-            }
-
-            if (step.id !== location.stepId) {
-              return step
-            }
-
-            return {
-              ...step,
-              status: step.status === 'pending' ? 'running' : step.status,
-              substeps: step.substeps.map((substep) => {
-                if (substep.id !== location.substepId) {
-                  return substep
-                }
-
-                const totalClips = totalValue !== null ? totalValue : substep.totalClips
-                const boundedTotal = Math.max(0, totalClips)
-
-                if (location.clipIndex !== null) {
-                  const clipPosition =
-                    boundedTotal > 0
-                      ? Math.min(boundedTotal, Math.max(1, location.clipIndex))
-                      : Math.max(1, location.clipIndex)
-                  const previousCompleted = substep.completedClips
-                  const rawCompleted =
-                    completedValue !== null ? Math.max(0, completedValue) : previousCompleted
-                  let boundedCompleted =
-                    boundedTotal > 0 ? Math.min(boundedTotal, rawCompleted) : rawCompleted
-                  if (progressValue >= 1) {
-                    boundedCompleted = Math.max(boundedCompleted, clipPosition)
-                  }
-                  const allDone =
-                    (boundedTotal === 0 && totalValue !== null) ||
-                    (boundedTotal > 0 && boundedCompleted >= boundedTotal)
-
-                  return {
-                    ...substep,
-                    status: allDone ? 'completed' : 'running',
-                    progress: progressValue,
-                    etaSeconds: etaValue,
-                    completedClips: boundedCompleted,
-                    totalClips: boundedTotal,
-                    activeClipIndex: allDone ? null : clipPosition
-                  }
-                }
-
-                const previousCompleted = substep.completedClips
-                const rawCompleted =
-                  completedValue !== null ? Math.max(0, completedValue) : previousCompleted
-                const boundedCompleted =
-                  boundedTotal > 0 ? Math.min(boundedTotal, rawCompleted) : rawCompleted
-                const progressed = boundedCompleted > previousCompleted
-                const allDone =
-                  (boundedTotal === 0 && totalValue !== null) ||
-                  (boundedTotal > 0 && boundedCompleted >= boundedTotal)
-
-                const nextStatus = allDone
-                  ? 'completed'
-                  : substep.status === 'pending' && !progressed && previousCompleted === 0
-                    ? substep.status
-                    : 'running'
-
-                const nextProgress = allDone ? 1 : progressed ? 0 : substep.progress
-
-                const nextActiveClipIndex = allDone
-                  ? null
-                  : totalValue !== null && boundedTotal > 0
-                    ? Math.min(boundedTotal, boundedCompleted + 1)
-                    : substep.activeClipIndex
-
-                return {
-                  ...substep,
-                  status: nextStatus,
-                  progress: nextProgress,
-                  etaSeconds: etaValue,
-                  completedClips: boundedCompleted,
-                  totalClips: boundedTotal,
-                  activeClipIndex: nextActiveClipIndex
-                }
-              })
-            }
-          })
-        }))
-        return
-      }
-
-      if (event.type === 'step_started' || event.type === 'step_completed' || event.type === 'step_failed') {
-        const location = resolvePipelineLocation(event.step)
-        if (!location) {
-          return
-        }
-        const targetIndex = PIPELINE_STEP_DEFINITIONS.findIndex((definition) => definition.id === location.stepId)
-        if (targetIndex === -1) {
-          return
-        }
-
-        updateState((prev) => ({
-          ...prev,
-          steps: prev.steps.map((step, index) => {
-            const shouldForceCompleted = index < targetIndex && step.status !== 'completed'
-
-            if (location.kind === 'step') {
-              if (shouldForceCompleted) {
-                return { ...step, status: 'completed', progress: 1, etaSeconds: null }
-              }
-              if (index === targetIndex) {
-                if (event.type === 'step_started') {
-                  return { ...step, status: 'running', progress: 0, etaSeconds: null }
-                }
-                if (event.type === 'step_completed') {
-                  return { ...step, status: 'completed', progress: 1, etaSeconds: null }
-                }
-                return { ...step, status: 'failed', progress: 1, etaSeconds: null }
-              }
-              return step
-            }
-
-            if (shouldForceCompleted) {
-              return { ...step, status: 'completed', progress: 1, etaSeconds: null }
-            }
-
-            if (step.id !== location.stepId) {
-              return step
-            }
-
-            const clipPosition =
-              location.kind === 'substep' && location.clipIndex !== null
-                ? Math.max(1, location.clipIndex)
-                : null
-
-            const updatedSubsteps = step.substeps.map((substep) => {
-              if (substep.id === location.substepId) {
-                if (event.type === 'step_started') {
-                  const nextActiveClip =
-                    clipPosition ?? substep.activeClipIndex ?? Math.max(1, substep.completedClips + 1)
-                  return {
-                    ...substep,
-                    status: 'running',
-                    progress: 0,
-                    etaSeconds: null,
-                    activeClipIndex: nextActiveClip
-                  }
-                }
-                if (event.type === 'step_completed') {
-                  const targetClipIndex = clipPosition ?? location.clipIndex
-                  const boundedTotal = Math.max(0, substep.totalClips)
-                  const rawCompleted =
-                    targetClipIndex !== null
-                      ? Math.max(substep.completedClips, targetClipIndex)
-                      : substep.completedClips
-                  const completedClips =
-                    boundedTotal > 0 ? Math.min(boundedTotal, rawCompleted) : rawCompleted
-                  const allDone = boundedTotal > 0 && completedClips >= boundedTotal
-                  return {
-                    ...substep,
-                    status: allDone ? 'completed' : 'running',
-                    progress: 1,
-                    etaSeconds: null,
-                    completedClips,
-                    activeClipIndex: allDone ? null : clipPosition ?? substep.activeClipIndex
-                  }
-                }
-                return {
-                  ...substep,
-                  status: 'failed',
-                  etaSeconds: null,
-                  progress: 1,
-                  activeClipIndex: clipPosition ?? substep.activeClipIndex
-                }
-              }
-
-              if (event.type === 'step_started' && clipPosition !== null) {
-                const boundedTotal = Math.max(0, substep.totalClips)
-                const completedClips = Math.max(0, substep.completedClips)
-                const allDone = boundedTotal > 0 && completedClips >= boundedTotal
-                if (!allDone && completedClips < clipPosition) {
-                  const nextActiveClip =
-                    boundedTotal > 0 ? Math.min(boundedTotal, clipPosition) : clipPosition
-                  return {
-                    ...substep,
-                    status: 'pending',
-                    progress: 0,
-                    etaSeconds: null,
-                    activeClipIndex: nextActiveClip
-                  }
-                }
-              }
-
-              return substep
-            })
-
-            const allCompleted = updatedSubsteps.length > 0 &&
-              updatedSubsteps.every((substep) => substep.status === 'completed')
-
-            if (event.type === 'step_failed') {
-              return {
-                ...step,
-                status: 'failed',
-                progress: 1,
-                etaSeconds: null,
-                substeps: updatedSubsteps
-              }
-            }
-
-            if (event.type === 'step_completed' && allCompleted) {
-              return {
-                ...step,
-                status: 'completed',
-                progress: 1,
-                etaSeconds: null,
-                substeps: updatedSubsteps
-              }
-            }
-
-            if (event.type === 'step_started' && step.status === 'pending') {
-              return {
-                ...step,
-                status: 'running',
-                substeps: updatedSubsteps
-              }
-            }
-
-            return { ...step, substeps: updatedSubsteps }
-          })
-        }))
-
-        if (event.type === 'step_failed') {
-          updateState((prev) => ({
-            ...prev,
-            pipelineError: event.message ?? 'Pipeline step failed.'
-          }))
-        }
-        return
-      }
-
-      if (event.type === 'log') {
-        const statusValue =
-          event.data && typeof event.data === 'object' ? (event.data as Record<string, unknown>).status : null
-        if (statusValue === 'waiting_for_review') {
-          updateState((prev) => ({ ...prev, awaitingReview: true }))
-        }
-        return
-      }
-
-      if (event.type === 'clip_ready') {
-        const jobId = activeJobIdRef.current
-        const data = event.data ?? {}
-        if (!jobId || typeof data !== 'object') {
-          return
-        }
-
-        const clipId = typeof data.clip_id === 'string' ? data.clip_id : null
-        const description = typeof data.description === 'string' ? data.description : null
-        const durationValue = typeof data.duration_seconds === 'number' ? data.duration_seconds : null
-        const createdAt = typeof data.created_at === 'string' ? data.created_at : null
-        const sourceUrl = typeof data.source_url === 'string' ? data.source_url : null
-        const sourceTitle = typeof data.source_title === 'string' ? data.source_title : null
-
-        if (!clipId || !description || !createdAt || durationValue === null || !sourceUrl || !sourceTitle) {
-          return
-        }
-
-        const playbackUrl = buildJobClipVideoUrl(jobId, clipId)
-        const manifestPayload: Record<string, unknown> = {
-          ...data,
-          id: clipId,
-          playback_url: playbackUrl,
-          description,
-          duration_seconds: durationValue,
-          created_at: createdAt,
-          source_url: sourceUrl,
-          source_title: sourceTitle,
-          source_published_at:
-            typeof data.source_published_at === 'string' ? data.source_published_at : null,
-          views: typeof data.views === 'number' ? data.views : null,
-          rating: typeof data.rating === 'number' ? data.rating : null,
-          quote: typeof data.quote === 'string' ? data.quote : null,
-          reason: typeof data.reason === 'string' ? data.reason : null,
-          account: typeof data.account === 'string' ? data.account : null,
-          video_id: typeof data.video_id === 'string' ? data.video_id : clipId,
-          video_title: typeof data.video_title === 'string' ? data.video_title : sourceTitle
-        }
-
-        const incomingClip = normaliseJobClip(manifestPayload)
-        if (!incomingClip) {
-          return
-        }
-
-        updateState((prev) => {
-          const existingIndex = prev.clips.findIndex((clip) => clip.id === incomingClip.id)
-          const mergedClips =
-            existingIndex === -1
-              ? [...prev.clips, incomingClip]
-              : prev.clips.map((clip, index) => (index === existingIndex ? incomingClip : clip))
-
-          mergedClips.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-
-          const hasSelection = mergedClips.some((clip) => clip.id === prev.selectedClipId)
-          return {
-            ...prev,
-            clips: mergedClips,
-            selectedClipId: hasSelection ? prev.selectedClipId : mergedClips[0]?.id ?? null
-          }
-        })
-
-        return
-      }
-
-      if (event.type === 'pipeline_completed') {
-        const successValue = event.data?.success
-        const success = typeof successValue === 'boolean' ? successValue : true
-        const errorValue = event.data?.error
-        const errorMessage =
-          typeof errorValue === 'string' ? errorValue : typeof event.message === 'string' ? event.message : null
-
-        updateState((prev) => ({
-          ...prev,
-          pipelineError: success ? null : errorMessage ?? 'Pipeline failed.',
-          isProcessing: false,
-          awaitingReview: false,
-          steps: prev.steps.map((step) => {
-            if (success) {
-              if (step.status === 'completed' || step.status === 'failed') {
-                return { ...step, etaSeconds: null }
-              }
-              return { ...step, status: 'completed', progress: 1, etaSeconds: null }
-            }
-            if (step.status === 'completed' || step.status === 'failed') {
-              return { ...step, etaSeconds: null }
-            }
-            return { ...step, status: 'failed', progress: 1, etaSeconds: null }
-          })
-        }))
-        cleanupConnection()
-      }
-    },
-    [cleanupConnection, updateState]
-  )
-
-  const startRealProcessing = useCallback(
-    async (urlToProcess: string, accountId: string, shouldPauseForReview: boolean) => {
-      updateState((prev) => ({
-        ...prev,
-        isProcessing: true,
-        pipelineError: null,
-        awaitingReview: false
-      }))
-      cleanupConnection()
-
-      try {
-        const toneOverride =
-          availableAccounts.find((account) => account.id === accountId)?.tone ?? null
-        const { jobId } = await startPipelineJob({
-          url: urlToProcess,
-          account: accountId,
-          tone: toneOverride,
-          reviewMode: shouldPauseForReview
-        })
-        activeJobIdRef.current = jobId
-        let unsubscribe: (() => void) | null = null
-        const cleanup = () => {
-          if (unsubscribe) {
-            unsubscribe()
-            unsubscribe = null
-          }
-        }
-        connectionCleanupRef.current = cleanup
-
-        unsubscribe = subscribeToPipelineEvents(jobId, {
-          onEvent: handlePipelineEvent,
-          onError: (error) => {
-            updateState((prev) => ({
-              ...prev,
-              pipelineError: error.message,
-              isProcessing: false
-            }))
-            cleanupConnection()
-          },
-          onClose: () => {
-            if (connectionCleanupRef.current === cleanup) {
-              connectionCleanupRef.current = null
-            }
-          }
-        })
-        updateState((prev) => ({ ...prev, activeJobId: jobId, awaitingReview: false }))
-        if (trialState.isTrialActive) {
-          await consumeTrialRun()
-        }
-      } catch (error) {
-        updateState((prev) => ({
-          ...prev,
-          pipelineError:
-            error instanceof Error ? error.message : 'Unable to start the pipeline.',
-          isProcessing: false
-        }))
-      }
-    },
-    [availableAccounts, cleanupConnection, consumeTrialRun, handlePipelineEvent, trialState.isTrialActive, updateState]
-  )
 
   useEffect(() => {
     if (clips.length === 0) {
@@ -695,10 +223,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       }
     }
   }, [clips, selectedClipId, updateState])
-
-  useEffect(() => {
-    activeJobIdRef.current = activeJobId
-  }, [activeJobId])
 
   const handleUrlChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -759,7 +283,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       }
 
       clearTimers()
-      cleanupConnection()
       updateState((prev) => ({
         ...prev,
         urlError: null,
@@ -782,16 +305,15 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         return
       }
 
-      void startRealProcessing(trimmed, accountId, reviewMode)
+      void onStartPipeline(trimmed, accountId, reviewMode)
     },
     [
       availableAccounts.length,
-      cleanupConnection,
       clearTimers,
       consumeTrialRun,
       isMockBackend,
       selectedAccountId,
-      startRealProcessing,
+      onStartPipeline,
       reviewMode,
       trialState.isTrialActive,
       updateState,
@@ -801,7 +323,6 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
 
   const handleReset = useCallback(() => {
     clearTimers()
-    cleanupConnection()
     updateState((prev) => ({
       ...prev,
       steps: createInitialPipelineSteps(),
@@ -814,8 +335,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       activeJobId: null,
       awaitingReview: false
     }))
-    activeJobIdRef.current = null
-  }, [cleanupConnection, clearTimers, updateState])
+  }, [clearTimers, updateState])
 
   const handleOpenClipsFolder = useCallback(async () => {
     if (!canAttemptToOpenFolder) {
@@ -857,31 +377,18 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       navigate(`/clip/${encodeURIComponent(clip.id)}/edit`, {
         state: {
           clip,
-          jobId: activeJobIdRef.current,
+          jobId: activeJobId,
           accountId: clip.accountId ?? null,
           context: 'job'
         }
       })
     },
-    [clips, navigate]
+    [activeJobId, clips, navigate]
   )
 
-  const handleResumePipeline = useCallback(async () => {
-    const jobId = activeJobIdRef.current
-    if (!jobId) {
-      return
-    }
-    try {
-      await resumePipelineJob(jobId)
-      updateState((prev) => ({ ...prev, awaitingReview: false }))
-    } catch (error) {
-      updateState((prev) => ({
-        ...prev,
-        pipelineError:
-          error instanceof Error ? error.message : 'Unable to resume the pipeline. Try again shortly.'
-      }))
-    }
-  }, [updateState])
+  const handleResumePipeline = useCallback(() => {
+    void onResumePipeline()
+  }, [onResumePipeline])
 
   const hasProgress = useMemo(
     () => steps.some((step) => step.status !== 'pending' || step.progress > 0),
