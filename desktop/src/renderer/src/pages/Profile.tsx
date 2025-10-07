@@ -827,18 +827,8 @@ const Profile: FC<ProfileProps> = ({
   const [newAccountError, setNewAccountError] = useState<string | null>(null)
   const [newAccountSuccess, setNewAccountSuccess] = useState<string | null>(null)
   const [isCreatingAccount, setIsCreatingAccount] = useState(false)
-  const { state: trialState, consumeTrialRun, refresh: refreshTrialStatus } = useTrialAccess()
-  const [isConsumingTrial, setIsConsumingTrial] = useState(false)
+  const { state: trialState, refresh: refreshTrialStatus } = useTrialAccess()
   const [isRefreshingTrial, setIsRefreshingTrial] = useState(false)
-
-  const handleUseTrialRun = useCallback(async () => {
-    setIsConsumingTrial(true)
-    try {
-      await consumeTrialRun()
-    } finally {
-      setIsConsumingTrial(false)
-    }
-  }, [consumeTrialRun])
 
   const handleRefreshTrialStatus = useCallback(async () => {
     setIsRefreshingTrial(true)
@@ -851,9 +841,7 @@ const Profile: FC<ProfileProps> = ({
 
   const totalTrialRuns = trialState.totalRuns ?? DEFAULT_TRIAL_RUNS
   const remainingTrialRuns = trialState.remainingRuns ?? 0
-  const consumeButtonLabel = isConsumingTrial ? 'Using…' : 'Use trial run'
   const refreshButtonLabel = isRefreshingTrial ? 'Refreshing…' : 'Refresh status'
-  const disableTrialButton = !trialState.isTrialActive || trialState.isLoading || trialState.isOffline
 
   useEffect(() => {
     registerSearch(null)
@@ -948,16 +936,9 @@ const Profile: FC<ProfileProps> = ({
             Reconnect to verify trial access. Offline mode limits functionality.
           </p>
         ) : trialState.isTrialActive ? (
-          <button
-            type="button"
-            onClick={() => {
-              void handleUseTrialRun()
-            }}
-            className="marble-button marble-button--primary w-fit px-4 py-2 text-sm font-semibold"
-            disabled={disableTrialButton}
-          >
-            {consumeButtonLabel}
-          </button>
+          <p className="text-sm font-medium text-[var(--muted)]">
+            Trial runs are used automatically when you process videos from the Home page.
+          </p>
         ) : (
           <p className="text-sm font-medium text-[var(--muted)]">You have exhausted your trial.</p>
         )}
