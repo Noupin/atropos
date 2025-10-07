@@ -104,7 +104,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const location = useLocation()
   const navigate = useNavigate()
   const { state: trialState } = useTrialAccess()
-  const navigationDisabled = !trialState.isTrialActive
+  const homeNavigationDisabled = !trialState.isTrialActive
 
   const preventDisabledNavigation = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
@@ -115,7 +115,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     if (trialState.isLoading || trialState.isTrialActive) {
       return
     }
-    const allowedPrefixes = ['/profile', '/settings']
+    const allowedPrefixes = ['/profile', '/settings', '/library']
     const isAllowed = allowedPrefixes.some((prefix) => location.pathname.startsWith(prefix))
     if (!isAllowed) {
       navigate('/profile', { replace: true })
@@ -475,22 +475,17 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                   to="/"
                   end
                   className={({ isActive }) =>
-                    navLinkClassName({ isActive, disabled: navigationDisabled })
+                    navLinkClassName({ isActive, disabled: homeNavigationDisabled })
                   }
-                  aria-disabled={navigationDisabled ? true : undefined}
-                  tabIndex={navigationDisabled ? -1 : undefined}
-                  onClick={navigationDisabled ? preventDisabledNavigation : undefined}
+                  aria-disabled={homeNavigationDisabled ? true : undefined}
+                  tabIndex={homeNavigationDisabled ? -1 : undefined}
+                  onClick={homeNavigationDisabled ? preventDisabledNavigation : undefined}
                 >
                   {({ isActive }) => <NavItemLabel label="Home" isActive={isActive} />}
                 </NavLink>
                 <NavLink
                   to="/library"
-                  className={({ isActive }) =>
-                    navLinkClassName({ isActive, disabled: navigationDisabled })
-                  }
-                  aria-disabled={navigationDisabled ? true : undefined}
-                  tabIndex={navigationDisabled ? -1 : undefined}
-                  onClick={navigationDisabled ? preventDisabledNavigation : undefined}
+                  className={({ isActive }) => navLinkClassName({ isActive })}
                 >
                   {({ isActive }) => (
                     <NavItemLabel
