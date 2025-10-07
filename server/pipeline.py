@@ -694,13 +694,14 @@ def process_video(
                 f"{Fore.YELLOW}Skipping STEP 5: loaded segments from {segments_path}{Style.RESET_ALL}",
                 level="warning",
             )
+            refinement_progress(1.0, message="Transcript structure already available")
         else:
             segments = []
             emit_log(
                 f"{Fore.YELLOW}Skipping STEP 5: no existing segments at {segments_path}{Style.RESET_ALL}",
                 level="warning",
             )
-        refinement_progress(1.0, message="Transcript structure skipped")
+            refinement_progress(1.0, message="Transcript structure skipped")
     emit_log(f"[Pipeline] Loaded {len(segments)} segments")
 
     # ----------------------
