@@ -1,24 +1,43 @@
-export default {
-  async fetch(request: Request, env: any, ctx: ExecutionContext) {
-    const url = new URL(request.url);
-    const path = url.pathname;
+import { handleOptions, jsonResponse } from './lib/http'
+import { acceptTransfer, initiateTransfer } from './routes/transfer'
+import { consumeTrial, getTrialStatus, startTrial } from './routes/trial'
+import type { Env } from './types'
 
-    if (path === "/health") {
-      return new Response(JSON.stringify({ status: "ok" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+const notFound = (): Response => jsonResponse({ error: 'not_found' }, { status: 404 })
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    if (request.method === 'OPTIONS') {
+      return handleOptions()
     }
 
-    // TODO: route other endpoints
-    // e.g. if path.startsWith("/billing") → billing handler
-    // else if path.startsWith("/license") → license handler
-    // else if path.startsWith("/trial") → trial handler
-    // else return 404
+    const url = new URL(request.url)
+    const path = url.pathname
 
-    return new Response(JSON.stringify({ error: "Not found" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
-    });
-  },
-};
+    if (path === '/health') {
+      return jsonResponse({ status: 'ok' })
+    }
+
+    if (path === '/trial/status' && request.method === 'GET') {
+      return getTrialStatus(request, env)
+    }
+
+    if (path === '/trial/start' && request.method === 'POST') {
+      return startTrial(request, env)
+    }
+
+    if (path === '/trial/consume' && request.method === 'POST') {
+      return consumeTrial(request, env)
+    }
+
+    if (path === '/transfer/initiate' && request.method === 'POST') {
+      return initiateTransfer(request, env)
+    }
+
+    if (path === '/transfer/accept' && request.method === 'POST') {
+      return acceptTransfer(request, env)
+    }
+
+    return notFound()
+  }
+}

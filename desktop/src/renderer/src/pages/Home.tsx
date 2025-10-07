@@ -26,6 +26,7 @@ import {
 import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
 import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
+import { useTrialAccess } from '../state/trialAccess'
 
 const SUPPORTED_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv'] as const
 
@@ -55,6 +56,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
   const [isOpeningFolder, setIsOpeningFolder] = useState(false)
   const canAttemptToOpenFolder = useMemo(() => canOpenAccountClipsFolder(), [])
+  const { state: trialState, consumeTrialRun } = useTrialAccess()
 
   useEffect(() => {
     setState(initialState)
@@ -663,6 +665,9 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
           }
         })
         updateState((prev) => ({ ...prev, activeJobId: jobId, awaitingReview: false }))
+        if (trialState.isTrialActive) {
+          await consumeTrialRun()
+        }
       } catch (error) {
         updateState((prev) => ({
           ...prev,
@@ -672,7 +677,7 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
         }))
       }
     },
-    [availableAccounts, cleanupConnection, handlePipelineEvent, updateState]
+    [availableAccounts, cleanupConnection, consumeTrialRun, handlePipelineEvent, trialState.isTrialActive, updateState]
   )
 
   useEffect(() => {
@@ -771,6 +776,9 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       if (isMockBackend) {
         const startTimeout = window.setTimeout(() => runStepRef.current(0), 150)
         timersRef.current.push(startTimeout)
+        if (trialState.isTrialActive) {
+          void consumeTrialRun()
+        }
         return
       }
 
@@ -780,10 +788,12 @@ const Home: FC<HomeProps> = ({ registerSearch, initialState, onStateChange, acco
       availableAccounts.length,
       cleanupConnection,
       clearTimers,
+      consumeTrialRun,
       isMockBackend,
       selectedAccountId,
       startRealProcessing,
       reviewMode,
+      trialState.isTrialActive,
       updateState,
       videoUrl
     ]

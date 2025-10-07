@@ -12,6 +12,7 @@ import {
 import { TONE_LABELS, TONE_OPTIONS } from '../constants/tone'
 import { timeAgo } from '../lib/format'
 import MarbleSelect from '../components/MarbleSelect'
+import { DEFAULT_TRIAL_RUNS, useTrialAccess } from '../state/trialAccess'
 
 const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
   tiktok: 'tiktok.json',
@@ -826,6 +827,21 @@ const Profile: FC<ProfileProps> = ({
   const [newAccountError, setNewAccountError] = useState<string | null>(null)
   const [newAccountSuccess, setNewAccountSuccess] = useState<string | null>(null)
   const [isCreatingAccount, setIsCreatingAccount] = useState(false)
+  const { state: trialState, refresh: refreshTrialStatus } = useTrialAccess()
+  const [isRefreshingTrial, setIsRefreshingTrial] = useState(false)
+
+  const handleRefreshTrialStatus = useCallback(async () => {
+    setIsRefreshingTrial(true)
+    try {
+      await refreshTrialStatus()
+    } finally {
+      setIsRefreshingTrial(false)
+    }
+  }, [refreshTrialStatus])
+
+  const totalTrialRuns = trialState.totalRuns ?? DEFAULT_TRIAL_RUNS
+  const remainingTrialRuns = trialState.remainingRuns ?? 0
+  const refreshButtonLabel = isRefreshingTrial ? 'Refreshing…' : 'Refresh status'
 
   useEffect(() => {
     registerSearch(null)
@@ -890,6 +906,43 @@ const Profile: FC<ProfileProps> = ({
           where processed videos will be delivered.
         </p>
       </header>
+
+      <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold text-[var(--fg)]">Trial access</h2>
+            <p className="text-xs text-[var(--muted)]">
+              {trialState.isOffline
+                ? 'Offline mode — licensing service unreachable.'
+                : `Remaining: ${remainingTrialRuns} / ${totalTrialRuns}`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              void handleRefreshTrialStatus()
+            }}
+            className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
+            disabled={trialState.isLoading}
+          >
+            {refreshButtonLabel}
+          </button>
+        </div>
+        {trialState.lastError ? (
+          <p className="text-xs font-medium text-[color:var(--error-strong)]">{trialState.lastError}</p>
+        ) : null}
+        {trialState.isOffline ? (
+          <p className="text-sm font-medium text-[var(--muted)]">
+            Reconnect to verify trial access. Offline mode limits functionality.
+          </p>
+        ) : trialState.isTrialActive ? (
+          <p className="text-sm font-medium text-[var(--muted)]">
+            Trial runs are used automatically when you process videos from the Home page.
+          </p>
+        ) : (
+          <p className="text-sm font-medium text-[var(--muted)]">You have exhausted your trial.</p>
+        )}
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-6">
