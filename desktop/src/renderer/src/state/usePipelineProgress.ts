@@ -108,7 +108,8 @@ export const usePipelineProgress = ({
           ...prev,
           steps: createInitialPipelineSteps(),
           pipelineError: null,
-          isProcessing: true
+          isProcessing: true,
+          lastRunProducedNoClips: false
         }))
         return
       }
@@ -460,7 +461,8 @@ export const usePipelineProgress = ({
           return {
             ...prev,
             clips: mergedClips,
-            selectedClipId: hasSelection ? prev.selectedClipId : mergedClips[0]?.id ?? null
+            selectedClipId: hasSelection ? prev.selectedClipId : mergedClips[0]?.id ?? null,
+            lastRunProducedNoClips: false
           }
         })
 
@@ -506,7 +508,8 @@ export const usePipelineProgress = ({
               return { ...step, etaSeconds: null }
             }
             return { ...step, status: 'failed', progress: 1, etaSeconds: null }
-          })
+          }),
+          lastRunProducedNoClips: success && prev.clips.length === 0
         }))
         cleanupConnection()
         const jobId = activeJobIdRef.current
@@ -551,7 +554,8 @@ export const usePipelineProgress = ({
           updateState((prev) => ({
             ...prev,
             pipelineError: error.message,
-            isProcessing: false
+            isProcessing: false,
+            lastRunProducedNoClips: false
           }))
           cleanupConnection()
         },
@@ -597,7 +601,8 @@ export const usePipelineProgress = ({
         ...prev,
         isProcessing: true,
         pipelineError: null,
-        awaitingReview: false
+        awaitingReview: false,
+        lastRunProducedNoClips: false
       }))
 
       cleanupConnection()
@@ -622,7 +627,8 @@ export const usePipelineProgress = ({
         updateState((prev) => ({
           ...prev,
           pipelineError: error instanceof Error ? error.message : 'Unable to start the pipeline.',
-          isProcessing: false
+          isProcessing: false,
+          lastRunProducedNoClips: false
         }))
       }
     },

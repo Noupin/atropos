@@ -97,6 +97,9 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
   selectedAccountId: null,
   accountError: null,
   activeJobId: null,
+  reviewMode: false,
+  awaitingReview: false,
+  lastRunProducedNoClips: false,
   ...overrides
 })
 

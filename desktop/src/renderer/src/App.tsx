@@ -170,7 +170,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     accountError: null,
     activeJobId: null,
     reviewMode: false,
-    awaitingReview: false
+    awaitingReview: false,
+    lastRunProducedNoClips: false
   }))
   const [accounts, setAccounts] = useState<AccountSummary[]>([])
   const [accountsError, setAccountsError] = useState<string | null>(null)

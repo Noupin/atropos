@@ -96,7 +96,8 @@ const Home: FC<HomeProps> = ({
     accountError,
     activeJobId,
     reviewMode,
-    awaitingReview
+    awaitingReview,
+    lastRunProducedNoClips
   } = state
 
   useEffect(() => {
@@ -326,7 +327,8 @@ const Home: FC<HomeProps> = ({
         isProcessing: true,
         accountError: null,
         activeJobId: null,
-        awaitingReview: false
+        awaitingReview: false,
+        lastRunProducedNoClips: false
       }))
 
       if (isMockBackend) {
@@ -369,7 +371,8 @@ const Home: FC<HomeProps> = ({
       selectedClipId: null,
       accountError: null,
       activeJobId: null,
-      awaitingReview: false
+      awaitingReview: false,
+      lastRunProducedNoClips: false
     }))
   }, [clearTimers, updateState])
 
@@ -486,6 +489,9 @@ const Home: FC<HomeProps> = ({
     if (clips.length > 0 && !isProcessing) {
       return 'Processing complete. Review the generated clips below.'
     }
+    if (lastRunProducedNoClips && !isProcessing) {
+      return 'Processing finished, but no clips were found for that video. Try refining your source or pipeline settings.'
+    }
     return 'Paste a supported link to kick off the Atropos pipeline.'
   }, [
     awaitingReview,
@@ -494,7 +500,8 @@ const Home: FC<HomeProps> = ({
     isProcessing,
     pipelineError,
     trialState.pendingConsumption,
-    trialState.pendingConsumptionStage
+    trialState.pendingConsumptionStage,
+    lastRunProducedNoClips
   ])
 
   return (
@@ -669,7 +676,9 @@ const Home: FC<HomeProps> = ({
               </ul>
             ) : (
               <div className="mt-4 rounded-xl border border-dashed border-white/15 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-6 text-sm text-[var(--muted)]">
-                No clips generated yet. Start the pipeline to create highlights ready for review.
+                {lastRunProducedNoClips
+                  ? 'The last pipeline run finished without generating any clips. Try another video or adjust your settings before running again.'
+                  : 'No clips generated yet. Start the pipeline to create highlights ready for review.'}
               </div>
             )}
           </div>

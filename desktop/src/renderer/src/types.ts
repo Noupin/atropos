@@ -129,6 +129,7 @@ export interface HomePipelineState {
   activeJobId: string | null
   reviewMode: boolean
   awaitingReview: boolean
+  lastRunProducedNoClips: boolean
 }
 
 export type PipelineEventType =
