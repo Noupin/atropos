@@ -54,7 +54,7 @@ const Home: FC<HomeProps> = ({
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
   const [isOpeningFolder, setIsOpeningFolder] = useState(false)
   const canAttemptToOpenFolder = useMemo(() => canOpenAccountClipsFolder(), [])
-  const { state: trialState, consumeTrialRun } = useTrialAccess()
+  const { state: trialState, markTrialRunPending, finalizeTrialRun } = useTrialAccess()
 
   useEffect(() => {
     setState(initialState)
@@ -141,6 +141,9 @@ const Home: FC<HomeProps> = ({
     runStepRef.current = (stepIndex: number) => {
       if (stepIndex >= PIPELINE_STEP_DEFINITIONS.length) {
         updateState((prev) => ({ ...prev, isProcessing: false }))
+        if (trialState.pendingConsumption) {
+          void finalizeTrialRun({ succeeded: true })
+        }
         return
       }
 
@@ -195,6 +198,9 @@ const Home: FC<HomeProps> = ({
           if (i === increments) {
             if (stepIndex === PIPELINE_STEP_DEFINITIONS.length - 1) {
               updateState((prev) => ({ ...prev, isProcessing: false }))
+              if (trialState.pendingConsumption) {
+                void finalizeTrialRun({ succeeded: true })
+              }
             } else {
               const nextTimeout = window.setTimeout(() => runStepRef.current(stepIndex + 1), 500)
               timersRef.current.push(nextTimeout)
@@ -205,7 +211,7 @@ const Home: FC<HomeProps> = ({
         timersRef.current.push(timeout)
       }
     }
-  }, [clearTimers, isMockBackend, updateState])
+  }, [clearTimers, finalizeTrialRun, isMockBackend, trialState.pendingConsumption, updateState])
 
 
   useEffect(() => {
@@ -282,6 +288,21 @@ const Home: FC<HomeProps> = ({
         return
       }
 
+      if (trialState.pendingConsumption) {
+        if (trialState.pendingConsumptionStage === 'finalizing') {
+          void finalizeTrialRun({ succeeded: true })
+        }
+        updateState((prev) => ({
+          ...prev,
+          pipelineError:
+            trialState.pendingConsumptionStage === 'finalizing'
+              ? 'Finishing the last trial run. Please wait a moment before starting a new video.'
+              : 'A trial run is already in progress. Let it complete before starting another video.',
+          isProcessing: false
+        }))
+        return
+      }
+
       clearTimers()
       updateState((prev) => ({
         ...prev,
@@ -300,7 +321,7 @@ const Home: FC<HomeProps> = ({
         const startTimeout = window.setTimeout(() => runStepRef.current(0), 150)
         timersRef.current.push(startTimeout)
         if (trialState.isTrialActive) {
-          void consumeTrialRun()
+          markTrialRunPending()
         }
         return
       }
@@ -310,12 +331,15 @@ const Home: FC<HomeProps> = ({
     [
       availableAccounts.length,
       clearTimers,
-      consumeTrialRun,
+      finalizeTrialRun,
       isMockBackend,
+      markTrialRunPending,
       selectedAccountId,
       onStartPipeline,
       reviewMode,
       trialState.isTrialActive,
+      trialState.pendingConsumption,
+      trialState.pendingConsumptionStage,
       updateState,
       videoUrl
     ]
@@ -442,11 +466,24 @@ const Home: FC<HomeProps> = ({
     if (currentStep) {
       return `Currently processing: ${currentStep.title}`
     }
+    if (trialState.pendingConsumption) {
+      return trialState.pendingConsumptionStage === 'finalizing'
+        ? 'Finalising your trial run. Please wait before starting another video.'
+        : 'A trial run is already in progress. Let it finish to free up your next attempt.'
+    }
     if (clips.length > 0 && !isProcessing) {
       return 'Processing complete. Review the generated clips below.'
     }
     return 'Paste a supported link to kick off the Atropos pipeline.'
-  }, [awaitingReview, clips.length, currentStep, isProcessing, pipelineError])
+  }, [
+    awaitingReview,
+    clips.length,
+    currentStep,
+    isProcessing,
+    pipelineError,
+    trialState.pendingConsumption,
+    trialState.pendingConsumptionStage
+  ])
 
   return (
     <section className="flex w-full flex-1 flex-col gap-6 px-6 py-8 lg:px-8">
@@ -499,7 +536,7 @@ const Home: FC<HomeProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="submit"
-                    disabled={!videoUrl.trim() || isProcessing}
+                    disabled={!videoUrl.trim() || isProcessing || trialState.pendingConsumption}
                     className="marble-button marble-button--primary whitespace-nowrap px-5 py-2.5 text-sm font-semibold sm:px-6 sm:py-2.5 sm:text-base"
                   >
                     {isProcessing ? 'Processing…' : 'Start processing'}
