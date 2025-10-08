@@ -263,8 +263,21 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   )
 
   const handlePipelineFinished = useCallback(
-    ({ jobId, success }: { jobId: string; success: boolean }) => {
-      if (!success || redirectedJobRef.current === jobId || !isOnHomePage) {
+    ({
+      jobId,
+      success,
+      producedClips
+    }: {
+      jobId: string
+      success: boolean
+      producedClips: number
+    }) => {
+      if (
+        !success ||
+        producedClips === 0 ||
+        redirectedJobRef.current === jobId ||
+        !isOnHomePage
+      ) {
         return
       }
       redirectedJobRef.current = jobId

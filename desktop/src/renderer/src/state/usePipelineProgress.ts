@@ -25,7 +25,7 @@ type UsePipelineProgressOptions = {
   hasPendingTrialRun: boolean
   isMockBackend: boolean
   onFirstClipReady?: (details: { jobId: string }) => void
-  onPipelineFinished?: (details: { jobId: string; success: boolean }) => void
+  onPipelineFinished?: (details: { jobId: string; success: boolean; producedClips: number }) => void
 }
 
 type UsePipelineProgressResult = {
@@ -58,7 +58,7 @@ export const usePipelineProgress = ({
     onFirstClipReady ?? null
   )
   const onPipelineFinishedRef = useRef<
-    ((details: { jobId: string; success: boolean }) => void) | null
+    ((details: { jobId: string; success: boolean; producedClips: number }) => void) | null
   >(onPipelineFinished ?? null)
 
   useEffect(() => {
@@ -492,25 +492,30 @@ export const usePipelineProgress = ({
               ? event.message
               : null
 
-        updateState((prev) => ({
-          ...prev,
-          pipelineError: success ? null : errorMessage ?? 'Pipeline failed.',
-          isProcessing: false,
-          awaitingReview: false,
-          steps: prev.steps.map((step) => {
-            if (success) {
+        let producedClipCount = 0
+
+        updateState((prev) => {
+          producedClipCount = prev.clips.length
+          return {
+            ...prev,
+            pipelineError: success ? null : errorMessage ?? 'Pipeline failed.',
+            isProcessing: false,
+            awaitingReview: false,
+            steps: prev.steps.map((step) => {
+              if (success) {
+                if (step.status === 'completed' || step.status === 'failed') {
+                  return { ...step, etaSeconds: null }
+                }
+                return { ...step, status: 'completed', progress: 1, etaSeconds: null }
+              }
               if (step.status === 'completed' || step.status === 'failed') {
                 return { ...step, etaSeconds: null }
               }
-              return { ...step, status: 'completed', progress: 1, etaSeconds: null }
-            }
-            if (step.status === 'completed' || step.status === 'failed') {
-              return { ...step, etaSeconds: null }
-            }
-            return { ...step, status: 'failed', progress: 1, etaSeconds: null }
-          }),
-          lastRunProducedNoClips: success && prev.clips.length === 0
-        }))
+              return { ...step, status: 'failed', progress: 1, etaSeconds: null }
+            }),
+            lastRunProducedNoClips: success && producedClipCount === 0
+          }
+        })
         cleanupConnection()
         const jobId = activeJobIdRef.current
         if (!finalizeTriggeredRef.current && trialFlagsRef.current.hasPendingTrialRun) {
@@ -519,7 +524,7 @@ export const usePipelineProgress = ({
         }
         const finishedCallback = onPipelineFinishedRef.current
         if (finishedCallback && jobId) {
-          finishedCallback({ jobId, success })
+          finishedCallback({ jobId, success, producedClips: producedClipCount })
         }
       }
     },
