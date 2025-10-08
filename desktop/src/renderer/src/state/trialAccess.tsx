@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState
 } from 'react'
 import type { ReactNode } from 'react'
@@ -32,6 +33,65 @@ export type TrialAccessState = {
 }
 
 export const DEFAULT_TRIAL_RUNS = 3
+
+const PENDING_CONSUMPTION_STORAGE_KEY = 'trialAccess.pendingConsumption'
+
+type StoredPendingConsumption = {
+  deviceHash: string
+  stage: PendingConsumptionStage
+}
+
+const readStoredPendingConsumption = (): StoredPendingConsumption | null => {
+  if (typeof window === 'undefined' || !('localStorage' in window)) {
+    return null
+  }
+  try {
+    const raw = window.localStorage.getItem(PENDING_CONSUMPTION_STORAGE_KEY)
+    if (!raw) {
+      return null
+    }
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') {
+      return null
+    }
+    const deviceHash = typeof parsed.deviceHash === 'string' ? parsed.deviceHash : null
+    const stageValue =
+      parsed.stage === 'finalizing'
+        ? 'finalizing'
+        : parsed.stage === 'in_progress'
+          ? 'in_progress'
+          : null
+    if (!deviceHash || stageValue === null) {
+      return null
+    }
+    return { deviceHash, stage: stageValue }
+  } catch (error) {
+    console.warn('Unable to read stored pending trial consumption state.', error)
+    return null
+  }
+}
+
+const writeStoredPendingConsumption = (value: StoredPendingConsumption): void => {
+  if (typeof window === 'undefined' || !('localStorage' in window)) {
+    return
+  }
+  try {
+    window.localStorage.setItem(PENDING_CONSUMPTION_STORAGE_KEY, JSON.stringify(value))
+  } catch (error) {
+    console.warn('Unable to persist pending trial consumption state.', error)
+  }
+}
+
+const clearStoredPendingConsumption = (): void => {
+  if (typeof window === 'undefined' || !('localStorage' in window)) {
+    return
+  }
+  try {
+    window.localStorage.removeItem(PENDING_CONSUMPTION_STORAGE_KEY)
+  } catch (error) {
+    console.warn('Unable to clear pending trial consumption state.', error)
+  }
+}
 
 const INITIAL_STATE: TrialAccessState = {
   totalRuns: null,
@@ -67,6 +127,7 @@ const mapStatusToState = (status: TrialStatusPayload): TrialAccessState => ({
 export const TrialAccessProvider = ({ children }: { children: ReactNode }): JSX.Element => {
   const [state, setState] = useState<TrialAccessState>(INITIAL_STATE)
   const [deviceHash, setDeviceHash] = useState<string | null>(null)
+  const hasRecoveredPendingRef = useRef(false)
 
   const applyStatus = useCallback(
     (status: TrialStatusPayload, overrides?: Partial<TrialAccessState>) => {
@@ -164,23 +225,83 @@ export const TrialAccessProvider = ({ children }: { children: ReactNode }): JSX.
     }))
   }, [])
 
-  const finalizeTrialRun = useCallback(
-    async ({ succeeded }: { succeeded: boolean }) => {
-      if (!deviceHash) {
+  const consumePendingTrialRun = useCallback(async () => {
+    if (!deviceHash) {
+      setState((prev) => ({
+        ...prev,
+        pendingConsumption: false,
+        pendingConsumptionStage: null
+      }))
+      clearStoredPendingConsumption()
+      return
+    }
+
+    try {
+      const status = await consumeTrial(deviceHash)
+      applyStatus(status, { pendingConsumption: false, pendingConsumptionStage: null })
+      clearStoredPendingConsumption()
+    } catch (error) {
+      if (error instanceof LicensingOfflineError) {
         setState((prev) => ({
           ...prev,
+          isLoading: false,
+          isOffline: true,
+          lastError: error.message,
+          pendingConsumption: true,
+          pendingConsumptionStage: 'finalizing'
+        }))
+        writeStoredPendingConsumption({ deviceHash, stage: 'finalizing' })
+        return
+      }
+      if (error instanceof TrialExhaustedError) {
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          isOffline: false,
+          isTrialActive: false,
+          remainingRuns: 0,
+          totalRuns: prev.totalRuns ?? DEFAULT_TRIAL_RUNS,
+          lastError: error.message,
           pendingConsumption: false,
           pendingConsumptionStage: null
         }))
+        clearStoredPendingConsumption()
         return
       }
+      if (error instanceof LicensingRequestError) {
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          isOffline: false,
+          lastError: error.message,
+          pendingConsumption: true,
+          pendingConsumptionStage: 'finalizing'
+        }))
+        writeStoredPendingConsumption({ deviceHash, stage: 'finalizing' })
+        return
+      }
+      console.error('Unexpected licensing error while finalizing trial run.', error)
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        isOffline: false,
+        lastError: 'Unexpected licensing error.',
+        pendingConsumption: true,
+        pendingConsumptionStage: 'finalizing'
+      }))
+      writeStoredPendingConsumption({ deviceHash, stage: 'finalizing' })
+    }
+  }, [applyStatus, deviceHash])
 
+  const finalizeTrialRun = useCallback(
+    async ({ succeeded }: { succeeded: boolean }) => {
       if (!succeeded) {
         setState((prev) => ({
           ...prev,
           pendingConsumption: false,
           pendingConsumptionStage: null
         }))
+        clearStoredPendingConsumption()
         return
       }
 
@@ -193,59 +314,50 @@ export const TrialAccessProvider = ({ children }: { children: ReactNode }): JSX.
         pendingConsumptionStage: 'finalizing'
       }))
 
-      try {
-        const status = await consumeTrial(deviceHash)
-        applyStatus(status, { pendingConsumption: false, pendingConsumptionStage: null })
-      } catch (error) {
-        if (error instanceof LicensingOfflineError) {
-          setState((prev) => ({
-            ...prev,
-            isLoading: false,
-            isOffline: true,
-            lastError: error.message,
-            pendingConsumption: true,
-            pendingConsumptionStage: 'finalizing'
-          }))
-          return
-        }
-        if (error instanceof TrialExhaustedError) {
-          setState((prev) => ({
-            ...prev,
-            isLoading: false,
-            isOffline: false,
-            isTrialActive: false,
-            remainingRuns: 0,
-            totalRuns: prev.totalRuns ?? DEFAULT_TRIAL_RUNS,
-            lastError: error.message,
-            pendingConsumption: false,
-            pendingConsumptionStage: null
-          }))
-          return
-        }
-        if (error instanceof LicensingRequestError) {
-          setState((prev) => ({
-            ...prev,
-            isLoading: false,
-            isOffline: false,
-            lastError: error.message,
-            pendingConsumption: true,
-            pendingConsumptionStage: 'finalizing'
-          }))
-          return
-        }
-        console.error('Unexpected licensing error while finalizing trial run.', error)
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          isOffline: false,
-          lastError: 'Unexpected licensing error.',
-          pendingConsumption: true,
-          pendingConsumptionStage: 'finalizing'
-        }))
-      }
+      await consumePendingTrialRun()
     },
-    [applyStatus, deviceHash]
+    [consumePendingTrialRun]
   )
+
+  useEffect(() => {
+    if (!deviceHash) {
+      return
+    }
+
+    if (!state.pendingConsumption) {
+      clearStoredPendingConsumption()
+      return
+    }
+
+    writeStoredPendingConsumption({
+      deviceHash,
+      stage: state.pendingConsumptionStage ?? 'in_progress'
+    })
+  }, [deviceHash, state.pendingConsumption, state.pendingConsumptionStage])
+
+  useEffect(() => {
+    if (!deviceHash || hasRecoveredPendingRef.current) {
+      return
+    }
+
+    hasRecoveredPendingRef.current = true
+
+    const stored = readStoredPendingConsumption()
+    if (!stored || stored.deviceHash !== deviceHash) {
+      return
+    }
+
+    setState((prev) => ({
+      ...prev,
+      isLoading: true,
+      lastError: null,
+      isOffline: false,
+      pendingConsumption: true,
+      pendingConsumptionStage: 'finalizing'
+    }))
+
+    void consumePendingTrialRun()
+  }, [consumePendingTrialRun, deviceHash])
 
   const value = useMemo(
     () => ({
