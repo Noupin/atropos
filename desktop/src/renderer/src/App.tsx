@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FC, MouseEvent, RefObject } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import Search from './components/Search'
@@ -60,6 +60,15 @@ type NavItemProgress = {
   fraction: number
   status: PipelineOverallStatus
   srLabel?: string
+}
+
+type PendingLibraryProject = {
+  jobId: string
+  accountId: string | null
+  projectId: string
+  title: string
+  completedClips: number
+  totalClips: number | null
 }
 
 type NavItemLabelProps = {
@@ -174,6 +183,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const navigate = useNavigate()
   const { state: trialState, markTrialRunPending, finalizeTrialRun } = useTrialAccess()
   const homeNavigationDisabled = !trialState.isTrialActive
+  const redirectedJobRef = useRef<string | null>(null)
+  const lastActiveJobIdRef = useRef<string | null>(null)
 
   const preventDisabledNavigation = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
@@ -238,6 +249,28 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     return null
   }, [homeProgressSummary.status, homeState.awaitingReview])
 
+  const handleFirstClipReady = useCallback(
+    ({ jobId }: { jobId: string }) => {
+      if (redirectedJobRef.current === jobId) {
+        return
+      }
+      redirectedJobRef.current = jobId
+      navigate('/library')
+    },
+    [navigate]
+  )
+
+  const handlePipelineFinished = useCallback(
+    ({ jobId, success }: { jobId: string; success: boolean }) => {
+      if (!success || redirectedJobRef.current === jobId) {
+        return
+      }
+      redirectedJobRef.current = jobId
+      navigate('/library')
+    },
+    [navigate]
+  )
+
   const { startPipeline, resumePipeline } = usePipelineProgress({
     state: homeState,
     setState: setHomeState,
@@ -246,8 +279,52 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     finalizeTrialRun,
     isTrialActive: trialState.isTrialActive,
     hasPendingTrialRun: trialState.pendingConsumption,
-    isMockBackend
+    isMockBackend,
+    onFirstClipReady: handleFirstClipReady,
+    onPipelineFinished: handlePipelineFinished
   })
+
+  useEffect(() => {
+    const currentJobId = homeState.activeJobId
+    if (currentJobId && currentJobId !== lastActiveJobIdRef.current) {
+      redirectedJobRef.current = null
+      lastActiveJobIdRef.current = currentJobId
+      return
+    }
+    if (!currentJobId) {
+      lastActiveJobIdRef.current = null
+      redirectedJobRef.current = null
+    }
+  }, [homeState.activeJobId])
+
+  const pendingLibraryProjects = useMemo(() => {
+    if (!homeState.isProcessing || !homeState.activeJobId || homeState.clips.length === 0) {
+      return [] as PendingLibraryProject[]
+    }
+
+    const clipStep = homeState.steps.find((step) => step.id === 'produce-clips')
+    const clipProgress = clipStep?.clipProgress ?? null
+    const completedClips = Math.max(
+      homeState.clips.length,
+      clipProgress ? Math.max(0, clipProgress.completed) : 0
+    )
+    const rawTotal = clipProgress ? Math.max(0, clipProgress.total) : 0
+    const totalClips = rawTotal > 0 ? rawTotal : null
+    const latestClip = homeState.clips[0]
+    const projectId = latestClip.videoId || latestClip.id
+    const title = latestClip.videoTitle || latestClip.sourceTitle || latestClip.title
+
+    return [
+      {
+        jobId: homeState.activeJobId,
+        accountId: latestClip.accountId ?? null,
+        projectId,
+        title,
+        completedClips,
+        totalClips
+      }
+    ] satisfies PendingLibraryProject[]
+  }, [homeState.activeJobId, homeState.clips, homeState.isProcessing, homeState.steps])
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -711,6 +788,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 registerSearch={registerSearch}
                 accounts={accounts}
                 isLoadingAccounts={isLoadingAccounts}
+                pendingProjects={pendingLibraryProjects}
               />
             }
           />

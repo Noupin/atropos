@@ -35,6 +35,15 @@ type GroupedClipsResult =
   | { mode: 'account'; groups: AccountGroup[] }
   | { mode: 'project'; groups: ProjectGroup[] }
 
+type PendingLibraryProject = {
+  jobId: string
+  accountId: string | null
+  projectId: string
+  title: string
+  completedClips: number
+  totalClips: number | null
+}
+
 const isAccountAvailable = (account: AccountSummary): boolean =>
   account.active && account.platforms.some((platform) => platform.active)
 
@@ -101,12 +110,14 @@ type LibraryProps = {
   registerSearch: (bridge: SearchBridge | null) => void
   accounts: AccountSummary[]
   isLoadingAccounts: boolean
+  pendingProjects: PendingLibraryProject[]
 }
 
 const Library: FC<LibraryProps> = ({
   registerSearch,
   accounts,
-  isLoadingAccounts
+  isLoadingAccounts,
+  pendingProjects
 }) => {
   const [clips, setClips] = useState<Clip[]>([])
   const [isLoadingClips, setIsLoadingClips] = useState(false)
@@ -139,6 +150,20 @@ const Library: FC<LibraryProps> = ({
     () => (availableAccounts.length === 1 ? availableAccounts[0].id : null),
     [availableAccounts]
   )
+
+  const accountKeyForPending = useCallback(
+    (value: string | null | undefined) => value ?? UNKNOWN_ACCOUNT_ID,
+    []
+  )
+
+  const pendingProjectLookup = useMemo(() => {
+    const map = new Map<string, PendingLibraryProject>()
+    for (const project of pendingProjects) {
+      const accountKey = accountKeyForPending(project.accountId)
+      map.set(`${accountKey}::${project.projectId}`, project)
+    }
+    return map
+  }, [accountKeyForPending, pendingProjects])
 
   useEffect(() => {
     if (!hasAccounts && clips.length > 0) {
@@ -403,11 +428,22 @@ const Library: FC<LibraryProps> = ({
   }, [])
 
   const renderProjectGroup = useCallback(
-    (group: ProjectGroup, prefix = '') => {
+    (group: ProjectGroup, context: { accountId?: string | null; prefix?: string } = {}) => {
+      const prefix = context.prefix ?? ''
       const projectGroupId = prefix ? `${prefix}:${group.id}` : group.id
       const isCollapsed = collapsedProjectIds.has(projectGroupId)
       const clipCount = group.clips.length
       const clipCountLabel = `${clipCount} ${clipCount === 1 ? 'clip' : 'clips'}`
+      const accountKey = accountKeyForPending(context.accountId ?? null)
+      const pendingProject = pendingProjectLookup.get(`${accountKey}::${group.id}`) ?? null
+      const completedCount = pendingProject
+        ? Math.max(1, Math.min(pendingProject.completedClips, pendingProject.totalClips ?? pendingProject.completedClips))
+        : 0
+      const pendingLabel = pendingProject
+        ? pendingProject.totalClips
+          ? `${completedCount} of ${pendingProject.totalClips} ready`
+          : `${completedCount} ready`
+        : null
 
       return (
         <div key={projectGroupId} className="flex flex-col gap-3">
@@ -443,6 +479,21 @@ const Library: FC<LibraryProps> = ({
               {clipCountLabel}
             </span>
           </div>
+          {pendingProject ? (
+            <div
+              className="flex items-center justify-between rounded-lg border border-dashed border-white/15 bg-[color:color-mix(in_srgb,var(--card)_72%,transparent)] px-3 py-2 text-xs"
+              role="status"
+            >
+              <span className="flex items-center gap-2 text-[var(--fg)]">
+                <span
+                  className="h-3 w-3 animate-spin rounded-full border-2 border-white/25 border-t-[color:var(--accent)]"
+                  aria-hidden
+                />
+                Rendering additional clips…
+              </span>
+              <span className="font-medium text-[var(--fg)]">{pendingLabel}</span>
+            </div>
+          ) : null}
           {!isCollapsed ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {group.clips.map((clip) => (
@@ -458,7 +509,14 @@ const Library: FC<LibraryProps> = ({
         </div>
       )
     },
-    [collapsedProjectIds, handleClipSelect, selectedClipId, toggleProjectCollapse]
+    [
+      accountKeyForPending,
+      collapsedProjectIds,
+      handleClipSelect,
+      pendingProjectLookup,
+      selectedClipId,
+      toggleProjectCollapse
+    ]
   )
 
   const selectedClip = useMemo(
@@ -586,7 +644,10 @@ const Library: FC<LibraryProps> = ({
                           {!isCollapsed ? (
                             <div className="flex flex-col gap-6">
                               {accountGroup.projects.map((projectGroup) =>
-                                renderProjectGroup(projectGroup, accountGroup.id)
+                                renderProjectGroup(projectGroup, {
+                                  accountId: accountGroup.id,
+                                  prefix: accountGroup.id
+                                })
                               )}
                             </div>
                           ) : null}
@@ -594,7 +655,7 @@ const Library: FC<LibraryProps> = ({
                       )
                     })
                   : groupedClips.groups.map((projectGroup) =>
-                      renderProjectGroup(projectGroup)
+                      renderProjectGroup(projectGroup, { accountId: singleAccountId })
                     )}
               </div>
             ) : (

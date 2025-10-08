@@ -24,6 +24,8 @@ type UsePipelineProgressOptions = {
   isTrialActive: boolean
   hasPendingTrialRun: boolean
   isMockBackend: boolean
+  onFirstClipReady?: (details: { jobId: string }) => void
+  onPipelineFinished?: (details: { jobId: string; success: boolean }) => void
 }
 
 type UsePipelineProgressResult = {
@@ -42,12 +44,22 @@ export const usePipelineProgress = ({
   finalizeTrialRun,
   isTrialActive,
   hasPendingTrialRun,
-  isMockBackend
+  isMockBackend,
+  onFirstClipReady,
+  onPipelineFinished
 }: UsePipelineProgressOptions): UsePipelineProgressResult => {
   const connectionCleanupRef = useRef<(() => void) | null>(null)
   const subscribedJobIdRef = useRef<string | null>(null)
   const activeJobIdRef = useRef<string | null>(state.activeJobId ?? null)
   const trialFlagsRef = useRef({ isTrialActive, hasPendingTrialRun })
+  const firstClipHandledRef = useRef(false)
+  const finalizeTriggeredRef = useRef(false)
+  const onFirstClipReadyRef = useRef<((details: { jobId: string }) => void) | null>(
+    onFirstClipReady ?? null
+  )
+  const onPipelineFinishedRef = useRef<
+    ((details: { jobId: string; success: boolean }) => void) | null
+  >(onPipelineFinished ?? null)
 
   useEffect(() => {
     activeJobIdRef.current = state.activeJobId ?? null
@@ -56,6 +68,14 @@ export const usePipelineProgress = ({
   useEffect(() => {
     trialFlagsRef.current = { isTrialActive, hasPendingTrialRun }
   }, [hasPendingTrialRun, isTrialActive])
+
+  useEffect(() => {
+    onFirstClipReadyRef.current = onFirstClipReady ?? null
+  }, [onFirstClipReady])
+
+  useEffect(() => {
+    onPipelineFinishedRef.current = onPipelineFinished ?? null
+  }, [onPipelineFinished])
 
   const updateState = useCallback(
     (updater: (prev: HomePipelineState) => HomePipelineState) => {
@@ -79,6 +99,8 @@ export const usePipelineProgress = ({
   const handlePipelineEvent = useCallback(
     (event: PipelineEventMessage) => {
       if (event.type === 'pipeline_started') {
+        firstClipHandledRef.current = false
+        finalizeTriggeredRef.current = false
         if (trialFlagsRef.current.isTrialActive) {
           markTrialRunPending()
         }
@@ -442,6 +464,18 @@ export const usePipelineProgress = ({
           }
         })
 
+        if (!firstClipHandledRef.current) {
+          firstClipHandledRef.current = true
+          if (!finalizeTriggeredRef.current && trialFlagsRef.current.hasPendingTrialRun) {
+            finalizeTriggeredRef.current = true
+            void finalizeTrialRun({ succeeded: true })
+            const callback = onFirstClipReadyRef.current
+            if (callback) {
+              callback({ jobId })
+            }
+          }
+        }
+
         return
       }
 
@@ -475,8 +509,14 @@ export const usePipelineProgress = ({
           })
         }))
         cleanupConnection()
-        if (trialFlagsRef.current.hasPendingTrialRun) {
+        const jobId = activeJobIdRef.current
+        if (!finalizeTriggeredRef.current && trialFlagsRef.current.hasPendingTrialRun) {
+          finalizeTriggeredRef.current = true
           void finalizeTrialRun({ succeeded: success })
+        }
+        const finishedCallback = onPipelineFinishedRef.current
+        if (finishedCallback && jobId) {
+          finishedCallback({ jobId, success })
         }
       }
     },
@@ -561,6 +601,8 @@ export const usePipelineProgress = ({
       }))
 
       cleanupConnection()
+      firstClipHandledRef.current = false
+      finalizeTriggeredRef.current = false
 
       try {
         const toneOverride = availableAccounts.find((account) => account.id === accountId)?.tone ?? null
