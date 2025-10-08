@@ -100,6 +100,8 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
   reviewMode: false,
   awaitingReview: false,
   lastRunProducedNoClips: false,
+  lastRunClipSummary: null,
+  lastRunClipStatus: null,
   ...overrides
 })
 
@@ -377,5 +379,28 @@ describe('Home pipeline events', () => {
     expect(within(stepsList).getByText(/clip 2\/5/i)).toBeInTheDocument()
     expect(within(stepsList).getByText(/2\/5 clips done/i)).toBeInTheDocument()
     expect(within(stepsList).getAllByText(/40%/i).length).toBeGreaterThan(0)
+  })
+})
+
+describe('Home pipeline alerts', () => {
+  it('shows a banner when the last run rendered no clips', () => {
+    renderHome({
+      registerSearch: () => {},
+      initialState: createInitialState({
+        lastRunProducedNoClips: true,
+        lastRunClipStatus: 'rendered_none',
+        lastRunClipSummary: { expected: 3, rendered: 0 }
+      }),
+      onStateChange: () => {},
+      accounts: [AVAILABLE_ACCOUNT],
+      onStartPipeline: vi.fn(),
+      onResumePipeline: vi.fn()
+    })
+
+    expect(screen.getByText(/no clips were rendered/i)).toBeInTheDocument()
+    expect(screen.getByText(/attempted to render 3 clips\./i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/tried to render 3 clips, but none of them succeeded/i)
+    ).toBeInTheDocument()
   })
 })

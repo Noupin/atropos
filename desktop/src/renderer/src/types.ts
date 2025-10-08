@@ -116,6 +116,13 @@ export interface PipelineStep extends PipelineStepDefinition {
   substeps: PipelineSubstep[]
 }
 
+export type PipelineClipOutcome = {
+  expected: number
+  rendered: number
+}
+
+export type PipelineClipStatus = 'none_to_render' | 'rendered_none' | null
+
 export interface HomePipelineState {
   videoUrl: string
   urlError: string | null
@@ -130,6 +137,8 @@ export interface HomePipelineState {
   reviewMode: boolean
   awaitingReview: boolean
   lastRunProducedNoClips: boolean
+  lastRunClipSummary: PipelineClipOutcome | null
+  lastRunClipStatus: PipelineClipStatus
 }
 
 export type PipelineEventType =

@@ -97,7 +97,9 @@ const Home: FC<HomeProps> = ({
     activeJobId,
     reviewMode,
     awaitingReview,
-    lastRunProducedNoClips
+    lastRunProducedNoClips,
+    lastRunClipSummary,
+    lastRunClipStatus
   } = state
 
   useEffect(() => {
@@ -328,7 +330,9 @@ const Home: FC<HomeProps> = ({
         accountError: null,
         activeJobId: null,
         awaitingReview: false,
-        lastRunProducedNoClips: false
+        lastRunProducedNoClips: false,
+        lastRunClipSummary: null,
+        lastRunClipStatus: null
       }))
 
       if (isMockBackend) {
@@ -372,7 +376,9 @@ const Home: FC<HomeProps> = ({
       accountError: null,
       activeJobId: null,
       awaitingReview: false,
-      lastRunProducedNoClips: false
+      lastRunProducedNoClips: false,
+      lastRunClipSummary: null,
+      lastRunClipStatus: null
     }))
   }, [clearTimers, updateState])
 
@@ -471,6 +477,48 @@ const Home: FC<HomeProps> = ({
     })
   }, [clips, selectedAccountId])
 
+  const clipStatusDetails = useMemo(() => {
+    if (isProcessing || !lastRunClipStatus) {
+      return null
+    }
+
+    const summary = lastRunClipSummary ?? { expected: 0, rendered: 0 }
+    const clipCountLabel = summary.expected === 1 ? 'clip' : 'clips'
+
+    if (lastRunClipStatus === 'rendered_none') {
+      const attemptedText = summary.expected > 0 ? `${summary.expected} ${clipCountLabel}` : 'any clips'
+      return {
+        shortMessage: 'Processing finished, but none of the scheduled clips could be rendered.',
+        bannerHeadline: 'No clips were rendered.',
+        bannerBody:
+          summary.expected > 0
+            ? `The pipeline finished, but none of the ${attemptedText} could be rendered. Adjust the clip boundaries or rerun the pipeline to try again.`
+            : 'The pipeline finished, but none of the clips could be rendered. Adjust the clip boundaries or rerun the pipeline to try again.',
+        emptyStateMessage:
+          summary.expected > 0
+            ? `The last pipeline run tried to render ${summary.expected} ${clipCountLabel}, but none of them succeeded. Run the pipeline again after adjusting your settings.`
+            : 'The last pipeline run finished, but no clips were rendered. Try adjusting your settings and run it again.',
+        summary,
+        attemptedLabel:
+          summary.expected > 0
+            ? `Attempted to render ${summary.expected} ${clipCountLabel}.`
+            : 'No clips were queued for rendering.'
+      }
+    }
+
+    return {
+      shortMessage:
+        'Processing finished, but no clip candidates were ready to render from that video. Try another source or tweak your filters.',
+      bannerHeadline: 'No clips were available to render.',
+      bannerBody:
+        'The pipeline completed successfully, but it did not find any clips to produce from that video. Try a different source or adjust your pipeline settings for broader matches.',
+      emptyStateMessage:
+        'The last pipeline run finished without finding any clips to render. Try another video or broaden your pipeline settings.',
+      summary,
+      attemptedLabel: 'No clips were queued for rendering.'
+    }
+  }, [isProcessing, lastRunClipStatus, lastRunClipSummary])
+
   const pipelineMessage = useMemo(() => {
     if (pipelineError) {
       return pipelineError
@@ -489,25 +537,41 @@ const Home: FC<HomeProps> = ({
     if (clips.length > 0 && !isProcessing) {
       return 'Processing complete. Review the generated clips below.'
     }
-    if (lastRunProducedNoClips && !isProcessing) {
-      return 'Processing finished, but no clips were found for that video. Try refining your source or pipeline settings.'
+    if (clipStatusDetails) {
+      return clipStatusDetails.shortMessage
     }
     return 'Paste a supported link to kick off the Atropos pipeline.'
   }, [
     awaitingReview,
+    clipStatusDetails,
     clips.length,
     currentStep,
     isProcessing,
     pipelineError,
     trialState.pendingConsumption,
-    trialState.pendingConsumptionStage,
-    lastRunProducedNoClips
+    trialState.pendingConsumptionStage
   ])
 
   return (
     <section className="flex w-full flex-1 flex-col gap-6 px-6 py-8 lg:px-8">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(260px,1fr)] xl:grid-cols-[minmax(0,1.4fr)_360px]">
         <div className="flex flex-col gap-6">
+          {!isProcessing && clipStatusDetails ? (
+            <div
+              aria-live="polite"
+              className="rounded-2xl border border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] p-5 text-sm text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))] shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]"
+            >
+              <div className="flex flex-col gap-2">
+                <p className="text-sm font-semibold text-[color:color-mix(in_srgb,var(--error-strong)_92%,var(--accent-contrast))]">
+                  {clipStatusDetails.bannerHeadline}
+                </p>
+                <p>{clipStatusDetails.bannerBody}</p>
+                <p className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--error-strong)_72%,var(--accent-contrast))]">
+                  {clipStatusDetails.attemptedLabel}
+                </p>
+              </div>
+            </div>
+          ) : null}
           <form
             onSubmit={handleSubmit}
             className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]"
@@ -676,8 +740,8 @@ const Home: FC<HomeProps> = ({
               </ul>
             ) : (
               <div className="mt-4 rounded-xl border border-dashed border-white/15 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-6 text-sm text-[var(--muted)]">
-                {lastRunProducedNoClips
-                  ? 'The last pipeline run finished without generating any clips. Try another video or adjust your settings before running again.'
+                {clipStatusDetails
+                  ? clipStatusDetails.emptyStateMessage
                   : 'No clips generated yet. Start the pipeline to create highlights ready for review.'}
               </div>
             )}

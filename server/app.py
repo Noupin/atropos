@@ -493,11 +493,16 @@ class JobState:
     def publish(self, event: PipelineEvent) -> None:
         """Broadcast ``event`` to all listeners and append it to history."""
 
-        payload = event.to_payload()
         with self.lock:
+            data = dict(event.data or {})
+            if event.type == PipelineEventType.PIPELINE_COMPLETED:
+                clip_count = len(self.clips)
+                data.setdefault("clips_rendered", clip_count)
+                data.setdefault("clips_available", clip_count)
+                event.data = data
+            payload = event.to_payload()
             self.history.append(payload)
             listeners_snapshot = list(self.listeners)
-            data = event.data or {}
             if event.type == PipelineEventType.PIPELINE_COMPLETED:
                 self.finished = True
                 self.error = data.get("error")
