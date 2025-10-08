@@ -86,6 +86,13 @@ const ACCOUNT_WITH_DISABLED_PLATFORM: AccountSummary = {
   effectiveTone: 'funny'
 }
 
+const SECONDARY_AVAILABLE_ACCOUNT: AccountSummary = {
+  ...AVAILABLE_ACCOUNT,
+  id: 'account-secondary',
+  displayName: 'Second Creator Hub',
+  platforms: [createPlatform()]
+}
+
 const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePipelineState => ({
   videoUrl: '',
   urlError: null,
@@ -202,6 +209,54 @@ describe('Home account selection', () => {
     expect(
       screen.getByText(/enable an account with an active platform from your profile/i)
     ).toBeInTheDocument()
+  })
+
+  it('retains the pasted link when switching accounts', () => {
+    let latestState = createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })
+    const handleStateChange = vi.fn((next: HomePipelineState) => {
+      latestState = next
+    })
+    const handleStateChangeWrapper = (next: HomePipelineState) => {
+      latestState = next
+      handleStateChange(next)
+    }
+
+    const baseProps = {
+      registerSearch: () => {},
+      accounts: [AVAILABLE_ACCOUNT, SECONDARY_AVAILABLE_ACCOUNT],
+      onStartPipeline: vi.fn(),
+      onResumePipeline: vi.fn()
+    }
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <Home
+          {...baseProps}
+          initialState={latestState}
+          onStateChange={handleStateChangeWrapper}
+        />
+      </MemoryRouter>
+    )
+
+    const videoUrl = 'https://www.youtube.com/watch?v=retained'
+    const videoUrlInput = screen.getByLabelText(/video url/i)
+    fireEvent.change(videoUrlInput, { target: { value: videoUrl } })
+
+    expect(handleStateChange).toHaveBeenCalledWith(
+      expect.objectContaining({ videoUrl })
+    )
+
+    rerender(
+      <MemoryRouter>
+        <Home
+          {...baseProps}
+          initialState={{ ...latestState, selectedAccountId: SECONDARY_AVAILABLE_ACCOUNT.id }}
+          onStateChange={handleStateChangeWrapper}
+        />
+      </MemoryRouter>
+    )
+
+    expect(screen.getByDisplayValue(videoUrl)).toBeInTheDocument()
   })
 })
 

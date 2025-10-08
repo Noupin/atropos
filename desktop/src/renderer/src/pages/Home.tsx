@@ -60,29 +60,23 @@ const Home: FC<HomeProps> = ({
     setState(initialState)
   }, [initialState])
 
-  const pendingStateRef = useRef<HomePipelineState | null>(null)
-
   const updateState = useCallback(
-    (updater: (prev: HomePipelineState) => HomePipelineState) =>
+    (updater: (prev: HomePipelineState) => HomePipelineState) => {
+      let nextState: HomePipelineState | null = null
       setState((prev) => {
         const next = updater(prev)
-        if (next !== prev) {
-          pendingStateRef.current = next
+        if (next === prev) {
+          return prev
         }
+        nextState = next
         return next
-      }),
-    []
+      })
+      if (nextState !== null) {
+        onStateChange(nextState)
+      }
+    },
+    [onStateChange]
   )
-
-  useEffect(() => {
-    if (pendingStateRef.current === null) {
-      return
-    }
-    if (pendingStateRef.current === state) {
-      onStateChange(state)
-    }
-    pendingStateRef.current = null
-  }, [onStateChange, state])
 
   const {
     videoUrl,
