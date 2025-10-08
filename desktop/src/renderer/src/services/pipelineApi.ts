@@ -29,6 +29,12 @@ export type PipelineEventHandlers = {
   onClose?: () => void
 }
 
+export type KillPipelineJobResult = {
+  killed: boolean
+  deletedProject: boolean
+  message: string | null
+}
+
 const parseJobId = (payload: UnknownRecord): string | null => {
   const jobId = payload.jobId ?? payload.job_id
   return typeof jobId === 'string' && jobId.length > 0 ? jobId : null
@@ -233,6 +239,40 @@ export const resumePipelineJob = async (jobId: string): Promise<void> => {
   const response = await fetch(url.toString(), { method: 'POST' })
   if (!response.ok) {
     throw new Error(`Unable to resume pipeline job (status ${response.status}).`)
+  }
+}
+
+export const killPipelineJob = async (jobId: string): Promise<KillPipelineJobResult> => {
+  const url = new URL(`/api/jobs/${encodeURIComponent(jobId)}/kill`, getApiBaseUrl())
+  const response = await fetch(url.toString(), { method: 'POST' })
+  if (!response.ok) {
+    let detail: string | null = null
+    try {
+      const payload = (await response.json()) as UnknownRecord
+      if (typeof payload.detail === 'string') {
+        detail = payload.detail
+      }
+    } catch (error) {
+      // ignore parse errors for failed responses
+    }
+    throw new Error(detail ?? `Unable to stop pipeline job (status ${response.status}).`)
+  }
+
+  if (response.status === 204) {
+    return { killed: true, deletedProject: false, message: null }
+  }
+
+  try {
+    const payload = (await response.json()) as UnknownRecord
+    const killed = payload.killed === true
+    const deletedProject = payload.deleted_project === true
+    const message =
+      typeof payload.message === 'string' && payload.message.length > 0
+        ? payload.message
+        : null
+    return { killed, deletedProject, message }
+  } catch (error) {
+    return { killed: true, deletedProject: false, message: null }
   }
 }
 

@@ -288,7 +288,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     [isOnHomePage, navigate]
   )
 
-  const { startPipeline, resumePipeline } = usePipelineProgress({
+  const { startPipeline, resumePipeline, killPipeline } = usePipelineProgress({
     state: homeState,
     setState: setHomeState,
     availableAccounts,
@@ -795,6 +795,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 accounts={accounts}
                 onStartPipeline={startPipeline}
                 onResumePipeline={resumePipeline}
+                onKillPipeline={killPipeline}
               />
             }
           />
@@ -851,6 +852,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 accounts={accounts}
                 onStartPipeline={startPipeline}
                 onResumePipeline={resumePipeline}
+                onKillPipeline={killPipeline}
               />
             }
           />

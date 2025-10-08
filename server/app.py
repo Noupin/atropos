@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import hashlib
 import logging
 import math
 import re
+import shutil
 import threading
 import uuid
 from dataclasses import dataclass, field, fields, is_dataclass
@@ -193,6 +195,14 @@ class UploadClipResponse(BaseModel):
     success: bool
     deleted: bool
     platforms: list[str]
+
+
+class KillJobResponse(BaseModel):
+    """Response body returned when a job cancellation request is processed."""
+
+    killed: bool = False
+    deleted_project: bool = False
+    message: str | None = None
 
 
 class ClipAdjustmentRequest(BaseModel):
@@ -665,6 +675,61 @@ def _get_job(job_id: str) -> JobState | None:
         return _jobs.get(job_id)
 
 
+def _raise_in_thread(thread: threading.Thread, exception: BaseException) -> bool:
+    """Inject ``exception`` into ``thread`` and return ``True`` on success."""
+
+    ident = thread.ident
+    if ident is None:
+        return False
+
+    result = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+        ctypes.c_long(ident), ctypes.py_object(exception)
+    )
+    if result == 0:
+        return False
+    if result > 1:  # pragma: no cover - defensive cleanup
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(ident), None)
+        return False
+    return True
+
+
+def _resolve_job_project_dir(state: JobState) -> Path | None:
+    """Best-effort resolution of the project directory for ``state``."""
+
+    with state.lock:
+        project_dir = state.project_dir
+        if project_dir is not None:
+            return project_dir
+        for clip in state.clips.values():
+            try:
+                return clip.video_path.parent.parent
+            except Exception:  # pragma: no cover - defensive path guard
+                continue
+    return None
+
+
+def _clear_job_artifacts(state: JobState) -> bool:
+    """Remove any on-disk artifacts associated with ``state``."""
+
+    project_dir = _resolve_job_project_dir(state)
+    if project_dir is None:
+        return True
+
+    try:
+        resolved = project_dir.resolve()
+    except OSError:
+        resolved = project_dir
+
+    shutil.rmtree(resolved, ignore_errors=True)
+    deleted = not resolved.exists()
+
+    with state.lock:
+        state.project_dir = None
+        state.clips.clear()
+
+    return deleted
+
+
 def _resolve_description_path(video_path: Path) -> Path:
     """Return the best description file path for ``video_path``."""
 
@@ -968,6 +1033,58 @@ async def resume_job(job_id: str) -> Response:
 
     state.resume()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/api/jobs/{job_id}/kill", response_model=KillJobResponse)
+async def kill_job(job_id: str) -> KillJobResponse:
+    """Terminate the active pipeline job and remove its working directory."""
+
+    state = _get_job(job_id)
+    if state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    message: str | None = None
+    killed = False
+
+    thread = state.thread
+    if state.resume_event is not None:
+        state.resume_event.set()
+
+    if thread and thread.is_alive():
+        cancel_requested = _raise_in_thread(
+            thread, RuntimeError("Pipeline cancelled by operator.")
+        )
+        if cancel_requested:
+            await asyncio.to_thread(thread.join, 5.0)
+        else:
+            await asyncio.to_thread(thread.join, 0.0)
+
+        if thread.is_alive():
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Pipeline did not respond to the cancellation request.",
+            )
+
+        killed = cancel_requested
+        message = "Pipeline cancelled." if cancel_requested else "Pipeline completed before cancellation."
+    else:
+        message = "Pipeline is not currently running."
+
+    deleted = await asyncio.to_thread(_clear_job_artifacts, state)
+    state.thread = None
+
+    if not deleted:
+        suffix = " Project files could not be fully removed."
+        message = f"{message}{suffix}" if message else suffix.strip()
+
+    logger.info(
+        "Kill request processed for job %s (killed=%s, deleted=%s)",
+        job_id,
+        killed,
+        deleted,
+    )
+
+    return KillJobResponse(killed=killed, deleted_project=deleted, message=message)
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatus)

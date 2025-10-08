@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -132,6 +133,67 @@ def test_job_resume_unblocks_review_mode(monkeypatch) -> None:
     state = server.app._get_job(job_id)
     if state and state.thread is not None:
         state.thread.join(timeout=1)
+    with server.app._jobs_lock:
+        server.app._jobs.clear()
+
+
+def test_kill_job_terminates_thread_and_cleans_project(
+    monkeypatch, tmp_path: Path
+) -> None:
+    started = threading.Event()
+
+    def _fake_process(
+        url: str,
+        account=None,
+        tone=None,
+        observer=None,
+        *,
+        pause_for_review: bool = False,
+        review_gate=None,
+    ) -> None:
+        started.set()
+        while True:
+            time.sleep(0.05)
+
+    monkeypatch.setattr(server.app, "process_video", _fake_process)
+
+    client = TestClient(server.app.app)
+    response = client.post("/api/jobs", json={"url": "https://example.com/video"})
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+
+    assert started.wait(timeout=2.0)
+
+    state = server.app._get_job(job_id)
+    assert state is not None
+
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    marker = project_dir / "marker.txt"
+    marker.write_text("hello", encoding="utf-8")
+
+    with state.lock:
+        state.project_dir = project_dir
+
+    kill_response = client.post(f"/api/jobs/{job_id}/kill")
+    assert kill_response.status_code == 200
+
+    payload = kill_response.json()
+    assert payload["killed"] is True
+    assert payload["deleted_project"] is True
+    assert "Pipeline" in payload["message"]
+
+    for _ in range(100):
+        status_response = client.get(f"/api/jobs/{job_id}")
+        assert status_response.status_code == 200
+        if status_response.json()["finished"]:
+            break
+        time.sleep(0.02)
+    else:  # pragma: no cover - defensive guard
+        raise AssertionError("Job did not report completion after kill request")
+
+    assert not project_dir.exists()
+
     with server.app._jobs_lock:
         server.app._jobs.clear()
 

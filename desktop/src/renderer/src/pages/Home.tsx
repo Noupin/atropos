@@ -38,6 +38,7 @@ type HomeProps = {
   accounts: AccountSummary[]
   onStartPipeline: (url: string, accountId: string, reviewMode: boolean) => Promise<void> | void
   onResumePipeline: () => Promise<void> | void
+  onKillPipeline: () => Promise<void> | void
 }
 
 const Home: FC<HomeProps> = ({
@@ -46,13 +47,17 @@ const Home: FC<HomeProps> = ({
   onStateChange,
   accounts,
   onStartPipeline,
-  onResumePipeline
+  onResumePipeline,
+  onKillPipeline
 }) => {
   const navigate = useNavigate()
   const [state, setState] = useState<HomePipelineState>(initialState)
   const [folderMessage, setFolderMessage] = useState<string | null>(null)
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
   const [isOpeningFolder, setIsOpeningFolder] = useState(false)
+  const [isKillConfirmOpen, setIsKillConfirmOpen] = useState(false)
+  const [isKillingPipeline, setIsKillingPipeline] = useState(false)
+  const [killErrorMessage, setKillErrorMessage] = useState<string | null>(null)
   const canAttemptToOpenFolder = useMemo(() => canOpenAccountClipsFolder(), [])
   const { state: trialState, markTrialRunPending, finalizeTrialRun } = useTrialAccess()
 
@@ -113,6 +118,18 @@ const Home: FC<HomeProps> = ({
     () => availableAccounts.find((account) => account.id === selectedAccountId) ?? null,
     [availableAccounts, selectedAccountId]
   )
+
+  const canStopPipeline = useMemo(
+    () => !isMockBackend && Boolean(activeJobId) && (isProcessing || awaitingReview),
+    [activeJobId, awaitingReview, isMockBackend, isProcessing]
+  )
+
+  useEffect(() => {
+    if (!canStopPipeline && isKillConfirmOpen) {
+      setIsKillConfirmOpen(false)
+      setKillErrorMessage(null)
+    }
+  }, [canStopPipeline, isKillConfirmOpen])
 
   useEffect(() => {
     if (selectedAccountId && !availableAccounts.some((account) => account.id === selectedAccountId)) {
@@ -429,6 +446,39 @@ const Home: FC<HomeProps> = ({
     void onResumePipeline()
   }, [onResumePipeline])
 
+  const handleRequestStopPipeline = useCallback(() => {
+    setKillErrorMessage(null)
+    setIsKillConfirmOpen(true)
+  }, [])
+
+  const handleCancelStopPipeline = useCallback(() => {
+    if (isKillingPipeline) {
+      return
+    }
+    setIsKillConfirmOpen(false)
+    setKillErrorMessage(null)
+  }, [isKillingPipeline])
+
+  const handleConfirmStopPipeline = useCallback(async () => {
+    if (isKillingPipeline) {
+      return
+    }
+    setKillErrorMessage(null)
+    setIsKillingPipeline(true)
+    try {
+      await onKillPipeline()
+      setIsKillConfirmOpen(false)
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to stop the pipeline. Try again shortly.'
+      setKillErrorMessage(message)
+    } finally {
+      setIsKillingPipeline(false)
+    }
+  }, [isKillingPipeline, onKillPipeline])
+
   const hasProgress = useMemo(
     () => steps.some((step) => step.status !== 'pending' || step.progress > 0),
     [steps]
@@ -664,9 +714,21 @@ const Home: FC<HomeProps> = ({
           </form>
 
           <div className="rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]">
-            <div className="flex flex-col gap-1">
-              <h3 className="text-lg font-semibold text-[var(--fg)]">Pipeline progress</h3>
-              <p className="text-sm text-[var(--muted)]">{pipelineMessage}</p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-lg font-semibold text-[var(--fg)]">Pipeline progress</h3>
+                <p className="text-sm text-[var(--muted)]">{pipelineMessage}</p>
+              </div>
+              {canStopPipeline ? (
+                <button
+                  type="button"
+                  onClick={handleRequestStopPipeline}
+                  disabled={isKillingPipeline}
+                  className="marble-button marble-button--danger whitespace-nowrap px-4 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60 sm:px-5 sm:text-sm"
+                >
+                  {isKillingPipeline ? 'Stopping…' : 'Stop pipeline'}
+                </button>
+              ) : null}
             </div>
             <div className="mt-4 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_75%,transparent)] p-4">
               <PipelineProgress steps={steps} />
@@ -819,6 +881,53 @@ const Home: FC<HomeProps> = ({
           </div>
         </aside>
       </div>
+
+      {isKillConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="kill-pipeline-dialog-title"
+            aria-describedby="kill-pipeline-dialog-description"
+            className="w-full max-w-md rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_85%,transparent)] p-6 shadow-[0_24px_60px_-16px_rgba(15,23,42,0.75)]"
+          >
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <h2 id="kill-pipeline-dialog-title" className="text-lg font-semibold text-[var(--fg)]">
+                  Stop the active pipeline?
+                </h2>
+                <p id="kill-pipeline-dialog-description" className="text-sm text-[var(--muted)]">
+                  Stopping the pipeline will terminate the current job and delete its working project folder. This action cannot
+                  be undone.
+                </p>
+              </div>
+              {killErrorMessage ? (
+                <p className="rounded-lg border border-[color:color-mix(in_srgb,var(--error-strong)_55%,var(--edge))] bg-[color:var(--error-soft)] px-3 py-2 text-sm text-[color:color-mix(in_srgb,var(--error-strong)_92%,var(--accent-contrast))]">
+                  {killErrorMessage}
+                </p>
+              ) : null}
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={handleCancelStopPipeline}
+                  disabled={isKillingPipeline}
+                  className="marble-button marble-button--outline px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Keep running
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmStopPipeline}
+                  disabled={isKillingPipeline}
+                  className="marble-button marble-button--danger px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isKillingPipeline ? 'Stopping…' : 'Stop pipeline'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }

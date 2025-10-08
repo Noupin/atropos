@@ -115,7 +115,12 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
 const renderHome = (props: ComponentProps<typeof Home>) =>
   render(
     <MemoryRouter>
-      <Home onStartPipeline={vi.fn()} onResumePipeline={vi.fn()} {...props} />
+      <Home
+        onStartPipeline={vi.fn()}
+        onResumePipeline={vi.fn()}
+        onKillPipeline={vi.fn()}
+        {...props}
+      />
     </MemoryRouter>
   )
 
@@ -159,7 +164,8 @@ describe('Home account selection', () => {
       onStateChange: () => {},
       accounts: [AVAILABLE_ACCOUNT],
       onStartPipeline: vi.fn(),
-      onResumePipeline: vi.fn()
+      onResumePipeline: vi.fn(),
+      onKillPipeline: vi.fn()
     }
     const { rerender } = render(
       <MemoryRouter>
@@ -225,7 +231,8 @@ describe('Home account selection', () => {
       registerSearch: () => {},
       accounts: [AVAILABLE_ACCOUNT, SECONDARY_AVAILABLE_ACCOUNT],
       onStartPipeline: vi.fn(),
-      onResumePipeline: vi.fn()
+      onResumePipeline: vi.fn(),
+      onKillPipeline: vi.fn()
     }
 
     const { rerender } = render(
@@ -281,7 +288,8 @@ describe('Home pipeline events', () => {
       onStateChange: () => {},
       accounts: [AVAILABLE_ACCOUNT],
       onStartPipeline: vi.fn(),
-      onResumePipeline: vi.fn()
+      onResumePipeline: vi.fn(),
+      onKillPipeline: vi.fn()
     }
     const { rerender } = render(
       <MemoryRouter>
@@ -367,7 +375,8 @@ describe('Home pipeline events', () => {
       onStateChange: () => {},
       accounts: [AVAILABLE_ACCOUNT],
       onStartPipeline: vi.fn(),
-      onResumePipeline: vi.fn()
+      onResumePipeline: vi.fn(),
+      onKillPipeline: vi.fn()
     }
     const { rerender } = render(
       <MemoryRouter>

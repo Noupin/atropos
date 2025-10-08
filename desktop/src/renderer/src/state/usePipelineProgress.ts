@@ -8,6 +8,7 @@ import {
 } from '../data/pipeline'
 import {
   normaliseJobClip,
+  killPipelineJob,
   resumePipelineJob,
   startPipelineJob,
   subscribeToPipelineEvents,
@@ -31,6 +32,7 @@ type UsePipelineProgressOptions = {
 type UsePipelineProgressResult = {
   startPipeline: (url: string, accountId: string, reviewMode: boolean) => Promise<void>
   resumePipeline: () => Promise<void>
+  killPipeline: () => Promise<void>
   cleanup: () => void
 }
 
@@ -733,9 +735,37 @@ export const usePipelineProgress = ({
     }
   }, [isMockBackend, updateState])
 
+  const killPipeline = useCallback(async () => {
+    const jobId = activeJobIdRef.current
+    if (!jobId || isMockBackend) {
+      return
+    }
+    try {
+      const result = await killPipelineJob(jobId)
+      const nextMessage = result.message ?? (result.killed ? 'Pipeline cancelled.' : null)
+      updateState((prev) => ({
+        ...prev,
+        isProcessing: false,
+        awaitingReview: false,
+        pipelineError: nextMessage ?? prev.pipelineError
+      }))
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to stop the pipeline. Try again shortly.'
+      updateState((prev) => ({
+        ...prev,
+        pipelineError: message
+      }))
+      throw error instanceof Error ? error : new Error(message)
+    }
+  }, [isMockBackend, updateState])
+
   return {
     startPipeline,
     resumePipeline,
+    killPipeline,
     cleanup: cleanupConnection
   }
 }
