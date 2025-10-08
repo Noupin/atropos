@@ -186,6 +186,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const homeNavigationDisabled = !trialState.isTrialActive
   const redirectedJobRef = useRef<string | null>(null)
   const lastActiveJobIdRef = useRef<string | null>(null)
+  const isOnHomePage = location.pathname === '/'
 
   const preventDisabledNavigation = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
@@ -263,13 +264,13 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   const handlePipelineFinished = useCallback(
     ({ jobId, success }: { jobId: string; success: boolean }) => {
-      if (!success || redirectedJobRef.current === jobId) {
+      if (!success || redirectedJobRef.current === jobId || !isOnHomePage) {
         return
       }
       redirectedJobRef.current = jobId
       navigate('/library')
     },
-    [navigate]
+    [isOnHomePage, navigate]
   )
 
   const { startPipeline, resumePipeline } = usePipelineProgress({
