@@ -47,10 +47,15 @@ export const usePipelineProgress = ({
   const connectionCleanupRef = useRef<(() => void) | null>(null)
   const subscribedJobIdRef = useRef<string | null>(null)
   const activeJobIdRef = useRef<string | null>(state.activeJobId ?? null)
+  const trialFlagsRef = useRef({ isTrialActive, hasPendingTrialRun })
 
   useEffect(() => {
     activeJobIdRef.current = state.activeJobId ?? null
   }, [state.activeJobId])
+
+  useEffect(() => {
+    trialFlagsRef.current = { isTrialActive, hasPendingTrialRun }
+  }, [hasPendingTrialRun, isTrialActive])
 
   const updateState = useCallback(
     (updater: (prev: HomePipelineState) => HomePipelineState) => {
@@ -74,7 +79,7 @@ export const usePipelineProgress = ({
   const handlePipelineEvent = useCallback(
     (event: PipelineEventMessage) => {
       if (event.type === 'pipeline_started') {
-        if (isTrialActive) {
+        if (trialFlagsRef.current.isTrialActive) {
           markTrialRunPending()
         }
         updateState((prev) => ({
@@ -470,12 +475,12 @@ export const usePipelineProgress = ({
           })
         }))
         cleanupConnection()
-        if (hasPendingTrialRun) {
+        if (trialFlagsRef.current.hasPendingTrialRun) {
           void finalizeTrialRun({ succeeded: success })
         }
       }
     },
-    [cleanupConnection, finalizeTrialRun, hasPendingTrialRun, markTrialRunPending, updateState]
+    [cleanupConnection, finalizeTrialRun, markTrialRunPending, updateState]
   )
 
   const subscribeToJob = useCallback(
