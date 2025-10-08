@@ -25,7 +25,7 @@ type UsePipelineProgressOptions = {
   hasPendingTrialRun: boolean
   isMockBackend: boolean
   onFirstClipReady?: (details: { jobId: string }) => void
-  onPipelineFinished?: (details: { jobId: string; success: boolean }) => void
+  onPipelineFinished?: (details: { jobId: string; success: boolean; producedClips: number }) => void
 }
 
 type UsePipelineProgressResult = {
@@ -35,6 +35,14 @@ type UsePipelineProgressResult = {
 }
 
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value))
+
+const parseNonNegativeInt = (value: unknown): number | null => {
+  if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
+    return null
+  }
+  const bounded = Math.floor(value)
+  return bounded >= 0 ? bounded : 0
+}
 
 export const usePipelineProgress = ({
   state,
@@ -58,7 +66,7 @@ export const usePipelineProgress = ({
     onFirstClipReady ?? null
   )
   const onPipelineFinishedRef = useRef<
-    ((details: { jobId: string; success: boolean }) => void) | null
+    ((details: { jobId: string; success: boolean; producedClips: number }) => void) | null
   >(onPipelineFinished ?? null)
 
   useEffect(() => {
@@ -108,7 +116,10 @@ export const usePipelineProgress = ({
           ...prev,
           steps: createInitialPipelineSteps(),
           pipelineError: null,
-          isProcessing: true
+          isProcessing: true,
+          lastRunProducedNoClips: false,
+          lastRunClipSummary: null,
+          lastRunClipStatus: null
         }))
         return
       }
@@ -460,7 +471,10 @@ export const usePipelineProgress = ({
           return {
             ...prev,
             clips: mergedClips,
-            selectedClipId: hasSelection ? prev.selectedClipId : mergedClips[0]?.id ?? null
+            selectedClipId: hasSelection ? prev.selectedClipId : mergedClips[0]?.id ?? null,
+            lastRunProducedNoClips: false,
+            lastRunClipSummary: null,
+            lastRunClipStatus: null
           }
         })
 
@@ -490,24 +504,79 @@ export const usePipelineProgress = ({
               ? event.message
               : null
 
-        updateState((prev) => ({
-          ...prev,
-          pipelineError: success ? null : errorMessage ?? 'Pipeline failed.',
-          isProcessing: false,
-          awaitingReview: false,
-          steps: prev.steps.map((step) => {
-            if (success) {
+        const rawData =
+          event.data && typeof event.data === 'object'
+            ? (event.data as Record<string, unknown>)
+            : null
+        const expectedFromEvent =
+          rawData !== null
+            ? parseNonNegativeInt(
+                rawData['clips_expected'] ??
+                  rawData['clips_processed'] ??
+                  rawData['total_clips'] ??
+                  null
+              )
+            : null
+        const renderedFromEvent =
+          rawData !== null
+            ? parseNonNegativeInt(
+                rawData['clips_rendered'] ??
+                  rawData['clips_available'] ??
+                  rawData['clips_processed'] ??
+                  null
+              )
+            : null
+
+        let producedClipCount = 0
+
+        updateState((prev) => {
+          const stateClipCount = prev.clips.length
+          const resolvedRenderedCount =
+            renderedFromEvent !== null ? Math.max(renderedFromEvent, stateClipCount) : stateClipCount
+          const clipProgressTotal = parseNonNegativeInt(
+            prev.steps.find((step) => step.id === 'produce-clips')?.clipProgress?.total
+          )
+          let resolvedExpectedCount =
+            expectedFromEvent !== null
+              ? Math.max(expectedFromEvent, resolvedRenderedCount)
+              : resolvedRenderedCount
+          if (clipProgressTotal !== null) {
+            resolvedExpectedCount = Math.max(resolvedExpectedCount, clipProgressTotal)
+          }
+
+          producedClipCount = resolvedRenderedCount
+          const clipStatus: HomePipelineState['lastRunClipStatus'] =
+            success && resolvedRenderedCount === 0
+              ? resolvedExpectedCount > 0
+                ? 'rendered_none'
+                : 'none_to_render'
+              : null
+          const clipSummary = clipStatus
+            ? { expected: resolvedExpectedCount, rendered: resolvedRenderedCount }
+            : null
+
+          return {
+            ...prev,
+            pipelineError: success ? null : errorMessage ?? 'Pipeline failed.',
+            isProcessing: false,
+            awaitingReview: false,
+            steps: prev.steps.map((step) => {
+              if (success) {
+                if (step.status === 'completed' || step.status === 'failed') {
+                  return { ...step, etaSeconds: null }
+                }
+                return { ...step, status: 'completed', progress: 1, etaSeconds: null }
+              }
               if (step.status === 'completed' || step.status === 'failed') {
                 return { ...step, etaSeconds: null }
               }
-              return { ...step, status: 'completed', progress: 1, etaSeconds: null }
-            }
-            if (step.status === 'completed' || step.status === 'failed') {
-              return { ...step, etaSeconds: null }
-            }
-            return { ...step, status: 'failed', progress: 1, etaSeconds: null }
-          })
-        }))
+              return { ...step, status: 'failed', progress: 1, etaSeconds: null }
+            }),
+            lastRunProducedNoClips: success && resolvedRenderedCount === 0,
+            lastRunClipSummary: clipSummary,
+            lastRunClipStatus: clipStatus
+          }
+        })
         cleanupConnection()
         const jobId = activeJobIdRef.current
         if (!finalizeTriggeredRef.current && trialFlagsRef.current.hasPendingTrialRun) {
@@ -516,7 +585,7 @@ export const usePipelineProgress = ({
         }
         const finishedCallback = onPipelineFinishedRef.current
         if (finishedCallback && jobId) {
-          finishedCallback({ jobId, success })
+          finishedCallback({ jobId, success, producedClips: producedClipCount })
         }
       }
     },
@@ -551,7 +620,10 @@ export const usePipelineProgress = ({
           updateState((prev) => ({
             ...prev,
             pipelineError: error.message,
-            isProcessing: false
+            isProcessing: false,
+            lastRunProducedNoClips: false,
+            lastRunClipSummary: null,
+            lastRunClipStatus: null
           }))
           cleanupConnection()
         },
@@ -597,7 +669,10 @@ export const usePipelineProgress = ({
         ...prev,
         isProcessing: true,
         pipelineError: null,
-        awaitingReview: false
+        awaitingReview: false,
+        lastRunProducedNoClips: false,
+        lastRunClipSummary: null,
+        lastRunClipStatus: null
       }))
 
       cleanupConnection()
@@ -622,7 +697,10 @@ export const usePipelineProgress = ({
         updateState((prev) => ({
           ...prev,
           pipelineError: error instanceof Error ? error.message : 'Unable to start the pipeline.',
-          isProcessing: false
+          isProcessing: false,
+          lastRunProducedNoClips: false,
+          lastRunClipSummary: null,
+          lastRunClipStatus: null
         }))
       }
     },

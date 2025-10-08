@@ -1231,6 +1231,8 @@ def process_video(
                     "elapsed_seconds": total_elapsed,
                     "project_dir": str(project_dir),
                     "clips_processed": len(refined_candidates),
+                    "clips_expected": total_candidates,
+                    "clips_rendered": produced_count,
                 },
             )
         )
