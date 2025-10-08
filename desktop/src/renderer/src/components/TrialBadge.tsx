@@ -19,6 +19,17 @@ const TrialBadge: FC = () => {
     label = 'Trial · …'
     className = `${baseClassName} border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] text-[color:var(--muted)]`
     title = 'Checking trial status…'
+  } else if (state.pendingConsumption) {
+    const remainingLabel =
+      state.remainingRuns !== null ? `${state.remainingRuns} left` : 'run pending'
+    const stageLabel =
+      state.pendingConsumptionStage === 'finalizing' ? 'finalising' : 'in progress'
+    label = `Trial · ${remainingLabel} · ${stageLabel}`
+    className = `${baseClassName} border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent)_85%,transparent)] text-[color:var(--accent-contrast)]`
+    title =
+      state.pendingConsumptionStage === 'finalizing'
+        ? 'Finalising the latest trial run. Please wait before starting another video.'
+        : 'A pipeline is currently using a trial run.'
   } else if (state.isTrialActive && state.remainingRuns !== null) {
     label = `Trial · ${state.remainingRuns} left`
     className = `${baseClassName} border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent)_85%,transparent)] text-[color:var(--accent-contrast)]`

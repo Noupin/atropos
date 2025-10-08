@@ -172,7 +172,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [settingsHeaderAction, setSettingsHeaderAction] = useState<SettingsHeaderAction | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
-  const { state: trialState, consumeTrialRun } = useTrialAccess()
+  const { state: trialState, markTrialRunPending, finalizeTrialRun } = useTrialAccess()
   const homeNavigationDisabled = !trialState.isTrialActive
 
   const preventDisabledNavigation = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
@@ -242,8 +242,10 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     state: homeState,
     setState: setHomeState,
     availableAccounts,
-    consumeTrialRun,
+    markTrialRunPending,
+    finalizeTrialRun,
     isTrialActive: trialState.isTrialActive,
+    hasPendingTrialRun: trialState.pendingConsumption,
     isMockBackend
   })
 

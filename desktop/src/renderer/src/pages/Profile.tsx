@@ -827,17 +827,21 @@ const Profile: FC<ProfileProps> = ({
   const [newAccountError, setNewAccountError] = useState<string | null>(null)
   const [newAccountSuccess, setNewAccountSuccess] = useState<string | null>(null)
   const [isCreatingAccount, setIsCreatingAccount] = useState(false)
-  const { state: trialState, refresh: refreshTrialStatus } = useTrialAccess()
+  const { state: trialState, refresh: refreshTrialStatus, finalizeTrialRun } = useTrialAccess()
   const [isRefreshingTrial, setIsRefreshingTrial] = useState(false)
 
   const handleRefreshTrialStatus = useCallback(async () => {
     setIsRefreshingTrial(true)
     try {
-      await refreshTrialStatus()
+      if (trialState.pendingConsumptionStage === 'finalizing') {
+        await finalizeTrialRun({ succeeded: true })
+      } else {
+        await refreshTrialStatus()
+      }
     } finally {
       setIsRefreshingTrial(false)
     }
-  }, [refreshTrialStatus])
+  }, [finalizeTrialRun, refreshTrialStatus, trialState.pendingConsumptionStage])
 
   const totalTrialRuns = trialState.totalRuns ?? DEFAULT_TRIAL_RUNS
   const remainingTrialRuns = trialState.remainingRuns ?? 0
@@ -914,7 +918,13 @@ const Profile: FC<ProfileProps> = ({
             <p className="text-xs text-[var(--muted)]">
               {trialState.isOffline
                 ? 'Offline mode — licensing service unreachable.'
-                : `Remaining: ${remainingTrialRuns} / ${totalTrialRuns}`}
+                : trialState.pendingConsumption
+                  ? `Remaining: ${remainingTrialRuns} / ${totalTrialRuns} · ${
+                      trialState.pendingConsumptionStage === 'finalizing'
+                        ? 'finalising last run'
+                        : 'pipeline in progress'
+                    }`
+                  : `Remaining: ${remainingTrialRuns} / ${totalTrialRuns}`}
             </p>
           </div>
           <button
@@ -934,6 +944,10 @@ const Profile: FC<ProfileProps> = ({
         {trialState.isOffline ? (
           <p className="text-sm font-medium text-[var(--muted)]">
             Reconnect to verify trial access. Offline mode limits functionality.
+          </p>
+        ) : trialState.pendingConsumption ? (
+          <p className="text-sm font-medium text-[var(--muted)]">
+            A pipeline is still completing. Your trial balance will update once processing finishes.
           </p>
         ) : trialState.isTrialActive ? (
           <p className="text-sm font-medium text-[var(--muted)]">
