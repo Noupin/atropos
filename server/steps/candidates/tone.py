@@ -6,6 +6,7 @@ from typing import Any, Callable, List, Tuple
 from datetime import datetime
 from tqdm import tqdm
 
+import config as pipeline_config
 from config import (
     WINDOW_CONTEXT_PERCENTAGE,
     WINDOW_OVERLAP_SECONDS,
@@ -111,7 +112,7 @@ def find_candidates_by_tone(
     from . import local_llm_call_json
 
     strategy = STRATEGY_REGISTRY[tone]
-    min_rating = strategy.min_rating if min_rating is None else min_rating
+    min_rating = pipeline_config.DEFAULT_MIN_RATING if min_rating is None else min_rating
     min_words = strategy.min_words if min_words is None else min_words
 
     items = parse_transcript(transcript_path)
