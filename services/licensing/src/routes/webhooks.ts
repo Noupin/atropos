@@ -70,26 +70,40 @@ const timingSafeEqual = (a: string, b: string): boolean => {
   return result === 0
 }
 
-const verifyStripeSignature = async (request: Request, env: Env, payload: string): Promise<boolean> => {
+type SignatureVerificationResult = 'valid' | 'missing' | 'invalid'
+
+const verifyStripeSignature = async (
+  request: Request,
+  env: Env,
+  payload: string,
+  context: { requestId: string }
+): Promise<SignatureVerificationResult> => {
   const secret = env.STRIPE_WEBHOOK_SECRET
   if (!secret) {
-    logError('webhook.stripe.secret_missing', {})
-    return false
+    logError('webhook.stripe.secret_missing', { requestId: context.requestId })
+    return 'invalid'
   }
 
-  const parsed = parseStripeSignatureHeader(request.headers.get('stripe-signature'))
+  const header = request.headers.get('stripe-signature')
+  if (!header) {
+    return 'missing'
+  }
+
+  const parsed = parseStripeSignatureHeader(header)
   if (!parsed) {
-    return false
+    return 'invalid'
   }
 
   try {
     const computed = await computeStripeSignature(secret, payload, parsed.timestamp)
-    return parsed.signatures.some((candidate) => timingSafeEqual(candidate, computed))
+    const isValid = parsed.signatures.some((candidate) => timingSafeEqual(candidate, computed))
+    return isValid ? 'valid' : 'invalid'
   } catch (error) {
     logError('webhook.stripe.signature_verification_failed', {
+      requestId: context.requestId,
       message: error instanceof Error ? error.message : 'Unknown error'
     })
-    return false
+    return 'invalid'
   }
 }
 
@@ -139,7 +153,8 @@ const toIso = (epochSeconds: number | null | undefined): string | null => {
 
 const handleCheckoutSessionCompleted = async (
   env: Env,
-  session: StripeCheckoutSession
+  session: StripeCheckoutSession,
+  context: { requestId: string }
 ): Promise<void> => {
   const deviceHash = session.metadata?.device_hash ?? session.client_reference_id ?? null
   const customerId =
@@ -150,6 +165,7 @@ const handleCheckoutSessionCompleted = async (
   const resolved = await resolveDeviceRecord(env, { deviceHash, customerId })
   if (!resolved) {
     logError('webhook.checkout_session_completed.device_not_found', {
+      requestId: context.requestId,
       deviceHash,
       customerId
     })
@@ -166,6 +182,7 @@ const handleCheckoutSessionCompleted = async (
     } catch (error) {
       if (error instanceof StripeApiError) {
         logError('webhook.checkout_session_completed.subscription_lookup_failed', {
+          requestId: context.requestId,
           subscriptionId: subscriptionDetails.subscriptionId,
           status: error.status,
           code: error.code,
@@ -173,6 +190,7 @@ const handleCheckoutSessionCompleted = async (
         })
       } else {
         logError('webhook.checkout_session_completed.subscription_lookup_unexpected', {
+          requestId: context.requestId,
           message: error instanceof Error ? error.message : 'Unknown error'
         })
       }
@@ -195,6 +213,7 @@ const handleCheckoutSessionCompleted = async (
   await putDeviceRecord(env, resolved.deviceHash, updatedRecord)
 
   logInfo('webhook.checkout_session_completed.updated', {
+    requestId: context.requestId,
     deviceHash: resolved.deviceHash,
     customerId: updatedRecord.subscription.customerId,
     subscriptionId: updatedRecord.subscription.subscriptionId
@@ -204,7 +223,8 @@ const handleCheckoutSessionCompleted = async (
 const applySubscriptionPayload = async (
   env: Env,
   subscription: StripeSubscription,
-  eventType: string
+  eventType: string,
+  context: { requestId: string }
 ): Promise<void> => {
   const deviceHash = subscription.metadata?.device_hash ?? null
   const customerId = subscription.customer ?? null
@@ -212,6 +232,7 @@ const applySubscriptionPayload = async (
 
   if (!resolved) {
     logError('webhook.subscription.device_not_found', {
+      requestId: context.requestId,
       eventType,
       deviceHash,
       customerId,
@@ -231,6 +252,7 @@ const applySubscriptionPayload = async (
   await putDeviceRecord(env, resolved.deviceHash, updatedRecord)
 
   logInfo('webhook.subscription.updated', {
+    requestId: context.requestId,
     eventType,
     deviceHash: resolved.deviceHash,
     subscriptionId: subscription.id,
@@ -238,16 +260,23 @@ const applySubscriptionPayload = async (
   })
 }
 
-const handleInvoicePaymentFailed = async (env: Env, invoice: { customer?: string | null }): Promise<void> => {
+const handleInvoicePaymentFailed = async (
+  env: Env,
+  invoice: { customer?: string | null },
+  context: { requestId: string }
+): Promise<void> => {
   const customerId = typeof invoice.customer === 'string' ? invoice.customer : null
   if (!customerId) {
-    logError('webhook.invoice_payment_failed.missing_customer', {})
+    logError('webhook.invoice_payment_failed.missing_customer', { requestId: context.requestId })
     return
   }
 
   const resolved = await findDeviceByCustomerId(env, customerId)
   if (!resolved) {
-    logError('webhook.invoice_payment_failed.device_not_found', { customerId })
+    logError('webhook.invoice_payment_failed.device_not_found', {
+      requestId: context.requestId,
+      customerId
+    })
     return
   }
 
@@ -259,18 +288,24 @@ const handleInvoicePaymentFailed = async (env: Env, invoice: { customer?: string
   await putDeviceRecord(env, resolved.deviceHash, updatedRecord)
 
   logInfo('webhook.invoice_payment_failed.updated', {
+    requestId: context.requestId,
     deviceHash: resolved.deviceHash,
     customerId
   })
 }
 
-const handleSubscriptionDeleted = async (env: Env, subscription: StripeSubscription): Promise<void> => {
+const handleSubscriptionDeleted = async (
+  env: Env,
+  subscription: StripeSubscription,
+  context: { requestId: string }
+): Promise<void> => {
   const deviceHash = subscription.metadata?.device_hash ?? null
   const customerId = subscription.customer ?? null
   const resolved = await resolveDeviceRecord(env, { deviceHash, customerId })
 
   if (!resolved) {
     logError('webhook.subscription_deleted.device_not_found', {
+      requestId: context.requestId,
       subscriptionId: subscription.id,
       deviceHash,
       customerId
@@ -294,25 +329,34 @@ const handleSubscriptionDeleted = async (env: Env, subscription: StripeSubscript
   await putDeviceRecord(env, resolved.deviceHash, updatedRecord)
 
   logInfo('webhook.subscription_deleted.updated', {
+    requestId: context.requestId,
     deviceHash: resolved.deviceHash,
     subscriptionId: subscription.id
   })
 }
 
-export const handleStripeWebhook = async (request: Request, env: Env): Promise<Response> => {
+export const handleStripeWebhook = async (
+  request: Request,
+  env: Env,
+  context: { requestId: string; route: string }
+): Promise<Response> => {
+  const { requestId, route } = context
+
   if (!env.STRIPE_WEBHOOK_SECRET) {
-    logError('webhook.stripe.secret_missing', {})
+    logError('webhook.stripe.secret_missing', { requestId })
     return jsonResponse({ error: 'stripe_error' }, { status: 500 })
   }
 
   const payload = await request.text()
-  if (!payload) {
+
+  const signatureResult = await verifyStripeSignature(request, env, payload, { requestId })
+  if (signatureResult === 'missing') {
+    logError('webhook.stripe.signature_missing', { requestId, route })
     return jsonResponse({ error: 'stripe_signature_missing' }, { status: 400 })
   }
-
-  const isValid = await verifyStripeSignature(request, env, payload)
-  if (!isValid) {
-    return jsonResponse({ error: 'stripe_signature_missing' }, { status: 400 })
+  if (signatureResult === 'invalid') {
+    logError('webhook.stripe.signature_invalid', { requestId, route })
+    return jsonResponse({ error: 'stripe_signature_invalid' }, { status: 400 })
   }
 
   let event: StripeEvent
@@ -320,12 +364,16 @@ export const handleStripeWebhook = async (request: Request, env: Env): Promise<R
     event = JSON.parse(payload) as StripeEvent
   } catch (error) {
     logError('webhook.stripe.invalid_json', {
+      requestId,
+      route,
       message: error instanceof Error ? error.message : 'Unknown error'
     })
     return jsonResponse({ error: 'stripe_error' }, { status: 400 })
   }
 
   logInfo('webhook.stripe.received', {
+    requestId,
+    route,
     eventType: event.type,
     eventId: event.id
   })
@@ -333,25 +381,34 @@ export const handleStripeWebhook = async (request: Request, env: Env): Promise<R
   try {
     switch (event.type) {
       case 'checkout.session.completed':
-        await handleCheckoutSessionCompleted(env, event.data.object as StripeCheckoutSession)
+        await handleCheckoutSessionCompleted(env, event.data.object as StripeCheckoutSession, {
+          requestId
+        })
         break
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
-        await applySubscriptionPayload(env, event.data.object as StripeSubscription, event.type)
+        await applySubscriptionPayload(env, event.data.object as StripeSubscription, event.type, {
+          requestId
+        })
         break
       case 'customer.subscription.deleted':
-        await handleSubscriptionDeleted(env, event.data.object as StripeSubscription)
+        await handleSubscriptionDeleted(env, event.data.object as StripeSubscription, { requestId })
         break
       case 'invoice.payment_failed':
-        await handleInvoicePaymentFailed(env, event.data.object as { customer?: string | null })
+        await handleInvoicePaymentFailed(
+          env,
+          event.data.object as { customer?: string | null },
+          { requestId }
+        )
         break
       default:
-        logInfo('webhook.stripe.unhandled_event', { eventType: event.type })
+        logInfo('webhook.stripe.unhandled_event', { requestId, eventType: event.type })
         break
     }
   } catch (error) {
     if (error instanceof StripeApiError) {
       logError('webhook.stripe.stripe_error', {
+        requestId,
         eventType: event.type,
         status: error.status,
         code: error.code,
@@ -361,15 +418,16 @@ export const handleStripeWebhook = async (request: Request, env: Env): Promise<R
     }
 
     logError('webhook.stripe.unexpected_error', {
+      requestId,
       eventType: event.type,
       message: error instanceof Error ? error.message : 'Unknown error'
     })
     return jsonResponse({ error: 'stripe_error' }, { status: 500 })
   }
 
-  return jsonResponse({ received: true })
+  return jsonResponse({ received: true, requestId })
 }
 
 export const diagnostics = async (): Promise<Response> => {
-  return jsonResponse({ ok: true, paths: ['/webhooks/stripe'] })
+  return jsonResponse({ ok: true, routes: ['/billing/webhook', '/webhooks/stripe'] })
 }

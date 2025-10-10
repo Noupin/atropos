@@ -51,6 +51,8 @@ export interface Env {
   STRIPE_PRICE_ID?: string
   SUBSCRIPTION_SUCCESS_URL?: string
   SUBSCRIPTION_CANCEL_URL?: string
+  TIER?: string
+  CORS_ALLOW_ORIGINS?: string
 }
 
 export interface TrialStatusResponse {

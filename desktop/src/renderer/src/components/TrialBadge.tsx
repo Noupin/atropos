@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAccess } from '../state/access'
 
 const baseClassName =
-  'inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] shadow-[0_10px_18px_rgba(43,42,40,0.18)]'
+  'inline-flex max-w-[160px] items-center justify-center gap-1 truncate rounded-full border px-2 py-0.5 text-xs font-semibold uppercase leading-tight tracking-[0.2em] shadow-[0_6px_14px_rgba(43,42,40,0.16)]'
 
 const TrialBadge: FC = () => {
   const navigate = useNavigate()

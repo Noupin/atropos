@@ -30,6 +30,21 @@ const normalizePathname = (pathname: string): string => {
   return pathname
 }
 
+const ROUTE_NAMES: Record<string, string> = {
+  '/health': 'health',
+  '/trial/status': 'trial.status',
+  '/trial/start': 'trial.start',
+  '/trial/consume': 'trial.consume',
+  '/transfer/initiate': 'transfer.initiate',
+  '/transfer/accept': 'transfer.accept',
+  '/subscribe': 'subscription.subscribe',
+  '/portal': 'subscription.portal',
+  '/subscription/status': 'subscription.status',
+  '/webhooks/stripe': 'webhooks.stripe',
+  '/billing/webhook': 'webhooks.billing',
+  '/webhooks/diagnostics': 'webhooks.diagnostics'
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') {
@@ -38,10 +53,14 @@ export default {
 
     const url = new URL(request.url)
     const path = normalizePathname(url.pathname)
+    const requestId = crypto.randomUUID()
+    const routeName = ROUTE_NAMES[path] ?? null
 
     logInfo('request.received', {
+      requestId,
       method: request.method,
-      path
+      path,
+      route: routeName
     })
 
     if (path === '/health') {
@@ -104,11 +123,14 @@ export default {
       return getSubscriptionStatus(request, env)
     }
 
-    if (path === '/webhooks/stripe') {
+    if (path === '/webhooks/stripe' || path === '/billing/webhook') {
       if (request.method !== 'POST') {
         return methodNotAllowed(['POST'])
       }
-      return handleStripeWebhook(request, env)
+      return handleStripeWebhook(request, env, {
+        requestId,
+        route: path
+      })
     }
 
     if (path === '/webhooks/diagnostics') {
