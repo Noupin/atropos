@@ -994,8 +994,33 @@ const Profile: FC<ProfileProps> = ({
     return 'Subscribe to continue using Atropos. Your trial has ended.'
   }, [trialState])
 
-  const shouldShowSubscribeButton = !trialState.hasActiveSubscription
-  const shouldShowManageSubscription = Boolean(trialState.subscription?.customerId)
+  const subscriptionCta = useMemo(() => {
+    if (trialState.hasActiveSubscription) {
+      return {
+        label: isOpeningPortal ? 'Opening…' : 'Manage subscription',
+        onClick: () => {
+          void handleOpenPortal()
+        },
+        variant: 'outline' as const,
+        disabled: trialState.isLoading || isOpeningPortal
+      }
+    }
+    return {
+      label: isLaunchingSubscription ? 'Opening…' : 'Subscribe',
+      onClick: () => {
+        void handleSubscribe()
+      },
+      variant: 'primary' as const,
+      disabled: trialState.isLoading || isLaunchingSubscription
+    }
+  }, [
+    handleOpenPortal,
+    handleSubscribe,
+    isLaunchingSubscription,
+    isOpeningPortal,
+    trialState.hasActiveSubscription,
+    trialState.isLoading
+  ])
 
   useEffect(() => {
     registerSearch(null)
@@ -1083,30 +1108,14 @@ rent)] p-6">
             >
               {refreshButtonLabel}
             </button>
-            {shouldShowManageSubscription ? (
-              <button
-                type="button"
-                onClick={() => {
-                  void handleOpenPortal()
-                }}
-                className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
-                disabled={trialState.isLoading || isOpeningPortal}
-              >
-                {isOpeningPortal ? 'Opening…' : 'Manage subscription'}
-              </button>
-            ) : null}
-            {shouldShowSubscribeButton ? (
-              <button
-                type="button"
-                onClick={() => {
-                  void handleSubscribe()
-                }}
-                className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
-                disabled={trialState.isLoading || isLaunchingSubscription}
-              >
-                {isLaunchingSubscription ? 'Opening…' : 'Subscribe'}
-              </button>
-            ) : null}
+            <button
+              type="button"
+              onClick={subscriptionCta.onClick}
+              className={`marble-button marble-button--${subscriptionCta.variant} px-3 py-1.5 text-xs font-semibold`}
+              disabled={subscriptionCta.disabled}
+            >
+              {subscriptionCta.label}
+            </button>
           </div>
         </div>
         {trialState.lastError ? (
