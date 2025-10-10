@@ -40,7 +40,7 @@ const TrialBadge: FC = () => {
     title = `Trial runs remaining: ${state.trial.remainingRuns}`
   } else {
     label = 'Access denied'
-    className = `${baseClassName} border-[color:var(--error-strong)] bg-[color:color-mix(in_srgb,var(--error)_30%,transparent)] text-[color:color-mix(in_srgb,var(--error)_90%,var(--accent-contrast))]`
+    className = `${baseClassName} border-[color:var(--error-strong)] bg-[color:color-mix(in_srgb,var(--error)_30%,transparent)] text-[color:color-mix(in_srgb,var(--error)_90%,var(--accent-contrast))] text-[0.6875rem]`
     title = 'Subscribe to unlock processing.'
   }
 

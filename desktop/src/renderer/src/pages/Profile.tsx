@@ -900,6 +900,7 @@ const Profile: FC<ProfileProps> = ({
 
   const totalTrialRuns = accessState.trial.totalRuns ?? DEFAULT_TRIAL_RUNS
   const remainingTrialRuns = accessState.trial.remainingRuns ?? 0
+  const showTrialDetails = !accessState.isOffline && !accessState.isSubscriptionActive
   const refreshButtonLabel = isRefreshingAccess ? 'Refreshing…' : 'Refresh status'
   const subscriptionButtonLabel = isProcessingSubscription
     ? 'Opening…'
@@ -997,7 +998,7 @@ const Profile: FC<ProfileProps> = ({
           <div className="flex flex-col gap-1">
             <h2 className="text-lg font-semibold text-[var(--fg)]">Access & subscription</h2>
             <p className="text-xs text-[var(--muted)]">{accessSummary}</p>
-            {!accessState.isOffline ? (
+            {showTrialDetails ? (
               <p className="text-xs text-[var(--muted)]">
                 Trial remaining: {remainingTrialRuns} / {totalTrialRuns}
               </p>
