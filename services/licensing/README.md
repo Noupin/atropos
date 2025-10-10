@@ -19,16 +19,21 @@ The licensing service is a Cloudflare Worker that tracks device trials, manages 
 
 ## Environment variables & secrets
 
-Configure secrets via `wrangler secret` or environment variables in CI:
+Configure the following secrets via `wrangler secret` or environment variables in CI:
 
 - `LICENSING_ENV` (`dev` or `prod`)
 - `LICENSING_KV` (Workers KV namespace binding for trial and transfer records)
 - `STRIPE_SECRET_KEY` (Stripe API key for the environment)
 - `STRIPE_PRICE_ID` (Recurring price used for subscriptions)
 - `STRIPE_WEBHOOK_SECRET` (Signing secret for `/webhooks/stripe`)
-- `SUBSCRIPTION_SUCCESS_URL` (URL the Checkout session redirects to on success)
-- `SUBSCRIPTION_CANCEL_URL` (URL the Checkout session redirects to on cancel)
-- `SUBSCRIPTION_PORTAL_RETURN_URL` (Return URL for the billing portal)
+
+Non-sensitive configuration such as deep links can live in `wrangler.toml` under `[vars]`/`[env.*.vars]`:
+
+- `SUBSCRIPTION_SUCCESS_URL` (Desktop deep link the Checkout session redirects to on success)
+- `SUBSCRIPTION_CANCEL_URL` (Desktop deep link for cancelled Checkout sessions)
+- `SUBSCRIPTION_PORTAL_RETURN_URL` (Return URL for the billing portal, typically another deep link)
+
+The repository defaults point these URLs at `atropos://subscription/*` so Stripe sends the user back into the Electron app after payment flows complete.
 
 ## Development vs production
 

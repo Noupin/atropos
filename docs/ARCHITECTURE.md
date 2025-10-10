@@ -48,7 +48,8 @@ Atropos is composed of three cooperating runtimes:
 - `VITE_LICENSE_API_BASE_URL` → Desktop → Cloudflare Worker host (dev: `https://licensing.dev.atropos.workers.dev`, prod: `https://licensing.atropos.app`).
 - `SERVER_ENV` / `ENVIRONMENT` → Python services → selects credentials in `server/config.py` and toggles webhook hosts.
 - `LICENSING_ENV` → Worker → selects Stripe keys and KV namespace bindings.
-- `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, `SUBSCRIPTION_SUCCESS_URL`, `SUBSCRIPTION_CANCEL_URL`, `SUBSCRIPTION_PORTAL_RETURN_URL` → Worker → configure subscription checkout + webhook handling.
+- `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` → Worker secrets → configure subscription checkout + webhook handling.
+- `SUBSCRIPTION_SUCCESS_URL`, `SUBSCRIPTION_CANCEL_URL`, `SUBSCRIPTION_PORTAL_RETURN_URL` → Worker vars (`wrangler.toml`) → deep-link destinations inside the desktop app for Stripe checkout and the billing portal.
 
 ### Cloudflare worker environments
 
