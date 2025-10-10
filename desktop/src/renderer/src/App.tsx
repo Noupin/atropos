@@ -4,6 +4,7 @@ import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-d
 import Search from './components/Search'
 import MarbleSelect from './components/MarbleSelect'
 import TrialBadge from './components/TrialBadge'
+import { getBadgeClassName, type BadgeVariant } from './components/badgeStyles'
 import ClipPage from './pages/Clip'
 import ClipEdit from './pages/ClipEdit'
 import Home from './pages/Home'
@@ -49,7 +50,7 @@ const THEME_STORAGE_KEY = 'atropos:theme'
 const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
 
-type NavItemBadgeVariant = 'accent' | 'info' | 'success' | 'error'
+type NavItemBadgeVariant = Exclude<BadgeVariant, 'neutral'>
 
 type NavItemBadge = {
   label: string
@@ -78,17 +79,6 @@ type NavItemLabelProps = {
   progress?: NavItemProgress | null
 }
 
-const badgeVariantClasses: Record<NavItemBadgeVariant, string> = {
-  accent:
-    'border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--accent)_80%,transparent)] text-[color:var(--accent-contrast)]',
-  info:
-    'border-[color:color-mix(in_srgb,var(--info-strong)_55%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--info-soft)_78%,transparent)] text-[color:color-mix(in_srgb,var(--info-strong)_88%,var(--accent-contrast))]',
-  success:
-    'border-[color:color-mix(in_srgb,var(--success-strong)_55%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--success-soft)_80%,transparent)] text-[color:color-mix(in_srgb,var(--success-strong)_90%,var(--accent-contrast))]',
-  error:
-    'border-[color:color-mix(in_srgb,var(--error-strong)_55%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--error-soft)_78%,transparent)] text-[color:color-mix(in_srgb,var(--error-strong)_90%,var(--accent-contrast))]'
-}
-
 const progressStatusClasses: Record<PipelineOverallStatus, string> = {
   idle: 'bg-[color:var(--edge-soft)]',
   active: 'bg-[color:var(--info-strong)]',
@@ -115,9 +105,7 @@ const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge, progress 
       {resolvedBadge ? (
         <span
           aria-hidden
-          className={`pointer-events-none absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] shadow-[0_10px_18px_rgba(43,42,40,0.18)] ${
-            badgeVariantClasses[resolvedBadge.variant]
-          }`}
+          className={`pointer-events-none absolute -top-3 left-1/2 -translate-x-1/2 ${getBadgeClassName(resolvedBadge.variant)}`}
         >
           {resolvedBadge.label}
         </span>
