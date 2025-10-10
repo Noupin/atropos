@@ -191,7 +191,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     !accessState.isTrialActive &&
     !accessState.isOffline
   const homeNavigationDisabled = accessRestricted
-  const libraryNavigationDisabled = accessRestricted
+  const libraryNavigationDisabled = false
   const redirectedJobRef = useRef<string | null>(null)
   const lastActiveJobIdRef = useRef<string | null>(null)
   const isOnHomePage = location.pathname === '/'
@@ -205,7 +205,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     if (!accessRestricted) {
       return
     }
-    const allowedPrefixes = ['/profile', '/settings']
+    const allowedPrefixes = ['/profile', '/settings', '/library']
     const isAllowed = allowedPrefixes.some((prefix) => location.pathname.startsWith(prefix))
     if (!isAllowed) {
       navigate('/profile', { replace: true })

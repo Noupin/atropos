@@ -974,7 +974,9 @@ const Profile: FC<ProfileProps> = ({
   const authStatusVariant = authStatusVariants[authStatus?.status ?? ''] ?? 'warning'
   const authStatusPill = getBadgeClassName(
     authStatusVariant,
-    !authStatus ? 'text-[color:var(--muted)]' : undefined
+    ['gap-2', !authStatus ? 'text-[color:var(--muted)]' : undefined]
+      .filter(Boolean)
+      .join(' ') || undefined
   )
   const authStatusDot = authStatus
     ? authStatusDots[authStatus.status] ?? authStatusDots.degraded
