@@ -3,6 +3,7 @@ import type { FC } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import ClipDescription from '../components/ClipDescription'
+import { getBadgeClassName } from '../components/badgeStyles'
 import type { Clip, SearchBridge } from '../types'
 import useSharedVolume from '../hooks/useSharedVolume'
 
@@ -174,10 +175,7 @@ const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
                 className="marble-button marble-button--outline inline-flex w-fit items-center gap-2 px-3 py-1.5 text-sm font-medium"
               >
                 <span>Jump to</span>
-                <span
-                  aria-hidden="true"
-                  className="status-pill status-pill--neutral text-[0.7rem] font-semibold"
-                >
+                <span aria-hidden="true" className={getBadgeClassName('neutral')}>
                   {clip.timestampSeconds !== null && clip.timestampSeconds !== undefined
                     ? formatDuration(clip.timestampSeconds)
                     : 'timestamp'}
