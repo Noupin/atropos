@@ -157,6 +157,31 @@ const handleInvoiceFailed = async (
   await saveRecordForDevice(env, context.deviceHash, finalRecord)
 }
 
+const handleInvoiceSucceeded = async (
+  env: Env,
+  stripe: Stripe,
+  invoice: Stripe.Invoice
+): Promise<void> => {
+  const customerId =
+    typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id ?? null
+  const subscriptionId =
+    typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id ?? null
+
+  const context = await resolveDeviceContext(env, {
+    deviceHash: invoice.metadata?.device_hash ?? null,
+    customerId
+  })
+  if (!context || !subscriptionId) {
+    return
+  }
+
+  const updatedRecord = await refreshSubscriptionFromStripe(stripe, context.record, subscriptionId)
+  const finalRecord = isSubscriptionActive(updatedRecord.subscription)
+    ? invalidateTrialIfNeeded(updatedRecord)
+    : updatedRecord
+  await saveRecordForDevice(env, context.deviceHash, finalRecord)
+}
+
 const handleSubscriptionDeleted = async (
   env: Env,
   stripe: Stripe,
@@ -213,6 +238,9 @@ export const handleStripeWebhook = async (request: Request, env: Env): Promise<R
         break
       case 'invoice.payment_failed':
         await handleInvoiceFailed(env, stripe, event.data.object as Stripe.Invoice)
+        break
+      case 'invoice.payment_succeeded':
+        await handleInvoiceSucceeded(env, stripe, event.data.object as Stripe.Invoice)
         break
       case 'customer.subscription.deleted':
         await handleSubscriptionDeleted(env, stripe, event.data.object as Stripe.Subscription)

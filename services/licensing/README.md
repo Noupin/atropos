@@ -35,6 +35,15 @@ Non-sensitive configuration such as deep links can live in `wrangler.toml` under
 
 The repository defaults point these URLs at `atropos://subscription/*` so Stripe sends the user back into the Electron app after payment flows complete.
 
+### Stripe webhook endpoints
+
+Stripe must call the worker's `/webhooks/stripe` route so subscription lifecycle events update device records. Configure the following endpoint URLs in the Stripe dashboard and subscribe them to `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`, and `invoice.payment_succeeded`:
+
+| Environment | Endpoint URL |
+| --- | --- |
+| Production | `https://license-api.atropos-video.com/webhooks/stripe` |
+| Development | `https://license-api-dev.atropos-video.com/webhooks/stripe` |
+
 ## Development vs production
 
 | Mode | Host | Notes |
