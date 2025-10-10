@@ -15,7 +15,7 @@ import { createInitialPipelineSteps, PIPELINE_STEP_DEFINITIONS } from '../data/p
 import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
 import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
-import { useTrialAccess } from '../state/trialAccess'
+import { useAccess } from '../state/access'
 
 const SUPPORTED_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv'] as const
 
@@ -54,7 +54,7 @@ const Home: FC<HomeProps> = ({
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
   const [isOpeningFolder, setIsOpeningFolder] = useState(false)
   const canAttemptToOpenFolder = useMemo(() => canOpenAccountClipsFolder(), [])
-  const { state: trialState, markTrialRunPending, finalizeTrialRun } = useTrialAccess()
+  const { state: accessState, markTrialRunPending, finalizeTrialRun } = useAccess()
 
   useEffect(() => {
     setState(initialState)
@@ -150,7 +150,7 @@ const Home: FC<HomeProps> = ({
     runStepRef.current = (stepIndex: number) => {
       if (stepIndex >= PIPELINE_STEP_DEFINITIONS.length) {
         updateState((prev) => ({ ...prev, isProcessing: false }))
-        if (trialState.pendingConsumption) {
+        if (accessState.pendingConsumption) {
           void finalizeTrialRun({ succeeded: true })
         }
         return
@@ -207,7 +207,7 @@ const Home: FC<HomeProps> = ({
           if (i === increments) {
             if (stepIndex === PIPELINE_STEP_DEFINITIONS.length - 1) {
               updateState((prev) => ({ ...prev, isProcessing: false }))
-              if (trialState.pendingConsumption) {
+              if (accessState.pendingConsumption) {
                 void finalizeTrialRun({ succeeded: true })
               }
             } else {
@@ -220,7 +220,7 @@ const Home: FC<HomeProps> = ({
         timersRef.current.push(timeout)
       }
     }
-  }, [clearTimers, finalizeTrialRun, isMockBackend, trialState.pendingConsumption, updateState])
+  }, [clearTimers, finalizeTrialRun, isMockBackend, accessState.pendingConsumption, updateState])
 
 
   useEffect(() => {
@@ -297,14 +297,14 @@ const Home: FC<HomeProps> = ({
         return
       }
 
-      if (trialState.pendingConsumption) {
-        if (trialState.pendingConsumptionStage === 'finalizing') {
+      if (accessState.pendingConsumption) {
+        if (accessState.pendingConsumptionStage === 'finalizing') {
           void finalizeTrialRun({ succeeded: true })
         }
         updateState((prev) => ({
           ...prev,
           pipelineError:
-            trialState.pendingConsumptionStage === 'finalizing'
+            accessState.pendingConsumptionStage === 'finalizing'
               ? 'Finishing the last trial run. Please wait a moment before starting a new video.'
               : 'A trial run is already in progress. Let it complete before starting another video.',
           isProcessing: false
@@ -332,7 +332,7 @@ const Home: FC<HomeProps> = ({
       if (isMockBackend) {
         const startTimeout = window.setTimeout(() => runStepRef.current(0), 150)
         timersRef.current.push(startTimeout)
-        if (trialState.isTrialActive) {
+        if (accessState.isTrialActive) {
           markTrialRunPending()
         }
         return
@@ -349,9 +349,9 @@ const Home: FC<HomeProps> = ({
       selectedAccountId,
       onStartPipeline,
       reviewMode,
-      trialState.isTrialActive,
-      trialState.pendingConsumption,
-      trialState.pendingConsumptionStage,
+      accessState.isTrialActive,
+      accessState.pendingConsumption,
+      accessState.pendingConsumptionStage,
       updateState,
       videoUrl
     ]
@@ -523,8 +523,8 @@ const Home: FC<HomeProps> = ({
     if (currentStep) {
       return `Currently processing: ${currentStep.title}`
     }
-    if (trialState.pendingConsumption) {
-      return trialState.pendingConsumptionStage === 'finalizing'
+    if (accessState.pendingConsumption) {
+      return accessState.pendingConsumptionStage === 'finalizing'
         ? 'Finalising your trial run. Please wait before starting another video.'
         : 'A trial run is already in progress. Let it finish to free up your next attempt.'
     }
@@ -542,8 +542,8 @@ const Home: FC<HomeProps> = ({
     currentStep,
     isProcessing,
     pipelineError,
-    trialState.pendingConsumption,
-    trialState.pendingConsumptionStage
+    accessState.pendingConsumption,
+    accessState.pendingConsumptionStage
   ])
 
   return (
@@ -613,7 +613,7 @@ const Home: FC<HomeProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="submit"
-                    disabled={!videoUrl.trim() || isProcessing || trialState.pendingConsumption}
+                    disabled={!videoUrl.trim() || isProcessing || accessState.pendingConsumption}
                     className="marble-button marble-button--primary whitespace-nowrap px-5 py-2.5 text-sm font-semibold sm:px-6 sm:py-2.5 sm:text-base"
                   >
                     {isProcessing ? 'Processing…' : 'Start processing'}

@@ -434,6 +434,7 @@ const buildClip = async (
     views: null,
     createdAt: stats.mtime.toISOString(),
     durationSec: duration,
+    sourceDurationSeconds: null,
     thumbnail: null,
     playbackUrl,
     previewUrl,

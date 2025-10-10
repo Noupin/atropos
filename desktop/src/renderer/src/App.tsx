@@ -14,7 +14,7 @@ import { createInitialPipelineSteps } from './data/pipeline'
 import { BACKEND_MODE } from './config/backend'
 import useNavigationHistory from './hooks/useNavigationHistory'
 import usePipelineProgress from './state/usePipelineProgress'
-import { useTrialAccess } from './state/trialAccess'
+import { useAccess } from './state/access'
 import {
   clamp01,
   summarisePipelineProgress,
@@ -184,8 +184,14 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [settingsHeaderAction, setSettingsHeaderAction] = useState<SettingsHeaderAction | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
-  const { state: trialState, markTrialRunPending, finalizeTrialRun } = useTrialAccess()
-  const homeNavigationDisabled = !trialState.isTrialActive
+  const { state: accessState, markTrialRunPending, finalizeTrialRun } = useAccess()
+  const accessRestricted =
+    !accessState.isLoading &&
+    !accessState.isSubscriptionActive &&
+    !accessState.isTrialActive &&
+    !accessState.isOffline
+  const homeNavigationDisabled = accessRestricted
+  const libraryNavigationDisabled = accessRestricted
   const redirectedJobRef = useRef<string | null>(null)
   const lastActiveJobIdRef = useRef<string | null>(null)
   const isOnHomePage = location.pathname === '/'
@@ -196,15 +202,15 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   useNavigationHistory()
   useEffect(() => {
-    if (trialState.isLoading || trialState.isTrialActive) {
+    if (!accessRestricted) {
       return
     }
-    const allowedPrefixes = ['/profile', '/settings', '/library']
+    const allowedPrefixes = ['/profile', '/settings']
     const isAllowed = allowedPrefixes.some((prefix) => location.pathname.startsWith(prefix))
     if (!isAllowed) {
       navigate('/profile', { replace: true })
     }
-  }, [location.pathname, navigate, trialState.isLoading, trialState.isTrialActive])
+  }, [location.pathname, navigate, accessRestricted])
 
   const availableAccounts = useMemo(
     () =>
@@ -255,13 +261,13 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   const handleFirstClipReady = useCallback(
     ({ jobId }: { jobId: string }) => {
-      if (redirectedJobRef.current === jobId) {
+      if (redirectedJobRef.current === jobId || libraryNavigationDisabled) {
         return
       }
       redirectedJobRef.current = jobId
       navigate('/library')
     },
-    [navigate]
+    [navigate, libraryNavigationDisabled]
   )
 
   const handlePipelineFinished = useCallback(
@@ -278,14 +284,15 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
         !success ||
         producedClips === 0 ||
         redirectedJobRef.current === jobId ||
-        !isOnHomePage
+        !isOnHomePage ||
+        libraryNavigationDisabled
       ) {
         return
       }
       redirectedJobRef.current = jobId
       navigate('/library')
     },
-    [isOnHomePage, navigate]
+    [isOnHomePage, navigate, libraryNavigationDisabled]
   )
 
   const { startPipeline, resumePipeline } = usePipelineProgress({
@@ -294,8 +301,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     availableAccounts,
     markTrialRunPending,
     finalizeTrialRun,
-    isTrialActive: trialState.isTrialActive,
-    hasPendingTrialRun: trialState.pendingConsumption,
+    isTrialActive: accessState.isTrialActive,
+    hasPendingTrialRun: accessState.pendingConsumption,
     isMockBackend,
     onFirstClipReady: handleFirstClipReady,
     onPipelineFinished: handlePipelineFinished
@@ -705,7 +712,12 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 </NavLink>
                 <NavLink
                   to="/library"
-                  className={({ isActive }) => navLinkClassName({ isActive })}
+                  className={({ isActive }) =>
+                    navLinkClassName({ isActive, disabled: libraryNavigationDisabled })
+                  }
+                  aria-disabled={libraryNavigationDisabled ? true : undefined}
+                  tabIndex={libraryNavigationDisabled ? -1 : undefined}
+                  onClick={libraryNavigationDisabled ? preventDisabledNavigation : undefined}
                 >
                   {({ isActive }) => (
                     <NavItemLabel

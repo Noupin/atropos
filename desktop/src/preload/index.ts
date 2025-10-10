@@ -18,6 +18,13 @@ const api = {
     ipcRenderer.on('navigation:command', listener)
     return () => ipcRenderer.removeListener('navigation:command', listener)
   },
+  onDeepLink: (callback: (url: string) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, url: string) => {
+      callback(url)
+    }
+    ipcRenderer.on('deep-link', listener)
+    return () => ipcRenderer.removeListener('deep-link', listener)
+  },
   updateNavigationState: (state: { canGoBack: boolean; canGoForward: boolean }): void => {
     ipcRenderer.send('navigation:state', state)
   }

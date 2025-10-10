@@ -12,7 +12,13 @@ import {
 import { TONE_LABELS, TONE_OPTIONS } from '../constants/tone'
 import { timeAgo } from '../lib/format'
 import MarbleSelect from '../components/MarbleSelect'
-import { DEFAULT_TRIAL_RUNS, useTrialAccess } from '../state/trialAccess'
+import { DEFAULT_TRIAL_RUNS, useAccess } from '../state/access'
+import {
+  LicensingOfflineError,
+  LicensingRequestError,
+  createBillingPortalSession,
+  createSubscriptionCheckout
+} from '../services/licensing'
 
 const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
   tiktok: 'tiktok.json',
@@ -827,25 +833,100 @@ const Profile: FC<ProfileProps> = ({
   const [newAccountError, setNewAccountError] = useState<string | null>(null)
   const [newAccountSuccess, setNewAccountSuccess] = useState<string | null>(null)
   const [isCreatingAccount, setIsCreatingAccount] = useState(false)
-  const { state: trialState, refresh: refreshTrialStatus, finalizeTrialRun } = useTrialAccess()
-  const [isRefreshingTrial, setIsRefreshingTrial] = useState(false)
+  const {
+    state: accessState,
+    refresh: refreshAccessStatus,
+    finalizeTrialRun,
+    deviceHash
+  } = useAccess()
+  const [isRefreshingAccess, setIsRefreshingAccess] = useState(false)
+  const [isProcessingSubscription, setIsProcessingSubscription] = useState(false)
+  const [subscriptionError, setSubscriptionError] = useState<string | null>(null)
 
-  const handleRefreshTrialStatus = useCallback(async () => {
-    setIsRefreshingTrial(true)
+  const handleRefreshAccessStatus = useCallback(async () => {
+    setIsRefreshingAccess(true)
     try {
-      if (trialState.pendingConsumptionStage === 'finalizing') {
+      if (accessState.pendingConsumptionStage === 'finalizing') {
         await finalizeTrialRun({ succeeded: true })
       } else {
-        await refreshTrialStatus()
+        await refreshAccessStatus()
       }
     } finally {
-      setIsRefreshingTrial(false)
+      setIsRefreshingAccess(false)
     }
-  }, [finalizeTrialRun, refreshTrialStatus, trialState.pendingConsumptionStage])
+  }, [accessState.pendingConsumptionStage, finalizeTrialRun, refreshAccessStatus])
 
-  const totalTrialRuns = trialState.totalRuns ?? DEFAULT_TRIAL_RUNS
-  const remainingTrialRuns = trialState.remainingRuns ?? 0
-  const refreshButtonLabel = isRefreshingTrial ? 'Refreshing…' : 'Refresh status'
+  const handleSubscriptionAction = useCallback(async () => {
+    if (!deviceHash) {
+      setSubscriptionError('Device identifier unavailable. Restart the app and try again.')
+      return
+    }
+    setSubscriptionError(null)
+    setIsProcessingSubscription(true)
+    try {
+      if (accessState.isSubscriptionActive) {
+        const { portalUrl } = await createBillingPortalSession(deviceHash)
+        if (!portalUrl) {
+          throw new Error('Billing portal URL was not provided.')
+        }
+        if (window.electron?.shell?.openExternal) {
+          void window.electron.shell.openExternal(portalUrl)
+        } else {
+          window.open(portalUrl, '_blank', 'noopener')
+        }
+      } else {
+        const { checkoutUrl } = await createSubscriptionCheckout(deviceHash)
+        if (!checkoutUrl) {
+          throw new Error('Checkout URL was not provided.')
+        }
+        if (window.electron?.shell?.openExternal) {
+          void window.electron.shell.openExternal(checkoutUrl)
+        } else {
+          window.open(checkoutUrl, '_blank', 'noopener')
+        }
+      }
+    } catch (error) {
+      let message = 'Unable to open the subscription portal.'
+      if (error instanceof LicensingOfflineError || error instanceof LicensingRequestError) {
+        message = error.message
+      } else if (error instanceof Error) {
+        message = error.message
+      }
+      setSubscriptionError(message)
+    } finally {
+      setIsProcessingSubscription(false)
+    }
+  }, [accessState.isSubscriptionActive, deviceHash])
+
+  const totalTrialRuns = accessState.trial.totalRuns ?? DEFAULT_TRIAL_RUNS
+  const remainingTrialRuns = accessState.trial.remainingRuns ?? 0
+  const refreshButtonLabel = isRefreshingAccess ? 'Refreshing…' : 'Refresh status'
+  const subscriptionButtonLabel = isProcessingSubscription
+    ? 'Opening…'
+    : accessState.isSubscriptionActive
+      ? 'Manage subscription'
+      : 'Subscribe'
+  const subscriptionStatus = accessState.subscription?.status ?? null
+  const subscriptionStatusLabel = subscriptionStatus
+    ? subscriptionStatus
+        .split('_')
+        .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+        .join(' ')
+    : null
+  const currentPeriodEndLabel = accessState.subscription?.currentPeriodEnd
+    ? formatTimestamp(accessState.subscription.currentPeriodEnd)
+    : null
+  const accessSummary = accessState.isOffline
+    ? 'Offline mode — licensing service unreachable.'
+    : accessState.isSubscriptionActive
+      ? currentPeriodEndLabel
+        ? `Subscription active · Renews ${currentPeriodEndLabel}`
+        : 'Subscription active.'
+      : subscriptionStatusLabel
+        ? `Subscription status: ${subscriptionStatusLabel}`
+        : accessState.isTrialActive
+          ? `Trial active · ${remainingTrialRuns} / ${totalTrialRuns} runs remaining`
+          : `Trial exhausted · ${remainingTrialRuns} / ${totalTrialRuns} runs remaining`
 
   useEffect(() => {
     registerSearch(null)
@@ -914,47 +995,70 @@ const Profile: FC<ProfileProps> = ({
       <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-semibold text-[var(--fg)]">Trial access</h2>
-            <p className="text-xs text-[var(--muted)]">
-              {trialState.isOffline
-                ? 'Offline mode — licensing service unreachable.'
-                : trialState.pendingConsumption
-                  ? `Remaining: ${remainingTrialRuns} / ${totalTrialRuns} · ${
-                      trialState.pendingConsumptionStage === 'finalizing'
-                        ? 'finalising last run'
-                        : 'pipeline in progress'
-                    }`
-                  : `Remaining: ${remainingTrialRuns} / ${totalTrialRuns}`}
-            </p>
+            <h2 className="text-lg font-semibold text-[var(--fg)]">Access & subscription</h2>
+            <p className="text-xs text-[var(--muted)]">{accessSummary}</p>
+            {!accessState.isOffline ? (
+              <p className="text-xs text-[var(--muted)]">
+                Trial remaining: {remainingTrialRuns} / {totalTrialRuns}
+              </p>
+            ) : null}
+            {!accessState.isOffline ? (
+              <p className="text-xs text-[var(--muted)]">
+                Subscription status: {subscriptionStatusLabel ?? 'Not subscribed'}
+                {currentPeriodEndLabel ? ` · Current period ends ${currentPeriodEndLabel}` : ''}
+                {accessState.subscription?.cancelAtPeriodEnd ? ' · Scheduled to cancel at period end' : ''}
+              </p>
+            ) : null}
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              void handleRefreshTrialStatus()
-            }}
-            className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
-            disabled={trialState.isLoading}
-          >
-            {refreshButtonLabel}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                void handleSubscriptionAction()
+              }}
+              className={`${accessState.isSubscriptionActive ? 'marble-button marble-button--outline' : 'marble-button'} px-3 py-1.5 text-xs font-semibold`}
+              disabled={accessState.isLoading || isProcessingSubscription}
+            >
+              {subscriptionButtonLabel}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void handleRefreshAccessStatus()
+              }}
+              className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
+              disabled={accessState.isLoading || isRefreshingAccess}
+            >
+              {refreshButtonLabel}
+            </button>
+          </div>
         </div>
-        {trialState.lastError ? (
-          <p className="text-xs font-medium text-[color:var(--error-strong)]">{trialState.lastError}</p>
+        {subscriptionError ? (
+          <p className="text-xs font-medium text-[color:var(--error-strong)]">{subscriptionError}</p>
         ) : null}
-        {trialState.isOffline ? (
+        {accessState.lastError ? (
+          <p className="text-xs font-medium text-[color:var(--error-strong)]">{accessState.lastError}</p>
+        ) : null}
+        {accessState.isOffline ? (
           <p className="text-sm font-medium text-[var(--muted)]">
-            Reconnect to verify trial access. Offline mode limits functionality.
+            Reconnect to verify access. Offline mode limits functionality.
           </p>
-        ) : trialState.pendingConsumption ? (
+        ) : accessState.pendingConsumption ? (
           <p className="text-sm font-medium text-[var(--muted)]">
-            A pipeline is still completing. Your trial balance will update once processing finishes.
+            A pipeline is still completing. Your balance will update once processing finishes.
           </p>
-        ) : trialState.isTrialActive ? (
+        ) : accessState.isSubscriptionActive ? (
+          <p className="text-sm font-medium text-[var(--muted)]">
+            Subscription is active. Manage billing using the button above.
+          </p>
+        ) : accessState.isTrialActive ? (
           <p className="text-sm font-medium text-[var(--muted)]">
             Trial runs are used automatically when you process videos from the Home page.
           </p>
         ) : (
-          <p className="text-sm font-medium text-[var(--muted)]">You have exhausted your trial.</p>
+          <p className="text-sm font-medium text-[var(--muted)]">
+            You have exhausted your trial. Subscribe to continue processing videos.
+          </p>
         )}
       </div>
 

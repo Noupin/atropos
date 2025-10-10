@@ -7,139 +7,72 @@ import {
   useRef,
   useState
 } from 'react'
-import type { ReactNode } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import { getOrCreateDeviceHash } from '../services/device'
 import {
   LicensingOfflineError,
   LicensingRequestError,
   TrialExhaustedError,
   consumeTrial,
-  fetchTrialStatus,
-  startTrial
+  fetchAccessStatus,
+  startTrial,
+  type AccessStatusPayload,
+  type TrialStatusPayload
 } from '../services/licensing'
-import type { TrialStatusPayload } from '../services/licensing'
+import {
+  AccessContextValue,
+  AccessState,
+  AccessTrialState,
+  DEFAULT_TRIAL_RUNS,
+  INITIAL_STATE,
+  deriveTrialState,
+  isSubscriptionActive,
+  isTrialAccessActive
+} from './accessTypes'
+import {
+  clearStoredPendingConsumption,
+  readStoredPendingConsumption,
+  writeStoredPendingConsumption
+} from './accessPersistence'
 
-type PendingConsumptionStage = 'in_progress' | 'finalizing' | null
+export { DEFAULT_TRIAL_RUNS } from './accessTypes'
 
-export type TrialAccessState = {
-  totalRuns: number | null
-  remainingRuns: number | null
-  isTrialActive: boolean
-  isOffline: boolean
-  isLoading: boolean
-  lastError: string | null
-  pendingConsumption: boolean
-  pendingConsumptionStage: PendingConsumptionStage
-}
+const AccessContext = createContext<AccessContextValue | undefined>(undefined)
 
-export const DEFAULT_TRIAL_RUNS = 3
-
-const PENDING_CONSUMPTION_STORAGE_KEY = 'trialAccess.pendingConsumption'
-
-type StoredPendingConsumption = {
-  deviceHash: string
-  stage: PendingConsumptionStage
-}
-
-const readStoredPendingConsumption = (): StoredPendingConsumption | null => {
-  if (typeof window === 'undefined' || !('localStorage' in window)) {
-    return null
-  }
-  try {
-    const raw = window.localStorage.getItem(PENDING_CONSUMPTION_STORAGE_KEY)
-    if (!raw) {
-      return null
-    }
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') {
-      return null
-    }
-    const deviceHash = typeof parsed.deviceHash === 'string' ? parsed.deviceHash : null
-    const stageValue =
-      parsed.stage === 'finalizing'
-        ? 'finalizing'
-        : parsed.stage === 'in_progress'
-          ? 'in_progress'
-          : null
-    if (!deviceHash || stageValue === null) {
-      return null
-    }
-    return { deviceHash, stage: stageValue }
-  } catch (error) {
-    console.warn('Unable to read stored pending trial consumption state.', error)
-    return null
-  }
-}
-
-const writeStoredPendingConsumption = (value: StoredPendingConsumption): void => {
-  if (typeof window === 'undefined' || !('localStorage' in window)) {
-    return
-  }
-  try {
-    window.localStorage.setItem(PENDING_CONSUMPTION_STORAGE_KEY, JSON.stringify(value))
-  } catch (error) {
-    console.warn('Unable to persist pending trial consumption state.', error)
-  }
-}
-
-const clearStoredPendingConsumption = (): void => {
-  if (typeof window === 'undefined' || !('localStorage' in window)) {
-    return
-  }
-  try {
-    window.localStorage.removeItem(PENDING_CONSUMPTION_STORAGE_KEY)
-  } catch (error) {
-    console.warn('Unable to clear pending trial consumption state.', error)
-  }
-}
-
-const INITIAL_STATE: TrialAccessState = {
-  totalRuns: null,
-  remainingRuns: null,
-  isTrialActive: false,
-  isOffline: false,
-  isLoading: true,
-  lastError: null,
-  pendingConsumption: false,
-  pendingConsumptionStage: null
-}
-
-type TrialAccessContextValue = {
-  state: TrialAccessState
-  refresh: () => Promise<void>
-  markTrialRunPending: () => void
-  finalizeTrialRun: (options: { succeeded: boolean }) => Promise<void>
-}
-
-const TrialAccessContext = createContext<TrialAccessContextValue | undefined>(undefined)
-
-const mapStatusToState = (status: TrialStatusPayload): TrialAccessState => ({
-  totalRuns: status.totalRuns,
-  remainingRuns: status.remainingRuns,
-  isTrialActive: status.isTrialAllowed,
-  isOffline: false,
-  isLoading: false,
-  lastError: null,
-  pendingConsumption: false,
-  pendingConsumptionStage: null
-})
-
-export const TrialAccessProvider = ({ children }: { children: ReactNode }): JSX.Element => {
-  const [state, setState] = useState<TrialAccessState>(INITIAL_STATE)
+export const AccessProvider = ({ children }: { children: ReactNode }): ReactElement => {
+  const [state, setState] = useState<AccessState>(INITIAL_STATE)
   const [deviceHash, setDeviceHash] = useState<string | null>(null)
   const hasRecoveredPendingRef = useRef(false)
 
   const applyStatus = useCallback(
-    (status: TrialStatusPayload, overrides?: Partial<TrialAccessState>) => {
-      setState((prev) => ({
-        ...mapStatusToState(status),
-        pendingConsumption: overrides?.pendingConsumption ?? prev.pendingConsumption,
-        pendingConsumptionStage:
-          overrides?.pendingConsumptionStage ?? prev.pendingConsumptionStage,
-        lastError: overrides?.lastError ?? null,
-        isOffline: overrides?.isOffline ?? false,
-        isLoading: overrides?.isLoading ?? false
-      }))
+    (status: AccessStatusPayload, overrides?: Partial<AccessState>) => {
+      setState((prev) => {
+        const subscription = status.subscription ?? null
+        const trial = deriveTrialState(status.trial)
+        const subscriptionActive = isSubscriptionActive(subscription)
+        const trialActive = isTrialAccessActive(status.access, trial)
+        const accessActive = subscriptionActive || trialActive || Boolean(status.access?.isActive)
+        const shouldResetPending = status.access?.source !== 'trial'
+
+        return {
+          deviceHash: status.deviceHash,
+          subscription,
+          trial,
+          access: status.access,
+          isSubscriptionActive: subscriptionActive,
+          isTrialActive: trialActive,
+          isAccessActive: accessActive,
+          isOffline: overrides?.isOffline ?? false,
+          isLoading: overrides?.isLoading ?? false,
+          lastError: overrides?.lastError ?? null,
+          pendingConsumption: shouldResetPending
+            ? false
+            : overrides?.pendingConsumption ?? prev.pendingConsumption,
+          pendingConsumptionStage: shouldResetPending
+            ? null
+            : overrides?.pendingConsumptionStage ?? prev.pendingConsumptionStage
+        }
+      })
     },
     []
   )
@@ -149,10 +82,10 @@ export const TrialAccessProvider = ({ children }: { children: ReactNode }): JSX.
       ...prev,
       isLoading: false,
       isOffline: true,
+      isAccessActive: false,
       isTrialActive: false,
-      lastError: message ?? 'Licensing service is unreachable.',
-      pendingConsumption: prev.pendingConsumption,
-      pendingConsumptionStage: prev.pendingConsumptionStage
+      isSubscriptionActive: false,
+      lastError: message ?? 'Licensing service is unreachable.'
     }))
   }, [])
 
@@ -161,23 +94,28 @@ export const TrialAccessProvider = ({ children }: { children: ReactNode }): JSX.
       ...prev,
       isLoading: false,
       isOffline: false,
-      lastError: message,
-      pendingConsumption: prev.pendingConsumption,
-      pendingConsumptionStage: prev.pendingConsumptionStage
+      lastError: message
     }))
   }, [])
 
   const loadStatus = useCallback(
-    async (hash: string) => {
+    async (hash: string, options?: { allowCreateTrial?: boolean }) => {
       setState((prev) => ({
         ...prev,
         isLoading: true,
-        lastError: null,
-        pendingConsumption: prev.pendingConsumption,
-        pendingConsumptionStage: prev.pendingConsumptionStage
+        isOffline: false,
+        lastError: null
       }))
       try {
-        const status = (await fetchTrialStatus(hash)) ?? (await startTrial(hash))
+        let status = await fetchAccessStatus(hash)
+        if (!status && (options?.allowCreateTrial ?? true)) {
+          await startTrial(hash)
+          status = await fetchAccessStatus(hash)
+        }
+        if (!status) {
+          markFailure('Access record not found.')
+          return
+        }
         applyStatus(status)
       } catch (error) {
         if (error instanceof LicensingOfflineError) {
@@ -188,7 +126,7 @@ export const TrialAccessProvider = ({ children }: { children: ReactNode }): JSX.
           markFailure(error.message)
           return
         }
-        console.error('Unexpected licensing error while loading status.', error)
+        console.error('Unexpected licensing error while loading access status.', error)
         markFailure('Unexpected licensing error.')
       }
     },
@@ -199,7 +137,7 @@ export const TrialAccessProvider = ({ children }: { children: ReactNode }): JSX.
     try {
       const hash = getOrCreateDeviceHash()
       setDeviceHash(hash)
-      void loadStatus(hash)
+      void loadStatus(hash, { allowCreateTrial: true })
     } catch (error) {
       console.error('Unable to initialise device hash.', error)
       markFailure('Unable to initialise device identity.')
@@ -210,19 +148,45 @@ export const TrialAccessProvider = ({ children }: { children: ReactNode }): JSX.
     if (!deviceHash) {
       return
     }
-    await loadStatus(deviceHash)
+    await loadStatus(deviceHash, { allowCreateTrial: false })
   }, [deviceHash, loadStatus])
 
   const markTrialRunPending = useCallback(() => {
     setState((prev) => ({
       ...prev,
       pendingConsumption: true,
-      pendingConsumptionStage: prev.pendingConsumptionStage === 'finalizing'
-        ? prev.pendingConsumptionStage
-        : 'in_progress',
+      pendingConsumptionStage:
+        prev.pendingConsumptionStage === 'finalizing' ? prev.pendingConsumptionStage : 'in_progress',
       lastError: null,
       isOffline: false
     }))
+  }, [])
+
+  const applyTrialStatus = useCallback((status: TrialStatusPayload) => {
+    setState((prev) => {
+      const trial: AccessTrialState = {
+        totalRuns: status.totalRuns,
+        remainingRuns: status.remainingRuns,
+        startedAt: prev.trial.startedAt
+      }
+      const trialActive = isTrialAccessActive(prev.access, trial)
+      const access = prev.access && prev.access.source === 'trial'
+        ? { ...prev.access, isActive: trialActive }
+        : prev.access
+      const isAccessActive = prev.isSubscriptionActive || Boolean(access?.isActive)
+      return {
+        ...prev,
+        trial,
+        access,
+        isTrialActive: trialActive,
+        isAccessActive,
+        pendingConsumption: false,
+        pendingConsumptionStage: null,
+        isOffline: false,
+        isLoading: false,
+        lastError: null
+      }
+    })
   }, [])
 
   const consumePendingTrialRun = useCallback(async () => {
@@ -238,7 +202,7 @@ export const TrialAccessProvider = ({ children }: { children: ReactNode }): JSX.
 
     try {
       const status = await consumeTrial(deviceHash)
-      applyStatus(status, { pendingConsumption: false, pendingConsumptionStage: null })
+      applyTrialStatus(status)
       clearStoredPendingConsumption()
     } catch (error) {
       if (error instanceof LicensingOfflineError) {
@@ -259,8 +223,12 @@ export const TrialAccessProvider = ({ children }: { children: ReactNode }): JSX.
           isLoading: false,
           isOffline: false,
           isTrialActive: false,
-          remainingRuns: 0,
-          totalRuns: prev.totalRuns ?? DEFAULT_TRIAL_RUNS,
+          isAccessActive: prev.isSubscriptionActive,
+          trial: {
+            totalRuns: prev.trial.totalRuns ?? DEFAULT_TRIAL_RUNS,
+            remainingRuns: 0,
+            startedAt: prev.trial.startedAt
+          },
           lastError: error.message,
           pendingConsumption: false,
           pendingConsumptionStage: null
@@ -291,7 +259,7 @@ export const TrialAccessProvider = ({ children }: { children: ReactNode }): JSX.
       }))
       writeStoredPendingConsumption({ deviceHash, stage: 'finalizing' })
     }
-  }, [applyStatus, deviceHash])
+  }, [applyTrialStatus, deviceHash])
 
   const finalizeTrialRun = useCallback(
     async ({ succeeded }: { succeeded: boolean }) => {
@@ -339,14 +307,11 @@ export const TrialAccessProvider = ({ children }: { children: ReactNode }): JSX.
     if (!deviceHash || hasRecoveredPendingRef.current) {
       return
     }
-
     hasRecoveredPendingRef.current = true
-
     const stored = readStoredPendingConsumption()
     if (!stored || stored.deviceHash !== deviceHash) {
       return
     }
-
     setState((prev) => ({
       ...prev,
       isLoading: true,
@@ -355,27 +320,65 @@ export const TrialAccessProvider = ({ children }: { children: ReactNode }): JSX.
       pendingConsumption: true,
       pendingConsumptionStage: 'finalizing'
     }))
-
     void consumePendingTrialRun()
   }, [consumePendingTrialRun, deviceHash])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    const handleFocus = (): void => {
+      void refresh()
+    }
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [refresh])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    const interval = window.setInterval(() => {
+      void refresh()
+    }, 5 * 60 * 1000)
+    return () => window.clearInterval(interval)
+  }, [refresh])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.api?.onDeepLink) {
+      return
+    }
+    const unsubscribe = window.api.onDeepLink((url) => {
+      try {
+        const parsed = new URL(url)
+        if (parsed.protocol.startsWith('atropos') && parsed.hostname === 'subscription') {
+          void refresh()
+        }
+      } catch (error) {
+        console.warn('Failed to parse deep link URL.', error)
+      }
+    })
+    return unsubscribe
+  }, [refresh])
 
   const value = useMemo(
     () => ({
       state,
+      deviceHash,
       refresh,
       markTrialRunPending,
       finalizeTrialRun
     }),
-    [state, refresh, markTrialRunPending, finalizeTrialRun]
+    [state, deviceHash, refresh, markTrialRunPending, finalizeTrialRun]
   )
 
-  return <TrialAccessContext.Provider value={value}>{children}</TrialAccessContext.Provider>
+  return <AccessContext.Provider value={value}>{children}</AccessContext.Provider>
 }
 
-export const useTrialAccess = (): TrialAccessContextValue => {
-  const context = useContext(TrialAccessContext)
+export const useAccess = (): AccessContextValue => {
+  const context = useContext(AccessContext)
   if (!context) {
-    throw new Error('useTrialAccess must be used within a TrialAccessProvider.')
+    throw new Error('useAccess must be used within an AccessProvider.')
   }
   return context
 }
