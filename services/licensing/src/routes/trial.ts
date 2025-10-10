@@ -1,6 +1,7 @@
 import { DEFAULT_TRIAL_RUNS, getDeviceRecord, putDeviceRecord } from '../lib/kv'
 import { jsonResponse } from '../lib/http'
 import type { DeviceRecord, Env, TrialStatusResponse } from '../types'
+import { parseJsonBody, normalizeDeviceHash } from '../lib/request'
 
 const buildStatus = (record: DeviceRecord): TrialStatusResponse => ({
   totalRuns: record.trial.totalRuns,
@@ -8,29 +9,12 @@ const buildStatus = (record: DeviceRecord): TrialStatusResponse => ({
   isTrialAllowed: record.trial.remainingRuns > 0
 })
 
-const normaliseDeviceHash = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null
-  }
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
-}
-
-const parseJsonBody = async (request: Request): Promise<Record<string, unknown>> => {
-  try {
-    const body = (await request.json()) as Record<string, unknown>
-    return body ?? {}
-  } catch (error) {
-    return {}
-  }
-}
-
 export const getTrialStatus = async (
   request: Request,
   env: Env
 ): Promise<Response> => {
   const url = new URL(request.url)
-  const deviceHash = normaliseDeviceHash(url.searchParams.get('device_hash'))
+  const deviceHash = normalizeDeviceHash(url.searchParams.get('device_hash'))
   if (!deviceHash) {
     return jsonResponse({ error: 'invalid_device_hash' }, { status: 400 })
   }
@@ -44,8 +28,8 @@ export const getTrialStatus = async (
 }
 
 export const startTrial = async (request: Request, env: Env): Promise<Response> => {
-  const body = await parseJsonBody(request)
-  const deviceHash = normaliseDeviceHash(body.device_hash)
+  const body = (await parseJsonBody<Record<string, unknown>>(request)) ?? {}
+  const deviceHash = normalizeDeviceHash(body.device_hash)
   if (!deviceHash) {
     return jsonResponse({ error: 'invalid_device_hash' }, { status: 400 })
   }
@@ -61,15 +45,25 @@ export const startTrial = async (request: Request, env: Env): Promise<Response> 
       totalRuns: DEFAULT_TRIAL_RUNS,
       remainingRuns: DEFAULT_TRIAL_RUNS,
       startedAt
-    }
+    },
+    subscription: existing?.subscription ?? {
+      customerId: null,
+      subscriptionId: null,
+      status: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      priceId: null,
+      updatedAt: null
+    },
+    updatedAt: startedAt
   }
   await putDeviceRecord(env, deviceHash, record)
   return jsonResponse(buildStatus(record))
 }
 
 export const consumeTrial = async (request: Request, env: Env): Promise<Response> => {
-  const body = await parseJsonBody(request)
-  const deviceHash = normaliseDeviceHash(body.device_hash)
+  const body = (await parseJsonBody<Record<string, unknown>>(request)) ?? {}
+  const deviceHash = normalizeDeviceHash(body.device_hash)
   if (!deviceHash) {
     return jsonResponse({ error: 'invalid_device_hash' }, { status: 400 })
   }
@@ -89,7 +83,8 @@ export const consumeTrial = async (request: Request, env: Env): Promise<Response
     trial: {
       ...record.trial,
       remainingRuns
-    }
+    },
+    updatedAt: new Date().toISOString()
   }
   await putDeviceRecord(env, deviceHash, updated)
 

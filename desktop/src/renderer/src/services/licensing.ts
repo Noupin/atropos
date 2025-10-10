@@ -4,6 +4,41 @@ export type TrialStatusPayload = {
   totalRuns: number
   remainingRuns: number
   isTrialAllowed: boolean
+  startedAt?: string | null
+}
+
+export type SubscriptionStatus =
+  | 'pending'
+  | 'active'
+  | 'past_due'
+  | 'canceled'
+  | 'incomplete'
+  | 'trialing'
+  | 'unpaid'
+  | null
+
+export type SubscriptionInfoPayload = {
+  customerId: string | null
+  subscriptionId: string | null
+  status: SubscriptionStatus
+  currentPeriodEnd: string | null
+  cancelAtPeriodEnd: boolean
+  priceId: string | null
+  updatedAt: string | null
+}
+
+export type AccessSource = 'subscription' | 'trial' | 'none'
+
+export type AccessSummaryPayload = {
+  source: AccessSource
+  isActive: boolean
+}
+
+export type AccessStatusPayload = {
+  deviceHash: string
+  access: AccessSummaryPayload
+  subscription: SubscriptionInfoPayload | null
+  trial: TrialStatusPayload | null
 }
 
 export class LicensingOfflineError extends Error {
@@ -25,8 +60,8 @@ export class LicensingRequestError extends Error {
   }
 }
 
-const handleResponse = async (response: Response): Promise<TrialStatusPayload> => {
-  const payload = (await response.json()) as TrialStatusPayload
+const parseJson = async <T>(response: Response): Promise<T> => {
+  const payload = (await response.json()) as T
   return payload
 }
 
@@ -59,7 +94,7 @@ export const fetchTrialStatus = async (deviceHash: string): Promise<TrialStatusP
   if (!response.ok) {
     throw new LicensingRequestError('Unable to fetch trial status.', response.status)
   }
-  return handleResponse(response)
+  return parseJson<TrialStatusPayload>(response)
 }
 
 export const startTrial = async (deviceHash: string): Promise<TrialStatusPayload> => {
@@ -70,7 +105,7 @@ export const startTrial = async (deviceHash: string): Promise<TrialStatusPayload
   if (!response.ok) {
     throw new LicensingRequestError('Unable to start trial.', response.status)
   }
-  return handleResponse(response)
+  return parseJson<TrialStatusPayload>(response)
 }
 
 export class TrialExhaustedError extends LicensingRequestError {
@@ -106,5 +141,54 @@ export const consumeTrial = async (deviceHash: string): Promise<TrialStatusPaylo
     throw new LicensingRequestError('Unable to consume trial.', response.status)
   }
 
-  return handleResponse(response)
+  return parseJson<TrialStatusPayload>(response)
+}
+
+export const fetchAccessStatus = async (deviceHash: string): Promise<AccessStatusPayload | null> => {
+  const response = await request(`/subscription/status?device_hash=${encodeURIComponent(deviceHash)}`)
+  if (response.status === 404) {
+    return null
+  }
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new LicensingRequestError('Unable to fetch access status.', response.status, body?.error)
+  }
+  return parseJson<AccessStatusPayload>(response)
+}
+
+export type CheckoutSessionPayload = {
+  sessionId: string
+  checkoutUrl: string | null
+}
+
+export const createSubscriptionCheckout = async (
+  deviceHash: string
+): Promise<CheckoutSessionPayload> => {
+  const response = await request('/subscribe', {
+    method: 'POST',
+    body: JSON.stringify({ device_hash: deviceHash })
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new LicensingRequestError('Unable to start subscription checkout.', response.status, body?.error)
+  }
+  return parseJson<CheckoutSessionPayload>(response)
+}
+
+export type PortalSessionPayload = {
+  portalUrl: string
+}
+
+export const createBillingPortalSession = async (
+  deviceHash: string
+): Promise<PortalSessionPayload> => {
+  const response = await request('/portal', {
+    method: 'POST',
+    body: JSON.stringify({ device_hash: deviceHash })
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new LicensingRequestError('Unable to open billing portal.', response.status, body?.error)
+  }
+  return parseJson<PortalSessionPayload>(response)
 }

@@ -5,7 +5,7 @@ import type { FC } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
-import { TrialAccessProvider } from './state/trialAccess'
+import { AccessProvider } from './state/access'
 
 const RootApp: FC = () => {
   const searchRef = useRef<HTMLInputElement | null>(null)
@@ -28,9 +28,9 @@ const RootApp: FC = () => {
 
   return (
     <BrowserRouter>
-      <TrialAccessProvider>
+      <AccessProvider>
         <App searchInputRef={searchRef} />
-      </TrialAccessProvider>
+      </AccessProvider>
     </BrowserRouter>
   )
 }

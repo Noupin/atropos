@@ -17,6 +17,8 @@ CORS_ALLOW_ORIGINS = "http://localhost:5173,app://atropos,https://atropos-video.
 APP_DOWNLOAD_URL = "https://atropos-video.com/download"
 DEEPLINK_SCHEME = "atropos"
 TRANSFER_LINK_TTL_SECONDS = "900"
+SUBSCRIPTION_SUCCESS_URL = "atropos://subscription/success"
+SUBSCRIPTION_CANCEL_URL = "atropos://subscription/cancel"
 
 # ===== DEV env (deploys as license-api-dev) =====
 [env.dev]
@@ -33,3 +35,5 @@ CORS_ALLOW_ORIGINS = "http://localhost:5173,app://atropos,https://atropos-video.
 APP_DOWNLOAD_URL = "https://atropos-video.com/download"
 DEEPLINK_SCHEME = "atropos"
 TRANSFER_LINK_TTL_SECONDS = "900"
+SUBSCRIPTION_SUCCESS_URL = "atropos://subscription/success"
+SUBSCRIPTION_CANCEL_URL = "atropos://subscription/cancel"

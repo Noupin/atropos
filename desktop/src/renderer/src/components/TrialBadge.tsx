@@ -1,27 +1,27 @@
 import type { FC } from 'react'
-import { useTrialAccess } from '../state/trialAccess'
+import { useNavigate } from 'react-router-dom'
+import { useAccess } from '../state/access'
 
 const baseClassName =
   'inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] shadow-[0_10px_18px_rgba(43,42,40,0.18)]'
 
 const TrialBadge: FC = () => {
-  const { state } = useTrialAccess()
+  const navigate = useNavigate()
+  const { state } = useAccess()
 
-  let label = 'Trial'
+  let label = 'Access'
   let className = `${baseClassName} border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] text-[color:var(--muted)]`
   let title: string | undefined
 
   if (state.isOffline) {
     label = 'Offline'
-    className = `${baseClassName} border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] text-[color:var(--muted)]`
-    title = 'Licensing service unreachable. Trial access cannot be verified.'
+    title = 'Licensing service unreachable. Access status cannot be verified.'
   } else if (state.isLoading) {
-    label = 'Trial · …'
-    className = `${baseClassName} border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] text-[color:var(--muted)]`
-    title = 'Checking trial status…'
+    label = 'Checking access…'
+    title = 'Checking access status…'
   } else if (state.pendingConsumption) {
     const remainingLabel =
-      state.remainingRuns !== null ? `${state.remainingRuns} left` : 'run pending'
+      state.trial.remainingRuns !== null ? `${state.trial.remainingRuns} left` : 'run pending'
     const stageLabel =
       state.pendingConsumptionStage === 'finalizing' ? 'finalising' : 'in progress'
     label = `Trial · ${remainingLabel} · ${stageLabel}`
@@ -30,14 +30,42 @@ const TrialBadge: FC = () => {
       state.pendingConsumptionStage === 'finalizing'
         ? 'Finalising the latest trial run. Please wait before starting another video.'
         : 'A pipeline is currently using a trial run.'
-  } else if (state.isTrialActive && state.remainingRuns !== null) {
-    label = `Trial · ${state.remainingRuns} left`
+  } else if (state.isSubscriptionActive) {
+    label = 'Access active'
+    className = `${baseClassName} border-[color:var(--success-strong)] bg-[color:color-mix(in_srgb,var(--success-soft)_80%,transparent)] text-[color:color-mix(in_srgb,var(--success-strong)_90%,var(--accent-contrast))]`
+    title = 'Subscription active.'
+  } else if (state.isTrialActive && state.trial.remainingRuns !== null) {
+    label = `Trial · ${state.trial.remainingRuns} left`
     className = `${baseClassName} border-[color:var(--accent)] bg-[color:color-mix(in_srgb,var(--accent)_85%,transparent)] text-[color:var(--accent-contrast)]`
-    title = `Trial runs remaining: ${state.remainingRuns}`
+    title = `Trial runs remaining: ${state.trial.remainingRuns}`
   } else {
-    label = 'Trial expired'
+    label = 'Access denied'
     className = `${baseClassName} border-[color:var(--error-strong)] bg-[color:color-mix(in_srgb,var(--error)_30%,transparent)] text-[color:color-mix(in_srgb,var(--error)_90%,var(--accent-contrast))]`
-    title = 'Trial has been exhausted.'
+    title = 'Subscribe to unlock processing.'
+  }
+
+  const isInteractive = !state.isAccessActive
+
+  const handleClick = (): void => {
+    if (!isInteractive) {
+      return
+    }
+    navigate('/profile')
+  }
+
+  if (isInteractive) {
+    return (
+      <button
+        type="button"
+        className={`${className} cursor-pointer transition hover:-translate-y-0.5 hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)]`}
+        role="status"
+        aria-live="polite"
+        title={title}
+        onClick={handleClick}
+      >
+        {label}
+      </button>
+    )
   }
 
   return (

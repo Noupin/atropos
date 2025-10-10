@@ -14,7 +14,7 @@ import { createInitialPipelineSteps } from './data/pipeline'
 import { BACKEND_MODE } from './config/backend'
 import useNavigationHistory from './hooks/useNavigationHistory'
 import usePipelineProgress from './state/usePipelineProgress'
-import { useTrialAccess } from './state/trialAccess'
+import { useAccess } from './state/access'
 import {
   clamp01,
   summarisePipelineProgress,
@@ -184,8 +184,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [settingsHeaderAction, setSettingsHeaderAction] = useState<SettingsHeaderAction | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
-  const { state: trialState, markTrialRunPending, finalizeTrialRun } = useTrialAccess()
-  const homeNavigationDisabled = !trialState.isTrialActive
+  const { state: accessState, markTrialRunPending, finalizeTrialRun } = useAccess()
+  const homeNavigationDisabled = !accessState.isAccessActive
   const redirectedJobRef = useRef<string | null>(null)
   const lastActiveJobIdRef = useRef<string | null>(null)
   const isOnHomePage = location.pathname === '/'
@@ -196,7 +196,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   useNavigationHistory()
   useEffect(() => {
-    if (trialState.isLoading || trialState.isTrialActive) {
+    if (accessState.isLoading || accessState.isAccessActive) {
       return
     }
     const allowedPrefixes = ['/profile', '/settings', '/library']
@@ -204,7 +204,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     if (!isAllowed) {
       navigate('/profile', { replace: true })
     }
-  }, [location.pathname, navigate, trialState.isLoading, trialState.isTrialActive])
+  }, [location.pathname, navigate, accessState.isLoading, accessState.isAccessActive])
 
   const availableAccounts = useMemo(
     () =>
@@ -294,8 +294,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     availableAccounts,
     markTrialRunPending,
     finalizeTrialRun,
-    isTrialActive: trialState.isTrialActive,
-    hasPendingTrialRun: trialState.pendingConsumption,
+    isTrialActive: accessState.isTrialActive,
+    hasPendingTrialRun: accessState.pendingConsumption,
     isMockBackend,
     onFirstClipReady: handleFirstClipReady,
     onPipelineFinished: handlePipelineFinished
