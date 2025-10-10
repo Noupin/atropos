@@ -1,6 +1,6 @@
 # Licensing Worker
 
-The licensing service is a Cloudflare Worker that tracks device trials and coordinates license transfers between machines.
+The licensing service is a Cloudflare Worker that tracks device trials, manages per-device Stripe subscriptions, and coordinates license transfers between machines.
 
 ## Endpoints
 
@@ -10,6 +10,10 @@ The licensing service is a Cloudflare Worker that tracks device trials and coord
 | `/trial/status` | `GET` | Returns trial usage details for the provided `device_hash`. |
 | `/trial/start` | `POST` | Initializes a trial record for a device if one does not exist. |
 | `/trial/consume` | `POST` | Consumes one trial run for the device and returns the updated quota. |
+| `/subscribe` | `POST` | Creates (or reuses) a Stripe customer for the device and returns a Checkout Session for the configured subscription price. |
+| `/portal` | `POST` | Creates a Stripe billing portal session so the device owner can manage their subscription. |
+| `/subscription/status` | `GET` | Returns combined subscription + trial access state for the provided `device_hash`. |
+| `/webhooks/stripe` | `POST` | Receives Stripe webhook events to update subscription status. |
 | `/transfer/initiate` | `POST` | Creates a one-time transfer token for moving a device record to a new machine. |
 | `/transfer/accept` | `POST` | Applies a valid transfer token to the requesting device, reassigning the trial record. |
 
@@ -19,6 +23,12 @@ Configure secrets via `wrangler secret` or environment variables in CI:
 
 - `LICENSING_ENV` (`dev` or `prod`)
 - `LICENSING_KV` (Workers KV namespace binding for trial and transfer records)
+- `STRIPE_SECRET_KEY` (Stripe API key for the environment)
+- `STRIPE_PRICE_ID` (Recurring price used for subscriptions)
+- `STRIPE_WEBHOOK_SECRET` (Signing secret for `/webhooks/stripe`)
+- `SUBSCRIPTION_SUCCESS_URL` (URL the Checkout session redirects to on success)
+- `SUBSCRIPTION_CANCEL_URL` (URL the Checkout session redirects to on cancel)
+- `SUBSCRIPTION_PORTAL_RETURN_URL` (Return URL for the billing portal)
 
 ## Development vs production
 
@@ -51,6 +61,16 @@ curl -X POST "$VITE_LICENSE_API_BASE_URL/trial/consume" \
   -H "Content-Type: application/json" \
   -d '{"device_hash":"abc123"}'
 
+# Start a subscription checkout for a device
+curl -X POST "$VITE_LICENSE_API_BASE_URL/subscribe" \
+  -H "Content-Type: application/json" \
+  -d '{"device_hash":"abc123"}'
+
+# Open the Stripe billing portal for an existing subscriber
+curl -X POST "$VITE_LICENSE_API_BASE_URL/portal" \
+  -H "Content-Type: application/json" \
+  -d '{"device_hash":"abc123"}'
+
 # Initiate a transfer to another device
 curl -X POST "$VITE_LICENSE_API_BASE_URL/transfer/initiate" \
   -H "Content-Type: application/json" \
@@ -64,3 +84,4 @@ curl -X POST "$VITE_LICENSE_API_BASE_URL/transfer/initiate" \
 - Transfer routes: `services/licensing/src/routes/transfer.ts`
 - Shared HTTP helpers: `services/licensing/src/lib/http.ts`
 - KV utilities: `services/licensing/src/lib/kv.ts`
+- Stripe helpers & webhook processing: `services/licensing/src/lib/stripe.ts`, `services/licensing/src/routes/subscription.ts`, `services/licensing/src/routes/webhooks/stripe.ts`

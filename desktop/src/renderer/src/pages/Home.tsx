@@ -332,7 +332,7 @@ const Home: FC<HomeProps> = ({
       if (isMockBackend) {
         const startTimeout = window.setTimeout(() => runStepRef.current(0), 150)
         timersRef.current.push(startTimeout)
-        if (trialState.isTrialActive) {
+        if (trialState.isTrialAvailable && !trialState.hasActiveSubscription) {
           markTrialRunPending()
         }
         return
@@ -349,7 +349,8 @@ const Home: FC<HomeProps> = ({
       selectedAccountId,
       onStartPipeline,
       reviewMode,
-      trialState.isTrialActive,
+      trialState.isTrialAvailable,
+      trialState.hasActiveSubscription,
       trialState.pendingConsumption,
       trialState.pendingConsumptionStage,
       updateState,

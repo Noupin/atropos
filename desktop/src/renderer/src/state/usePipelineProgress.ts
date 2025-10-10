@@ -21,7 +21,8 @@ type UsePipelineProgressOptions = {
   availableAccounts: AccountSummary[]
   markTrialRunPending: () => void
   finalizeTrialRun: (options: { succeeded: boolean }) => Promise<void>
-  isTrialActive: boolean
+  isAccessGranted: boolean
+  shouldUseTrial: boolean
   hasPendingTrialRun: boolean
   isMockBackend: boolean
   onFirstClipReady?: (details: { jobId: string }) => void
@@ -50,7 +51,8 @@ export const usePipelineProgress = ({
   availableAccounts,
   markTrialRunPending,
   finalizeTrialRun,
-  isTrialActive,
+  isAccessGranted,
+  shouldUseTrial,
   hasPendingTrialRun,
   isMockBackend,
   onFirstClipReady,
@@ -59,7 +61,7 @@ export const usePipelineProgress = ({
   const connectionCleanupRef = useRef<(() => void) | null>(null)
   const subscribedJobIdRef = useRef<string | null>(null)
   const activeJobIdRef = useRef<string | null>(state.activeJobId ?? null)
-  const trialFlagsRef = useRef({ isTrialActive, hasPendingTrialRun })
+  const trialFlagsRef = useRef({ shouldUseTrial, hasPendingTrialRun, isAccessGranted })
   const firstClipHandledRef = useRef(false)
   const finalizeTriggeredRef = useRef(false)
   const onFirstClipReadyRef = useRef<((details: { jobId: string }) => void) | null>(
@@ -74,8 +76,8 @@ export const usePipelineProgress = ({
   }, [state.activeJobId])
 
   useEffect(() => {
-    trialFlagsRef.current = { isTrialActive, hasPendingTrialRun }
-  }, [hasPendingTrialRun, isTrialActive])
+    trialFlagsRef.current = { shouldUseTrial, hasPendingTrialRun, isAccessGranted }
+  }, [hasPendingTrialRun, shouldUseTrial, isAccessGranted])
 
   useEffect(() => {
     onFirstClipReadyRef.current = onFirstClipReady ?? null
@@ -109,7 +111,7 @@ export const usePipelineProgress = ({
       if (event.type === 'pipeline_started') {
         firstClipHandledRef.current = false
         finalizeTriggeredRef.current = false
-        if (trialFlagsRef.current.isTrialActive) {
+        if (trialFlagsRef.current.shouldUseTrial) {
           markTrialRunPending()
         }
         updateState((prev) => ({
@@ -656,6 +658,15 @@ export const usePipelineProgress = ({
         return
       }
 
+      if (!isAccessGranted) {
+        updateState((prev) => ({
+          ...prev,
+          pipelineError: 'An active subscription or trial is required to start a new video.',
+          isProcessing: false
+        }))
+        return
+      }
+
       if (hasPendingTrialRun) {
         updateState((prev) => ({
           ...prev,
@@ -689,7 +700,7 @@ export const usePipelineProgress = ({
         })
         activeJobIdRef.current = jobId
         updateState((prev) => ({ ...prev, activeJobId: jobId, awaitingReview: false }))
-        if (isTrialActive) {
+        if (shouldUseTrial) {
           markTrialRunPending()
         }
         subscribeToJob(jobId)
@@ -708,8 +719,9 @@ export const usePipelineProgress = ({
       availableAccounts,
       cleanupConnection,
       hasPendingTrialRun,
+      isAccessGranted,
       isMockBackend,
-      isTrialActive,
+      shouldUseTrial,
       markTrialRunPending,
       subscribeToJob,
       updateState

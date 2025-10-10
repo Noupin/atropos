@@ -1,0 +1,9 @@
+{
+  "name": "@atropos/licensing-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "stripe": "^15.11.0"
+  }
+}

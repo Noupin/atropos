@@ -1,6 +1,12 @@
 import { handleOptions, jsonResponse } from './lib/http'
 import { acceptTransfer, initiateTransfer } from './routes/transfer'
 import { consumeTrial, getTrialStatus, startTrial } from './routes/trial'
+import {
+  createSubscriptionCheckout,
+  createCustomerPortalSession,
+  getSubscriptionStatus
+} from './routes/subscription'
+import { handleStripeWebhook } from './routes/webhooks/stripe'
 import type { Env } from './types'
 
 const notFound = (): Response => jsonResponse({ error: 'not_found' }, { status: 404 })
@@ -36,6 +42,22 @@ export default {
 
     if (path === '/transfer/accept' && request.method === 'POST') {
       return acceptTransfer(request, env)
+    }
+
+    if (path === '/subscribe' && request.method === 'POST') {
+      return createSubscriptionCheckout(request, env)
+    }
+
+    if (path === '/portal' && request.method === 'POST') {
+      return createCustomerPortalSession(request, env)
+    }
+
+    if (path === '/subscription/status' && request.method === 'GET') {
+      return getSubscriptionStatus(request, env)
+    }
+
+    if (path === '/webhooks/stripe' && request.method === 'POST') {
+      return handleStripeWebhook(request, env)
     }
 
     return notFound()

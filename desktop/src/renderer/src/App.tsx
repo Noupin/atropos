@@ -185,7 +185,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const location = useLocation()
   const navigate = useNavigate()
   const { state: trialState, markTrialRunPending, finalizeTrialRun } = useTrialAccess()
-  const homeNavigationDisabled = !trialState.isTrialActive
+  const homeNavigationDisabled = !trialState.isAccessGranted
   const redirectedJobRef = useRef<string | null>(null)
   const lastActiveJobIdRef = useRef<string | null>(null)
   const isOnHomePage = location.pathname === '/'
@@ -196,7 +196,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   useNavigationHistory()
   useEffect(() => {
-    if (trialState.isLoading || trialState.isTrialActive) {
+    if (trialState.isLoading || trialState.isAccessGranted) {
       return
     }
     const allowedPrefixes = ['/profile', '/settings', '/library']
@@ -204,7 +204,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     if (!isAllowed) {
       navigate('/profile', { replace: true })
     }
-  }, [location.pathname, navigate, trialState.isLoading, trialState.isTrialActive])
+  }, [location.pathname, navigate, trialState.isLoading, trialState.isAccessGranted])
 
   const availableAccounts = useMemo(
     () =>
@@ -294,7 +294,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     availableAccounts,
     markTrialRunPending,
     finalizeTrialRun,
-    isTrialActive: trialState.isTrialActive,
+    isAccessGranted: trialState.isAccessGranted,
+    shouldUseTrial: trialState.isTrialAvailable && !trialState.hasActiveSubscription,
     hasPendingTrialRun: trialState.pendingConsumption,
     isMockBackend,
     onFirstClipReady: handleFirstClipReady,

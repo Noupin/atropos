@@ -827,11 +827,21 @@ const Profile: FC<ProfileProps> = ({
   const [newAccountError, setNewAccountError] = useState<string | null>(null)
   const [newAccountSuccess, setNewAccountSuccess] = useState<string | null>(null)
   const [isCreatingAccount, setIsCreatingAccount] = useState(false)
-  const { state: trialState, refresh: refreshTrialStatus, finalizeTrialRun } = useTrialAccess()
+  const {
+    state: trialState,
+    refresh: refreshTrialStatus,
+    finalizeTrialRun,
+    initiateSubscription,
+    openSubscriptionPortal
+  } = useTrialAccess()
   const [isRefreshingTrial, setIsRefreshingTrial] = useState(false)
+  const [isLaunchingSubscription, setIsLaunchingSubscription] = useState(false)
+  const [isOpeningPortal, setIsOpeningPortal] = useState(false)
+  const [subscriptionActionError, setSubscriptionActionError] = useState<string | null>(null)
 
   const handleRefreshTrialStatus = useCallback(async () => {
     setIsRefreshingTrial(true)
+    setSubscriptionActionError(null)
     try {
       if (trialState.pendingConsumptionStage === 'finalizing') {
         await finalizeTrialRun({ succeeded: true })
@@ -843,9 +853,149 @@ const Profile: FC<ProfileProps> = ({
     }
   }, [finalizeTrialRun, refreshTrialStatus, trialState.pendingConsumptionStage])
 
+  const handleSubscribe = useCallback(async () => {
+    setSubscriptionActionError(null)
+    try {
+      setIsLaunchingSubscription(true)
+      const session = await initiateSubscription()
+      const checkoutUrl = session.checkoutUrl ??
+        (session.sessionId ? `https://checkout.stripe.com/pay/${session.sessionId}` : null)
+      if (checkoutUrl) {
+        window.open(checkoutUrl, '_blank', 'noopener')
+      } else {
+        setSubscriptionActionError('Unable to open subscription checkout link.')
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to start subscription checkout. Please try again.'
+      setSubscriptionActionError(message)
+    } finally {
+      setIsLaunchingSubscription(false)
+    }
+  }, [initiateSubscription])
+
+  const handleOpenPortal = useCallback(async () => {
+    setSubscriptionActionError(null)
+    try {
+      setIsOpeningPortal(true)
+      const session = await openSubscriptionPortal()
+      if (session.portalUrl) {
+        window.open(session.portalUrl, '_blank', 'noopener')
+      } else {
+        setSubscriptionActionError('Subscription portal is currently unavailable.')
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to open the subscription portal. Please try again.'
+      setSubscriptionActionError(message)
+    } finally {
+      setIsOpeningPortal(false)
+    }
+  }, [openSubscriptionPortal])
+
   const totalTrialRuns = trialState.totalRuns ?? DEFAULT_TRIAL_RUNS
   const remainingTrialRuns = trialState.remainingRuns ?? 0
   const refreshButtonLabel = isRefreshingTrial ? 'Refreshing…' : 'Refresh status'
+  const formatSubscriptionDate = useCallback((value: string | null | undefined) => {
+    if (!value) {
+      return null
+    }
+    try {
+      const date = new Date(value)
+      return date.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      })
+    } catch (error) {
+      return null
+    }
+  }, [])
+
+  const subscriptionSummary = useMemo(() => {
+    const subscription = trialState.subscription
+    if (!subscription) {
+      return 'No subscription linked to this device.'
+    }
+    const formattedDate = formatSubscriptionDate(subscription.currentPeriodEnd)
+    switch (subscription.status) {
+      case 'active':
+      case 'trialing':
+        if (subscription.cancelAtPeriodEnd && formattedDate) {
+          return `Subscription active · Ends ${formattedDate}`
+        }
+        if (formattedDate) {
+          return `Subscription active · Renews ${formattedDate}`
+        }
+        return 'Subscription active.'
+      case 'past_due':
+        return 'Subscription payment failed. Update billing details.'
+      case 'canceled':
+        return formattedDate ? `Subscription canceled on ${formattedDate}.` : 'Subscription canceled.'
+      case 'pending':
+        return 'Subscription checkout in progress.'
+      default:
+        return `Subscription status: ${subscription.status.replace(/_/g, ' ')}.`
+    }
+  }, [formatSubscriptionDate, trialState.subscription])
+
+  const trialSummary = useMemo(() => {
+    if (trialState.pendingConsumption) {
+      const stageLabel =
+        trialState.pendingConsumptionStage === 'finalizing'
+          ? 'finalising last run'
+          : 'pipeline in progress'
+      return `Trial run pending · ${stageLabel}`
+    }
+    if (trialState.isTrialAvailable) {
+      return `Trial runs remaining: ${remainingTrialRuns} / ${totalTrialRuns}`
+    }
+    if (trialState.totalRuns !== null) {
+      return 'Trial exhausted.'
+    }
+    return 'Trial unavailable.'
+  }, [
+    remainingTrialRuns,
+    totalTrialRuns,
+    trialState.isTrialAvailable,
+    trialState.pendingConsumption,
+    trialState.pendingConsumptionStage,
+    trialState.totalRuns
+  ])
+
+  const accessSummaryLines = useMemo(() => {
+    if (trialState.isOffline) {
+      return ['Offline mode — licensing service unreachable.']
+    }
+    return [subscriptionSummary, trialSummary].filter(
+      (line) => typeof line === 'string' && line.trim().length > 0
+    )
+  }, [subscriptionSummary, trialSummary, trialState.isOffline])
+
+  const accessMessage = useMemo(() => {
+    if (trialState.isOffline) {
+      return 'Reconnect to verify subscription or trial access. Offline mode limits functionality.'
+    }
+    if (trialState.pendingConsumption) {
+      return trialState.pendingConsumptionStage === 'finalizing'
+        ? 'A pipeline is still completing. Your balance will update once processing finishes.'
+        : 'A trial run is already in progress. Let it complete before starting another video.'
+    }
+    if (trialState.hasActiveSubscription) {
+      return 'Subscription active. You can process videos without limits.'
+    }
+    if (trialState.isTrialAvailable) {
+      return 'Trial runs are used automatically when you process videos from the Home page.'
+    }
+    return 'Subscribe to continue using Atropos. Your trial has ended.'
+  }, [trialState])
+
+  const shouldShowSubscribeButton = !trialState.hasActiveSubscription
+  const shouldShowManageSubscription = Boolean(trialState.subscription?.customerId)
 
   useEffect(() => {
     registerSearch(null)
@@ -911,51 +1061,61 @@ const Profile: FC<ProfileProps> = ({
         </p>
       </header>
 
-      <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transpa
+rent)] p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-semibold text-[var(--fg)]">Trial access</h2>
-            <p className="text-xs text-[var(--muted)]">
-              {trialState.isOffline
-                ? 'Offline mode — licensing service unreachable.'
-                : trialState.pendingConsumption
-                  ? `Remaining: ${remainingTrialRuns} / ${totalTrialRuns} · ${
-                      trialState.pendingConsumptionStage === 'finalizing'
-                        ? 'finalising last run'
-                        : 'pipeline in progress'
-                    }`
-                  : `Remaining: ${remainingTrialRuns} / ${totalTrialRuns}`}
-            </p>
+            <h2 className="text-lg font-semibold text-[var(--fg)]">Access status</h2>
+            {accessSummaryLines.map((line) => (
+              <p key={line} className="text-xs text-[var(--muted)]">
+                {line}
+              </p>
+            ))}
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              void handleRefreshTrialStatus()
-            }}
-            className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
-            disabled={trialState.isLoading}
-          >
-            {refreshButtonLabel}
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                void handleRefreshTrialStatus()
+              }}
+              className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
+              disabled={trialState.isLoading}
+            >
+              {refreshButtonLabel}
+            </button>
+            {shouldShowManageSubscription ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void handleOpenPortal()
+                }}
+                className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
+                disabled={trialState.isLoading || isOpeningPortal}
+              >
+                {isOpeningPortal ? 'Opening…' : 'Manage subscription'}
+              </button>
+            ) : null}
+            {shouldShowSubscribeButton ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void handleSubscribe()
+                }}
+                className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
+                disabled={trialState.isLoading || isLaunchingSubscription}
+              >
+                {isLaunchingSubscription ? 'Opening…' : 'Subscribe'}
+              </button>
+            ) : null}
+          </div>
         </div>
         {trialState.lastError ? (
           <p className="text-xs font-medium text-[color:var(--error-strong)]">{trialState.lastError}</p>
         ) : null}
-        {trialState.isOffline ? (
-          <p className="text-sm font-medium text-[var(--muted)]">
-            Reconnect to verify trial access. Offline mode limits functionality.
-          </p>
-        ) : trialState.pendingConsumption ? (
-          <p className="text-sm font-medium text-[var(--muted)]">
-            A pipeline is still completing. Your trial balance will update once processing finishes.
-          </p>
-        ) : trialState.isTrialActive ? (
-          <p className="text-sm font-medium text-[var(--muted)]">
-            Trial runs are used automatically when you process videos from the Home page.
-          </p>
-        ) : (
-          <p className="text-sm font-medium text-[var(--muted)]">You have exhausted your trial.</p>
-        )}
+        {subscriptionActionError ? (
+          <p className="text-xs font-medium text-[color:var(--error-strong)]">{subscriptionActionError}</p>
+        ) : null}
+        <p className="text-sm font-medium text-[var(--muted)]">{accessMessage}</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">

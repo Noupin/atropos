@@ -1,29 +1,8 @@
 import { DEFAULT_TRIAL_RUNS, getDeviceRecord, putDeviceRecord } from '../lib/kv'
 import { jsonResponse } from '../lib/http'
-import type { DeviceRecord, Env, TrialStatusResponse } from '../types'
-
-const buildStatus = (record: DeviceRecord): TrialStatusResponse => ({
-  totalRuns: record.trial.totalRuns,
-  remainingRuns: record.trial.remainingRuns,
-  isTrialAllowed: record.trial.remainingRuns > 0
-})
-
-const normaliseDeviceHash = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null
-  }
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
-}
-
-const parseJsonBody = async (request: Request): Promise<Record<string, unknown>> => {
-  try {
-    const body = (await request.json()) as Record<string, unknown>
-    return body ?? {}
-  } catch (error) {
-    return {}
-  }
-}
+import { buildAccessResponse, isSubscriptionActive } from '../lib/access'
+import { normaliseDeviceHash, parseJsonBody } from '../lib/validation'
+import type { DeviceRecord, Env } from '../types'
 
 export const getTrialStatus = async (
   request: Request,
@@ -40,7 +19,7 @@ export const getTrialStatus = async (
     return jsonResponse({ error: 'trial_not_found' }, { status: 404 })
   }
 
-  return jsonResponse(buildStatus(record))
+  return jsonResponse(buildAccessResponse(record))
 }
 
 export const startTrial = async (request: Request, env: Env): Promise<Response> => {
@@ -52,7 +31,7 @@ export const startTrial = async (request: Request, env: Env): Promise<Response> 
 
   const existing = await getDeviceRecord(env, deviceHash)
   if (existing) {
-    return jsonResponse(buildStatus(existing))
+    return jsonResponse(buildAccessResponse(existing))
   }
 
   const startedAt = new Date().toISOString()
@@ -64,7 +43,7 @@ export const startTrial = async (request: Request, env: Env): Promise<Response> 
     }
   }
   await putDeviceRecord(env, deviceHash, record)
-  return jsonResponse(buildStatus(record))
+  return jsonResponse(buildAccessResponse(record))
 }
 
 export const consumeTrial = async (request: Request, env: Env): Promise<Response> => {
@@ -79,7 +58,11 @@ export const consumeTrial = async (request: Request, env: Env): Promise<Response
     return jsonResponse({ code: 'trial_exhausted' }, { status: 400 })
   }
 
-  if (record.trial.remainingRuns <= 0) {
+  if (isSubscriptionActive(record.subscription)) {
+    return jsonResponse(buildAccessResponse(record))
+  }
+
+  if (!record.trial || record.trial.remainingRuns <= 0) {
     return jsonResponse({ code: 'trial_exhausted' }, { status: 400 })
   }
 
@@ -93,5 +76,5 @@ export const consumeTrial = async (request: Request, env: Env): Promise<Response
   }
   await putDeviceRecord(env, deviceHash, updated)
 
-  return jsonResponse(buildStatus(updated))
+  return jsonResponse(buildAccessResponse(updated))
 }

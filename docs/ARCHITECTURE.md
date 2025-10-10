@@ -38,8 +38,8 @@ Atropos is composed of three cooperating runtimes:
 
 1. Desktop obtains configuration from `VITE_*` env vars at build/start time. `VITE_API_BASE_URL` and `VITE_LICENSE_API_BASE_URL` choose between dev/prod hosts. Never default to `localhost` in packaged builds—use the host mapping rules below.
 2. Desktop requests job creation via local FastAPI (`server/app.py`). The FastAPI app honors `ENVIRONMENT` to select credentials and remote dependencies.
-3. Before uploads, desktop calls `/license/verify` on the Cloudflare Worker using the device fingerprint and license token. The worker checks Workers KV for the device record and Stripe for subscription status.
-4. The worker issues a signed JWT (Ed25519) representing entitlement scope and expiration, which the desktop caches in memory and persists to secure storage.
+3. The desktop polls `/subscription/status` (and related `/subscribe` + `/portal` actions) on the Cloudflare Worker using the device fingerprint to determine whether the device has an active subscription or remaining trial runs. The worker checks Workers KV for the device record and synchronizes with Stripe webhooks to reflect billing state.
+4. When access is granted, the worker can issue signed entitlements (Ed25519 JWT) that the desktop caches locally before orchestrating uploads.
 5. Python services validate the JWT via shared public keys before processing, ensuring expired or revoked entitlements are denied.
 
 ### Environment selection
@@ -48,6 +48,7 @@ Atropos is composed of three cooperating runtimes:
 - `VITE_LICENSE_API_BASE_URL` → Desktop → Cloudflare Worker host (dev: `https://licensing.dev.atropos.workers.dev`, prod: `https://licensing.atropos.app`).
 - `SERVER_ENV` / `ENVIRONMENT` → Python services → selects credentials in `server/config.py` and toggles webhook hosts.
 - `LICENSING_ENV` → Worker → selects Stripe keys and KV namespace bindings.
+- `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, `SUBSCRIPTION_SUCCESS_URL`, `SUBSCRIPTION_CANCEL_URL`, `SUBSCRIPTION_PORTAL_RETURN_URL` → Worker → configure subscription checkout + webhook handling.
 
 ### Cloudflare worker environments
 
