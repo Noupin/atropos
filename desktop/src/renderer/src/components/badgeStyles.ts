@@ -1,5 +1,5 @@
-const baseClassName =
-  'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold leading-none shadow-[0_6px_14px_rgba(43,42,40,0.16)]'
+export const PILL_BASE =
+  'inline-flex h-6 items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-medium leading-none align-middle appearance-none shadow-[0_6px_14px_rgba(43,42,40,0.16)]'
 
 type BadgeVariant =
   | 'accent'
@@ -15,7 +15,7 @@ const variantClassNames: Record<BadgeVariant, string> = {
   accent:
     'border-[color:color-mix(in_srgb,var(--accent)_65%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--accent)_80%,transparent)] text-[color:color-mix(in_srgb,var(--accent)_90%,var(--accent-contrast))]',
   error:
-    'border-[color:color-mix(in_srgb,var(--error-strong)_65%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--error-soft)_82%,transparent)] text-[color:color-mix(in_srgb,var(--error-strong)_92%,var(--accent-contrast))]',
+    'border-[color:var(--error-strong)] bg-[color:color-mix(in_srgb,var(--error)_20%,transparent)] text-[color:color-mix(in_srgb,var(--error-strong)_94%,var(--accent-contrast))]',
   neutral:
     'border-[color:color-mix(in_srgb,var(--edge-soft)_90%,transparent)] bg-[color:color-mix(in_srgb,var(--panel)_80%,transparent)] text-[color:color-mix(in_srgb,var(--muted)_88%,var(--fg))]',
   warning:
@@ -25,6 +25,6 @@ const variantClassNames: Record<BadgeVariant, string> = {
 }
 
 export const getBadgeClassName = (variant: BadgeVariant, extraClassName?: string): string =>
-  [baseClassName, variantClassNames[variant], extraClassName].filter(Boolean).join(' ')
+  [PILL_BASE, variantClassNames[variant], extraClassName].filter(Boolean).join(' ')
 
 export type { BadgeVariant }
