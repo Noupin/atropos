@@ -1,4 +1,4 @@
-import type { FC } from 'react'
+import type { FC, KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getBadgeClassName } from './badgeStyles'
 import { resolveAccessBadge } from './accessBadge'
@@ -12,29 +12,38 @@ const TrialBadge: FC = () => {
   const interactiveExtraClasses =
     'cursor-pointer transition hover:-translate-y-0.5 hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)]'
   const inactiveExtraClasses = 'cursor-default'
+  const { label, title, isInteractive, variant } = presentation
   const className = getBadgeClassName(
-    presentation.variant,
-    presentation.isInteractive ? interactiveExtraClasses : inactiveExtraClasses
+    variant,
+    isInteractive ? interactiveExtraClasses : inactiveExtraClasses
   )
-  const { label, title, isInteractive } = presentation
 
   const handleClick = (): void => {
     navigate('/profile')
   }
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLSpanElement>): void => {
+    if (!isInteractive) {
+      return
+    }
+    if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+      event.preventDefault()
+      handleClick()
+    }
+  }
+
   return (
-    <button
-      type="button"
+    <span
       className={className}
-      role="status"
       aria-live="polite"
       title={title}
-      aria-disabled={isInteractive ? undefined : true}
-      tabIndex={isInteractive ? undefined : -1}
+      tabIndex={isInteractive ? 0 : undefined}
+      role={isInteractive ? 'link' : 'status'}
       onClick={isInteractive ? handleClick : undefined}
+      onKeyDown={isInteractive ? handleKeyDown : undefined}
     >
       {label}
-    </button>
+    </span>
   )
 }
 
