@@ -184,7 +184,12 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [settingsHeaderAction, setSettingsHeaderAction] = useState<SettingsHeaderAction | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
-  const { state: trialState, markTrialRunPending, finalizeTrialRun } = useTrialAccess()
+  const {
+    state: trialState,
+    markTrialRunPending,
+    finalizeTrialRun,
+    refresh: refreshTrialStatus
+  } = useTrialAccess()
   const homeNavigationDisabled = !trialState.isAccessGranted
   const redirectedJobRef = useRef<string | null>(null)
   const lastActiveJobIdRef = useRef<string | null>(null)
@@ -205,6 +210,57 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       navigate('/profile', { replace: true })
     }
   }, [location.pathname, navigate, trialState.isLoading, trialState.isAccessGranted])
+
+  useEffect(() => {
+    if (!window.api || typeof window.api.onDeepLink !== 'function') {
+      return
+    }
+
+    const unsubscribe = window.api.onDeepLink((rawUrl: string) => {
+      try {
+        const parsed = new URL(rawUrl)
+        if (parsed.protocol !== 'atropos:') {
+          return
+        }
+
+        const timestamp = Date.now()
+        const host = parsed.hostname
+        const path = parsed.pathname.replace(/^\/+/, '')
+
+        if (host === 'subscription') {
+          if (path === 'complete') {
+            const result = parsed.searchParams.get('result')
+            const normalizedResult: 'success' | 'cancel' | 'unknown' =
+              result === 'success' || result === 'cancel' ? result : 'unknown'
+            navigate('/profile', {
+              state: {
+                subscriptionReturn: normalizedResult,
+                deepLinkTimestamp: timestamp
+              }
+            })
+          } else if (path === 'manage') {
+            navigate('/profile', {
+              state: { subscriptionManage: true, deepLinkTimestamp: timestamp }
+            })
+          } else {
+            navigate('/profile', { state: { deepLinkTimestamp: timestamp } })
+          }
+        } else {
+          navigate('/profile', { state: { deepLinkTimestamp: timestamp } })
+        }
+
+        void refreshTrialStatus()
+      } catch (error) {
+        console.error('Failed to handle deep link', error)
+      }
+    })
+
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe()
+      }
+    }
+  }, [navigate, refreshTrialStatus])
 
   const availableAccounts = useMemo(
     () =>

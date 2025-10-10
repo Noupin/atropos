@@ -4,6 +4,40 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
 
+const DEEPLINK_PROTOCOL = 'atropos'
+
+const normalizeDeepLink = (raw: string): string | null => {
+  if (!raw) {
+    return null
+  }
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== `${DEEPLINK_PROTOCOL}:`) {
+      return null
+    }
+    return url.toString()
+  } catch (error) {
+    return null
+  }
+}
+
+const extractDeepLinkFromArgv = (argv: string[]): string | null => {
+  const match = argv.find((value) => typeof value === 'string' && value.startsWith(`${DEEPLINK_PROTOCOL}://`))
+  if (!match) {
+    return null
+  }
+  return normalizeDeepLink(match)
+}
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+
+if (!gotSingleInstanceLock) {
+  app.quit()
+  process.exit(0)
+}
+
+const initialDeepLink = extractDeepLinkFromArgv(process.argv)
+
 type NavigationCommand = 'back' | 'forward'
 
 type NavigationState = {
@@ -13,6 +47,61 @@ type NavigationState = {
 
 let mainWindow: BrowserWindow | null = null
 let navigationState: NavigationState = { canGoBack: false, canGoForward: false }
+let pendingDeepLink: string | null = null
+
+const focusMainWindow = (): void => {
+  if (!mainWindow) {
+    return
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore()
+  }
+  if (!mainWindow.isVisible()) {
+    mainWindow.show()
+  }
+  mainWindow.focus()
+}
+
+const dispatchPendingDeepLink = (): void => {
+  if (!pendingDeepLink || !mainWindow || mainWindow.isDestroyed()) {
+    return
+  }
+  if (mainWindow.webContents.isDestroyed()) {
+    return
+  }
+  focusMainWindow()
+  mainWindow.webContents.send('deeplink:navigate', pendingDeepLink)
+  pendingDeepLink = null
+}
+
+const queueDeepLink = (url: string): void => {
+  const normalized = normalizeDeepLink(url)
+  if (!normalized) {
+    return
+  }
+  pendingDeepLink = normalized
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return
+  }
+  focusMainWindow()
+  if (mainWindow.webContents.isLoading()) {
+    return
+  }
+  dispatchPendingDeepLink()
+}
+
+app.on('second-instance', (_event, argv) => {
+  focusMainWindow()
+  const url = extractDeepLinkFromArgv(argv)
+  if (url) {
+    queueDeepLink(url)
+  }
+})
+
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  queueDeepLink(url)
+})
 
 const sendNavigationCommand = (direction: NavigationCommand): void => {
   if (!mainWindow) {
@@ -84,6 +173,10 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  mainWindow.webContents.on('did-finish-load', () => {
+    dispatchPendingDeepLink()
+  })
+
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -104,6 +197,12 @@ app.whenReady().then(() => {
   // Set app user model id for windows
   app.setName('Atropos')
   electronApp.setAppUserModelId('com.atropos.app')
+
+  if (process.defaultApp && process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(DEEPLINK_PROTOCOL, process.execPath, [process.argv[1]])
+  } else {
+    app.setAsDefaultProtocolClient(DEEPLINK_PROTOCOL)
+  }
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -144,6 +243,10 @@ app.whenReady().then(() => {
   })
 
   createWindow()
+
+  if (initialDeepLink) {
+    queueDeepLink(initialDeepLink)
+  }
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

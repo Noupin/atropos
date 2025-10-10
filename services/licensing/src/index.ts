@@ -18,7 +18,8 @@ export default {
     }
 
     const url = new URL(request.url)
-    const path = url.pathname
+    const trimmedPath = url.pathname.replace(/\/+$/, '')
+    const path = trimmedPath.length > 0 ? trimmedPath : '/'
 
     if (path === '/health') {
       return jsonResponse({ status: 'ok' })

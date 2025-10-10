@@ -6,6 +6,7 @@ export interface ClipLibraryApi {
   openAccountClipsFolder(accountId: string): Promise<boolean>
   onNavigationCommand(callback: (direction: 'back' | 'forward') => void): () => void
   updateNavigationState(state: { canGoBack: boolean; canGoForward: boolean }): void
+  onDeepLink(callback: (url: string) => void): () => void
 }
 
 declare global {

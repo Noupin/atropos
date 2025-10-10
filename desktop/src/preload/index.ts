@@ -20,6 +20,14 @@ const api = {
   },
   updateNavigationState: (state: { canGoBack: boolean; canGoForward: boolean }): void => {
     ipcRenderer.send('navigation:state', state)
+  },
+  onDeepLink: (callback: (url: string) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, url: string) => {
+      callback(url)
+    }
+
+    ipcRenderer.on('deeplink:navigate', listener)
+    return () => ipcRenderer.removeListener('deeplink:navigate', listener)
   }
 }
 

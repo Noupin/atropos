@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FC } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   PLATFORM_LABELS,
   SUPPORTED_PLATFORMS,
@@ -63,6 +64,14 @@ type ProfileProps = {
   ) => Promise<AccountSummary>
   onDeletePlatform: (accountId: string, platform: SupportedPlatform) => Promise<AccountSummary>
   onRefreshAccounts: () => Promise<void>
+}
+
+type SubscriptionReturnResult = 'success' | 'cancel' | 'unknown'
+
+type ProfileLocationState = {
+  subscriptionReturn?: SubscriptionReturnResult
+  subscriptionManage?: boolean
+  deepLinkTimestamp?: number
 }
 
 type AccountCardProps = {
@@ -822,6 +831,8 @@ const Profile: FC<ProfileProps> = ({
   onDeletePlatform,
   onRefreshAccounts
 }) => {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [newAccountName, setNewAccountName] = useState('')
   const [newAccountDescription, setNewAccountDescription] = useState('')
   const [newAccountError, setNewAccountError] = useState<string | null>(null)
@@ -838,10 +849,12 @@ const Profile: FC<ProfileProps> = ({
   const [isLaunchingSubscription, setIsLaunchingSubscription] = useState(false)
   const [isOpeningPortal, setIsOpeningPortal] = useState(false)
   const [subscriptionActionError, setSubscriptionActionError] = useState<string | null>(null)
+  const [subscriptionActionNotice, setSubscriptionActionNotice] = useState<string | null>(null)
 
   const handleRefreshTrialStatus = useCallback(async () => {
     setIsRefreshingTrial(true)
     setSubscriptionActionError(null)
+    setSubscriptionActionNotice(null)
     try {
       if (trialState.pendingConsumptionStage === 'finalizing') {
         await finalizeTrialRun({ succeeded: true })
@@ -855,6 +868,7 @@ const Profile: FC<ProfileProps> = ({
 
   const handleSubscribe = useCallback(async () => {
     setSubscriptionActionError(null)
+    setSubscriptionActionNotice(null)
     try {
       setIsLaunchingSubscription(true)
       const session = await initiateSubscription()
@@ -870,6 +884,7 @@ const Profile: FC<ProfileProps> = ({
         error instanceof Error
           ? error.message
           : 'Unable to start subscription checkout. Please try again.'
+      setSubscriptionActionNotice(null)
       setSubscriptionActionError(message)
     } finally {
       setIsLaunchingSubscription(false)
@@ -878,6 +893,7 @@ const Profile: FC<ProfileProps> = ({
 
   const handleOpenPortal = useCallback(async () => {
     setSubscriptionActionError(null)
+    setSubscriptionActionNotice(null)
     try {
       setIsOpeningPortal(true)
       const session = await openSubscriptionPortal()
@@ -891,6 +907,7 @@ const Profile: FC<ProfileProps> = ({
         error instanceof Error
           ? error.message
           : 'Unable to open the subscription portal. Please try again.'
+      setSubscriptionActionNotice(null)
       setSubscriptionActionError(message)
     } finally {
       setIsOpeningPortal(false)
@@ -1023,6 +1040,33 @@ const Profile: FC<ProfileProps> = ({
   ])
 
   useEffect(() => {
+    const state = (location.state as ProfileLocationState | null) ?? null
+    if (!state || typeof state.deepLinkTimestamp !== 'number') {
+      return
+    }
+
+    if (state.subscriptionReturn === 'success') {
+      setSubscriptionActionNotice('Payment received. Finalizing subscription status…')
+      setSubscriptionActionError(null)
+      void refreshTrialStatus()
+    } else if (state.subscriptionReturn === 'cancel') {
+      setSubscriptionActionNotice(null)
+      setSubscriptionActionError('Checkout was cancelled before completion.')
+      void refreshTrialStatus()
+    } else if (state.subscriptionManage) {
+      setSubscriptionActionNotice('Returned from the billing portal. Checking subscription status…')
+      setSubscriptionActionError(null)
+      void refreshTrialStatus()
+    } else {
+      setSubscriptionActionNotice('Processing subscription update…')
+      setSubscriptionActionError(null)
+      void refreshTrialStatus()
+    }
+
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location, navigate, refreshTrialStatus])
+
+  useEffect(() => {
     registerSearch(null)
     return () => registerSearch(null)
   }, [registerSearch])
@@ -1098,34 +1142,37 @@ rent)] p-6">
             ))}
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                void handleRefreshTrialStatus()
-              }}
-              className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
-              disabled={trialState.isLoading}
-            >
-              {refreshButtonLabel}
-            </button>
-            <button
-              type="button"
-              onClick={subscriptionCta.onClick}
-              className={`marble-button marble-button--${subscriptionCta.variant} px-3 py-1.5 text-xs font-semibold`}
-              disabled={subscriptionCta.disabled}
-            >
-              {subscriptionCta.label}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              void handleRefreshTrialStatus()
+            }}
+            className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
+            disabled={trialState.isLoading || isRefreshingTrial}
+          >
+            {refreshButtonLabel}
+          </button>
+          <button
+            type="button"
+            onClick={subscriptionCta.onClick}
+            className={`marble-button marble-button--${subscriptionCta.variant} px-3 py-1.5 text-xs font-semibold`}
+            disabled={subscriptionCta.disabled}
+          >
+            {subscriptionCta.label}
+          </button>
         </div>
-        {trialState.lastError ? (
-          <p className="text-xs font-medium text-[color:var(--error-strong)]">{trialState.lastError}</p>
-        ) : null}
-        {subscriptionActionError ? (
-          <p className="text-xs font-medium text-[color:var(--error-strong)]">{subscriptionActionError}</p>
-        ) : null}
-        <p className="text-sm font-medium text-[var(--muted)]">{accessMessage}</p>
       </div>
+      {trialState.lastError ? (
+        <p className="text-xs font-medium text-[color:var(--error-strong)]">{trialState.lastError}</p>
+      ) : null}
+      {subscriptionActionNotice ? (
+        <p className="text-xs font-medium text-[color:var(--info-strong)]">{subscriptionActionNotice}</p>
+      ) : null}
+      {subscriptionActionError ? (
+        <p className="text-xs font-medium text-[color:var(--error-strong)]">{subscriptionActionError}</p>
+      ) : null}
+      <p className="text-sm font-medium text-[var(--muted)]">{accessMessage}</p>
+    </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-6">
