@@ -12,6 +12,8 @@ import {
 import { TONE_LABELS, TONE_OPTIONS } from '../constants/tone'
 import { timeAgo } from '../lib/format'
 import MarbleSelect from '../components/MarbleSelect'
+import { getBadgeClassName, type BadgeVariant } from '../components/badgeStyles'
+import { resolveAccessBadge } from '../components/accessBadge'
 import { DEFAULT_TRIAL_RUNS, useAccess } from '../state/access'
 import {
   LicensingOfflineError,
@@ -80,34 +82,28 @@ type AccountCardProps = {
   onDeletePlatform: ProfileProps['onDeletePlatform']
 }
 
-const authStatusStyles: Record<string, { pill: string; dot: string }> = {
-  ok: {
-    pill: 'status-pill status-pill--success',
-    dot: 'status-pill__dot status-pill__dot--success'
-  },
-  degraded: {
-    pill: 'status-pill status-pill--warning',
-    dot: 'status-pill__dot status-pill__dot--warning'
-  },
-  disabled: {
-    pill: 'status-pill status-pill--neutral',
-    dot: 'status-pill__dot status-pill__dot--muted'
-  }
+const authStatusVariants: Record<string, BadgeVariant> = {
+  ok: 'success',
+  degraded: 'warning',
+  disabled: 'neutral'
 }
 
-const platformStatusStyles: Record<string, { pill: string; dot: string }> = {
-  active: {
-    pill: 'status-pill status-pill--success',
-    dot: 'status-pill__dot status-pill__dot--success'
-  },
-  disconnected: {
-    pill: 'status-pill status-pill--error',
-    dot: 'status-pill__dot status-pill__dot--error'
-  },
-  disabled: {
-    pill: 'status-pill status-pill--neutral',
-    dot: 'status-pill__dot status-pill__dot--muted'
-  }
+const platformStatusVariants: Record<string, BadgeVariant> = {
+  active: 'success',
+  disconnected: 'error',
+  disabled: 'neutral'
+}
+
+const authStatusDots: Record<string, string> = {
+  ok: 'status-pill__dot status-pill__dot--success',
+  degraded: 'status-pill__dot status-pill__dot--warning',
+  disabled: 'status-pill__dot status-pill__dot--muted'
+}
+
+const platformStatusDots: Record<string, string> = {
+  active: 'status-pill__dot status-pill__dot--success',
+  disconnected: 'status-pill__dot status-pill__dot--error',
+  disabled: 'status-pill__dot status-pill__dot--muted'
 }
 
 const AccountCard: FC<AccountCardProps> = ({
@@ -440,14 +436,16 @@ const AccountCard: FC<AccountCardProps> = ({
       : platform.connected
         ? 'Authenticated'
         : 'Needs attention'
-    const variant = !isPlatformActive
-      ? platformStatusStyles.disabled
+    const variantKey: keyof typeof platformStatusVariants = !isPlatformActive
+      ? 'disabled'
       : platform.connected
-        ? platformStatusStyles.active
-        : platformStatusStyles.disconnected
+        ? 'active'
+        : 'disconnected'
+    const badgeClass = getBadgeClassName(platformStatusVariants[variantKey])
+    const dotClass = platformStatusDots[variantKey]
     return (
-      <span className={`${variant.pill} text-xs`}> 
-        <span className={variant.dot} aria-hidden="true" />
+      <span className={badgeClass}>
+        <span className={dotClass} aria-hidden="true" />
         {labelText}
       </span>
     )
@@ -575,16 +573,16 @@ const AccountCard: FC<AccountCardProps> = ({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="status-pill status-pill--neutral text-xs">
+              <span className={getBadgeClassName('neutral')}>
                 {account.platforms.length} platform{account.platforms.length === 1 ? '' : 's'}
               </span>
               {account.effectiveTone || account.tone ? (
-                <span className="status-pill status-pill--neutral text-xs" title={toneBadgeTitle}>
+                <span className={getBadgeClassName('neutral')} title={toneBadgeTitle}>
                   Tone: {effectiveToneLabel}
                 </span>
               ) : null}
               {!isAccountActive ? (
-                <span className="status-pill status-pill--warning text-xs font-semibold">
+                <span className={getBadgeClassName('warning')}>
                   Disabled
                 </span>
               ) : null}
@@ -761,7 +759,7 @@ const AccountCard: FC<AccountCardProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="text-sm font-semibold text-[var(--fg)]">Add a platform</h4>
             {selectedPlatform ? (
-              <span className="status-pill status-pill--neutral text-xs">
+              <span className={getBadgeClassName('neutral')}>
                 Authenticating {PLATFORM_LABELS[selectedPlatform]}
               </span>
             ) : null}
@@ -971,17 +969,16 @@ const Profile: FC<ProfileProps> = ({
     accounts.reduce((total, account) => total + account.platforms.length, 0)
   const totalAccounts = authStatus?.accounts ?? accounts.length
   const accountLabel = totalAccounts === 1 ? 'account' : 'accounts'
-  const authStatusVariant = authStatus
-    ? authStatusStyles[authStatus.status] ?? authStatusStyles.degraded
-    : null
-  const authStatusPill = [
-    authStatusVariant?.pill ?? 'status-pill status-pill--neutral',
-    'text-xs',
-    !authStatus ? 'text-[color:var(--muted)]' : ''
-  ]
-    .filter(Boolean)
-    .join(' ')
-  const authStatusDot = authStatusVariant?.dot ?? 'status-pill__dot status-pill__dot--muted'
+  const accessBadge = resolveAccessBadge(accessState)
+  const accessBadgeClassName = getBadgeClassName(accessBadge.variant)
+  const authStatusVariant = authStatusVariants[authStatus?.status ?? ''] ?? 'warning'
+  const authStatusPill = getBadgeClassName(
+    authStatusVariant,
+    !authStatus ? 'text-[color:var(--muted)]' : undefined
+  )
+  const authStatusDot = authStatus
+    ? authStatusDots[authStatus.status] ?? authStatusDots.degraded
+    : 'status-pill__dot status-pill__dot--muted'
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
@@ -996,7 +993,17 @@ const Profile: FC<ProfileProps> = ({
       <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-semibold text-[var(--fg)]">Access & subscription</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-semibold text-[var(--fg)]">Access & subscription</h2>
+              <span
+                className={accessBadgeClassName}
+                role="status"
+                aria-live="polite"
+                title={accessBadge.title}
+              >
+                {accessBadge.label}
+              </span>
+            </div>
             <p className="text-xs text-[var(--muted)]">{accessSummary}</p>
             {showTrialDetails ? (
               <p className="text-xs text-[var(--muted)]">
