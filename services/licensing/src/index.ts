@@ -1,6 +1,6 @@
 import { handleOptions, jsonResponse } from './lib/http'
 import { logInfo } from './lib/log'
-import { acceptTransfer, initiateTransfer } from './routes/transfer'
+import { acceptTransfer, cancelTransfer, initiateTransfer } from './routes/transfer'
 import { consumeTrial, getTrialStatus, startTrial } from './routes/trial'
 import {
   createPortalSession,
@@ -37,6 +37,7 @@ const ROUTE_NAMES: Record<string, string> = {
   '/trial/consume': 'trial.consume',
   '/transfer/initiate': 'transfer.initiate',
   '/transfer/accept': 'transfer.accept',
+  '/transfer/cancel': 'transfer.cancel',
   '/subscribe': 'subscription.subscribe',
   '/portal': 'subscription.portal',
   '/subscription/status': 'subscription.status',
@@ -100,6 +101,13 @@ export default {
         return methodNotAllowed(['POST'])
       }
       return acceptTransfer(request, env)
+    }
+
+    if (path === '/transfer/cancel') {
+      if (request.method !== 'POST') {
+        return methodNotAllowed(['POST'])
+      }
+      return cancelTransfer(request, env)
     }
 
     if (path === '/subscribe') {

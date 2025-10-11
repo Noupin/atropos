@@ -13,6 +13,7 @@ import {
   LicensingOfflineError,
   LicensingRequestError,
   TrialExhaustedError,
+  acceptSubscriptionTransfer,
   consumeTrial,
   fetchAccessStatus,
   startTrial,
@@ -75,12 +76,21 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
   const [state, setState] = useState<AccessState>(INITIAL_STATE)
   const [deviceHash, setDeviceHash] = useState<string | null>(null)
   const hasRecoveredPendingRef = useRef(false)
+  const pendingTransferTokenRef = useRef<string | null>(null)
   const lastVerifiedAtRef = useRef<number | null>(readLastVerifiedAt())
 
   const applyStatus = useCallback(
     (status: AccessStatusPayload, overrides?: Partial<AccessState>) => {
       setState((prev) => {
         const subscription = status.subscription ?? null
+        const transfer = status.transfer ?? {
+          status: 'none',
+          email: null,
+          initiatedAt: null,
+          expiresAt: null,
+          completedAt: null,
+          targetDeviceHash: null
+        }
         const trial = deriveTrialState(status.trial)
         const subscriptionActive = isSubscriptionActive(subscription)
         const trialActive = isTrialAccessActive(status.access, trial)
@@ -90,14 +100,15 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
         lastVerifiedAtRef.current = now
         writeLastVerifiedAt(now)
 
-        return {
-          deviceHash: status.deviceHash,
-          subscription,
-          trial,
-          access: status.access,
-          isSubscriptionActive: subscriptionActive,
-          isTrialActive: trialActive,
-          isAccessActive: accessActive,
+          return {
+            deviceHash: status.deviceHash,
+            subscription,
+            trial,
+            access: status.access,
+            transfer,
+            isSubscriptionActive: subscriptionActive,
+            isTrialActive: trialActive,
+            isAccessActive: accessActive,
           isOffline: overrides?.isOffline ?? false,
           isOfflineLocked: overrides?.isOfflineLocked ?? false,
           offlineExpiresAt: overrides?.offlineExpiresAt ?? null,
@@ -452,6 +463,52 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
     void consumePendingTrialRun()
   }, [consumePendingTrialRun, deviceHash])
 
+  const processTransferToken = useCallback(
+    async (token: string) => {
+      if (!deviceHash) {
+        pendingTransferTokenRef.current = token
+        return
+      }
+
+      setState((prev) => ({
+        ...prev,
+        isLoading: true,
+        lastError: null,
+        isOffline: false,
+        isOfflineLocked: false,
+        offlineExpiresAt: null,
+        offlineRemainingMs: null,
+        offlineLastVerifiedAt: null
+      }))
+
+      try {
+        await acceptSubscriptionTransfer(deviceHash, token)
+        pendingTransferTokenRef.current = null
+        await refresh()
+      } catch (error) {
+        if (error instanceof LicensingOfflineError) {
+          pendingTransferTokenRef.current = null
+          markOffline(error.message)
+          return
+        }
+        let message = 'Unable to accept subscription transfer.'
+        if (error instanceof LicensingRequestError) {
+          message = error.message
+        } else if (error instanceof Error && error.message) {
+          message = error.message
+        }
+        console.error('Failed to accept subscription transfer.', error)
+        pendingTransferTokenRef.current = null
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          lastError: message
+        }))
+      }
+    },
+    [deviceHash, markOffline, refresh]
+  )
+
   useEffect(() => {
     if (typeof window === 'undefined') {
       return
@@ -519,15 +576,37 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
     const unsubscribe = window.api.onDeepLink((url) => {
       try {
         const parsed = new URL(url)
-        if (parsed.protocol.startsWith('atropos') && parsed.hostname === 'subscription') {
+        if (!parsed.protocol.startsWith('atropos')) {
+          return
+        }
+        if (parsed.hostname === 'subscription') {
           void refresh()
+          return
+        }
+        if (parsed.hostname === 'transfer') {
+          const token = parsed.searchParams.get('token')
+          const action = parsed.pathname.replace(/\/+$/u, '').replace(/^\/+/, '')
+          if (action === 'accept' && token) {
+            void processTransferToken(token)
+          }
         }
       } catch (error) {
         console.warn('Failed to parse deep link URL.', error)
       }
     })
     return unsubscribe
-  }, [refresh])
+  }, [processTransferToken, refresh])
+
+  useEffect(() => {
+    if (!deviceHash && pendingTransferTokenRef.current) {
+      return
+    }
+    if (deviceHash && pendingTransferTokenRef.current) {
+      const token = pendingTransferTokenRef.current
+      pendingTransferTokenRef.current = null
+      void processTransferToken(token)
+    }
+  }, [deviceHash, processTransferToken])
 
   const value = useMemo(
     () => ({

@@ -22,6 +22,7 @@ import {
   createBillingPortalSession,
   createSubscriptionCheckout
 } from '../services/licensing'
+import SubscriptionTransferPanel from '../components/SubscriptionTransferPanel'
 
 const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
   tiktok: 'tiktok.json',
@@ -917,23 +918,34 @@ const Profile: FC<ProfileProps> = ({
     ? formatTimestamp(accessState.subscription.currentPeriodEnd)
     : null
   const offlineCountdownLabel = formatOfflineCountdown(accessState.offlineRemainingMs)
-  const accessSummary = accessState.isOffline
-    ? accessState.isOfflineLocked
-      ? 'Offline mode — reconnect to verify your subscription.'
-      : accessState.access?.source === 'subscription'
-        ? offlineCountdownLabel
-          ? `Offline mode — reconnect within ${offlineCountdownLabel} to keep your subscription active.`
-          : 'Offline mode — reconnect soon to verify your subscription.'
-        : 'Offline mode — reconnect to verify access.'
-    : accessState.isSubscriptionActive
-      ? currentPeriodEndLabel
-        ? `Subscription active · Renews ${currentPeriodEndLabel}`
-        : 'Subscription active.'
-      : subscriptionStatusLabel
-        ? `Subscription status: ${subscriptionStatusLabel}`
-        : accessState.isTrialActive
-          ? `Trial active · ${remainingTrialRuns} / ${totalTrialRuns} runs remaining`
-          : `Trial exhausted · ${remainingTrialRuns} / ${totalTrialRuns} runs remaining`
+  const hasTransferableSubscription = Boolean(
+    accessState.subscription?.subscriptionId || accessState.subscription?.customerId
+  )
+  const transferDisabledMessage = hasTransferableSubscription
+    ? null
+    : 'Subscribe before transferring access.'
+  const transferControlDisabled = accessState.isLoading || isProcessingSubscription || isRefreshingAccess
+  const accessSummary = accessState.transfer.status === 'locked'
+    ? 'Access has moved to another device. Use the transfer controls below to reclaim it.'
+    : accessState.transfer.status === 'pending'
+      ? 'Transfer link sent. Activate the new device to complete the move.'
+      : accessState.isOffline
+        ? accessState.isOfflineLocked
+          ? 'Offline mode — reconnect to verify your subscription.'
+          : accessState.access?.source === 'subscription'
+            ? offlineCountdownLabel
+              ? `Offline mode — reconnect within ${offlineCountdownLabel} to keep your subscription active.`
+              : 'Offline mode — reconnect soon to verify your subscription.'
+            : 'Offline mode — reconnect to verify access.'
+        : accessState.isSubscriptionActive
+          ? currentPeriodEndLabel
+            ? `Subscription active · Renews ${currentPeriodEndLabel}`
+            : 'Subscription active.'
+          : subscriptionStatusLabel
+            ? `Subscription status: ${subscriptionStatusLabel}`
+            : accessState.isTrialActive
+              ? `Trial active · ${remainingTrialRuns} / ${totalTrialRuns} runs remaining`
+              : `Trial exhausted · ${remainingTrialRuns} / ${totalTrialRuns} runs remaining`
 
   useEffect(() => {
     registerSearch(null)
@@ -1084,6 +1096,15 @@ const Profile: FC<ProfileProps> = ({
           </p>
         )}
       </div>
+
+      <SubscriptionTransferPanel
+        deviceHash={deviceHash ?? null}
+        transfer={accessState.transfer}
+        isDisabled={transferControlDisabled}
+        canInitiate={hasTransferableSubscription}
+        disabledMessage={transferDisabledMessage}
+        onRefresh={handleRefreshAccessStatus}
+      />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-6">

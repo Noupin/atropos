@@ -34,11 +34,23 @@ export type AccessSummaryPayload = {
   isActive: boolean
 }
 
+export type TransferStatus = 'none' | 'pending' | 'locked'
+
+export type TransferStatePayload = {
+  status: TransferStatus
+  email: string | null
+  initiatedAt: string | null
+  expiresAt: string | null
+  completedAt: string | null
+  targetDeviceHash: string | null
+}
+
 export type AccessStatusPayload = {
   deviceHash: string
   access: AccessSummaryPayload
   subscription: SubscriptionInfoPayload | null
   trial: TrialStatusPayload | null
+  transfer: TransferStatePayload
 }
 
 export class LicensingOfflineError extends Error {
@@ -191,4 +203,55 @@ export const createBillingPortalSession = async (
     throw new LicensingRequestError('Unable to open billing portal.', response.status, body?.error)
   }
   return parseJson<PortalSessionPayload>(response)
+}
+
+export type InitiateTransferResponse = {
+  token: string
+  expiresAt: string
+  initiatedAt: string
+  magicLink: string
+}
+
+export const initiateSubscriptionTransfer = async (
+  deviceHash: string,
+  email: string
+): Promise<InitiateTransferResponse> => {
+  const response = await request('/transfer/initiate', {
+    method: 'POST',
+    body: JSON.stringify({ device_hash: deviceHash, email })
+  })
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new LicensingRequestError('Unable to initiate transfer.', response.status, body?.error)
+  }
+
+  return parseJson<InitiateTransferResponse>(response)
+}
+
+export const cancelSubscriptionTransfer = async (deviceHash: string): Promise<void> => {
+  const response = await request('/transfer/cancel', {
+    method: 'POST',
+    body: JSON.stringify({ device_hash: deviceHash })
+  })
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new LicensingRequestError('Unable to cancel transfer.', response.status, body?.error)
+  }
+}
+
+export const acceptSubscriptionTransfer = async (
+  deviceHash: string,
+  token: string
+): Promise<void> => {
+  const response = await request('/transfer/accept', {
+    method: 'POST',
+    body: JSON.stringify({ device_hash: deviceHash, token })
+  })
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new LicensingRequestError('Unable to accept transfer.', response.status, body?.error)
+  }
 }

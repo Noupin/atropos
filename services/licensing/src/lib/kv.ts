@@ -1,4 +1,4 @@
-import type { DeviceRecord, Env, StoredDeviceRecord, SubscriptionInfo } from '../types'
+import type { DeviceRecord, Env, StoredDeviceRecord, SubscriptionInfo, TransferInfo } from '../types'
 
 const JSON_TYPE: KVNamespaceGetOptions<'json'> = { type: 'json' }
 
@@ -14,6 +14,26 @@ const normalizeSubscription = (value?: Partial<SubscriptionInfo> | null): Subscr
   updatedAt: value?.updatedAt ?? null
 })
 
+const normalizeTransfer = (value?: Partial<TransferInfo> | null): TransferInfo | undefined => {
+  if (!value) {
+    return undefined
+  }
+
+  const initiatedAt = value.initiatedAt ?? new Date().toISOString()
+  const status = value.status ?? 'pending'
+
+  return {
+    email: value.email ?? '',
+    token: value.token ?? null,
+    expiresAt: value.expiresAt ?? null,
+    initiatedAt,
+    status,
+    targetDeviceHash: value.targetDeviceHash ?? null,
+    completedAt: value.completedAt ?? null,
+    cancelledAt: value.cancelledAt ?? null
+  }
+}
+
 export const getDeviceRecord = async (
   env: Env,
   deviceHash: string
@@ -26,7 +46,7 @@ export const getDeviceRecord = async (
   return {
     trial: stored.trial,
     subscription: normalizeSubscription(stored.subscription ?? null),
-    transfer: stored.transfer,
+    transfer: normalizeTransfer(stored.transfer ?? null),
     updatedAt: stored.updatedAt
   }
 }

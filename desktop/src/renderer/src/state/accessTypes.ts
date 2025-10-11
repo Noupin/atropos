@@ -1,7 +1,8 @@
 import type {
   AccessStatusPayload,
   SubscriptionInfoPayload,
-  TrialStatusPayload
+  TrialStatusPayload,
+  TransferStatePayload
 } from '../services/licensing'
 
 export type PendingConsumptionStage = 'in_progress' | 'finalizing' | null
@@ -17,6 +18,7 @@ export type AccessState = {
   subscription: SubscriptionInfoPayload | null
   trial: AccessTrialState
   access: AccessStatusPayload['access'] | null
+  transfer: TransferStatePayload
   isSubscriptionActive: boolean
   isTrialActive: boolean
   isAccessActive: boolean
@@ -50,6 +52,14 @@ export const INITIAL_STATE: AccessState = {
     startedAt: null
   },
   access: null,
+  transfer: {
+    status: 'none',
+    email: null,
+    initiatedAt: null,
+    expiresAt: null,
+    completedAt: null,
+    targetDeviceHash: null
+  },
   isSubscriptionActive: false,
   isTrialActive: false,
   isAccessActive: false,

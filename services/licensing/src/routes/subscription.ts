@@ -14,10 +14,15 @@ import type {
   DeviceRecord,
   Env,
   SubscriptionInfo,
-  SubscriptionStatusResponse
+  SubscriptionStatusResponse,
+  TransferStateSummary
 } from '../types'
 
 const buildAccessSummary = (record: DeviceRecord): AccessSummary => {
+  if (record.transfer?.status === 'completed' && record.transfer.targetDeviceHash) {
+    return { source: 'none', isActive: false }
+  }
+
   const subscriptionStatus = record.subscription.status
   if (subscriptionStatus) {
     const isActive = subscriptionStatus === 'active' || subscriptionStatus === 'trialing'
@@ -41,6 +46,50 @@ const cloneSubscription = (subscription: SubscriptionInfo): SubscriptionInfo => 
   updatedAt: subscription.updatedAt
 })
 
+const mapTransferState = (record: DeviceRecord): TransferStateSummary => {
+  if (!record.transfer) {
+    return {
+      status: 'none',
+      email: null,
+      initiatedAt: null,
+      expiresAt: null,
+      completedAt: null,
+      targetDeviceHash: null
+    }
+  }
+
+  if (record.transfer.status === 'pending') {
+    return {
+      status: 'pending',
+      email: record.transfer.email?.trim() ? record.transfer.email : null,
+      initiatedAt: record.transfer.initiatedAt ?? null,
+      expiresAt: record.transfer.expiresAt ?? null,
+      completedAt: null,
+      targetDeviceHash: null
+    }
+  }
+
+  if (record.transfer.status === 'completed' && record.transfer.targetDeviceHash) {
+    return {
+      status: 'locked',
+      email: record.transfer.email?.trim() ? record.transfer.email : null,
+      initiatedAt: record.transfer.initiatedAt ?? null,
+      expiresAt: null,
+      completedAt: record.transfer.completedAt ?? null,
+      targetDeviceHash: record.transfer.targetDeviceHash
+    }
+  }
+
+  return {
+    status: 'none',
+    email: null,
+    initiatedAt: null,
+    expiresAt: null,
+    completedAt: null,
+    targetDeviceHash: null
+  }
+}
+
 export const subscribe = async (request: Request, env: Env): Promise<Response> => {
   const body = (await parseJsonBody<Record<string, unknown>>(request)) ?? {}
   const deviceHash = normalizeDeviceHash(body.device_hash)
@@ -59,6 +108,11 @@ export const subscribe = async (request: Request, env: Env): Promise<Response> =
   if (!record) {
     logError('subscription.subscribe.device_missing', { deviceHash })
     return jsonResponse({ error: 'invalid_device' }, { status: 404 })
+  }
+
+  if (record.transfer?.status === 'completed' && record.transfer.targetDeviceHash) {
+    logError('subscription.subscribe.transfer_locked', { deviceHash })
+    return jsonResponse({ error: 'transfer_locked' }, { status: 403 })
   }
 
   const priceId = env.STRIPE_PRICE_ID
@@ -164,6 +218,11 @@ export const createPortalSession = async (request: Request, env: Env): Promise<R
     return jsonResponse({ error: 'subscription_not_found' }, { status: 404 })
   }
 
+  if (record.transfer?.status === 'completed' && record.transfer.targetDeviceHash) {
+    logError('subscription.portal.transfer_locked', { deviceHash })
+    return jsonResponse({ error: 'transfer_locked' }, { status: 403 })
+  }
+
   const successUrl = env.SUBSCRIPTION_SUCCESS_URL
   if (!successUrl) {
     logError('subscription.portal.success_url_unconfigured', { deviceHash })
@@ -228,12 +287,14 @@ export const getSubscriptionStatus = async (request: Request, env: Env): Promise
     remainingRuns: record.trial.remainingRuns,
     startedAt: record.trial.startedAt
   }
+  const transfer = mapTransferState(record)
 
   const response: SubscriptionStatusResponse = {
     deviceHash,
     access,
     subscription: subscription.status || subscription.customerId || subscription.subscriptionId ? subscription : null,
-    trial
+    trial,
+    transfer
   }
 
   logInfo('subscription.status.success', {
