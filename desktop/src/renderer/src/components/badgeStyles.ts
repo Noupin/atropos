@@ -13,7 +13,7 @@ const variantClassNames: Record<BadgeVariant, string> = {
   success:
     'border-[color:color-mix(in_srgb,var(--success-strong)_65%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--success-soft)_82%,transparent)] text-[color:color-mix(in_srgb,var(--success-strong)_92%,var(--accent-contrast))]',
   accent:
-    'border-[color:color-mix(in_srgb,var(--accent)_65%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--accent)_80%,transparent)] text-[color:color-mix(in_srgb,var(--accent)_90%,var(--accent-contrast))]',
+    'border-[color:color-mix(in_srgb,var(--accent)_65%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--accent)_80%,transparent)] text-[color:var(--accent-contrast)]',
   error:
     'border-[color:var(--error-strong)] bg-[color:color-mix(in_srgb,var(--error)_20%,transparent)] text-[color:color-mix(in_srgb,var(--error-strong)_94%,var(--accent-contrast))]',
   neutral:
