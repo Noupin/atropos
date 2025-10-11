@@ -210,6 +210,7 @@ export type InitiateTransferResponse = {
   expiresAt: string
   initiatedAt: string
   magicLink: string
+  activationLink: string
 }
 
 export const initiateSubscriptionTransfer = async (

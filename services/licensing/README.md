@@ -13,8 +13,9 @@ The licensing service is a Cloudflare Worker that tracks device trials and coord
 | `/subscription/status` | `GET` | Returns the combined subscription + trial access state for a device. |
 | `/subscribe` | `POST` | Creates a Stripe Checkout session so the device can start a subscription. |
 | `/portal` | `POST` | Creates a Stripe Billing Portal session so the subscriber can manage billing. |
-| `/transfer/initiate` | `POST` | Creates a one-time transfer token and magic link for moving a device record to a new machine. |
+| `/transfer/initiate` | `POST` | Creates a one-time transfer token along with deep-link and HTTPS activation URLs for moving a device record to a new machine. |
 | `/transfer/accept` | `POST` | Applies a valid transfer token to the requesting device, reassigning the device record. |
+| `/transfer/activate` | `GET` | Lightweight landing page that redirects to the desktop deep link and provides manual copy instructions. |
 | `/transfer/cancel` | `POST` | Cancels a pending transfer so access remains with the original device. |
 | `/billing/webhook` | `POST` | Primary Stripe webhook route used in production. |
 | `/webhooks/stripe` | `POST` | Receives Stripe webhook notifications for checkout and subscription lifecycle events. |

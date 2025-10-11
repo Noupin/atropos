@@ -29,15 +29,28 @@ type SubscriptionTransferPanelProps = {
   onRefresh: () => Promise<void> | void
 }
 
-const buildMailtoUrl = (email: string, link: string, expiresAt: string): string => {
+const buildMailtoUrl = (
+  email: string,
+  activationLink: string,
+  appLink: string,
+  expiresAt: string
+): string => {
   const subject = 'Transfer your Atropos subscription'
   const expiration = formatTimestamp(expiresAt)
+  const shareableLink = activationLink || appLink || ''
+  const fallbackLink = appLink || activationLink || ''
   const lines = [
     'Hi,',
     '',
     'Click the link below to activate your Atropos subscription on this device:',
     '',
-    `<${link}>`,
+    shareableLink,
+    '',
+    'If you are asked to choose an app, pick Atropos.',
+    '',
+    'Need to paste the link manually? Use the direct Atropos link below:',
+    '',
+    fallbackLink,
     '',
     `This secure link expires ${expiration}.`,
     '',
@@ -51,8 +64,18 @@ const buildMailtoUrl = (email: string, link: string, expiresAt: string): string 
   return `mailto:${encodeURIComponent(email)}?subject=${encodedSubject}&body=${encodedBody}`
 }
 
-const openMailClient = (email: string, magicLink: string, expiresAt: string): void => {
-  const mailtoUrl = buildMailtoUrl(email, magicLink, expiresAt)
+const openMailClient = (
+  email: string,
+  activationLink: string,
+  appLink: string,
+  expiresAt: string
+): void => {
+  const shareableLink = activationLink || appLink
+  const fallbackLink = appLink || activationLink
+  if (!shareableLink || !fallbackLink) {
+    return
+  }
+  const mailtoUrl = buildMailtoUrl(email, shareableLink, fallbackLink, expiresAt)
   if (window.electron?.shell?.openExternal) {
     void window.electron.shell.openExternal(mailtoUrl)
     return
@@ -73,7 +96,8 @@ const SubscriptionTransferPanel: FC<SubscriptionTransferPanelProps> = ({
   const [isCancelling, setIsCancelling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const [magicLink, setMagicLink] = useState<string | null>(null)
+  const [appLink, setAppLink] = useState<string | null>(null)
+  const [activationLink, setActivationLink] = useState<string | null>(null)
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
 
   const isLocked = transfer.status === 'locked'
@@ -94,7 +118,8 @@ const SubscriptionTransferPanel: FC<SubscriptionTransferPanelProps> = ({
     event.preventDefault()
     setError(null)
     setSuccess(null)
-    setMagicLink(null)
+    setAppLink(null)
+    setActivationLink(null)
     setExpiresAt(null)
 
     if (!deviceHash) {
@@ -110,10 +135,11 @@ const SubscriptionTransferPanel: FC<SubscriptionTransferPanelProps> = ({
     setIsSubmitting(true)
     try {
       const response = await initiateSubscriptionTransfer(deviceHash, trimmedEmail)
-      setMagicLink(response.magicLink)
+      setAppLink(response.magicLink)
+      setActivationLink(response.activationLink)
       setExpiresAt(response.expiresAt)
-      setSuccess('Transfer link generated. Your email client will open with the details.')
-      openMailClient(trimmedEmail, response.magicLink, response.expiresAt)
+      setSuccess('Transfer link generated. Your email client will open with the activation link.')
+      openMailClient(trimmedEmail, response.activationLink, response.magicLink, response.expiresAt)
       await onRefresh()
     } catch (err) {
       if (err instanceof LicensingOfflineError) {
@@ -139,7 +165,8 @@ const SubscriptionTransferPanel: FC<SubscriptionTransferPanelProps> = ({
   const handleCancel = async () => {
     setError(null)
     setSuccess(null)
-    setMagicLink(null)
+    setAppLink(null)
+    setActivationLink(null)
     setExpiresAt(null)
 
     if (!deviceHash) {
@@ -218,7 +245,8 @@ const SubscriptionTransferPanel: FC<SubscriptionTransferPanelProps> = ({
                 setEmail(event.target.value)
                 setError(null)
                 setSuccess(null)
-                setMagicLink(null)
+                setAppLink(null)
+                setActivationLink(null)
                 setExpiresAt(null)
               }}
               placeholder="name@example.com"
@@ -238,10 +266,28 @@ const SubscriptionTransferPanel: FC<SubscriptionTransferPanelProps> = ({
           ) : null}
         </form>
       )}
-      {magicLink && expiresAt ? (
+      {(expiresAt && (activationLink || appLink)) ? (
         <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/5 p-4 text-xs text-[var(--muted)]">
-          <div className="font-semibold text-[var(--fg)]">Magic link</div>
-          <code className="break-all rounded bg-black/30 px-2 py-1 text-[var(--fg)]">{magicLink}</code>
+          <div className="font-semibold text-[var(--fg)]">Activation details</div>
+          {activationLink ? (
+            <div className="flex flex-col gap-1">
+              <span className="font-semibold text-[var(--fg)]">Shareable link</span>
+              <a
+                href={activationLink}
+                target="_blank"
+                rel="noreferrer"
+                className="break-all text-[var(--link)] hover:underline"
+              >
+                {activationLink}
+              </a>
+            </div>
+          ) : null}
+          {appLink ? (
+            <div className="flex flex-col gap-1">
+              <span className="font-semibold text-[var(--fg)]">Direct app link</span>
+              <code className="break-all rounded bg-black/30 px-2 py-1 text-[var(--fg)]">{appLink}</code>
+            </div>
+          ) : null}
           <div>Link expires {formatTimestamp(expiresAt)}.</div>
         </div>
       ) : null}

@@ -17,6 +17,23 @@ let mainWindow: BrowserWindow | null = null
 let navigationState: NavigationState = { canGoBack: false, canGoForward: false }
 let pendingDeepLinks: string[] = []
 
+const focusMainWindow = (): void => {
+  if (!mainWindow) {
+    return
+  }
+  if (mainWindow.isDestroyed()) {
+    mainWindow = null
+    return
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore()
+  }
+  if (!mainWindow.isVisible()) {
+    mainWindow.show()
+  }
+  mainWindow.focus()
+}
+
 const singleInstanceLock = app.requestSingleInstanceLock()
 
 if (!singleInstanceLock) {
@@ -42,16 +59,21 @@ const enqueueDeepLink = (url: string): void => {
     return
   }
   if (mainWindow) {
+    focusMainWindow()
     mainWindow.webContents.send('deep-link', url)
     return
   }
   pendingDeepLinks.push(url)
+  if (app.isReady() && BrowserWindow.getAllWindows().length === 0) {
+    createWindow()
+  }
 }
 
 const flushPendingDeepLinks = (): void => {
   if (!mainWindow || pendingDeepLinks.length === 0) {
     return
   }
+  focusMainWindow()
   for (const url of pendingDeepLinks) {
     mainWindow.webContents.send('deep-link', url)
   }
@@ -60,10 +82,7 @@ const flushPendingDeepLinks = (): void => {
 
 app.on('second-instance', (_event, argv) => {
   if (mainWindow) {
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore()
-    }
-    mainWindow.focus()
+    focusMainWindow()
   }
   const urlArg = argv.find((arg) => arg.startsWith(`${DEEP_LINK_SCHEME}://`))
   if (urlArg) {
@@ -212,7 +231,9 @@ app.whenReady().then(() => {
     }
   })
 
-  createWindow()
+  if (!mainWindow) {
+    createWindow()
+  }
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

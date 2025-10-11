@@ -918,12 +918,11 @@ const Profile: FC<ProfileProps> = ({
     ? formatTimestamp(accessState.subscription.currentPeriodEnd)
     : null
   const offlineCountdownLabel = formatOfflineCountdown(accessState.offlineRemainingMs)
-  const hasTransferableSubscription = Boolean(
-    accessState.subscription?.subscriptionId || accessState.subscription?.customerId
-  )
-  const transferDisabledMessage = hasTransferableSubscription
-    ? null
-    : 'Subscribe before transferring access.'
+  const hasSubscriptionAccess =
+    accessState.access?.source === 'subscription' && Boolean(accessState.access?.isActive)
+  const shouldShowTransferPanel = hasSubscriptionAccess || accessState.transfer.status === 'pending'
+  const canInitiateTransfer = hasSubscriptionAccess
+  const transferDisabledMessage = canInitiateTransfer ? null : 'Subscribe before transferring access.'
   const transferControlDisabled = accessState.isLoading || isProcessingSubscription || isRefreshingAccess
   const accessSummary = accessState.transfer.status === 'locked'
     ? 'Access has moved to another device. Use the transfer controls below to reclaim it.'
@@ -1097,14 +1096,16 @@ const Profile: FC<ProfileProps> = ({
         )}
       </div>
 
-      <SubscriptionTransferPanel
-        deviceHash={deviceHash ?? null}
-        transfer={accessState.transfer}
-        isDisabled={transferControlDisabled}
-        canInitiate={hasTransferableSubscription}
-        disabledMessage={transferDisabledMessage}
-        onRefresh={handleRefreshAccessStatus}
-      />
+      {shouldShowTransferPanel ? (
+        <SubscriptionTransferPanel
+          deviceHash={deviceHash ?? null}
+          transfer={accessState.transfer}
+          isDisabled={transferControlDisabled}
+          canInitiate={canInitiateTransfer}
+          disabledMessage={transferDisabledMessage}
+          onRefresh={handleRefreshAccessStatus}
+        />
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-6">
