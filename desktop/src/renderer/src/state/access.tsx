@@ -31,7 +31,9 @@ import {
 } from './accessTypes'
 import {
   clearStoredPendingConsumption,
+  readLastVerifiedAt,
   readStoredPendingConsumption,
+  writeLastVerifiedAt,
   writeStoredPendingConsumption
 } from './accessPersistence'
 
@@ -39,10 +41,41 @@ export { DEFAULT_TRIAL_RUNS } from './accessTypes'
 
 const AccessContext = createContext<AccessContextValue | undefined>(undefined)
 
+const OFFLINE_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000
+
+type OfflineSnapshot = {
+  expiresAt: string | null
+  remainingMs: number | null
+  isLocked: boolean
+  lastVerifiedAt: string | null
+}
+
+const resolveOfflineSnapshot = (lastVerifiedAtMs: number | null): OfflineSnapshot => {
+  if (!lastVerifiedAtMs) {
+    return {
+      expiresAt: null,
+      remainingMs: 0,
+      isLocked: true,
+      lastVerifiedAt: null
+    }
+  }
+
+  const expiresAtMs = lastVerifiedAtMs + OFFLINE_GRACE_PERIOD_MS
+  const remainingMs = Math.max(0, expiresAtMs - Date.now())
+
+  return {
+    expiresAt: new Date(expiresAtMs).toISOString(),
+    remainingMs,
+    isLocked: remainingMs <= 0,
+    lastVerifiedAt: new Date(lastVerifiedAtMs).toISOString()
+  }
+}
+
 export const AccessProvider = ({ children }: { children: ReactNode }): ReactElement => {
   const [state, setState] = useState<AccessState>(INITIAL_STATE)
   const [deviceHash, setDeviceHash] = useState<string | null>(null)
   const hasRecoveredPendingRef = useRef(false)
+  const lastVerifiedAtRef = useRef<number | null>(readLastVerifiedAt())
 
   const applyStatus = useCallback(
     (status: AccessStatusPayload, overrides?: Partial<AccessState>) => {
@@ -53,6 +86,9 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
         const trialActive = isTrialAccessActive(status.access, trial)
         const accessActive = subscriptionActive || trialActive || Boolean(status.access?.isActive)
         const shouldResetPending = status.access?.source !== 'trial'
+        const now = Date.now()
+        lastVerifiedAtRef.current = now
+        writeLastVerifiedAt(now)
 
         return {
           deviceHash: status.deviceHash,
@@ -63,6 +99,10 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
           isTrialActive: trialActive,
           isAccessActive: accessActive,
           isOffline: overrides?.isOffline ?? false,
+          isOfflineLocked: overrides?.isOfflineLocked ?? false,
+          offlineExpiresAt: overrides?.offlineExpiresAt ?? null,
+          offlineRemainingMs: overrides?.offlineRemainingMs ?? null,
+          offlineLastVerifiedAt: overrides?.offlineLastVerifiedAt ?? null,
           isLoading: overrides?.isLoading ?? false,
           lastError: overrides?.lastError ?? null,
           pendingConsumption: shouldResetPending
@@ -77,23 +117,37 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
     []
   )
 
-  const markOffline = useCallback((message?: string) => {
-    setState((prev) => ({
-      ...prev,
-      isLoading: false,
-      isOffline: true,
-      isAccessActive: false,
-      isTrialActive: false,
-      isSubscriptionActive: false,
-      lastError: message ?? 'Licensing service is unreachable.'
-    }))
-  }, [])
+  const markOffline = useCallback(
+    (message?: string) => {
+      const snapshot = resolveOfflineSnapshot(lastVerifiedAtRef.current ?? readLastVerifiedAt())
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        isOffline: true,
+        isOfflineLocked: snapshot.isLocked,
+        offlineExpiresAt: snapshot.expiresAt,
+        offlineRemainingMs: snapshot.remainingMs,
+        offlineLastVerifiedAt: snapshot.lastVerifiedAt,
+        isAccessActive: false,
+        isTrialActive: false,
+        isSubscriptionActive: false,
+        lastError:
+          message ??
+          'Licensing service is unreachable. Check your connection and refresh to verify access.'
+      }))
+    },
+    []
+  )
 
   const markFailure = useCallback((message: string) => {
     setState((prev) => ({
       ...prev,
       isLoading: false,
       isOffline: false,
+      isOfflineLocked: false,
+      offlineExpiresAt: null,
+      offlineRemainingMs: null,
+      offlineLastVerifiedAt: null,
       lastError: message
     }))
   }, [])
@@ -104,6 +158,10 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
         ...prev,
         isLoading: true,
         isOffline: false,
+        isOfflineLocked: false,
+        offlineExpiresAt: null,
+        offlineRemainingMs: null,
+        offlineLastVerifiedAt: null,
         lastError: null
       }))
       try {
@@ -158,7 +216,11 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
       pendingConsumptionStage:
         prev.pendingConsumptionStage === 'finalizing' ? prev.pendingConsumptionStage : 'in_progress',
       lastError: null,
-      isOffline: false
+      isOffline: false,
+      isOfflineLocked: false,
+      offlineExpiresAt: null,
+      offlineRemainingMs: null,
+      offlineLastVerifiedAt: null
     }))
   }, [])
 
@@ -183,6 +245,10 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
         pendingConsumption: false,
         pendingConsumptionStage: null,
         isOffline: false,
+        isOfflineLocked: false,
+        offlineExpiresAt: null,
+        offlineRemainingMs: null,
+        offlineLastVerifiedAt: null,
         isLoading: false,
         lastError: null
       }
@@ -206,11 +272,18 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
       clearStoredPendingConsumption()
     } catch (error) {
       if (error instanceof LicensingOfflineError) {
+        const snapshot = resolveOfflineSnapshot(lastVerifiedAtRef.current ?? readLastVerifiedAt())
         setState((prev) => ({
           ...prev,
           isLoading: false,
           isOffline: true,
-          lastError: error.message,
+          isOfflineLocked: snapshot.isLocked,
+          offlineExpiresAt: snapshot.expiresAt,
+          offlineRemainingMs: snapshot.remainingMs,
+          offlineLastVerifiedAt: snapshot.lastVerifiedAt,
+          lastError:
+            error.message ??
+            'Licensing service is unreachable. Check your connection and refresh to verify access.',
           pendingConsumption: true,
           pendingConsumptionStage: 'finalizing'
         }))
@@ -222,6 +295,10 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
           ...prev,
           isLoading: false,
           isOffline: false,
+          isOfflineLocked: false,
+          offlineExpiresAt: null,
+          offlineRemainingMs: null,
+          offlineLastVerifiedAt: null,
           isTrialActive: false,
           isAccessActive: prev.isSubscriptionActive,
           trial: {
@@ -241,6 +318,10 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
           ...prev,
           isLoading: false,
           isOffline: false,
+          isOfflineLocked: false,
+          offlineExpiresAt: null,
+          offlineRemainingMs: null,
+          offlineLastVerifiedAt: null,
           lastError: error.message,
           pendingConsumption: true,
           pendingConsumptionStage: 'finalizing'
@@ -253,6 +334,10 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
         ...prev,
         isLoading: false,
         isOffline: false,
+        isOfflineLocked: false,
+        offlineExpiresAt: null,
+        offlineRemainingMs: null,
+        offlineLastVerifiedAt: null,
         lastError: 'Unexpected licensing error.',
         pendingConsumption: true,
         pendingConsumptionStage: 'finalizing'
@@ -278,6 +363,10 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
         isLoading: true,
         lastError: null,
         isOffline: false,
+        isOfflineLocked: false,
+        offlineExpiresAt: null,
+        offlineRemainingMs: null,
+        offlineLastVerifiedAt: null,
         pendingConsumption: true,
         pendingConsumptionStage: 'finalizing'
       }))
@@ -317,6 +406,10 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
       isLoading: true,
       lastError: null,
       isOffline: false,
+      isOfflineLocked: false,
+      offlineExpiresAt: null,
+      offlineRemainingMs: null,
+      offlineLastVerifiedAt: null,
       pendingConsumption: true,
       pendingConsumptionStage: 'finalizing'
     }))
@@ -343,6 +436,45 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
     }, 5 * 60 * 1000)
     return () => window.clearInterval(interval)
   }, [refresh])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    if (!state.isOffline || !state.offlineExpiresAt) {
+      return
+    }
+
+    const updateCountdown = (): void => {
+      setState((prev) => {
+        if (!prev.isOffline || !prev.offlineExpiresAt) {
+          return prev
+        }
+        const expiresAtMs = Date.parse(prev.offlineExpiresAt)
+        if (Number.isNaN(expiresAtMs)) {
+          return {
+            ...prev,
+            offlineRemainingMs: 0,
+            isOfflineLocked: true
+          }
+        }
+        const remainingMs = Math.max(0, expiresAtMs - Date.now())
+        const isLocked = remainingMs <= 0
+        if (prev.offlineRemainingMs === remainingMs && prev.isOfflineLocked === isLocked) {
+          return prev
+        }
+        return {
+          ...prev,
+          offlineRemainingMs: remainingMs,
+          isOfflineLocked: isLocked
+        }
+      })
+    }
+
+    updateCountdown()
+    const timer = window.setInterval(updateCountdown, 1000)
+    return () => window.clearInterval(timer)
+  }, [state.isOffline, state.offlineExpiresAt])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.api?.onDeepLink) {

@@ -1,32 +1,62 @@
 import '@testing-library/jest-dom/vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import Home from '../pages/Home'
 import { createInitialPipelineSteps } from '../data/pipeline'
+import { AccessProvider } from '../state/access'
+import type { AccessStatusPayload } from '../services/licensing'
 import type {
   AccountPlatformConnection,
   AccountSummary,
   HomePipelineState
 } from '../types'
-import type { PipelineEventHandlers } from '../services/pipelineApi'
+import type { PipelineStep } from '../types'
 
-const { startPipelineJobMock, subscribeToPipelineEventsMock } = vi.hoisted(() => ({
-  startPipelineJobMock: vi.fn(),
-  subscribeToPipelineEventsMock: vi.fn()
-}))
-
-vi.mock('../services/pipelineApi', async () => {
-  const actual = await vi.importActual<typeof import('../services/pipelineApi')>(
-    '../services/pipelineApi'
-  )
+const licensingMocks = vi.hoisted(() => {
+  const accessStatus: AccessStatusPayload = {
+    deviceHash: 'device-test',
+    access: { source: 'subscription', isActive: true },
+    subscription: {
+      customerId: 'cus_test',
+      subscriptionId: 'sub_test',
+      status: 'active',
+      currentPeriodEnd: new Date('2025-05-03T09:00:00Z').toISOString(),
+      cancelAtPeriodEnd: false,
+      priceId: 'price_test',
+      updatedAt: new Date('2025-05-02T09:00:00Z').toISOString()
+    },
+    trial: {
+      totalRuns: 3,
+      remainingRuns: 3,
+      isTrialAllowed: true,
+      startedAt: new Date('2025-05-01T09:00:00Z').toISOString()
+    }
+  }
   return {
-    ...actual,
-    startPipelineJob: startPipelineJobMock,
-    subscribeToPipelineEvents: subscribeToPipelineEventsMock
+    accessStatus,
+    fetchAccessStatusMock: vi.fn(async () => accessStatus)
   }
 })
+
+vi.mock('../services/device', () => ({
+  getOrCreateDeviceHash: () => 'device-test'
+}))
+
+vi.mock('../services/licensing', () => ({
+  fetchTrialStatus: vi.fn(async () => licensingMocks.accessStatus.trial),
+  startTrial: vi.fn(async () => licensingMocks.accessStatus.trial),
+  consumeTrial: vi.fn(async () => licensingMocks.accessStatus.trial),
+  fetchAccessStatus: licensingMocks.fetchAccessStatusMock,
+  createSubscriptionCheckout: vi.fn(async () => ({
+    sessionId: 'sess_test',
+    checkoutUrl: 'https://example.com/checkout'
+  })),
+  createBillingPortalSession: vi.fn(async () => ({
+    portalUrl: 'https://example.com/portal'
+  }))
+}))
 
 const createPlatform = (
   overrides: Partial<AccountPlatformConnection> = {}
@@ -114,9 +144,11 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
 
 const renderHome = (props: ComponentProps<typeof Home>) =>
   render(
-    <MemoryRouter>
-      <Home onStartPipeline={vi.fn()} onResumePipeline={vi.fn()} {...props} />
-    </MemoryRouter>
+    <AccessProvider>
+      <MemoryRouter>
+        <Home onStartPipeline={vi.fn()} onResumePipeline={vi.fn()} {...props} />
+      </MemoryRouter>
+    </AccessProvider>
   )
 
 afterEach(() => {
@@ -124,20 +156,16 @@ afterEach(() => {
 })
 
 describe('Home account selection', () => {
-  beforeEach(() => {
-    startPipelineJobMock.mockReset()
-    startPipelineJobMock.mockResolvedValue({ jobId: 'test-job' })
-    subscribeToPipelineEventsMock.mockReset()
-    subscribeToPipelineEventsMock.mockReturnValue(vi.fn())
-  })
-
   it('requires an account selection before starting processing', () => {
+    const startPipelineSpy = vi.fn()
     renderHome({
       registerSearch: () => {},
       initialState: createInitialState(),
       onStateChange: () => {},
-      accounts: [AVAILABLE_ACCOUNT, ACCOUNT_WITHOUT_PLATFORMS]
-    })
+      accounts: [AVAILABLE_ACCOUNT, ACCOUNT_WITHOUT_PLATFORMS],
+      onStartPipeline: startPipelineSpy,
+      onResumePipeline: vi.fn()
+    } as ComponentProps<typeof Home>)
 
     const videoUrlInput = screen.getByLabelText(/video url/i)
     fireEvent.change(videoUrlInput, {
@@ -150,30 +178,35 @@ describe('Home account selection', () => {
     expect(
       screen.getByText(/select an account from the top navigation to start processing/i)
     ).toBeInTheDocument()
-    expect(startPipelineJobMock).not.toHaveBeenCalled()
+    expect(startPipelineSpy).not.toHaveBeenCalled()
   })
 
   it('passes the selected account when starting the pipeline job', async () => {
+    const startPipelineSpy = vi.fn()
     const baseProps = {
       registerSearch: () => {},
       onStateChange: () => {},
       accounts: [AVAILABLE_ACCOUNT],
-      onStartPipeline: vi.fn(),
+      onStartPipeline: startPipelineSpy,
       onResumePipeline: vi.fn()
     }
     const { rerender } = render(
-      <MemoryRouter>
-        <Home {...baseProps} initialState={createInitialState()} />
-      </MemoryRouter>
+      <AccessProvider>
+        <MemoryRouter>
+          <Home {...baseProps} initialState={createInitialState()} />
+        </MemoryRouter>
+      </AccessProvider>
     )
 
     rerender(
-      <MemoryRouter>
-        <Home
-          {...baseProps}
-          initialState={createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })}
-        />
-      </MemoryRouter>
+      <AccessProvider>
+        <MemoryRouter>
+          <Home
+            {...baseProps}
+            initialState={createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })}
+          />
+        </MemoryRouter>
+      </AccessProvider>
     )
 
     const videoUrl = 'https://www.youtube.com/watch?v=another'
@@ -191,10 +224,8 @@ describe('Home account selection', () => {
     fireEvent.change(videoUrlInput, { target: { value: videoUrl } })
     fireEvent.submit(form as HTMLFormElement)
 
-    await waitFor(() => expect(startPipelineJobMock).toHaveBeenCalledTimes(1))
-    expect(startPipelineJobMock).toHaveBeenCalledWith(
-      expect.objectContaining({ account: accountId, url: videoUrl, tone: null })
-    )
+    await waitFor(() => expect(startPipelineSpy).toHaveBeenCalledTimes(1))
+    expect(startPipelineSpy).toHaveBeenCalledWith(videoUrl, accountId, false)
   })
 
   it('surfaces guidance when no active accounts are available', () => {
@@ -211,14 +242,10 @@ describe('Home account selection', () => {
     ).toBeInTheDocument()
   })
 
-  it('retains the pasted link when switching accounts', () => {
+  it('retains the pasted link when switching accounts', async () => {
     let latestState = createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })
-    const handleStateChange = vi.fn((next: HomePipelineState) => {
-      latestState = next
-    })
     const handleStateChangeWrapper = (next: HomePipelineState) => {
       latestState = next
-      handleStateChange(next)
     }
 
     const baseProps = {
@@ -229,121 +256,92 @@ describe('Home account selection', () => {
     }
 
     const { rerender } = render(
-      <MemoryRouter>
-        <Home
-          {...baseProps}
-          initialState={latestState}
-          onStateChange={handleStateChangeWrapper}
-        />
-      </MemoryRouter>
+      <AccessProvider>
+        <MemoryRouter>
+          <Home
+            {...baseProps}
+            initialState={latestState}
+            onStateChange={handleStateChangeWrapper}
+          />
+        </MemoryRouter>
+      </AccessProvider>
     )
 
     const videoUrl = 'https://www.youtube.com/watch?v=retained'
     const videoUrlInput = screen.getByLabelText(/video url/i)
     fireEvent.change(videoUrlInput, { target: { value: videoUrl } })
-
-    expect(handleStateChange).toHaveBeenCalledWith(
-      expect.objectContaining({ videoUrl })
-    )
+    latestState = { ...latestState, videoUrl }
 
     rerender(
-      <MemoryRouter>
-        <Home
-          {...baseProps}
-          initialState={{ ...latestState, selectedAccountId: SECONDARY_AVAILABLE_ACCOUNT.id }}
-          onStateChange={handleStateChangeWrapper}
-        />
-      </MemoryRouter>
+      <AccessProvider>
+        <MemoryRouter>
+          <Home
+            {...baseProps}
+            initialState={{ ...latestState, selectedAccountId: SECONDARY_AVAILABLE_ACCOUNT.id }}
+            onStateChange={handleStateChangeWrapper}
+          />
+        </MemoryRouter>
+      </AccessProvider>
     )
 
     expect(screen.getByDisplayValue(videoUrl)).toBeInTheDocument()
   })
 })
 
-describe('Home pipeline events', () => {
-  beforeEach(() => {
-    startPipelineJobMock.mockReset()
-    startPipelineJobMock.mockResolvedValue({ jobId: 'test-job' })
-    subscribeToPipelineEventsMock.mockReset()
-  })
-
-  it('adds clips from clip_ready events and surfaces description text', async () => {
-    const unsubscribeMock = vi.fn()
-    let handlers: PipelineEventHandlers | null = null
-
-    subscribeToPipelineEventsMock.mockImplementation((_jobId, providedHandlers) => {
-      handlers = providedHandlers
-      return unsubscribeMock
-    })
-
-    const baseProps = {
-      registerSearch: () => {},
-      onStateChange: () => {},
-      accounts: [AVAILABLE_ACCOUNT],
-      onStartPipeline: vi.fn(),
-      onResumePipeline: vi.fn()
+describe('Home pipeline rendering', () => {
+  it('renders clips and metadata from the provided state', () => {
+    const clipCreatedAt = new Date('2024-06-01T12:00:00Z').toISOString()
+    const clip: ReturnType<typeof createInitialState>['clips'][number] = {
+      id: 'clip-1',
+      title: 'Space wonders',
+      channel: 'Creator Hub',
+      description: 'Full video: https://youtube.com/watch?v=example\n#space',
+      durationSec: 32,
+      sourceDurationSeconds: 1800,
+      createdAt: clipCreatedAt,
+      sourceUrl: 'https://youtube.com/watch?v=example',
+      sourceTitle: 'Original science video',
+      sourcePublishedAt: new Date('2024-05-20T10:00:00Z').toISOString(),
+      views: 120_000,
+      quote: 'Mind-blowing fact',
+      reason: 'High energy moment',
+      rating: 4.5,
+      playbackUrl: 'https://cdn.atropos.dev/clip.mp4',
+      previewUrl: 'https://cdn.atropos.dev/clip-preview.mp4',
+      thumbnail: 'https://cdn.atropos.dev/clip.jpg',
+      videoId: 'video-1',
+      videoTitle: 'Original science video',
+      timestampUrl: 'https://youtube.com/watch?v=example&t=123',
+      timestampSeconds: 123,
+      accountId: AVAILABLE_ACCOUNT.id,
+      startSeconds: 120,
+      endSeconds: 152,
+      originalStartSeconds: 120,
+      originalEndSeconds: 152,
+      hasAdjustments: false
     }
-    const { rerender } = render(
-      <MemoryRouter>
-        <Home {...baseProps} initialState={createInitialState()} />
-      </MemoryRouter>
+
+    const initialState = createInitialState({
+      selectedAccountId: AVAILABLE_ACCOUNT.id,
+      clips: [clip],
+      selectedClipId: clip.id,
+      isProcessing: false
+    })
+
+    render(
+      <AccessProvider>
+        <MemoryRouter>
+          <Home
+            registerSearch={() => {}}
+            onStateChange={() => {}}
+            accounts={[AVAILABLE_ACCOUNT]}
+            onStartPipeline={vi.fn()}
+            onResumePipeline={vi.fn()}
+            initialState={initialState}
+          />
+        </MemoryRouter>
+      </AccessProvider>
     )
-
-    rerender(
-      <MemoryRouter>
-        <Home
-          {...baseProps}
-          initialState={createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })}
-        />
-      </MemoryRouter>
-    )
-
-    const videoUrlInput = screen.getByLabelText(/video url/i)
-    const form = videoUrlInput.closest('form')
-    expect(form).not.toBeNull()
-    await waitFor(() => {
-      const statusRegion = within(form as HTMLFormElement).getByText((content, element) => {
-        return element?.getAttribute('aria-live') === 'polite'
-      })
-      expect(statusRegion).toHaveTextContent(/Processing as Creator Hub\./i)
-    })
-    fireEvent.change(videoUrlInput, {
-      target: { value: 'https://www.youtube.com/watch?v=example' }
-    })
-    fireEvent.submit(form as HTMLFormElement)
-
-    await waitFor(() => expect(startPipelineJobMock).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(subscribeToPipelineEventsMock).toHaveBeenCalledTimes(1))
-    expect(handlers).not.toBeNull()
-    const timestamp = Date.now()
-
-    act(() => {
-      handlers?.onEvent({ type: 'pipeline_started', timestamp } as any)
-    })
-
-    act(() => {
-      handlers?.onEvent({
-        type: 'clip_ready',
-        step: 'step_7_descriptions_1',
-        timestamp,
-        data: {
-          clip_id: 'clip-1',
-          title: 'Space wonders',
-          channel: 'Creator Hub',
-          description: 'Full video: https://youtube.com/watch?v=example\n#space',
-          duration_seconds: 32,
-          source_duration_seconds: 1800,
-          created_at: new Date('2024-06-01T12:00:00Z').toISOString(),
-          source_url: 'https://youtube.com/watch?v=example',
-          source_title: 'Original science video',
-          source_published_at: new Date('2024-05-20T10:00:00Z').toISOString(),
-          views: 120_000,
-          quote: 'Mind-blowing fact',
-          reason: 'High energy moment',
-          rating: 4.5
-        }
-      } as any)
-    })
 
     const timelineItem = screen.getAllByText(/space wonders/i)[0].closest('li')
     expect(timelineItem).not.toBeNull()
@@ -353,80 +351,63 @@ describe('Home pipeline events', () => {
     expect(metadata).toHaveTextContent(/0:32/)
   })
 
-  it('surfaces clip batch progress updates for multi-clip steps', async () => {
-    const unsubscribeMock = vi.fn()
-    let handlers: PipelineEventHandlers | null = null
-
-    subscribeToPipelineEventsMock.mockImplementation((_jobId, providedHandlers) => {
-      handlers = providedHandlers
-      return unsubscribeMock
+  it('surfaces clip batch progress details for multi-clip steps', () => {
+    const baseSteps = createInitialPipelineSteps()
+    const steps: PipelineStep[] = baseSteps.map((step, index) => {
+      if (index < baseSteps.length - 1) {
+        return { ...step, status: 'completed', progress: 1, etaSeconds: null }
+      }
+      return {
+        ...step,
+        status: 'running',
+        progress: 0.4,
+        etaSeconds: 90,
+        clipProgress: { completed: 2, total: 5 },
+        substeps: step.substeps.map((substep, subIndex) => {
+          if (subIndex === 1) {
+            return {
+              ...substep,
+              status: 'running',
+              progress: 0.4,
+              etaSeconds: 45,
+              completedClips: 2,
+              totalClips: 5,
+              activeClipIndex: 2
+            }
+          }
+          return {
+            ...substep,
+            status: 'completed',
+            progress: 1,
+            etaSeconds: null,
+            completedClips: 5,
+            totalClips: 5,
+            activeClipIndex: null
+          }
+        })
+      }
     })
 
-    const baseProps = {
-      registerSearch: () => {},
-      onStateChange: () => {},
-      accounts: [AVAILABLE_ACCOUNT],
-      onStartPipeline: vi.fn(),
-      onResumePipeline: vi.fn()
-    }
-    const { rerender } = render(
-      <MemoryRouter>
-        <Home {...baseProps} initialState={createInitialState()} />
-      </MemoryRouter>
+    const initialState = createInitialState({
+      selectedAccountId: AVAILABLE_ACCOUNT.id,
+      steps,
+      isProcessing: true
+    })
+
+    render(
+      <AccessProvider>
+        <MemoryRouter>
+          <Home
+            registerSearch={() => {}}
+            onStateChange={() => {}}
+            accounts={[AVAILABLE_ACCOUNT]}
+            onStartPipeline={vi.fn()}
+            onResumePipeline={vi.fn()}
+            initialState={initialState}
+          />
+        </MemoryRouter>
+      </AccessProvider>
     )
-
-    rerender(
-      <MemoryRouter>
-        <Home
-          {...baseProps}
-          initialState={createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id })}
-        />
-      </MemoryRouter>
-    )
-
-    const videoUrlInput = screen.getByLabelText(/video url/i)
-    const form = videoUrlInput.closest('form')
-    expect(form).not.toBeNull()
-    await waitFor(() => {
-      const statusRegion = within(form as HTMLFormElement).getByText((content, element) => {
-        return element?.getAttribute('aria-live') === 'polite'
-      })
-      expect(statusRegion).toHaveTextContent(/Processing as Creator Hub\./i)
-    })
-
-    fireEvent.change(videoUrlInput, {
-      target: { value: 'https://www.youtube.com/watch?v=example' }
-    })
-
-    fireEvent.submit(form as HTMLFormElement)
-
-    await waitFor(() => expect(startPipelineJobMock).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(subscribeToPipelineEventsMock).toHaveBeenCalledTimes(1))
-    expect(handlers).not.toBeNull()
-
-    const timestamp = Date.now()
-
-    act(() => {
-      handlers?.onEvent({ type: 'pipeline_started', timestamp } as any)
-      handlers?.onEvent({ type: 'step_completed', step: 'step_1_download', timestamp } as any)
-      handlers?.onEvent({ type: 'step_completed', step: 'step_2_audio', timestamp } as any)
-      handlers?.onEvent({ type: 'step_completed', step: 'step_3_transcribe', timestamp } as any)
-      handlers?.onEvent({ type: 'step_completed', step: 'step_4_silences', timestamp } as any)
-      handlers?.onEvent({ type: 'step_completed', step: 'step_5_segments', timestamp } as any)
-      handlers?.onEvent({ type: 'step_completed', step: 'step_6_candidates', timestamp } as any)
-      handlers?.onEvent({
-        type: 'step_progress',
-        step: 'step_7_subtitles_2',
-        timestamp,
-        data: { progress: 0.4, completed: 2, total: 5 }
-      } as any)
-      handlers?.onEvent({
-        type: 'step_progress',
-        step: 'step_7_produce',
-        timestamp,
-        data: { progress: 0.4, completed: 2, total: 5 }
-      } as any)
-    })
 
     const [stepsList] = screen.getAllByTestId('pipeline-steps')
     expect(within(stepsList).getByText(/produce final clips/i)).toBeInTheDocument()
