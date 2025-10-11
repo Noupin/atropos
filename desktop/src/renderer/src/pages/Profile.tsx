@@ -15,6 +15,7 @@ import MarbleSelect from '../components/MarbleSelect'
 import { getBadgeClassName, type BadgeVariant } from '../components/badgeStyles'
 import { resolveAccessBadge } from '../components/accessBadge'
 import { DEFAULT_TRIAL_RUNS, useAccess } from '../state/access'
+import { formatOfflineCountdown } from '../state/accessFormatting'
 import {
   LicensingOfflineError,
   LicensingRequestError,
@@ -915,8 +916,15 @@ const Profile: FC<ProfileProps> = ({
   const currentPeriodEndLabel = accessState.subscription?.currentPeriodEnd
     ? formatTimestamp(accessState.subscription.currentPeriodEnd)
     : null
+  const offlineCountdownLabel = formatOfflineCountdown(accessState.offlineRemainingMs)
   const accessSummary = accessState.isOffline
-    ? 'Offline mode — licensing service unreachable.'
+    ? accessState.isOfflineLocked
+      ? 'Offline mode — reconnect to verify your subscription.'
+      : accessState.access?.source === 'subscription'
+        ? offlineCountdownLabel
+          ? `Offline mode — reconnect within ${offlineCountdownLabel} to keep your subscription active.`
+          : 'Offline mode — reconnect soon to verify your subscription.'
+        : 'Offline mode — reconnect to verify access.'
     : accessState.isSubscriptionActive
       ? currentPeriodEndLabel
         ? `Subscription active · Renews ${currentPeriodEndLabel}`
@@ -1007,6 +1015,11 @@ const Profile: FC<ProfileProps> = ({
               </span>
             </div>
             <p className="text-xs text-[var(--muted)]">{accessSummary}</p>
+            {accessState.isOffline && accessState.offlineLastVerifiedAt ? (
+              <p className="text-xs text-[var(--muted)]">
+                Last verified {timeAgo(accessState.offlineLastVerifiedAt)}.
+              </p>
+            ) : null}
             {showTrialDetails ? (
               <p className="text-xs text-[var(--muted)]">
                 Trial remaining: {remainingTrialRuns} / {totalTrialRuns}

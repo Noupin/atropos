@@ -16,6 +16,7 @@ import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
 import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
 import { useAccess } from '../state/access'
+import { formatOfflineCountdown } from '../state/accessFormatting'
 
 const SUPPORTED_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv'] as const
 
@@ -122,6 +123,7 @@ const Home: FC<HomeProps> = ({
 
   const timersRef = useRef<number[]>([])
   const runStepRef = useRef<(index: number) => void>(() => {})
+  const offlineRestrictionMessageRef = useRef<string | null>(null)
 
   const isMockBackend = BACKEND_MODE === 'mock'
 
@@ -259,6 +261,60 @@ const Home: FC<HomeProps> = ({
     [updateState]
   )
 
+  const offlineRestrictionMessage = useMemo(() => {
+    if (!accessState.isOffline) {
+      return null
+    }
+    if (accessState.isOfflineLocked) {
+      return 'Offline access expired. Reconnect to verify your subscription before processing.'
+    }
+    if (accessState.access?.source === 'subscription') {
+      return null
+    }
+    if (accessState.access?.source === 'trial') {
+      return 'Trial runs require an internet connection. Reconnect to continue processing.'
+    }
+    return 'Reconnect to the internet to verify your access before processing.'
+  }, [accessState.access?.source, accessState.isOffline, accessState.isOfflineLocked])
+
+  const offlineCountdownMessage = useMemo(() => {
+    if (!accessState.isOffline || accessState.isOfflineLocked) {
+      return null
+    }
+    if (accessState.access?.source !== 'subscription') {
+      return null
+    }
+    const countdownLabel = formatOfflineCountdown(accessState.offlineRemainingMs)
+    if (countdownLabel) {
+      return `Offline mode — reconnect within ${countdownLabel} to keep your subscription active.`
+    }
+    return 'Offline mode — reconnect soon to keep your subscription active.'
+  }, [
+    accessState.access?.source,
+    accessState.isOffline,
+    accessState.isOfflineLocked,
+    accessState.offlineRemainingMs
+  ])
+
+  useEffect(() => {
+    if (!offlineRestrictionMessage) {
+      const lastMessage = offlineRestrictionMessageRef.current
+      if (!lastMessage) {
+        return
+      }
+      offlineRestrictionMessageRef.current = null
+      updateState((prev) => {
+        if (prev.pipelineError === lastMessage) {
+          return { ...prev, pipelineError: null }
+        }
+        return prev
+      })
+      return
+    }
+
+    offlineRestrictionMessageRef.current = offlineRestrictionMessage
+  }, [offlineRestrictionMessage, updateState])
+
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
@@ -294,6 +350,16 @@ const Home: FC<HomeProps> = ({
       }
 
       if (hasError || !accountId || !isUrlValid) {
+        return
+      }
+
+      if (offlineRestrictionMessage) {
+        offlineRestrictionMessageRef.current = offlineRestrictionMessage
+        updateState((prev) => ({
+          ...prev,
+          pipelineError: offlineRestrictionMessage,
+          isProcessing: false
+        }))
         return
       }
 
@@ -349,6 +415,7 @@ const Home: FC<HomeProps> = ({
       selectedAccountId,
       onStartPipeline,
       reviewMode,
+      offlineRestrictionMessage,
       accessState.isTrialActive,
       accessState.pendingConsumption,
       accessState.pendingConsumptionStage,
@@ -517,6 +584,12 @@ const Home: FC<HomeProps> = ({
     if (pipelineError) {
       return pipelineError
     }
+    if (offlineRestrictionMessage) {
+      return offlineRestrictionMessage
+    }
+    if (offlineCountdownMessage) {
+      return offlineCountdownMessage
+    }
     if (awaitingReview) {
       return 'Pipeline paused for manual clip review. Adjust boundaries, then resume when ready.'
     }
@@ -542,6 +615,8 @@ const Home: FC<HomeProps> = ({
     currentStep,
     isProcessing,
     pipelineError,
+    offlineCountdownMessage,
+    offlineRestrictionMessage,
     accessState.pendingConsumption,
     accessState.pendingConsumptionStage
   ])
@@ -613,7 +688,12 @@ const Home: FC<HomeProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="submit"
-                    disabled={!videoUrl.trim() || isProcessing || accessState.pendingConsumption}
+                    disabled={
+                      !videoUrl.trim() ||
+                      isProcessing ||
+                      accessState.pendingConsumption ||
+                      Boolean(offlineRestrictionMessage)
+                    }
                     className="marble-button marble-button--primary whitespace-nowrap px-5 py-2.5 text-sm font-semibold sm:px-6 sm:py-2.5 sm:text-base"
                   >
                     {isProcessing ? 'Processing…' : 'Start processing'}
