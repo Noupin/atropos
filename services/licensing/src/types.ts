@@ -4,10 +4,28 @@ export interface TrialInfo {
   startedAt: string
 }
 
+export type TransferLifecycleState = 'pending' | 'completed' | 'cancelled'
+
 export interface TransferInfo {
   email: string
-  token: string
-  expiresAt: string
+  token: string | null
+  expiresAt: string | null
+  initiatedAt: string
+  status: TransferLifecycleState
+  targetDeviceHash: string | null
+  completedAt: string | null
+  cancelledAt: string | null
+}
+
+export type TransferStatus = 'none' | 'pending' | 'locked'
+
+export interface TransferStateSummary {
+  status: TransferStatus
+  email: string | null
+  initiatedAt: string | null
+  expiresAt: string | null
+  completedAt: string | null
+  targetDeviceHash: string | null
 }
 
 export type SubscriptionStatus =
@@ -40,7 +58,7 @@ export interface DeviceRecord {
 export interface StoredDeviceRecord {
   trial: TrialInfo
   subscription?: Partial<SubscriptionInfo> | null
-  transfer?: TransferInfo
+  transfer?: Partial<TransferInfo> | null
   updatedAt?: string
 }
 
@@ -73,4 +91,5 @@ export interface SubscriptionStatusResponse {
   access: AccessSummary
   subscription: SubscriptionInfo | null
   trial: TrialInfo | null
+  transfer: TransferStateSummary
 }
