@@ -149,8 +149,35 @@ export const acceptTransfer = async (request: Request, env: Env): Promise<Respon
   const sanitized = rest as DeviceRecord
   const nowIso = new Date().toISOString()
 
+  const sourceSubscription = {
+    customerId: record.subscription.customerId,
+    subscriptionId: record.subscription.subscriptionId,
+    status: record.subscription.status,
+    currentPeriodEnd: record.subscription.currentPeriodEnd,
+    cancelAtPeriodEnd: record.subscription.cancelAtPeriodEnd,
+    priceId: record.subscription.priceId,
+    updatedAt: nowIso
+  }
+
+  const clearedSubscription = {
+    customerId: sourceSubscription.customerId,
+    subscriptionId: sourceSubscription.subscriptionId,
+    status: null,
+    currentPeriodEnd: null,
+    cancelAtPeriodEnd: false,
+    priceId: sourceSubscription.priceId,
+    updatedAt: nowIso
+  }
+
+  const targetRecord: DeviceRecord = {
+    ...sanitized,
+    subscription: sourceSubscription,
+    updatedAt: nowIso
+  }
+
   const locked: DeviceRecord = {
     ...record,
+    subscription: clearedSubscription,
     transfer: {
       email: record.transfer?.email ?? '',
       token: null,
@@ -165,7 +192,7 @@ export const acceptTransfer = async (request: Request, env: Env): Promise<Respon
   }
 
   await putDeviceRecord(env, sourceDeviceHash, locked)
-  await putDeviceRecord(env, deviceHash, { ...sanitized, updatedAt: nowIso })
+  await putDeviceRecord(env, deviceHash, targetRecord)
 
   return jsonResponse({ success: true })
 }

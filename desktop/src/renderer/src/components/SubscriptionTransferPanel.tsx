@@ -32,7 +32,20 @@ type SubscriptionTransferPanelProps = {
 const buildMailtoUrl = (email: string, link: string, expiresAt: string): string => {
   const subject = 'Transfer your Atropos subscription'
   const expiration = formatTimestamp(expiresAt)
-  const body = `Use the link below to activate your subscription on this device.\\n\\n${link}\\n\\nThe link expires at ${expiration}.`
+  const lines = [
+    'Hi,',
+    '',
+    'Click the link below to activate your Atropos subscription on this device:',
+    '',
+    `<${link}>`,
+    '',
+    `This secure link expires ${expiration}.`,
+    '',
+    'If you did not request this, you can safely ignore this email.',
+    '',
+    '— The Atropos Team'
+  ]
+  const body = lines.join('\r\n')
   const encodedSubject = encodeURIComponent(subject)
   const encodedBody = encodeURIComponent(body)
   return `mailto:${encodeURIComponent(email)}?subject=${encodedSubject}&body=${encodedBody}`
