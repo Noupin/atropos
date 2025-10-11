@@ -259,15 +259,47 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     return null
   }, [homeProgressSummary.status, homeState.awaitingReview])
 
+  const clipProductionTargets = useMemo(() => {
+    const clipStep = homeState.steps.find((step) => step.id === 'produce-clips')
+    if (!clipStep) {
+      return { expectedTotal: null, completed: 0 }
+    }
+
+    const clipProgress = clipStep.clipProgress
+    const completedFromProgress = clipProgress ? Math.max(0, clipProgress.completed) : 0
+    const totals = clipStep.substeps.map((substep) => Math.max(0, substep.totalClips))
+    if (clipProgress) {
+      totals.push(Math.max(0, clipProgress.total))
+    }
+    const expectedTotal = totals.reduce((max, value) => Math.max(max, value), 0)
+
+    return {
+      expectedTotal: expectedTotal > 0 ? expectedTotal : null,
+      completed: completedFromProgress
+    }
+  }, [homeState.steps])
+
+  const shouldDelayLibraryRedirect = useMemo(
+    () =>
+      clipProductionTargets.expectedTotal !== null &&
+      clipProductionTargets.expectedTotal > 1 &&
+      homeProgressSummary.status !== 'completed',
+    [clipProductionTargets.expectedTotal, homeProgressSummary.status]
+  )
+
   const handleFirstClipReady = useCallback(
     ({ jobId }: { jobId: string }) => {
-      if (redirectedJobRef.current === jobId || libraryNavigationDisabled) {
+      if (
+        redirectedJobRef.current === jobId ||
+        libraryNavigationDisabled ||
+        shouldDelayLibraryRedirect
+      ) {
         return
       }
       redirectedJobRef.current = jobId
       navigate('/library')
     },
-    [navigate, libraryNavigationDisabled]
+    [navigate, libraryNavigationDisabled, shouldDelayLibraryRedirect]
   )
 
   const handlePipelineFinished = useCallback(
@@ -326,14 +358,14 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       return [] as PendingLibraryProject[]
     }
 
-    const clipStep = homeState.steps.find((step) => step.id === 'produce-clips')
-    const clipProgress = clipStep?.clipProgress ?? null
     const completedClips = Math.max(
       homeState.clips.length,
-      clipProgress ? Math.max(0, clipProgress.completed) : 0
+      clipProductionTargets.completed
     )
-    const rawTotal = clipProgress ? Math.max(0, clipProgress.total) : 0
-    const totalClips = rawTotal > 0 ? rawTotal : null
+    const totalClips =
+      clipProductionTargets.expectedTotal !== null
+        ? Math.max(clipProductionTargets.expectedTotal, completedClips)
+        : null
     const latestClip = homeState.clips[0]
     const projectId = latestClip.videoId || latestClip.id
     const title = latestClip.videoTitle || latestClip.sourceTitle || latestClip.title
@@ -348,7 +380,13 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
         totalClips
       }
     ] satisfies PendingLibraryProject[]
-  }, [homeState.activeJobId, homeState.clips, homeState.isProcessing, homeState.steps])
+  }, [
+    clipProductionTargets,
+    homeState.activeJobId,
+    homeState.clips,
+    homeState.isProcessing,
+    homeState.steps
+  ])
 
   useEffect(() => {
     if (typeof document === 'undefined') {
