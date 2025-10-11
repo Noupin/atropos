@@ -1,3 +1,5 @@
+import { timeAgo } from '../lib/format'
+import { formatOfflineCountdown } from '../state/accessFormatting'
 import type { AccessState } from '../state/accessTypes'
 import type { BadgeVariant } from './badgeStyles'
 
@@ -14,9 +16,32 @@ export const resolveAccessBadge = (state: AccessState): AccessBadgePresentation 
   let title: string | undefined
 
   if (state.isOffline) {
-    label = 'Offline'
-    variant = 'neutral'
-    title = 'Licensing service unreachable. Access status cannot be verified.'
+    const countdownLabel = formatOfflineCountdown(state.offlineRemainingMs)
+    const lastVerifiedLabel = state.offlineLastVerifiedAt
+      ? timeAgo(state.offlineLastVerifiedAt)
+      : null
+    const isSubscriptionSource = state.access?.source === 'subscription'
+    if (state.isOfflineLocked) {
+      label = 'Offline · Access locked'
+      variant = 'error'
+      title =
+        'Offline access expired. Reconnect to verify your subscription before processing.' +
+        (lastVerifiedLabel ? ` Last checked ${lastVerifiedLabel}.` : '')
+    } else if (state.access?.source === 'trial') {
+      label = 'Offline · Trial locked'
+      variant = 'error'
+      title = 'Trial runs require an internet connection. Reconnect to continue processing.'
+    } else if (isSubscriptionSource) {
+      label = countdownLabel ? `Offline · ${countdownLabel} left` : 'Offline · Pending verification'
+      variant = 'warning'
+      title =
+        `Subscription verified offline. Reconnect within ${countdownLabel ?? 'the grace period'} to keep processing.` +
+        (lastVerifiedLabel ? ` Last checked ${lastVerifiedLabel}.` : '')
+    } else {
+      label = 'Offline · Access paused'
+      variant = 'error'
+      title = 'Licensing service unreachable. Reconnect to verify access.'
+    }
   } else if (state.isLoading) {
     label = 'Checking access…'
     variant = 'neutral'

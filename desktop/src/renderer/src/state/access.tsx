@@ -120,21 +120,46 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
   const markOffline = useCallback(
     (message?: string) => {
       const snapshot = resolveOfflineSnapshot(lastVerifiedAtRef.current ?? readLastVerifiedAt())
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        isOffline: true,
-        isOfflineLocked: snapshot.isLocked,
-        offlineExpiresAt: snapshot.expiresAt,
-        offlineRemainingMs: snapshot.remainingMs,
-        offlineLastVerifiedAt: snapshot.lastVerifiedAt,
-        isAccessActive: false,
-        isTrialActive: false,
-        isSubscriptionActive: false,
-        lastError:
-          message ??
-          'Licensing service is unreachable. Check your connection and refresh to verify access.'
-      }))
+      setState((prev) => {
+        const wasSubscriptionActive = prev.isSubscriptionActive
+        const accessSource = prev.access?.source ?? 'none'
+        const nextIsSubscriptionActive = snapshot.isLocked ? false : wasSubscriptionActive
+        const nextIsAccessActive = snapshot.isLocked
+          ? false
+          : accessSource === 'subscription' && wasSubscriptionActive
+        let nextError = message
+        if (!nextError) {
+          if (snapshot.isLocked) {
+            nextError =
+              accessSource === 'subscription'
+                ? 'Offline access expired. Reconnect to verify your subscription before processing.'
+                : 'Offline access expired. Reconnect to the internet to resume processing.'
+          } else if (accessSource === 'trial') {
+            nextError =
+              'Trial runs require an internet connection. Reconnect to continue processing.'
+          } else if (accessSource === 'subscription' && wasSubscriptionActive) {
+            nextError =
+              'Licensing service is unreachable. Reconnect within 24 hours to keep your subscription active.'
+          } else {
+            nextError =
+              'Licensing service is unreachable. Check your connection and refresh to verify access.'
+          }
+        }
+
+        return {
+          ...prev,
+          isLoading: false,
+          isOffline: true,
+          isOfflineLocked: snapshot.isLocked,
+          offlineExpiresAt: snapshot.expiresAt,
+          offlineRemainingMs: snapshot.remainingMs,
+          offlineLastVerifiedAt: snapshot.lastVerifiedAt,
+          isAccessActive: nextIsAccessActive,
+          isTrialActive: false,
+          isSubscriptionActive: nextIsSubscriptionActive,
+          lastError: nextError
+        }
+      })
     },
     []
   )
@@ -273,20 +298,31 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
     } catch (error) {
       if (error instanceof LicensingOfflineError) {
         const snapshot = resolveOfflineSnapshot(lastVerifiedAtRef.current ?? readLastVerifiedAt())
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          isOffline: true,
-          isOfflineLocked: snapshot.isLocked,
-          offlineExpiresAt: snapshot.expiresAt,
-          offlineRemainingMs: snapshot.remainingMs,
-          offlineLastVerifiedAt: snapshot.lastVerifiedAt,
-          lastError:
-            error.message ??
-            'Licensing service is unreachable. Check your connection and refresh to verify access.',
-          pendingConsumption: true,
-          pendingConsumptionStage: 'finalizing'
-        }))
+        setState((prev) => {
+          const wasSubscriptionActive = prev.isSubscriptionActive
+          const accessSource = prev.access?.source ?? 'none'
+          const nextIsSubscriptionActive = snapshot.isLocked ? false : wasSubscriptionActive
+          const nextIsAccessActive = snapshot.isLocked
+            ? false
+            : accessSource === 'subscription' && wasSubscriptionActive
+          return {
+            ...prev,
+            isLoading: false,
+            isOffline: true,
+            isOfflineLocked: snapshot.isLocked,
+            offlineExpiresAt: snapshot.expiresAt,
+            offlineRemainingMs: snapshot.remainingMs,
+            offlineLastVerifiedAt: snapshot.lastVerifiedAt,
+            isAccessActive: nextIsAccessActive,
+            isSubscriptionActive: nextIsSubscriptionActive,
+            isTrialActive: false,
+            lastError:
+              error.message ??
+              'Licensing service is unreachable. Check your connection and refresh to verify access.',
+            pendingConsumption: true,
+            pendingConsumptionStage: 'finalizing'
+          }
+        })
         writeStoredPendingConsumption({ deviceHash, stage: 'finalizing' })
         return
       }

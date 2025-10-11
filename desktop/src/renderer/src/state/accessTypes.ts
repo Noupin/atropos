@@ -21,6 +21,10 @@ export type AccessState = {
   isTrialActive: boolean
   isAccessActive: boolean
   isOffline: boolean
+  isOfflineLocked: boolean
+  offlineExpiresAt: string | null
+  offlineRemainingMs: number | null
+  offlineLastVerifiedAt: string | null
   isLoading: boolean
   lastError: string | null
   pendingConsumption: boolean
@@ -50,6 +54,10 @@ export const INITIAL_STATE: AccessState = {
   isTrialActive: false,
   isAccessActive: false,
   isOffline: false,
+  isOfflineLocked: false,
+  offlineExpiresAt: null,
+  offlineRemainingMs: null,
+  offlineLastVerifiedAt: null,
   isLoading: true,
   lastError: null,
   pendingConsumption: false,
