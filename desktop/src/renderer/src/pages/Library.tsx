@@ -380,6 +380,22 @@ const Library: FC<LibraryProps> = ({
     })
   }, [allLoadedClips, query])
 
+  const isLoadingInitial = useMemo(() => {
+    if (!hasAccounts) {
+      return false
+    }
+    for (const accountId of targetAccountIds) {
+      const listing = accountClipState.get(accountId)
+      if (!listing) {
+        return true
+      }
+      if (listing.isLoading && listing.clips.length === 0) {
+        return true
+      }
+    }
+    return false
+  }, [accountClipState, hasAccounts, targetAccountIds])
+
   useEffect(() => {
     if (filteredClips.length === 0) {
       if (!isLoadingInitial && allLoadedClips.length === 0 && selectedClipId !== null) {
@@ -493,22 +509,6 @@ const Library: FC<LibraryProps> = ({
     hasMultipleAccounts,
     singleAccountId
   ])
-
-  const isLoadingInitial = useMemo(() => {
-    if (!hasAccounts) {
-      return false
-    }
-    for (const accountId of targetAccountIds) {
-      const listing = accountClipState.get(accountId)
-      if (!listing) {
-        return true
-      }
-      if (listing.isLoading && listing.clips.length === 0) {
-        return true
-      }
-    }
-    return false
-  }, [accountClipState, hasAccounts, targetAccountIds])
 
   const isAnyAccountLoading = useMemo(
     () => targetAccountIds.some((accountId) => accountClipState.get(accountId)?.isLoading),
