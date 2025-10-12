@@ -129,6 +129,20 @@ export const buildAccountClipsUrl = (accountId: string): string => {
   return url.toString()
 }
 
+export const buildClipsPageUrl = (
+  accountId: string,
+  limit: number,
+  cursor?: string | null
+): string => {
+  const url = new URL('/api/clips', getApiBaseUrl())
+  url.searchParams.set('accountId', accountId)
+  url.searchParams.set('limit', `${Math.max(1, Math.floor(limit))}`)
+  if (cursor) {
+    url.searchParams.set('cursor', cursor)
+  }
+  return url.toString()
+}
+
 export const buildAccountPlatformUrl = (accountId: string): string => {
   const url = new URL(`/api/accounts/${encodeURIComponent(accountId)}/platforms`, getApiBaseUrl())
   return url.toString()

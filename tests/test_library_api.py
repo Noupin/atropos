@@ -57,6 +57,43 @@ def _create_clip_structure(base: Path) -> tuple[str, Path]:
     return account_id, clip_path
 
 
+def _create_multiple_clips(base: Path, account_id: str, total: int) -> None:
+    for index in range(total):
+        project_dir = base / account_id / f"Project_{index:02d}"
+        shorts_dir = project_dir / "shorts"
+        shorts_dir.mkdir(parents=True, exist_ok=True)
+
+        clip_filename = f"clip_{index}.00-{index + 5}.00_r8.0.mp4"
+        clip_path = shorts_dir / clip_filename
+        clip_path.write_bytes(b"fake-mp4-data")
+
+        description = (
+            "Full video: https://example.com/watch?v=abc123\n"
+            "Credit: Example Channel\n"
+            f"Clip {index}\n"
+        )
+        clip_path.with_suffix(".txt").write_text(description, encoding="utf-8")
+
+        candidates_path = project_dir / "candidates.json"
+        candidates_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "start": float(index),
+                        "end": float(index + 5),
+                        "quote": f"Quote {index}",
+                        "reason": f"Reason {index}",
+                        "rating": 8.0,
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp() + index
+        os.utime(clip_path, (timestamp, timestamp))
+
+
 def test_list_account_clips(monkeypatch, tmp_path):
     out_root = tmp_path / "out"
     monkeypatch.setenv("OUT_ROOT", str(out_root))
@@ -92,6 +129,46 @@ def test_list_account_clips(monkeypatch, tmp_path):
     assert clip["video_title"] == "Amazing Project"
     assert clip["playback_url"].endswith(f"/api/accounts/{account_id}/clips/{clip['id']}/video")
     assert clip["preview_url"].endswith(f"/api/accounts/{account_id}/clips/{clip['id']}/preview")
+
+
+def test_paginated_clips_endpoint(monkeypatch, tmp_path):
+    out_root = tmp_path / "out"
+    monkeypatch.setenv("OUT_ROOT", str(out_root))
+    account_id = "account-paged"
+    _create_multiple_clips(out_root, account_id, total=5)
+
+    client = TestClient(app)
+
+    first_page = client.get("/api/clips", params={"accountId": account_id, "limit": 2})
+    assert first_page.status_code == 200
+    first_payload = first_page.json()
+    assert set(first_payload.keys()) == {"clips", "nextCursor"}
+    assert len(first_payload["clips"]) == 2
+    assert isinstance(first_payload["nextCursor"], str)
+
+    second_page = client.get(
+        "/api/clips",
+        params={"accountId": account_id, "limit": 2, "cursor": first_payload["nextCursor"]},
+    )
+    assert second_page.status_code == 200
+    second_payload = second_page.json()
+    assert len(second_payload["clips"]) == 2
+    assert isinstance(second_payload.get("nextCursor"), str)
+
+    third_page = client.get(
+        "/api/clips",
+        params={"accountId": account_id, "limit": 2, "cursor": second_payload["nextCursor"]},
+    )
+    assert third_page.status_code == 200
+    third_payload = third_page.json()
+    assert len(third_payload["clips"]) == 1
+    assert third_payload["nextCursor"] is None
+
+    bad_cursor = client.get(
+        "/api/clips",
+        params={"accountId": account_id, "limit": 2, "cursor": "not-a-valid-cursor"},
+    )
+    assert bad_cursor.status_code == 400
 
 
 def test_get_account_clip(monkeypatch, tmp_path):

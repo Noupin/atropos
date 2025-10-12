@@ -14,7 +14,7 @@ import { BACKEND_MODE } from '../config/backend'
 import { createInitialPipelineSteps, PIPELINE_STEP_DEFINITIONS } from '../data/pipeline'
 import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
-import type { AccountSummary, HomePipelineState, SearchBridge } from '../types'
+import type { AccountSummary, HomePipelineState } from '../types'
 import { useAccess } from '../state/access'
 import { formatOfflineCountdown } from '../state/accessFormatting'
 
@@ -33,7 +33,6 @@ const isValidVideoUrl = (value: string): boolean => {
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value))
 
 type HomeProps = {
-  registerSearch: (bridge: SearchBridge | null) => void
   initialState: HomePipelineState
   onStateChange: (state: HomePipelineState) => void
   accounts: AccountSummary[]
@@ -42,7 +41,6 @@ type HomeProps = {
 }
 
 const Home: FC<HomeProps> = ({
-  registerSearch,
   initialState,
   onStateChange,
   accounts,
@@ -133,13 +131,7 @@ const Home: FC<HomeProps> = ({
     timersRef.current = []
   }, [])
 
-  useEffect(() => {
-    registerSearch(null)
-    return () => {
-      registerSearch(null)
-      clearTimers()
-    }
-  }, [clearTimers, registerSearch])
+  useEffect(() => () => clearTimers(), [clearTimers])
 
   useEffect(() => {
     if (!isMockBackend) {

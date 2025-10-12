@@ -11,7 +11,7 @@ import useSharedVolume from '../hooks/useSharedVolume'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
 import { fetchConfigEntries } from '../services/configApi'
-import type { Clip, SearchBridge } from '../types'
+import type { Clip } from '../types'
 
 type ClipEditLocationState = {
   clip?: Clip
@@ -127,20 +127,13 @@ const delay = (ms: number): Promise<void> =>
     setTimeout(resolve, ms)
   })
 
-const ClipEdit: FC<{ registerSearch: (bridge: SearchBridge | null) => void }> = ({
-  registerSearch
-}) => {
+const ClipEdit: FC = () => {
   const { id } = useParams<{ id: string }>()
   const location = useLocation()
   const state = (location.state as ClipEditLocationState | null) ?? null
 
   const sourceClip = state?.clip && (!id || state.clip.id === id) ? state.clip : null
   const context = state?.context ?? 'job'
-
-  useEffect(() => {
-    registerSearch(null)
-    return () => registerSearch(null)
-  }, [registerSearch])
 
   const minGap = MIN_CLIP_GAP
 

@@ -6,7 +6,6 @@ import {
   type AccountPlatformConnection,
   type AccountSummary,
   type AuthPingSummary,
-  type SearchBridge,
   type SupportedPlatform
 } from '../types'
 import { TONE_LABELS, TONE_OPTIONS } from '../constants/tone'
@@ -43,7 +42,6 @@ const formatTimestamp = (value: string | null | undefined): string => {
 }
 
 type ProfileProps = {
-  registerSearch: (bridge: SearchBridge | null) => void
   accounts: AccountSummary[]
   accountsError: string | null
   authStatus: AuthPingSummary | null
@@ -814,7 +812,6 @@ const AccountCard: FC<AccountCardProps> = ({
 }
 
 const Profile: FC<ProfileProps> = ({
-  registerSearch,
   accounts,
   accountsError,
   authStatus,
@@ -945,11 +942,6 @@ const Profile: FC<ProfileProps> = ({
             : accessState.isTrialActive
               ? `Trial active · ${remainingTrialRuns} / ${totalTrialRuns} runs remaining`
               : `Trial exhausted · ${remainingTrialRuns} / ${totalTrialRuns} runs remaining`
-
-  useEffect(() => {
-    registerSearch(null)
-    return () => registerSearch(null)
-  }, [registerSearch])
 
   const handleCreateAccount = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {

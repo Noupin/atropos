@@ -1,6 +1,7 @@
-import { BACKEND_MODE, buildAccountClipsUrl } from '../config/backend'
+import { BACKEND_MODE, buildAccountClipsUrl, buildClipsPageUrl } from '../config/backend'
 import type { Clip } from '../types'
 import type { ClipAdjustmentPayload } from './pipelineApi'
+import { extractErrorMessage, requestWithFallback } from './http'
 
 type RawClipPayload = {
   id?: unknown
@@ -161,20 +162,118 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
   return clip
 }
 
-const fetchAccountClipsFromApi = async (accountId: string): Promise<Clip[]> => {
-  const url = buildAccountClipsUrl(accountId)
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`)
+const CURSOR_VERSION = 1
+
+const decodeCursorToken = (token: string | null | undefined): number => {
+  if (!token) {
+    return 0
   }
-  const payload = (await response.json()) as unknown
-  if (!Array.isArray(payload)) {
-    return []
+  const padding = token.length % 4 === 0 ? '' : '='.repeat(4 - (token.length % 4))
+  const decoder = typeof globalThis.atob === 'function' ? globalThis.atob : null
+  if (!decoder) {
+    throw new Error('Unable to decode pagination cursor')
   }
-  const clips = payload
+  try {
+    const raw = decoder(token + padding)
+    const parsed = JSON.parse(raw) as { v?: unknown; o?: unknown }
+    if (
+      parsed &&
+      parsed.v === CURSOR_VERSION &&
+      typeof parsed.o === 'number' &&
+      Number.isFinite(parsed.o) &&
+      parsed.o >= 0
+    ) {
+      return Math.floor(parsed.o)
+    }
+  } catch (error) {
+    throw new Error('Invalid pagination cursor')
+  }
+  throw new Error('Invalid pagination cursor')
+}
+
+const encodeCursorToken = (offset: number): string => {
+  const encoder = typeof globalThis.btoa === 'function' ? globalThis.btoa : null
+  if (!encoder) {
+    throw new Error('Unable to encode pagination cursor')
+  }
+  const payload = JSON.stringify({ v: CURSOR_VERSION, o: Math.max(0, Math.floor(offset)) })
+  return encoder(payload).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+}
+
+type RawClipPagePayload = {
+  clips?: unknown
+  nextCursor?: unknown
+  next_cursor?: unknown
+}
+
+const parseClipPagePayload = (payload: unknown): { clips: Clip[]; nextCursor: string | null } => {
+  if (!payload || typeof payload !== 'object') {
+    return { clips: [], nextCursor: null }
+  }
+  const record = payload as RawClipPagePayload
+  const items = Array.isArray(record.clips) ? record.clips : []
+  const clips = items
     .map((item) => (item && typeof item === 'object' ? normaliseClip(item as RawClipPayload) : null))
     .filter((clip): clip is Clip => clip !== null)
-  return clips
+  const nextCursorValue = record.nextCursor ?? record.next_cursor
+  const nextCursor = typeof nextCursorValue === 'string' && nextCursorValue.length > 0 ? nextCursorValue : null
+  return { clips, nextCursor }
+}
+
+const fetchAccountClipPageFromApi = async (
+  accountId: string,
+  limit: number,
+  cursor: string | null
+): Promise<{ clips: Clip[]; nextCursor: string | null }> => {
+  const response = await requestWithFallback(() => buildClipsPageUrl(accountId, limit, cursor))
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response))
+  }
+  const payload = (await response.json()) as unknown
+  return parseClipPagePayload(payload)
+}
+
+export type ClipPage = {
+  clips: Clip[]
+  nextCursor: string | null
+}
+
+export const fetchAccountClipsPage = async ({
+  accountId,
+  limit,
+  cursor
+}: {
+  accountId: string
+  limit: number
+  cursor?: string | null
+}): Promise<ClipPage> => {
+  if (!accountId) {
+    return { clips: [], nextCursor: null }
+  }
+
+  const pageSize = Math.max(1, Math.floor(limit))
+  if (BACKEND_MODE === 'api' || typeof window === 'undefined' || !window.api?.listAccountClips) {
+    try {
+      return await fetchAccountClipPageFromApi(accountId, pageSize, cursor ?? null)
+    } catch (error) {
+      console.error('Unable to load clips from API library', error)
+      return { clips: [], nextCursor: null }
+    }
+  }
+
+  try {
+    const rawClips = await window.api.listAccountClips(accountId)
+    const allClips = isClipArray(rawClips) ? rawClips : []
+    const offset = decodeCursorToken(cursor)
+    const start = Math.min(offset, allClips.length)
+    const end = Math.min(start + pageSize, allClips.length)
+    const slice = allClips.slice(start, end)
+    const nextCursor = end < allClips.length ? encodeCursorToken(end) : null
+    return { clips: slice, nextCursor }
+  } catch (error) {
+    console.error('Unable to load clips from library bridge', error)
+    return { clips: [], nextCursor: null }
+  }
 }
 
 export const listAccountClips = async (accountId: string | null): Promise<Clip[]> => {
@@ -182,22 +281,24 @@ export const listAccountClips = async (accountId: string | null): Promise<Clip[]
     return []
   }
 
-  if (BACKEND_MODE === 'api' || typeof window === 'undefined' || !window.api?.listAccountClips) {
-    try {
-      return await fetchAccountClipsFromApi(accountId)
-    } catch (error) {
-      console.error('Unable to load clips from API library', error)
-      return []
+  const clips: Clip[] = []
+  let cursor: string | null = null
+  const seen = new Set<string | null>()
+  const pageSize = 50
+
+  while (!seen.has(cursor)) {
+    seen.add(cursor)
+    const page = await fetchAccountClipsPage({ accountId, limit: pageSize, cursor })
+    if (page.clips.length > 0) {
+      clips.push(...page.clips)
     }
+    if (!page.nextCursor || page.nextCursor === cursor || page.clips.length === 0) {
+      break
+    }
+    cursor = page.nextCursor
   }
 
-  try {
-    const clips = await window.api.listAccountClips(accountId)
-    return isClipArray(clips) ? clips : []
-  } catch (error) {
-    console.error('Unable to load clips from library bridge', error)
-    return []
-  }
+  return clips
 }
 
 const isFolderBridgeAvailable = (): boolean => {

@@ -617,6 +617,69 @@ def list_account_clips_sync(account_id: Optional[str]) -> List[LibraryClip]:
     return clips
 
 
+_CURSOR_VERSION = 1
+_MAX_PAGE_SIZE = 100
+
+
+def _encode_cursor(offset: int) -> str:
+    payload = {"v": _CURSOR_VERSION, "o": int(offset)}
+    raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    token = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    return token
+
+
+def _decode_cursor(value: Optional[str]) -> int:
+    if not value:
+        return 0
+    padding = "=" * (-len(value) % 4)
+    try:
+        decoded = base64.urlsafe_b64decode((value + padding).encode("ascii"))
+        payload = json.loads(decoded.decode("utf-8"))
+    except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError("Invalid pagination cursor") from exc
+
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid pagination cursor")
+
+    version = payload.get("v")
+    offset = payload.get("o")
+    if version != _CURSOR_VERSION or not isinstance(offset, int) or offset < 0:
+        raise ValueError("Invalid pagination cursor")
+    return offset
+
+
+def paginate_account_clips_sync(
+    account_id: Optional[str],
+    *,
+    limit: int,
+    cursor: Optional[str],
+) -> tuple[list[LibraryClip], Optional[str]]:
+    try:
+        offset = _decode_cursor(cursor)
+    except ValueError as exc:  # pragma: no cover - validated by endpoint tests
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    size = max(1, min(int(limit), _MAX_PAGE_SIZE))
+    clips = list_account_clips_sync(account_id)
+
+    if offset >= len(clips):
+        return [], None
+
+    end_index = min(offset + size, len(clips))
+    page = clips[offset:end_index]
+    next_cursor = _encode_cursor(end_index) if end_index < len(clips) else None
+    return page, next_cursor
+
+
+def paginate_account_clips(
+    account_id: Optional[str],
+    *,
+    limit: int,
+    cursor: Optional[str],
+) -> asyncio.Future[tuple[list[LibraryClip], Optional[str]]]:
+    return asyncio.to_thread(paginate_account_clips_sync, account_id, limit=limit, cursor=cursor)
+
+
 def list_account_clips(account_id: Optional[str]) -> asyncio.Future[List[LibraryClip]]:
     return asyncio.to_thread(list_account_clips_sync, account_id)
 
@@ -641,6 +704,8 @@ __all__ = [
     "ADJUSTMENT_METADATA_SUFFIX",
     "list_account_clips",
     "list_account_clips_sync",
+    "paginate_account_clips",
+    "paginate_account_clips_sync",
     "resolve_clip_video_path",
     "load_adjustment_metadata",
     "write_adjustment_metadata",

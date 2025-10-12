@@ -152,7 +152,6 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
 
 const renderHome = (props: Partial<ComponentProps<typeof Home>> = {}) => {
   const mergedProps: ComponentProps<typeof Home> = {
-    registerSearch: () => {},
     initialState: createInitialState(),
     onStateChange: () => {},
     accounts: [],
@@ -200,7 +199,6 @@ describe('Home account selection', () => {
   it('passes the selected account when starting the pipeline job', async () => {
     const startPipelineSpy = vi.fn()
     const baseProps = {
-      registerSearch: () => {},
       onStateChange: () => {},
       accounts: [AVAILABLE_ACCOUNT],
       onStartPipeline: startPipelineSpy,
@@ -246,7 +244,6 @@ describe('Home account selection', () => {
 
   it('surfaces guidance when no active accounts are available', () => {
     renderHome({
-      registerSearch: () => {},
       initialState: createInitialState(),
       onStateChange: () => {},
       accounts: [INACTIVE_ACCOUNT, ACCOUNT_WITHOUT_PLATFORMS, ACCOUNT_WITH_DISABLED_PLATFORM]
@@ -265,7 +262,6 @@ describe('Home account selection', () => {
     }
 
     const baseProps = {
-      registerSearch: () => {},
       accounts: [AVAILABLE_ACCOUNT, SECONDARY_AVAILABLE_ACCOUNT],
       onStartPipeline: vi.fn(),
       onResumePipeline: vi.fn()
@@ -348,7 +344,6 @@ describe('Home pipeline rendering', () => {
       <AccessProvider>
         <MemoryRouter>
           <Home
-            registerSearch={() => {}}
             onStateChange={() => {}}
             accounts={[AVAILABLE_ACCOUNT]}
             onStartPipeline={vi.fn()}
@@ -414,7 +409,6 @@ describe('Home pipeline rendering', () => {
       <AccessProvider>
         <MemoryRouter>
           <Home
-            registerSearch={() => {}}
             onStateChange={() => {}}
             accounts={[AVAILABLE_ACCOUNT]}
             onStartPipeline={vi.fn()}
@@ -437,7 +431,6 @@ describe('Home pipeline rendering', () => {
 describe('Home pipeline alerts', () => {
   it('shows a banner when the last run rendered no clips', () => {
     renderHome({
-      registerSearch: () => {},
       initialState: createInitialState({
         lastRunProducedNoClips: true,
         lastRunClipStatus: 'rendered_none',

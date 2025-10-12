@@ -4,21 +4,13 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import ClipDescription from '../components/ClipDescription'
 import { getBadgeClassName } from '../components/badgeStyles'
-import type { Clip, SearchBridge } from '../types'
+import type { Clip } from '../types'
 import useSharedVolume from '../hooks/useSharedVolume'
 
-type ClipPageProps = {
-  registerSearch: (bridge: SearchBridge | null) => void
-}
-
-const ClipPage: FC<ClipPageProps> = ({ registerSearch }) => {
+const ClipPage: FC = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const location = useLocation()
-
-  useEffect(() => {
-    registerSearch(null)
-  }, [registerSearch])
 
   const locationState = location.state as { clip?: Clip } | null
   const clip = locationState?.clip && locationState.clip.id === id ? locationState.clip : null
