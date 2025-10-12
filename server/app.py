@@ -33,7 +33,8 @@ from interfaces.progress import PipelineEvent, PipelineEventType, PipelineObserv
 from pipeline import GENERIC_HASHTAGS, process_video
 from library import (
     DEFAULT_ACCOUNT_PLACEHOLDER,
-    list_account_clips,
+    LibraryClipPage,
+    list_account_clips_page,
     list_account_clips_sync,
     resolve_clip_video_path,
     write_adjustment_metadata,
@@ -434,6 +435,14 @@ class LibraryClipManifest(ClipManifest):
     timestamp_url: str | None = None
     timestamp_seconds: float | None = None
     thumbnail_url: str | None = None
+
+
+class LibraryClipPageResponse(BaseModel):
+    """Paginated response for library clip listings."""
+
+    items: list[LibraryClipManifest]
+    next_cursor: str | None = Field(default=None)
+    total_count: int = Field(default=0, ge=0)
 
 
 def _clip_to_payload(clip: ClipArtifact, request: Request, job_id: str) -> Dict[str, Any]:
@@ -1246,13 +1255,26 @@ async def upload_job_clip(job_id: str, clip_id: str, payload: UploadClipRequest)
     return UploadClipResponse(success=True, deleted=deleted, platforms=platform_list)
 
 
-@app.get("/api/accounts/{account_id}/clips", response_model=list[LibraryClipManifest])
-async def list_account_clip_library(account_id: str, request: Request) -> list[LibraryClipManifest]:
+@app.get(
+    "/api/accounts/{account_id}/clips",
+    response_model=LibraryClipPageResponse,
+)
+async def list_account_clip_library(
+    account_id: str,
+    request: Request,
+    limit: int = Query(default=24, ge=1, le=200),
+    cursor: str | None = Query(default=None),
+) -> LibraryClipPageResponse:
     """Return stored clips for ``account_id`` from the library."""
 
     account_value = None if account_id == DEFAULT_ACCOUNT_PLACEHOLDER else account_id
-    clips = await list_account_clips(account_value)
-    return [LibraryClipManifest(**clip.to_payload(request)) for clip in clips]
+    page: LibraryClipPage = await list_account_clips_page(
+        account_value, limit=limit, cursor=cursor
+    )
+    items = [LibraryClipManifest(**clip.to_payload(request)) for clip in page.items]
+    return LibraryClipPageResponse(
+        items=items, next_cursor=page.next_cursor, total_count=page.total_count
+    )
 
 
 @app.get("/api/accounts/{account_id}/clips/{clip_id}", response_model=LibraryClipManifest)

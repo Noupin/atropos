@@ -6,6 +6,7 @@ import { pathToFileURL } from 'url'
 // Use Node.js path join to reference the icon file, as TypeScript does not support importing non-code assets.
 const icon = join(__dirname, '../../favicon.png')
 import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
+import type { ListAccountClipsOptions } from '../renderer/src/services/clipLibrary'
 
 type NavigationCommand = 'back' | 'forward'
 
@@ -346,14 +347,21 @@ app.whenReady().then(() => {
   ipcMain.on('navigation:state', (_event, state: NavigationState) => {
     navigationState = state
   })
-  ipcMain.handle('clips:list', async (_event, accountId: string | null) => {
-    try {
-      return await listAccountClips(accountId)
-    } catch (error) {
-      console.error('Failed to list clips', error)
-      return []
+  ipcMain.handle(
+    'clips:list',
+    async (
+      _event,
+      accountId: string | null,
+      options: ListAccountClipsOptions = {}
+    ) => {
+      try {
+        return await listAccountClips(accountId, options)
+      } catch (error) {
+        console.error('Failed to list clips', error)
+        return { items: [], nextCursor: null, totalCount: 0 }
+      }
     }
-  })
+  )
   ipcMain.handle('clips:open-folder', async (_event, accountId: string) => {
     try {
       const paths = await resolveAccountClipsDirectory(accountId)

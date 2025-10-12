@@ -4,11 +4,14 @@ import { electronAPI } from '@electron-toolkit/preload'
 import type { ElectronAPIWithShell } from '../types/electron'
 
 // Custom APIs for renderer
-type Clip = import('../renderer/src/types').Clip
+type ClipPage = import('../renderer/src/types').ClipPage
+type ListAccountClipsOptions = import('../renderer/src/services/clipLibrary').ListAccountClipsOptions
 
 const api = {
-  listAccountClips: (accountId: string | null): Promise<Clip[]> =>
-    ipcRenderer.invoke('clips:list', accountId),
+  listAccountClips: (
+    accountId: string | null,
+    options: ListAccountClipsOptions = {}
+  ): Promise<ClipPage> => ipcRenderer.invoke('clips:list', accountId, options),
   openAccountClipsFolder: (accountId: string): Promise<boolean> =>
     ipcRenderer.invoke('clips:open-folder', accountId),
   onNavigationCommand: (callback: (direction: 'back' | 'forward') => void): (() => void) => {

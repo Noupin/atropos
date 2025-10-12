@@ -16,6 +16,13 @@ import useNavigationHistory from './hooks/useNavigationHistory'
 import usePipelineProgress from './state/usePipelineProgress'
 import { useAccess } from './state/access'
 import {
+  createDefaultViewState,
+  loadViewState,
+  saveViewState,
+  type AppViewState,
+  type LibraryViewState
+} from './state/viewStatePersistence'
+import {
   clamp01,
   summarisePipelineProgress,
   type PipelineOverallStatus
@@ -45,6 +52,25 @@ type PlatformPayload = {
 }
 
 const THEME_STORAGE_KEY = 'atropos:theme'
+
+const dedupeIds = (values: string[]): string[] => {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const value of values) {
+    if (!seen.has(value)) {
+      seen.add(value)
+      result.push(value)
+    }
+  }
+  return result
+}
+
+const arraysEqual = (a: string[], b: string[]): boolean => {
+  if (a.length !== b.length) {
+    return false
+  }
+  return a.every((value, index) => value === b[index])
+}
 
 const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
@@ -156,25 +182,31 @@ type AppProps = {
 }
 
 const App: FC<AppProps> = ({ searchInputRef }) => {
+  const [viewState, setViewState] = useState<AppViewState>(() => loadViewState() ?? createDefaultViewState())
+  const initialViewStateRef = useRef(viewState)
+  const hasRestoredPathRef = useRef(false)
   const [searchBridge, setSearchBridge] = useState<SearchBridge | null>(null)
   const [searchValue, setSearchValue] = useState('')
-  const [homeState, setHomeState] = useState<HomePipelineState>(() => ({
-    videoUrl: '',
-    urlError: null,
-    pipelineError: null,
-    steps: createInitialPipelineSteps(),
-    isProcessing: false,
-    clips: [],
-    selectedClipId: null,
-    selectedAccountId: null,
-    accountError: null,
-    activeJobId: null,
-    reviewMode: false,
-    awaitingReview: false,
-    lastRunProducedNoClips: false,
-    lastRunClipSummary: null,
-    lastRunClipStatus: null
-  }))
+  const [homeState, setHomeState] = useState<HomePipelineState>(() => {
+    const persisted = initialViewStateRef.current.home
+    return {
+      videoUrl: '',
+      urlError: null,
+      pipelineError: null,
+      steps: createInitialPipelineSteps(),
+      isProcessing: false,
+      clips: [],
+      selectedClipId: persisted.selectedClipId,
+      selectedAccountId: persisted.selectedAccountId,
+      accountError: null,
+      activeJobId: null,
+      reviewMode: false,
+      awaitingReview: false,
+      lastRunProducedNoClips: false,
+      lastRunClipSummary: null,
+      lastRunClipStatus: null
+    }
+  })
   const [accounts, setAccounts] = useState<AccountSummary[]>([])
   const [accountsError, setAccountsError] = useState<string | null>(null)
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true)
@@ -196,11 +228,78 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const lastActiveJobIdRef = useRef<string | null>(null)
   const isOnHomePage = location.pathname === '/'
 
+  useEffect(() => {
+    if (hasRestoredPathRef.current) {
+      return
+    }
+    hasRestoredPathRef.current = true
+    const targetPath = initialViewStateRef.current.activePath
+    if (targetPath && targetPath !== location.pathname && location.pathname === '/') {
+      navigate(targetPath, { replace: true })
+    }
+  }, [location.pathname, navigate])
+
+  useEffect(() => {
+    setViewState((previous) =>
+      previous.activePath === location.pathname
+        ? previous
+        : { ...previous, activePath: location.pathname }
+    )
+  }, [location.pathname])
+
+  useEffect(() => {
+    saveViewState(viewState)
+  }, [viewState])
+
+  const handleLibraryViewStateChange = useCallback(
+    (libraryState: LibraryViewState) => {
+      setViewState((previous) => {
+        const nextLibrary: LibraryViewState = {
+          query: libraryState.query,
+          collapsedAccountIds: dedupeIds(libraryState.collapsedAccountIds),
+          collapsedProjectIds: dedupeIds(libraryState.collapsedProjectIds),
+          selectedClipId: libraryState.selectedClipId ?? null
+        }
+        if (
+          previous.library.query === nextLibrary.query &&
+          previous.library.selectedClipId === nextLibrary.selectedClipId &&
+          arraysEqual(previous.library.collapsedAccountIds, nextLibrary.collapsedAccountIds) &&
+          arraysEqual(previous.library.collapsedProjectIds, nextLibrary.collapsedProjectIds)
+        ) {
+          return previous
+        }
+        return {
+          ...previous,
+          library: nextLibrary
+        }
+      })
+    },
+    []
+  )
+
   const preventDisabledNavigation = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
   }, [])
 
   useNavigationHistory()
+
+  useEffect(() => {
+    setViewState((previous) => {
+      if (
+        previous.home.selectedAccountId === homeState.selectedAccountId &&
+        previous.home.selectedClipId === homeState.selectedClipId
+      ) {
+        return previous
+      }
+      return {
+        ...previous,
+        home: {
+          selectedAccountId: homeState.selectedAccountId,
+          selectedClipId: homeState.selectedClipId
+        }
+      }
+    })
+  }, [homeState.selectedAccountId, homeState.selectedClipId])
   useEffect(() => {
     if (!accessRestricted) {
       return
@@ -856,6 +955,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 accounts={accounts}
                 isLoadingAccounts={isLoadingAccounts}
                 pendingProjects={pendingLibraryProjects}
+                persistedState={viewState.library}
+                onPersist={handleLibraryViewStateChange}
               />
             }
           />

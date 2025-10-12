@@ -9,6 +9,7 @@ import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ClipCard from '../components/ClipCard'
 import ClipDescription from '../components/ClipDescription'
+import MarbleSpinner from '../components/MarbleSpinner'
 import { formatDuration, formatViews } from '../lib/format'
 import { listAccountClips } from '../services/clipLibrary'
 import type { AccountSummary, Clip, SearchBridge } from '../types'
@@ -29,11 +30,16 @@ type AccountGroup = {
   title: string
   projects: ProjectGroup[]
   latestCreatedAt: string
+  totalCount: number
+  loadedCount: number
+  nextCursor: string | null
+  isLoading: boolean
+  error: string | null
 }
 
 type GroupedClipsResult =
   | { mode: 'account'; groups: AccountGroup[] }
-  | { mode: 'project'; groups: ProjectGroup[] }
+  | { mode: 'project'; groups: ProjectGroup[]; accountId: string | null; accountState: AccountClipListing | null }
 
 type PendingLibraryProject = {
   jobId: string
@@ -43,6 +49,31 @@ type PendingLibraryProject = {
   completedClips: number
   totalClips: number | null
 }
+
+type AccountClipListing = {
+  clips: Clip[]
+  nextCursor: string | null
+  totalCount: number
+  isLoading: boolean
+  error: string | null
+}
+
+type LibraryPersistenceState = {
+  query: string
+  collapsedAccountIds: string[]
+  collapsedProjectIds: string[]
+  selectedClipId: string | null
+}
+
+const DEFAULT_PAGE_SIZE = 12
+
+const createListing = (): AccountClipListing => ({
+  clips: [],
+  nextCursor: null,
+  totalCount: 0,
+  isLoading: false,
+  error: null
+})
 
 const isAccountAvailable = (account: AccountSummary): boolean =>
   account.active && account.platforms.some((platform) => platform.active)
@@ -111,30 +142,42 @@ type LibraryProps = {
   accounts: AccountSummary[]
   isLoadingAccounts: boolean
   pendingProjects: PendingLibraryProject[]
+  persistedState?: LibraryPersistenceState | null
+  onPersist?: (state: LibraryPersistenceState) => void
 }
 
 const Library: FC<LibraryProps> = ({
   registerSearch,
   accounts,
   isLoadingAccounts,
-  pendingProjects
+  pendingProjects,
+  persistedState = null,
+  onPersist
 }) => {
-  const [clips, setClips] = useState<Clip[]>([])
-  const [isLoadingClips, setIsLoadingClips] = useState(false)
-  const [clipsError, setClipsError] = useState<string | null>(null)
-  const [query, setQuery] = useState('')
-  const [selectedClipId, setSelectedClipId] = useState<string | null>(null)
+  const [query, setQuery] = useState(persistedState?.query ?? '')
+  const [selectedClipId, setSelectedClipId] = useState<string | null>(
+    persistedState?.selectedClipId ?? null
+  )
   const [collapsedAccountIds, setCollapsedAccountIds] = useState<Set<string>>(
-    () => new Set<string>()
+    () => new Set(persistedState?.collapsedAccountIds ?? [])
   )
   const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(
-    () => new Set<string>()
+    () => new Set(persistedState?.collapsedProjectIds ?? [])
   )
-  const queryRef = useRef('')
-  const loadRequestRef = useRef(0)
+  const [clipsError, setClipsError] = useState<string | null>(null)
+  const [accountClipState, setAccountClipState] = useState<Map<string, AccountClipListing>>(
+    () => new Map()
+  )
+  const queryRef = useRef(query)
+  const loadRequestRef = useRef<Map<string, number>>(new Map())
+  const accountClipStateRef = useRef(accountClipState)
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    accountClipStateRef.current = accountClipState
+  }, [accountClipState])
 
   const availableAccounts = useMemo(
     () => accounts.filter((account) => isAccountAvailable(account)),
@@ -164,12 +207,6 @@ const Library: FC<LibraryProps> = ({
     }
     return map
   }, [accountKeyForPending, pendingProjects])
-
-  useEffect(() => {
-    if (!hasAccounts && clips.length > 0) {
-      setClips([])
-    }
-  }, [clips.length, hasAccounts])
 
   const handleQueryChange = useCallback((value: string) => {
     queryRef.current = value
@@ -215,74 +252,119 @@ const Library: FC<LibraryProps> = ({
     return activeAccountIds
   }, [activeAccountIds, hasAccounts])
 
-  const loadClipsForAccounts = useCallback(
-    async (accountIds: string[]) => {
-      if (accountIds.length === 0) {
-        setClips([])
-        setClipsError(null)
-        setIsLoadingClips(false)
-        return
+  useEffect(() => {
+    setAccountClipState((previous) => {
+      const next = new Map<string, AccountClipListing>()
+      for (const accountId of targetAccountIds) {
+        next.set(accountId, previous.get(accountId) ?? createListing())
       }
+      return next
+    })
+  }, [targetAccountIds])
 
-      const requestId = loadRequestRef.current + 1
-      loadRequestRef.current = requestId
+  useEffect(() => {
+    const current = loadRequestRef.current
+    const next = new Map<string, number>()
+    for (const accountId of targetAccountIds) {
+      next.set(accountId, current.get(accountId) ?? 0)
+    }
+    loadRequestRef.current = next
+  }, [targetAccountIds])
 
-      setIsLoadingClips(true)
-      setClipsError(null)
+  const loadAccountClipsPage = useCallback(
+    async (
+      accountId: string,
+      options: { cursor?: string | null; append?: boolean; limit?: number } = {}
+    ) => {
+      const { cursor = null, append = Boolean(options.cursor), limit = DEFAULT_PAGE_SIZE } = options
+      const requests = loadRequestRef.current
+      const currentToken = (requests.get(accountId) ?? 0) + 1
+      requests.set(accountId, currentToken)
+
+      setAccountClipState((previous) => {
+        const next = new Map(previous)
+        const existing = next.get(accountId) ?? createListing()
+        next.set(accountId, { ...existing, isLoading: true, error: null })
+        return next
+      })
 
       try {
-        const results = await Promise.all(
-          accountIds.map(async (accountId) => {
-            try {
-              return await listAccountClips(accountId)
-            } catch (error) {
-              console.error('Failed to load clips for account', accountId, error)
-              return [] as Clip[]
+        const page = await listAccountClips(accountId, { cursor, limit })
+        if (loadRequestRef.current.get(accountId) !== currentToken) {
+          return
+        }
+
+        setAccountClipState((previous) => {
+          const next = new Map(previous)
+          const existing = next.get(accountId) ?? createListing()
+          const baseClips = append ? existing.clips : []
+          const seen = new Set(baseClips.map((clip) => clip.id))
+          const normalisedItems = page.items.map((clip) =>
+            clip.accountId === undefined || clip.accountId === null
+              ? { ...clip, accountId }
+              : clip
+          )
+          const combined = append ? [...baseClips] : []
+          for (const clip of normalisedItems) {
+            if (!seen.has(clip.id)) {
+              combined.push(clip)
+              seen.add(clip.id)
             }
-          })
-        )
-
-        if (loadRequestRef.current !== requestId) {
-          return
-        }
-
-        const merged = new Map<string, Clip>()
-        for (const accountClips of results) {
-          for (const clip of accountClips) {
-            merged.set(clip.id, clip)
           }
-        }
-
-        const mergedClips = Array.from(merged.values())
-        mergedClips.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-        setClips(mergedClips)
+          next.set(accountId, {
+            clips: append ? combined : normalisedItems,
+            nextCursor: page.nextCursor,
+            totalCount: page.totalCount,
+            isLoading: false,
+            error: null
+          })
+          return next
+        })
+        setClipsError(null)
       } catch (error) {
-        if (loadRequestRef.current !== requestId) {
+        console.error('Failed to load clips for account', accountId, error)
+        if (loadRequestRef.current.get(accountId) !== currentToken) {
           return
         }
-        console.error('Failed to load clips for library view', error)
-        setClips([])
+        setAccountClipState((previous) => {
+          const next = new Map(previous)
+          const existing = next.get(accountId) ?? createListing()
+          next.set(accountId, { ...existing, isLoading: false, error: 'Unable to load clips.' })
+          return next
+        })
         setClipsError('Unable to load clips. Please try again.')
-      } finally {
-        if (loadRequestRef.current === requestId) {
-          setIsLoadingClips(false)
-        }
       }
     },
     []
   )
 
   useEffect(() => {
-    void loadClipsForAccounts(targetAccountIds)
-  }, [loadClipsForAccounts, targetAccountIds])
+    for (const accountId of targetAccountIds) {
+      const listing = accountClipStateRef.current.get(accountId)
+      if (!listing || (!listing.isLoading && listing.clips.length === 0 && !listing.error)) {
+        void loadAccountClipsPage(accountId, { append: false })
+      }
+    }
+  }, [targetAccountIds, loadAccountClipsPage])
+
+  const allLoadedClips = useMemo(() => {
+    const aggregated: Clip[] = []
+    for (const accountId of targetAccountIds) {
+      const listing = accountClipState.get(accountId)
+      if (listing) {
+        aggregated.push(...listing.clips)
+      }
+    }
+    return aggregated.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+  }, [accountClipState, targetAccountIds])
 
   const filteredClips = useMemo(() => {
     const trimmed = query.trim().toLowerCase()
     if (!trimmed) {
-      return clips
+      return allLoadedClips
     }
 
-    return clips.filter((clip) => {
+    return allLoadedClips.filter((clip) => {
       const haystack = [
         clip.title,
         clip.channel,
@@ -296,11 +378,11 @@ const Library: FC<LibraryProps> = ({
 
       return haystack.includes(trimmed)
     })
-  }, [clips, query])
+  }, [allLoadedClips, query])
 
   useEffect(() => {
     if (filteredClips.length === 0) {
-      if (selectedClipId !== null) {
+      if (!isLoadingInitial && allLoadedClips.length === 0 && selectedClipId !== null) {
         setSelectedClipId(null)
       }
       return
@@ -309,7 +391,7 @@ const Library: FC<LibraryProps> = ({
     if (!selectedClipId || !filteredClips.some((clip) => clip.id === selectedClipId)) {
       setSelectedClipId(filteredClips[0].id)
     }
-  }, [filteredClips, selectedClipId])
+  }, [allLoadedClips.length, filteredClips, isLoadingInitial, selectedClipId])
 
   const groupedClips = useMemo(() => {
     const buildProjectGroups = (items: Clip[]): ProjectGroup[] => {
@@ -378,21 +460,60 @@ const Library: FC<LibraryProps> = ({
       return {
         mode: 'account',
         groups: Array.from(accountGroups.entries())
-          .map(([id, value]) => ({
-            id,
-            title: value.title,
-            projects: buildProjectGroups(value.clips),
-            latestCreatedAt: value.latestCreatedAt
-          }))
+          .map(([id, value]) => {
+            const listing = accountClipState.get(id) ?? createListing()
+            return {
+              id,
+              title: value.title,
+              projects: buildProjectGroups(value.clips),
+              latestCreatedAt: value.latestCreatedAt,
+              totalCount: listing.totalCount,
+              loadedCount: listing.clips.length,
+              nextCursor: listing.nextCursor,
+              isLoading: listing.isLoading,
+              error: listing.error
+            }
+          })
           .sort((a, b) => (a.latestCreatedAt < b.latestCreatedAt ? 1 : -1))
       } satisfies GroupedClipsResult
     }
 
+    const listing = singleAccountId ? accountClipState.get(singleAccountId) ?? createListing() : null
+
     return {
       mode: 'project',
-      groups: buildProjectGroups(filteredClips)
+      groups: buildProjectGroups(filteredClips),
+      accountId: singleAccountId,
+      accountState: listing
     } satisfies GroupedClipsResult
-  }, [availableAccounts, filteredClips, hasMultipleAccounts])
+  }, [
+    accountClipState,
+    availableAccounts,
+    filteredClips,
+    hasMultipleAccounts,
+    singleAccountId
+  ])
+
+  const isLoadingInitial = useMemo(() => {
+    if (!hasAccounts) {
+      return false
+    }
+    for (const accountId of targetAccountIds) {
+      const listing = accountClipState.get(accountId)
+      if (!listing) {
+        return true
+      }
+      if (listing.isLoading && listing.clips.length === 0) {
+        return true
+      }
+    }
+    return false
+  }, [accountClipState, hasAccounts, targetAccountIds])
+
+  const isAnyAccountLoading = useMemo(
+    () => targetAccountIds.some((accountId) => accountClipState.get(accountId)?.isLoading),
+    [accountClipState, targetAccountIds]
+  )
 
   useEffect(() => {
     setCollapsedAccountIds(new Set<string>())
@@ -426,6 +547,36 @@ const Library: FC<LibraryProps> = ({
   const handleClipSelect = useCallback((clip: Clip) => {
     setSelectedClipId(clip.id)
   }, [])
+
+  const handleLoadMore = useCallback(
+    (accountId: string) => {
+      const listing = accountClipStateRef.current.get(accountId)
+      if (!listing || listing.isLoading || !listing.nextCursor) {
+        return
+      }
+      void loadAccountClipsPage(accountId, { cursor: listing.nextCursor, append: true })
+    },
+    [loadAccountClipsPage]
+  )
+
+  const handleRetryAccount = useCallback(
+    (accountId: string) => {
+      void loadAccountClipsPage(accountId, { append: false })
+    },
+    [loadAccountClipsPage]
+  )
+
+  useEffect(() => {
+    if (!onPersist) {
+      return
+    }
+    onPersist({
+      query,
+      collapsedAccountIds: Array.from(collapsedAccountIds),
+      collapsedProjectIds: Array.from(collapsedProjectIds),
+      selectedClipId
+    })
+  }, [collapsedAccountIds, collapsedProjectIds, onPersist, query, selectedClipId])
 
   const renderProjectGroup = useCallback(
     (group: ProjectGroup, context: { accountId?: string | null; prefix?: string } = {}) => {
@@ -588,7 +739,7 @@ const Library: FC<LibraryProps> = ({
                       ? ` from ${availableAccounts[0].displayName}.`
                       : '.'}
                 </span>
-                {isLoadingClips ? <span className="text-[var(--fg)]">Loading clips…</span> : null}
+                {isAnyAccountLoading ? <MarbleSpinner size="sm" label="Loading clips…" /> : null}
               </div>
             ) : null}
           </div>
@@ -603,17 +754,25 @@ const Library: FC<LibraryProps> = ({
                         0
                       )
                       const isCollapsed = collapsedAccountIds.has(accountGroup.id)
+                      const hasLoadedClips = accountGroup.loadedCount > 0
+                      const loadSummary = accountGroup.totalCount
+                        ? `${Math.min(accountGroup.loadedCount, accountGroup.totalCount)} of ${accountGroup.totalCount} loaded`
+                        : `${accountGroup.loadedCount} loaded`
+                      const canLoadMore =
+                        !isCollapsed &&
+                        accountGroup.nextCursor !== null &&
+                        accountGroup.loadedCount < accountGroup.totalCount
 
                       return (
                         <div
                           key={accountGroup.id}
                           className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:var(--card-strong)] p-4"
                         >
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-start justify-between gap-3">
                             <button
                               type="button"
                               onClick={() => toggleAccountCollapse(accountGroup.id)}
-                              className="group flex items-start gap-3 text-left text-[var(--fg)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+                              className="group flex flex-1 items-start gap-3 text-left text-[var(--fg)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
                               aria-expanded={!isCollapsed}
                             >
                               <svg
@@ -629,7 +788,7 @@ const Library: FC<LibraryProps> = ({
                                 />
                               </svg>
                               <div className="flex flex-col">
-                                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_srgb,var(--accent)_70%,transparent)]">
+                                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
                                   Account
                                 </span>
                                 <span className="text-lg font-semibold leading-snug text-[var(--fg)] transition-colors group-hover:text-[color:var(--accent)]">
@@ -637,10 +796,37 @@ const Library: FC<LibraryProps> = ({
                                 </span>
                               </div>
                             </button>
-                            <span className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
-                              {accountClipCount} {accountClipCount === 1 ? 'clip' : 'clips'}
-                            </span>
+                            <div className="flex flex-col items-end text-xs text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
+                              <span className="uppercase tracking-wide">
+                                {accountClipCount} {accountClipCount === 1 ? 'clip' : 'clips'}
+                              </span>
+                              <span className="text-[color:color-mix(in_srgb,var(--muted)_90%,transparent)]">
+                                {loadSummary}
+                              </span>
+                            </div>
                           </div>
+
+                          {accountGroup.error ? (
+                            <div className="rounded-lg border border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] px-4 py-3 text-sm text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <span>{accountGroup.error}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRetryAccount(accountGroup.id)}
+                                  className="marble-button marble-button--outline px-3 py-1 text-xs font-semibold"
+                                >
+                                  Try again
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {accountGroup.isLoading && !hasLoadedClips ? (
+                            <div className="flex justify-center py-6">
+                              <MarbleSpinner label="Loading clips…" />
+                            </div>
+                          ) : null}
+
                           {!isCollapsed ? (
                             <div className="flex flex-col gap-6">
                               {accountGroup.projects.map((projectGroup) =>
@@ -651,16 +837,81 @@ const Library: FC<LibraryProps> = ({
                               )}
                             </div>
                           ) : null}
+
+                          {canLoadMore ? (
+                            <div className="flex justify-center pt-2">
+                              <button
+                                type="button"
+                                onClick={() => handleLoadMore(accountGroup.id)}
+                                className="marble-button marble-button--ghost inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold"
+                                disabled={accountGroup.isLoading}
+                              >
+                                {accountGroup.isLoading ? (
+                                  <MarbleSpinner size="sm" label="Loading more" />
+                                ) : (
+                                  'Load more clips'
+                                )}
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       )
                     })
-                  : groupedClips.groups.map((projectGroup) =>
-                      renderProjectGroup(projectGroup, { accountId: singleAccountId })
+                  : (
+                      <>
+                        {groupedClips.groups.map((projectGroup) =>
+                          renderProjectGroup(projectGroup, { accountId: singleAccountId })
+                        )}
+                        {groupedClips.accountState ? (
+                          <>
+                            {groupedClips.accountState.error ? (
+                              <div className="mt-4 rounded-lg border border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] px-4 py-3 text-sm text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                  <span>{groupedClips.accountState.error}</span>
+                                  {groupedClips.accountId ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRetryAccount(groupedClips.accountId!)}
+                                      className="marble-button marble-button--outline px-3 py-1 text-xs font-semibold"
+                                    >
+                                      Try again
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            ) : null}
+                            {groupedClips.accountState.isLoading && groupedClips.accountState.clips.length === 0 ? (
+                              <div className="flex justify-center py-6">
+                                <MarbleSpinner label="Loading clips…" />
+                              </div>
+                            ) : null}
+                            {groupedClips.accountId &&
+                            groupedClips.accountState.nextCursor !== null &&
+                            groupedClips.accountState.clips.length > 0 &&
+                            groupedClips.accountState.clips.length < groupedClips.accountState.totalCount ? (
+                              <div className="flex justify-center pt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleLoadMore(groupedClips.accountId!)}
+                                  className="marble-button marble-button--ghost inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold"
+                                  disabled={groupedClips.accountState.isLoading}
+                                >
+                                  {groupedClips.accountState.isLoading ? (
+                                    <MarbleSpinner size="sm" label="Loading more" />
+                                  ) : (
+                                    'Load more clips'
+                                  )}
+                                </button>
+                              </div>
+                            ) : null}
+                          </>
+                        ) : null}
+                      </>
                     )}
               </div>
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] p-10 text-center text-sm text-[var(--muted)]">
-                {isLoadingClips
+                {isLoadingInitial
                   ? 'Loading your clips…'
                   : 'No clips match the current filters. Try clearing your search.'}
               </div>

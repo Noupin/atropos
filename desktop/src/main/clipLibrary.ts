@@ -2,7 +2,8 @@ import { promises as fs } from 'fs'
 import type { Stats } from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
-import type { Clip } from '../renderer/src/types'
+import type { Clip, ClipPage } from '../renderer/src/types'
+import type { ListAccountClipsOptions } from '../renderer/src/services/clipLibrary'
 
 interface CandidateEntry {
   start: number
@@ -543,17 +544,20 @@ export const resolveAccountClipsDirectory = async (
   return null
 }
 
-export const listAccountClips = async (accountId: string | null): Promise<Clip[]> => {
+export const listAccountClips = async (
+  accountId: string | null,
+  options: ListAccountClipsOptions = {}
+): Promise<ClipPage> => {
   const paths = await resolveAccountClipsDirectory(accountId)
   if (!paths) {
-    return []
+    return { items: [], nextCursor: null, totalCount: 0 }
   }
 
   const { base, accountDir } = paths
 
   const projectDirs = await findProjectDirectories(accountDir)
   if (projectDirs.length === 0) {
-    return []
+    return { items: [], nextCursor: null, totalCount: 0 }
   }
 
   const clips: Clip[] = []
@@ -588,7 +592,27 @@ export const listAccountClips = async (accountId: string | null): Promise<Clip[]
   }
 
   clips.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-  return clips
+  const totalCount = clips.length
+  if (totalCount === 0) {
+    return { items: [], nextCursor: null, totalCount: 0 }
+  }
+
+  const limit =
+    typeof options.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0
+      ? Math.floor(options.limit)
+      : totalCount
+  let startIndex = 0
+  if (options.cursor) {
+    const cursorIndex = clips.findIndex((clip) => clip.id === options.cursor)
+    if (cursorIndex >= 0) {
+      startIndex = cursorIndex + 1
+    }
+  }
+  const window = clips.slice(startIndex, startIndex + limit)
+  const nextCursor =
+    startIndex + window.length < totalCount && window.length > 0 ? window[window.length - 1].id : null
+
+  return { items: window, nextCursor, totalCount }
 }
 
 export default listAccountClips

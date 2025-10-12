@@ -28,6 +28,12 @@ export interface Clip {
   hasAdjustments: boolean
 }
 
+export interface ClipPage {
+  items: Clip[]
+  nextCursor: string | null
+  totalCount: number
+}
+
 export type SupportedPlatform = 'tiktok' | 'youtube' | 'instagram'
 
 export const PLATFORM_LABELS: Record<SupportedPlatform, string> = {

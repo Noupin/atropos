@@ -67,9 +67,12 @@ def test_list_account_clips(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     payload = response.json()
-    assert isinstance(payload, list)
-    assert len(payload) == 1
-    clip = payload[0]
+    assert isinstance(payload, dict)
+    assert payload["total_count"] == 1
+    assert payload["next_cursor"] is None
+    assert isinstance(payload["items"], list)
+    assert len(payload["items"]) == 1
+    clip = payload["items"][0]
     assert clip["title"] == "Amazing Project"
     assert clip["account"] == account_id
     assert clip["quote"] == "A memorable quote"
@@ -94,6 +97,46 @@ def test_list_account_clips(monkeypatch, tmp_path):
     assert clip["preview_url"].endswith(f"/api/accounts/{account_id}/clips/{clip['id']}/preview")
 
 
+def test_list_account_clips_pagination(monkeypatch, tmp_path):
+    out_root = tmp_path / "out"
+    monkeypatch.setenv("OUT_ROOT", str(out_root))
+    account_id, clip_path = _create_clip_structure(out_root)
+
+    base_description = clip_path.with_suffix(".txt").read_text(encoding="utf-8")
+    base_timestamp = clip_path.stat().st_mtime
+
+    second_clip_path = clip_path.parent / "clip_12.00-24.00.mp4"
+    second_clip_path.write_bytes(b"another-fake-mp4")
+    second_clip_path.with_suffix(".txt").write_text(base_description, encoding="utf-8")
+    os.utime(second_clip_path, (base_timestamp + 60, base_timestamp + 60))
+
+    client = TestClient(app)
+    first_page = client.get(
+        f"/api/accounts/{account_id}/clips",
+        params={"limit": 1},
+    )
+
+    assert first_page.status_code == 200
+    payload = first_page.json()
+    assert payload["total_count"] == 2
+    assert len(payload["items"]) == 1
+    first_clip_id = payload["items"][0]["id"]
+    cursor = payload["next_cursor"]
+    assert cursor is not None
+
+    second_page = client.get(
+        f"/api/accounts/{account_id}/clips",
+        params={"limit": 1, "cursor": cursor},
+    )
+
+    assert second_page.status_code == 200
+    second_payload = second_page.json()
+    assert len(second_payload["items"]) == 1
+    assert second_payload["items"][0]["id"] != first_clip_id
+    assert second_payload["total_count"] == 2
+    assert second_payload["next_cursor"] is None
+
+
 def test_get_account_clip(monkeypatch, tmp_path):
     out_root = tmp_path / "out"
     monkeypatch.setenv("OUT_ROOT", str(out_root))
@@ -101,7 +144,7 @@ def test_get_account_clip(monkeypatch, tmp_path):
 
     client = TestClient(app)
     listing = client.get(f"/api/accounts/{account_id}/clips")
-    clip_id = listing.json()[0]["id"]
+    clip_id = listing.json()["items"][0]["id"]
 
     detail = client.get(f"/api/accounts/{account_id}/clips/{clip_id}")
     assert detail.status_code == 200

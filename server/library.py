@@ -144,6 +144,15 @@ class LibraryClip:
         }
 
 
+@dataclass
+class LibraryClipPage:
+    """A windowed page of library clips for pagination."""
+
+    items: List[LibraryClip]
+    next_cursor: Optional[str]
+    total_count: int
+
+
 def _round_two(value: float) -> float:
     return round(value * 100) / 100
 
@@ -621,6 +630,40 @@ def list_account_clips(account_id: Optional[str]) -> asyncio.Future[List[Library
     return asyncio.to_thread(list_account_clips_sync, account_id)
 
 
+def list_account_clips_page_sync(
+    account_id: Optional[str], *, limit: int, cursor: Optional[str]
+) -> LibraryClipPage:
+    """Return a page of clips for ``account_id`` respecting ``limit`` and ``cursor``."""
+
+    clips = list_account_clips_sync(account_id)
+    total_count = len(clips)
+
+    start_index = 0
+    if cursor:
+        for index, clip in enumerate(clips):
+            if clip.clip_id == cursor:
+                start_index = index + 1
+                break
+    if limit <= 0:
+        window = clips[start_index:]
+    else:
+        window = clips[start_index : start_index + limit]
+
+    next_cursor = None
+    if start_index + len(window) < total_count:
+        next_cursor = window[-1].clip_id if window else None
+
+    return LibraryClipPage(items=window, next_cursor=next_cursor, total_count=total_count)
+
+
+def list_account_clips_page(
+    account_id: Optional[str], *, limit: int, cursor: Optional[str]
+) -> asyncio.Future[LibraryClipPage]:
+    return asyncio.to_thread(
+        list_account_clips_page_sync, account_id, limit=limit, cursor=cursor
+    )
+
+
 def resolve_clip_video_path(account_id: Optional[str], clip_id: str) -> Path:
     base = get_out_root()
     target_account = base / account_id if account_id else base
@@ -637,10 +680,13 @@ def resolve_clip_video_path(account_id: Optional[str], clip_id: str) -> Path:
 
 __all__ = [
     "LibraryClip",
+    "LibraryClipPage",
     "DEFAULT_ACCOUNT_PLACEHOLDER",
     "ADJUSTMENT_METADATA_SUFFIX",
     "list_account_clips",
     "list_account_clips_sync",
+    "list_account_clips_page",
+    "list_account_clips_page_sync",
     "resolve_clip_video_path",
     "load_adjustment_metadata",
     "write_adjustment_metadata",

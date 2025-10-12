@@ -1,5 +1,5 @@
 import { BACKEND_MODE, buildAccountClipsUrl } from '../config/backend'
-import type { Clip } from '../types'
+import type { Clip, ClipPage } from '../types'
 import type { ClipAdjustmentPayload } from './pipelineApi'
 
 type RawClipPayload = {
@@ -32,8 +32,8 @@ type RawClipPayload = {
   has_adjustments?: unknown
 }
 
-const isClipArray = (value: unknown): value is Clip[] => {
-  return Array.isArray(value) && value.every((item) => typeof item === 'object' && item !== null && 'id' in item)
+const isClipArray = (value: unknown): value is RawClipPayload[] => {
+  return Array.isArray(value)
 }
 
 export const normaliseClip = (payload: RawClipPayload): Clip | null => {
@@ -161,42 +161,89 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
   return clip
 }
 
-const fetchAccountClipsFromApi = async (accountId: string): Promise<Clip[]> => {
-  const url = buildAccountClipsUrl(accountId)
+export type ListAccountClipsOptions = {
+  cursor?: string | null
+  limit?: number
+}
+
+type RawClipPagePayload = {
+  items?: unknown
+  next_cursor?: unknown
+  total_count?: unknown
+}
+
+const fetchAccountClipsFromApi = async (
+  accountId: string,
+  options: ListAccountClipsOptions = {}
+): Promise<ClipPage> => {
+  const url = new URL(buildAccountClipsUrl(accountId))
+  if (typeof options.limit === 'number' && Number.isFinite(options.limit)) {
+    url.searchParams.set('limit', `${Math.max(1, Math.floor(options.limit))}`)
+  }
+  if (options.cursor) {
+    url.searchParams.set('cursor', options.cursor)
+  }
   const response = await fetch(url)
   if (!response.ok) {
     throw new Error(`Request failed with status ${response.status}`)
   }
-  const payload = (await response.json()) as unknown
-  if (!Array.isArray(payload)) {
-    return []
-  }
-  const clips = payload
+  const payload = (await response.json()) as RawClipPagePayload
+  const items = Array.isArray(payload.items) ? payload.items : []
+  const clips = items
     .map((item) => (item && typeof item === 'object' ? normaliseClip(item as RawClipPayload) : null))
     .filter((clip): clip is Clip => clip !== null)
-  return clips
+  const nextCursor = typeof payload.next_cursor === 'string' ? payload.next_cursor : null
+  const totalCountRaw = payload.total_count
+  const totalCount =
+    typeof totalCountRaw === 'number' && Number.isFinite(totalCountRaw) && totalCountRaw >= 0
+      ? Math.floor(totalCountRaw)
+      : clips.length
+  return { items: clips, nextCursor, totalCount }
 }
 
-export const listAccountClips = async (accountId: string | null): Promise<Clip[]> => {
+export const listAccountClips = async (
+  accountId: string | null,
+  options: ListAccountClipsOptions = {}
+): Promise<ClipPage> => {
   if (!accountId) {
-    return []
+    return { items: [], nextCursor: null, totalCount: 0 }
   }
 
   if (BACKEND_MODE === 'api' || typeof window === 'undefined' || !window.api?.listAccountClips) {
     try {
-      return await fetchAccountClipsFromApi(accountId)
+      return await fetchAccountClipsFromApi(accountId, options)
     } catch (error) {
       console.error('Unable to load clips from API library', error)
-      return []
+      return { items: [], nextCursor: null, totalCount: 0 }
     }
   }
 
   try {
-    const clips = await window.api.listAccountClips(accountId)
-    return isClipArray(clips) ? clips : []
+    const page = await window.api.listAccountClips(accountId, options)
+    if (!page || typeof page !== 'object') {
+      return { items: [], nextCursor: null, totalCount: 0 }
+    }
+    const { items, nextCursor, totalCount } = page as {
+      items?: unknown
+      nextCursor?: unknown
+      totalCount?: unknown
+    }
+    const clipItems = isClipArray(items)
+      ? items
+          .map((item) => (item && typeof item === 'object' ? normaliseClip(item as RawClipPayload) : null))
+          .filter((clip): clip is Clip => clip !== null)
+      : []
+    return {
+      items: clipItems,
+      nextCursor: typeof nextCursor === 'string' ? nextCursor : null,
+      totalCount:
+        typeof totalCount === 'number' && Number.isFinite(totalCount) && totalCount >= 0
+          ? Math.floor(totalCount)
+          : clipItems.length
+    }
   } catch (error) {
     console.error('Unable to load clips from library bridge', error)
-    return []
+    return { items: [], nextCursor: null, totalCount: 0 }
   }
 }
 

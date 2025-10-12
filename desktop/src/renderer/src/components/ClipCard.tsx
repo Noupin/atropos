@@ -41,13 +41,9 @@ const ClipCard: FC<ClipCardProps> = ({ clip, onClick, isActive = false }) => {
             className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
           />
         ) : (
-          <video
-            src={clip.playbackUrl}
-            muted
-            playsInline
-            preload="metadata"
-            className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-          />
+          <div className="flex h-full w-full items-center justify-center bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] text-xs font-medium uppercase tracking-[0.18em] text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
+            No preview
+          </div>
         )}
         <span
           className={`absolute left-2 top-2 rounded-md px-2 py-0.5 text-xs font-semibold ${
