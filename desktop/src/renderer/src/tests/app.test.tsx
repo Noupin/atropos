@@ -128,7 +128,7 @@ describe('App library navigation behaviour', () => {
   it('navigates to the library when a single clip is expected', () => {
     render(
       <MemoryRouter>
-        <App searchInputRef={{ current: null }} />
+        <App />
       </MemoryRouter>
     )
 
@@ -143,7 +143,7 @@ describe('App library navigation behaviour', () => {
   it('defers navigation when multiple clips are expected', () => {
     render(
       <MemoryRouter>
-        <App searchInputRef={{ current: null }} />
+        <App />
       </MemoryRouter>
     )
 

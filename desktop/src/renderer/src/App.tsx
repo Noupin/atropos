@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FC, MouseEvent, RefObject } from 'react'
+import type { FC, MouseEvent } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import Search from './components/Search'
 import MarbleSelect from './components/MarbleSelect'
 import TrialBadge from './components/TrialBadge'
 import ClipPage from './pages/Clip'
@@ -177,16 +176,12 @@ const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge, progress 
   )
 }
 
-type AppProps = {
-  searchInputRef: RefObject<HTMLInputElement | null>
-}
+type AppProps = Record<string, never>
 
-const App: FC<AppProps> = ({ searchInputRef }) => {
+const App: FC<AppProps> = () => {
   const [viewState, setViewState] = useState<AppViewState>(() => loadViewState() ?? createDefaultViewState())
   const initialViewStateRef = useRef(viewState)
   const hasRestoredPathRef = useRef(false)
-  const [searchBridge, setSearchBridge] = useState<SearchBridge | null>(null)
-  const [searchValue, setSearchValue] = useState('')
   const [homeState, setHomeState] = useState<HomePipelineState>(() => {
     const persisted = initialViewStateRef.current.home
     return {
@@ -723,17 +718,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   )
 
   const registerSearch = useCallback((bridge: SearchBridge | null) => {
-    setSearchBridge(bridge)
-    setSearchValue(bridge?.getQuery() ?? '')
+    void bridge
   }, [])
-
-  const handleSearchChange = useCallback(
-    (value: string) => {
-      setSearchValue(value)
-      searchBridge?.onQueryChange(value)
-    },
-    [searchBridge]
-  )
 
   const toggleTheme = useCallback(() => {
     if (typeof document === 'undefined') {
@@ -766,7 +752,6 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     []
   )
 
-  const isLibraryRoute = location.pathname.startsWith('/library')
   const isClipEditRoute = /^\/clip\/[^/]+\/edit$/.test(location.pathname)
   const isSettingsRoute = location.pathname.startsWith('/settings')
   const showBackButton = location.pathname.startsWith('/clip/')
@@ -878,16 +863,6 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
               <TrialBadge />
             </div>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
-              {isLibraryRoute ? (
-                <div className="min-w-[220px] flex-1 basis-full sm:basis-auto sm:max-w-md">
-                  <Search
-                    ref={searchInputRef}
-                    value={searchValue}
-                    onChange={handleSearchChange}
-                    disabled={!searchBridge}
-                  />
-                </div>
-              ) : null}
               <div className="flex flex-wrap items-center gap-3">
                 {isSettingsRoute && settingsHeaderAction ? (
                   <button
@@ -951,7 +926,6 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
             path="/library"
             element={
               <Library
-                registerSearch={registerSearch}
                 accounts={accounts}
                 isLoadingAccounts={isLoadingAccounts}
                 pendingProjects={pendingLibraryProjects}

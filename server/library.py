@@ -112,6 +112,11 @@ class LibraryClip:
             account_id=self.account_id or DEFAULT_ACCOUNT_PLACEHOLDER,
             clip_id=self.clip_id,
         )
+        thumbnail_url = request.url_for(
+            "get_account_clip_thumbnail",
+            account_id=self.account_id or DEFAULT_ACCOUNT_PLACEHOLDER,
+            clip_id=self.clip_id,
+        )
 
         return {
             "id": self.clip_id,
@@ -135,7 +140,7 @@ class LibraryClip:
             "account": self.account_id,
             "timestamp_url": self.timestamp_url,
             "timestamp_seconds": self.timestamp_seconds,
-            "thumbnail_url": self.thumbnail_url,
+            "thumbnail_url": str(thumbnail_url),
             "start_seconds": self.start_seconds,
             "end_seconds": self.end_seconds,
             "original_start_seconds": self.original_start_seconds,

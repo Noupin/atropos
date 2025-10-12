@@ -1,39 +1,19 @@
 import './index.css'
 
-import { StrictMode, useEffect, useRef } from 'react'
+import { StrictMode } from 'react'
 import type { FC } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { AccessProvider } from './state/access'
 
-const RootApp: FC = () => {
-  const searchRef = useRef<HTMLInputElement | null>(null)
-
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === '/' && !event.defaultPrevented && !event.altKey && !event.ctrlKey && !event.metaKey) {
-        const target = event.target as HTMLElement | null
-        if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) {
-          return
-        }
-        event.preventDefault()
-        searchRef.current?.focus()
-      }
-    }
-
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [])
-
-  return (
-    <BrowserRouter>
-      <AccessProvider>
-        <App searchInputRef={searchRef} />
-      </AccessProvider>
-    </BrowserRouter>
-  )
-}
+const RootApp: FC = () => (
+  <BrowserRouter>
+    <AccessProvider>
+      <App />
+    </AccessProvider>
+  </BrowserRouter>
+)
 
 const container = document.getElementById('root')
 

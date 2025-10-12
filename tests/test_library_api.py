@@ -95,6 +95,9 @@ def test_list_account_clips(monkeypatch, tmp_path):
     assert clip["video_title"] == "Amazing Project"
     assert clip["playback_url"].endswith(f"/api/accounts/{account_id}/clips/{clip['id']}/video")
     assert clip["preview_url"].endswith(f"/api/accounts/{account_id}/clips/{clip['id']}/preview")
+    assert clip["thumbnail_url"].endswith(
+        f"/api/accounts/{account_id}/clips/{clip['id']}/thumbnail"
+    )
 
 
 def test_list_account_clips_pagination(monkeypatch, tmp_path):
@@ -153,6 +156,9 @@ def test_get_account_clip(monkeypatch, tmp_path):
     assert payload["title"] == "Amazing Project"
     assert payload["playback_url"].endswith(f"/api/accounts/{account_id}/clips/{clip_id}/video")
     assert payload["preview_url"].endswith(f"/api/accounts/{account_id}/clips/{clip_id}/preview")
+    assert payload["thumbnail_url"].endswith(
+        f"/api/accounts/{account_id}/clips/{clip_id}/thumbnail"
+    )
 
     missing = client.get(f"/api/accounts/{account_id}/clips/unknown")
     assert missing.status_code == 404
@@ -204,4 +210,35 @@ def test_get_account_clip_preview(monkeypatch, tmp_path):
     assert response.content == b"preview-bytes"
 
     missing = client.get(f"/api/accounts/{account_id}/clips/unknown/preview")
+    assert missing.status_code == 404
+
+
+def test_get_account_clip_thumbnail(monkeypatch, tmp_path):
+    out_root = tmp_path / "out"
+    monkeypatch.setenv("OUT_ROOT", str(out_root))
+    account_id, clip_path = _create_clip_structure(out_root)
+
+    relative = clip_path.relative_to(out_root)
+    clip_id = base64.urlsafe_b64encode(relative.as_posix().encode("utf-8")).decode("ascii").rstrip("=")
+
+    def _fake_run(command, *args, **kwargs):
+        output_path = Path(command[-1])
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"thumbnail-bytes")
+        class _Result:
+            returncode = 0
+
+        return _Result()
+
+    monkeypatch.setattr(server.app.subprocess, "run", _fake_run)
+
+    client = TestClient(app)
+    response = client.get(f"/api/accounts/{account_id}/clips/{clip_id}/thumbnail")
+
+    assert response.status_code == 200
+    assert response.headers.get("content-type") == "image/jpeg"
+    assert response.headers.get("cache-control") == "no-store"
+    assert response.content == b"thumbnail-bytes"
+
+    missing = client.get(f"/api/accounts/{account_id}/clips/unknown/thumbnail")
     assert missing.status_code == 404

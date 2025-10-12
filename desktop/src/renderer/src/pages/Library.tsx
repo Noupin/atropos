@@ -10,9 +10,10 @@ import { useNavigate } from 'react-router-dom'
 import ClipCard from '../components/ClipCard'
 import ClipDescription from '../components/ClipDescription'
 import MarbleSpinner from '../components/MarbleSpinner'
+import Search from '../components/Search'
 import { formatDuration, formatViews } from '../lib/format'
 import { listAccountClips } from '../services/clipLibrary'
-import type { AccountSummary, Clip, SearchBridge } from '../types'
+import type { AccountSummary, Clip } from '../types'
 import useSharedVolume from '../hooks/useSharedVolume'
 
 const UNKNOWN_ACCOUNT_ID = '__unknown__'
@@ -138,7 +139,6 @@ const getProjectGroupKey = (clip: Clip): string => {
 }
 
 type LibraryProps = {
-  registerSearch: (bridge: SearchBridge | null) => void
   accounts: AccountSummary[]
   isLoadingAccounts: boolean
   pendingProjects: PendingLibraryProject[]
@@ -147,7 +147,6 @@ type LibraryProps = {
 }
 
 const Library: FC<LibraryProps> = ({
-  registerSearch,
   accounts,
   isLoadingAccounts,
   pendingProjects,
@@ -168,9 +167,12 @@ const Library: FC<LibraryProps> = ({
   const [accountClipState, setAccountClipState] = useState<Map<string, AccountClipListing>>(
     () => new Map()
   )
-  const queryRef = useRef(query)
   const loadRequestRef = useRef<Map<string, number>>(new Map())
   const accountClipStateRef = useRef(accountClipState)
+  const seenAccountIdsRef = useRef<Set<string>>(new Set())
+  const seenProjectIdsRef = useRef<Set<string>>(new Set())
+  const hasRestoredAccountCollapseRef = useRef(persistedState !== null)
+  const hasRestoredProjectCollapseRef = useRef(persistedState !== null)
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const navigate = useNavigate()
@@ -209,25 +211,8 @@ const Library: FC<LibraryProps> = ({
   }, [accountKeyForPending, pendingProjects])
 
   const handleQueryChange = useCallback((value: string) => {
-    queryRef.current = value
     setQuery(value)
   }, [])
-
-  const handleQueryClear = useCallback(() => {
-    queryRef.current = ''
-    setQuery('')
-  }, [])
-
-  useEffect(() => {
-    const bridge: SearchBridge = {
-      getQuery: () => queryRef.current,
-      onQueryChange: handleQueryChange,
-      clear: handleQueryClear
-    }
-
-    registerSearch(bridge)
-    return () => registerSearch(null)
-  }, [handleQueryChange, handleQueryClear, registerSearch])
 
   const handleAdjustClipBoundaries = useCallback(
     (clip: Clip) => {
@@ -398,16 +383,16 @@ const Library: FC<LibraryProps> = ({
 
   useEffect(() => {
     if (filteredClips.length === 0) {
-      if (!isLoadingInitial && allLoadedClips.length === 0 && selectedClipId !== null) {
+      if (selectedClipId !== null) {
         setSelectedClipId(null)
       }
       return
     }
 
-    if (!selectedClipId || !filteredClips.some((clip) => clip.id === selectedClipId)) {
-      setSelectedClipId(filteredClips[0].id)
+    if (selectedClipId && !filteredClips.some((clip) => clip.id === selectedClipId)) {
+      setSelectedClipId(null)
     }
-  }, [allLoadedClips.length, filteredClips, isLoadingInitial, selectedClipId])
+  }, [filteredClips, selectedClipId])
 
   const groupedClips = useMemo(() => {
     const buildProjectGroups = (items: Clip[]): ProjectGroup[] => {
@@ -516,9 +501,82 @@ const Library: FC<LibraryProps> = ({
   )
 
   useEffect(() => {
-    setCollapsedAccountIds(new Set<string>())
-    setCollapsedProjectIds(new Set<string>())
-  }, [hasMultipleAccounts])
+    if (groupedClips.mode !== 'account') {
+      if (hasRestoredAccountCollapseRef.current) {
+        hasRestoredAccountCollapseRef.current = false
+      }
+      return
+    }
+
+    const seenAccounts = seenAccountIdsRef.current
+
+    setCollapsedAccountIds((previous) => {
+      let mutated = false
+      const next = new Set(previous)
+
+      for (const group of groupedClips.groups) {
+        if (!seenAccounts.has(group.id)) {
+          seenAccounts.add(group.id)
+          if (!hasRestoredAccountCollapseRef.current && !next.has(group.id)) {
+            next.add(group.id)
+            mutated = true
+          }
+        }
+      }
+
+      return mutated ? next : previous
+    })
+
+    if (hasRestoredAccountCollapseRef.current && groupedClips.groups.length > 0) {
+      hasRestoredAccountCollapseRef.current = false
+    }
+  }, [groupedClips])
+
+  useEffect(() => {
+    const seenProjects = seenProjectIdsRef.current
+
+    setCollapsedProjectIds((previous) => {
+      let mutated = false
+      const next = new Set(previous)
+
+      if (groupedClips.mode === 'account') {
+        for (const accountGroup of groupedClips.groups) {
+          for (const project of accountGroup.projects) {
+            const key = `${accountGroup.id}:${project.id}`
+            if (!seenProjects.has(key)) {
+              seenProjects.add(key)
+              if (!hasRestoredProjectCollapseRef.current && !next.has(key)) {
+                next.add(key)
+                mutated = true
+              }
+            }
+          }
+        }
+      } else {
+        for (const project of groupedClips.groups) {
+          const key = project.id
+          if (!seenProjects.has(key)) {
+            seenProjects.add(key)
+            if (!hasRestoredProjectCollapseRef.current && !next.has(key)) {
+              next.add(key)
+              mutated = true
+            }
+          }
+        }
+      }
+
+      return mutated ? next : previous
+    })
+
+    const hasProjects =
+      groupedClips.mode === 'account'
+        ? groupedClips.groups.some((group) => group.projects.length > 0)
+        : groupedClips.groups.length > 0
+
+    if (hasRestoredProjectCollapseRef.current && hasProjects) {
+      hasRestoredProjectCollapseRef.current = false
+    }
+  }, [groupedClips])
 
   const toggleAccountCollapse = useCallback((id: string) => {
     setCollapsedAccountIds((previous) => {
@@ -719,6 +777,29 @@ const Library: FC<LibraryProps> = ({
                 {isLoadingAccounts ? 'Loading accounts…' : accountScopeLabel}
               </div>
             </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="w-full sm:max-w-md">
+                <Search
+                  value={query}
+                  onChange={handleQueryChange}
+                  disabled={!hasAccounts}
+                  placeholder="Search clips…"
+                />
+              </div>
+              {hasAccounts ? (
+                <div className="flex w-full items-center justify-between gap-3 text-xs text-[var(--muted)] sm:w-auto sm:justify-end">
+                  <span>
+                    Showing {filteredClips.length} {filteredClips.length === 1 ? 'clip' : 'clips'}
+                    {hasMultipleAccounts
+                      ? ' from all accounts'
+                      : availableAccounts[0]
+                        ? ` from ${availableAccounts[0].displayName}`
+                        : ''}
+                  </span>
+                  {isAnyAccountLoading ? <MarbleSpinner size="sm" label="Loading clips…" /> : null}
+                </div>
+              ) : null}
+            </div>
             {clipsError ? (
               <div className="rounded-lg border border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] px-4 py-3 text-sm text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]">
                 {clipsError}
@@ -727,19 +808,6 @@ const Library: FC<LibraryProps> = ({
             {!hasAccounts && !isLoadingAccounts ? (
               <div className="rounded-lg border border-dashed border-white/10 bg-black/20 px-4 py-6 text-sm text-[var(--muted)]">
                 Connect an account with an active platform from your profile to start collecting clips.
-              </div>
-            ) : null}
-            {hasAccounts ? (
-              <div className="flex items-center justify-between text-xs text-[var(--muted)]">
-                <span>
-                  Showing {filteredClips.length} {filteredClips.length === 1 ? 'clip' : 'clips'}
-                  {hasMultipleAccounts
-                    ? ' from all accounts.'
-                    : availableAccounts[0]
-                      ? ` from ${availableAccounts[0].displayName}.`
-                      : '.'}
-                </span>
-                {isAnyAccountLoading ? <MarbleSpinner size="sm" label="Loading clips…" /> : null}
               </div>
             ) : null}
           </div>

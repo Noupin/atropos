@@ -7,6 +7,7 @@ import hashlib
 import logging
 import math
 import re
+import subprocess
 import threading
 import uuid
 from dataclasses import dataclass, field, fields, is_dataclass
@@ -1329,6 +1330,101 @@ async def get_account_clip_preview(
         path=preview_path,
         media_type="video/mp4",
         filename=preview_path.name,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def _generate_preview_thumbnail(
+    *, project_dir: Path, stem: str, time_seconds: float
+) -> Path:
+    """Render or reuse a thumbnail image for the provided clip stem."""
+
+    project_dir = project_dir.resolve()
+    if not project_dir.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project directory not found",
+        )
+
+    timestamp = max(0.0, round(float(time_seconds), 3))
+    project_name = project_dir.name
+    source_video = project_dir / f"{project_name}.mp4"
+    if not source_video.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source video not found",
+        )
+
+    thumbnail_dir = project_dir / "thumbnails"
+    thumbnail_dir.mkdir(parents=True, exist_ok=True)
+
+    key_input = f"{stem}:{timestamp:.3f}".encode("utf-8")
+    digest = hashlib.sha1(key_input).hexdigest()[:16]
+    thumbnail_path = thumbnail_dir / f"{stem}-{digest}.jpg"
+
+    if thumbnail_path.exists():
+        return thumbnail_path
+
+    command = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{timestamp:.3f}",
+        "-i",
+        str(source_video),
+        "-frames:v",
+        "1",
+        "-q:v",
+        "2",
+        str(thumbnail_path),
+    ]
+
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError as exc:
+        logger.exception("FFmpeg not available for thumbnail generation", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Thumbnail generation is unavailable.",
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        logger.exception("Failed to generate thumbnail for %s", stem, exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate thumbnail.",
+        ) from exc
+
+    return thumbnail_path
+
+
+@app.get("/api/accounts/{account_id}/clips/{clip_id}/thumbnail")
+async def get_account_clip_thumbnail(account_id: str, clip_id: str) -> FileResponse:
+    """Return (and generate if needed) a thumbnail image for ``clip_id``."""
+
+    account_value = None if account_id == DEFAULT_ACCOUNT_PLACEHOLDER else account_id
+    clips = list_account_clips_sync(account_value)
+    target = next((clip for clip in clips if clip.clip_id == clip_id), None)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+
+    duration = max(0.0, target.end_seconds - target.start_seconds)
+    midpoint = target.start_seconds + (duration / 2.0 if duration > 0 else 0.0)
+    project_dir = target.playback_path.parent.parent
+    thumbnail_path = _generate_preview_thumbnail(
+        project_dir=project_dir,
+        stem=target.playback_path.stem,
+        time_seconds=midpoint,
+    )
+
+    return FileResponse(
+        path=thumbnail_path,
+        media_type="image/jpeg",
+        filename=thumbnail_path.name,
         headers={"Cache-Control": "no-store"},
     )
 
