@@ -58,6 +58,7 @@ const enqueueDeepLink = (url: string): void => {
   if (!url.startsWith(`${DEEP_LINK_SCHEME}://`)) {
     return
   }
+  console.info('[deep-link] enqueue', url)
   if (mainWindow) {
     focusMainWindow()
     mainWindow.webContents.send('deep-link', url)
@@ -86,12 +87,14 @@ app.on('second-instance', (_event, argv) => {
   }
   const urlArg = argv.find((arg) => arg.startsWith(`${DEEP_LINK_SCHEME}://`))
   if (urlArg) {
+    console.info('[deep-link] second-instance url', urlArg)
     enqueueDeepLink(urlArg)
   }
 })
 
 app.on('open-url', (event, url) => {
   event.preventDefault()
+  console.info('[deep-link] open-url event', url)
   enqueueDeepLink(url)
 })
 
@@ -185,12 +188,12 @@ app.whenReady().then(() => {
   app.setName('Atropos')
   electronApp.setAppUserModelId('com.atropos.app')
 
-  if (process.defaultApp) {
-    if (process.argv.length >= 2) {
+  if (!app.isPackaged) {
+    if (process.defaultApp && process.argv.length >= 2) {
       app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME, process.execPath, [resolve(process.argv[1])])
+    } else {
+      app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME)
     }
-  } else {
-    app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME)
   }
 
   // Default open or close DevTools by F12 in development
