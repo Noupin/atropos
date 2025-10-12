@@ -859,42 +859,113 @@ def _apply_clip_adjustment(
     return duration, description_text
 
 
-def _generate_preview_clip(
-    *,
-    project_dir: Path,
-    stem: str,
-    start_seconds: float,
-    end_seconds: float,
-) -> Path:
-    """Render or reuse a lightweight preview clip for the provided range."""
+def _validate_short_path(project_dir: Path, short_path: Path) -> Path:
+    """Ensure ``short_path`` points to a rendered short within ``project_dir``."""
 
     project_dir = project_dir.resolve()
     if not project_dir.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project directory not found")
 
-    start_value = max(0.0, round(float(start_seconds), 3))
-    end_value = max(0.0, round(float(end_seconds), 3))
+    try:
+        resolved_short = short_path.resolve(strict=True)
+    except (OSError, FileNotFoundError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Rendered short not found",
+        ) from exc
+
+    try:
+        resolved_short.relative_to(project_dir)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Rendered short not found",
+        ) from exc
+
+    return resolved_short
+
+
+def _resolve_short_offsets(
+    *,
+    clip_start: float,
+    clip_end: float,
+    requested_start: float,
+    requested_end: float,
+) -> tuple[float, float]:
+    """Normalise preview bounds so they align with the rendered short timeline."""
+
+    clip_start_value = float(clip_start)
+    clip_end_value = float(clip_end)
+    if not math.isfinite(clip_start_value) or not math.isfinite(clip_end_value):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clip bounds are invalid.")
+
+    if clip_end_value <= clip_start_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Clip duration must be greater than zero.",
+        )
+
+    start_candidate = float(requested_start)
+    end_candidate = float(requested_end)
+
+    start_clamped = max(clip_start_value, min(start_candidate, clip_end_value))
+    if start_clamped >= clip_end_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Preview range must be within the clip bounds.",
+        )
+
+    end_clamped = max(clip_start_value, min(end_candidate, clip_end_value))
+    if end_clamped <= start_clamped:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Preview range must be greater than zero.",
+        )
+
+    start_offset = round(start_clamped - clip_start_value, 3)
+    end_offset = round(end_clamped - clip_start_value, 3)
+    if end_offset <= start_offset:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Preview range must be greater than zero.",
+        )
+
+    return start_offset, end_offset
+
+
+def _generate_preview_clip(
+    *,
+    project_dir: Path,
+    short_path: Path,
+    start_offset: float,
+    end_offset: float,
+) -> Path:
+    """Render or reuse a lightweight preview clip from the rendered short."""
+
+    project_dir = project_dir.resolve()
+    if not project_dir.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project directory not found")
+
+    short_video = _validate_short_path(project_dir, short_path)
+
+    start_value = max(0.0, round(float(start_offset), 3))
+    end_value = max(0.0, round(float(end_offset), 3))
     if end_value <= start_value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Preview range must be greater than zero.",
         )
 
-    project_name = project_dir.name
-    source_video = project_dir / f"{project_name}.mp4"
-    if not source_video.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source video not found")
-
     preview_dir = project_dir / "previews"
     preview_dir.mkdir(parents=True, exist_ok=True)
 
-    key_input = f"{stem}:{start_value:.3f}:{end_value:.3f}".encode("utf-8")
+    key_input = f"{short_video.stem}:{start_value:.3f}:{end_value:.3f}".encode("utf-8")
     digest = hashlib.sha1(key_input).hexdigest()[:16]
-    preview_path = preview_dir / f"{stem}-{digest}.mp4"
+    preview_path = preview_dir / f"{short_video.stem}-{digest}.mp4"
 
     if not preview_path.exists():
         ok = save_clip(
-            source_video,
+            short_video,
             preview_path,
             start=start_value,
             end=end_value,
@@ -1069,7 +1140,7 @@ async def get_job_clip_preview(
     start: float | None = Query(default=None, ge=0.0),
     end: float | None = Query(default=None, ge=0.0),
 ) -> FileResponse:
-    """Stream a lightweight preview of the clip from the original source video."""
+    """Stream a lightweight preview of the clip derived from its rendered short."""
 
     state = _get_job(job_id)
     if state is None:
@@ -1091,14 +1162,23 @@ async def get_job_clip_preview(
         except ValueError:
             project_dir = clip_project_dir
 
-    start_seconds = float(start) if start is not None else clip.start_seconds
-    end_seconds = float(end) if end is not None else clip.end_seconds
+    clip_start = float(clip.start_seconds)
+    clip_end = float(clip.end_seconds)
+    requested_start = float(start) if start is not None else clip_start
+    requested_end = float(end) if end is not None else clip_end
+
+    start_offset, end_offset = _resolve_short_offsets(
+        clip_start=clip_start,
+        clip_end=clip_end,
+        requested_start=requested_start,
+        requested_end=requested_end,
+    )
 
     preview_path = _generate_preview_clip(
         project_dir=project_dir,
-        stem=clip.video_path.stem,
-        start_seconds=start_seconds,
-        end_seconds=end_seconds,
+        short_path=clip.video_path,
+        start_offset=start_offset,
+        end_offset=end_offset,
     )
 
     return FileResponse(
@@ -1112,30 +1192,30 @@ async def get_job_clip_preview(
 def _generate_clip_thumbnail(
     *,
     project_dir: Path,
-    stem: str,
-    start_seconds: float,
-    end_seconds: float,
+    short_path: Path,
+    start_offset: float,
+    end_offset: float,
 ) -> Path:
-    """Create or reuse a JPEG thumbnail for the provided clip segment."""
+    """Create or reuse a JPEG thumbnail derived from the rendered short."""
 
     project_dir = project_dir.resolve()
     if not project_dir.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project directory not found")
 
-    source_video = project_dir / f"{project_dir.name}.mp4"
-    if not source_video.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source video not found")
+    short_video = _validate_short_path(project_dir, short_path)
 
     thumbnails_dir = project_dir / "thumbnails"
     thumbnails_dir.mkdir(parents=True, exist_ok=True)
 
-    duration = max(0.0, float(end_seconds) - float(start_seconds))
-    midpoint = float(start_seconds) + (duration * 0.5 if duration > 0 else 0.0)
-    midpoint = max(float(start_seconds), min(float(end_seconds), midpoint))
+    start_value = max(0.0, float(start_offset))
+    end_value = max(0.0, float(end_offset))
+    duration = max(0.0, end_value - start_value)
+    midpoint = start_value + (duration * 0.5 if duration > 0 else 0.0)
+    midpoint = max(start_value, min(end_value, midpoint))
 
-    key_input = f"{stem}:{midpoint:.3f}".encode("utf-8")
+    key_input = f"{short_video.stem}:{midpoint:.3f}".encode("utf-8")
     digest = hashlib.sha1(key_input).hexdigest()[:16]
-    thumbnail_path = thumbnails_dir / f"{stem}-{digest}.jpg"
+    thumbnail_path = thumbnails_dir / f"{short_video.stem}-{digest}.jpg"
 
     if thumbnail_path.exists():
         return thumbnail_path
@@ -1146,7 +1226,7 @@ def _generate_clip_thumbnail(
         "-ss",
         f"{midpoint:.3f}",
         "-i",
-        str(source_video),
+        str(short_video),
         "-frames:v",
         "1",
         "-q:v",
@@ -1163,7 +1243,9 @@ def _generate_clip_thumbnail(
             detail="Unable to generate thumbnail",
         ) from exc
     except subprocess.CalledProcessError as exc:  # pragma: no cover - defensive guard
-        logger.exception("Failed to render thumbnail for clip %s", stem, exc_info=exc)
+        logger.exception(
+            "Failed to render thumbnail for clip %s", short_video.stem, exc_info=exc
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to generate thumbnail",
@@ -1358,7 +1440,7 @@ async def get_account_clip_preview(
     start: float | None = Query(default=None, ge=0.0),
     end: float | None = Query(default=None, ge=0.0),
 ) -> FileResponse:
-    """Stream a preview of a library clip from the original project source."""
+    """Stream a preview of a library clip derived from the rendered short."""
 
     account_value = None if account_id == DEFAULT_ACCOUNT_PLACEHOLDER else account_id
     clips = list_account_clips_sync(account_value)
@@ -1366,15 +1448,25 @@ async def get_account_clip_preview(
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
 
-    start_seconds = float(start) if start is not None else target.start_seconds
-    end_seconds = float(end) if end is not None else target.end_seconds
-
     project_dir = target.playback_path.parent.parent
+
+    clip_start = float(target.start_seconds)
+    clip_end = float(target.end_seconds)
+    requested_start = float(start) if start is not None else clip_start
+    requested_end = float(end) if end is not None else clip_end
+
+    start_offset, end_offset = _resolve_short_offsets(
+        clip_start=clip_start,
+        clip_end=clip_end,
+        requested_start=requested_start,
+        requested_end=requested_end,
+    )
+
     preview_path = _generate_preview_clip(
         project_dir=project_dir,
-        stem=target.playback_path.stem,
-        start_seconds=start_seconds,
-        end_seconds=end_seconds,
+        short_path=target.playback_path,
+        start_offset=start_offset,
+        end_offset=end_offset,
     )
 
     return FileResponse(
@@ -1396,11 +1488,21 @@ async def get_account_clip_thumbnail(account_id: str, clip_id: str) -> FileRespo
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
 
     project_dir = target.playback_path.parent.parent
+
+    clip_start = float(target.start_seconds)
+    clip_end = float(target.end_seconds)
+    start_offset, end_offset = _resolve_short_offsets(
+        clip_start=clip_start,
+        clip_end=clip_end,
+        requested_start=clip_start,
+        requested_end=clip_end,
+    )
+
     thumbnail_path = _generate_clip_thumbnail(
         project_dir=project_dir,
-        stem=target.playback_path.stem,
-        start_seconds=target.start_seconds,
-        end_seconds=target.end_seconds,
+        short_path=target.playback_path,
+        start_offset=start_offset,
+        end_offset=end_offset,
     )
 
     return FileResponse(

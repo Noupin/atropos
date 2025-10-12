@@ -226,10 +226,13 @@ def test_get_account_clip_preview(monkeypatch, tmp_path):
     relative = clip_path.relative_to(out_root)
     clip_id = base64.urlsafe_b64encode(relative.as_posix().encode("utf-8")).decode("ascii").rstrip("=")
 
-    def _fake_save_clip(source, output_path, *_, **__) -> bool:
+    def _fake_save_clip(source, output_path, *_, **kwargs) -> bool:
+        assert Path(source) == clip_path
         target = Path(output_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b"preview-bytes")
+        assert kwargs.get("start") == 1.0
+        assert kwargs.get("end") == 3.0
         return True
 
     monkeypatch.setattr(server.app, "save_clip", _fake_save_clip)
@@ -256,7 +259,11 @@ def test_get_account_clip_thumbnail(monkeypatch, tmp_path):
     relative = clip_path.relative_to(out_root)
     clip_id = base64.urlsafe_b64encode(relative.as_posix().encode("utf-8")).decode("ascii").rstrip("=")
 
-    def _fake_generate_thumbnail(*_, **__):
+    def _fake_generate_thumbnail(*, project_dir, short_path, start_offset, end_offset):
+        assert Path(project_dir) == clip_path.parent.parent
+        assert Path(short_path) == clip_path
+        assert start_offset == 0.0
+        assert end_offset > start_offset
         target = clip_path.parent / "thumbnails" / "thumb.jpg"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b"thumbnail-bytes")
