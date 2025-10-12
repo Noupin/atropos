@@ -1,4 +1,9 @@
-import { BACKEND_MODE, buildAccountClipsUrl, buildClipsPageUrl } from '../config/backend'
+import {
+  BACKEND_MODE,
+  buildAccountClipThumbnailUrl,
+  buildAccountClipsUrl,
+  buildClipsPageUrl
+} from '../config/backend'
 import type { Clip } from '../types'
 import type { ClipAdjustmentPayload } from './pipelineApi'
 import { extractErrorMessage, requestWithFallback } from './http'
@@ -328,6 +333,21 @@ const summariseProjects = (clips: Clip[]): ProjectSummary[] => {
     .sort((a, b) => (a.latestCreatedAt < b.latestCreatedAt ? 1 : -1))
 }
 
+const attachAccountMetadata = (clips: Clip[], accountId: string): Clip[] => {
+  return clips.map((clip) => {
+    const effectiveAccountId = clip.accountId && clip.accountId.length > 0 ? clip.accountId : accountId
+    const fallbackThumbnail =
+      !clip.thumbnail && effectiveAccountId
+        ? buildAccountClipThumbnailUrl(effectiveAccountId, clip.id)
+        : clip.thumbnail
+    return {
+      ...clip,
+      accountId: effectiveAccountId,
+      thumbnail: fallbackThumbnail ?? null
+    }
+  })
+}
+
 export const fetchAccountClipsPage = async ({
   accountId,
   limit,
@@ -344,7 +364,11 @@ export const fetchAccountClipsPage = async ({
   const pageSize = Math.max(1, Math.floor(limit))
   if (BACKEND_MODE === 'api' || typeof window === 'undefined' || !window.api?.listAccountClips) {
     try {
-      return await fetchAccountClipPageFromApi(accountId, pageSize, cursor ?? null)
+      const page = await fetchAccountClipPageFromApi(accountId, pageSize, cursor ?? null)
+      return {
+        ...page,
+        clips: attachAccountMetadata(page.clips, accountId)
+      }
     } catch (error) {
       console.error('Unable to load clips from API library', error)
       return { clips: [], nextCursor: null, totalClips: null, projects: [] }
@@ -360,7 +384,7 @@ export const fetchAccountClipsPage = async ({
     const slice = allClips.slice(start, end)
     const nextCursor = end < allClips.length ? encodeCursorToken(end) : null
     return {
-      clips: slice,
+      clips: attachAccountMetadata(slice, accountId),
       nextCursor,
       totalClips: allClips.length,
       projects: summariseProjects(allClips)

@@ -111,11 +111,8 @@ const Library: FC<LibraryProps> = ({
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
   const scrollRestoredRef = useRef(false)
-  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(
-    () => new Set<string>()
-  )
-  const pageSize = Math.max(1, Math.floor(libraryState.pageSize))
-  const previousPageSizeRef = useRef(pageSize)
+  const effectivePageSize = Math.max(1, Math.floor(libraryState.pageSize))
+  const previousPageSizeRef = useRef(effectivePageSize)
 
   const availableAccounts = useMemo(
     () => accounts.filter((account) => isAccountAvailable(account)),
@@ -129,7 +126,12 @@ const Library: FC<LibraryProps> = ({
     () => new Set(libraryState.expandedAccountIds),
     [libraryState.expandedAccountIds]
   )
+  const expandedProjectIdSet = useMemo(
+    () => new Set(libraryState.expandedProjectIds),
+    [libraryState.expandedProjectIds]
+  )
   const selectedClipId = libraryState.selectedClipId
+  const previousSelectedClipIdRef = useRef<string | null>(selectedClipId)
 
   const accountKeyForPending = useCallback(
     (value: string | null | undefined) => value ?? UNKNOWN_ACCOUNT_ID,
@@ -164,6 +166,16 @@ const Library: FC<LibraryProps> = ({
   }, [accountStates])
 
   useEffect(() => {
+    if (selectedClipId && previousSelectedClipIdRef.current !== selectedClipId) {
+      setIsVideoLoading(true)
+    }
+    if (!selectedClipId) {
+      setIsVideoLoading(false)
+    }
+    previousSelectedClipIdRef.current = selectedClipId
+  }, [selectedClipId, setIsVideoLoading])
+
+  useEffect(() => {
     setAccountStates((previous) => {
       const next: Record<string, AccountRuntimeState> = {}
       for (const account of availableAccounts) {
@@ -174,27 +186,11 @@ const Library: FC<LibraryProps> = ({
   }, [availableAccounts])
 
   useEffect(() => {
-    setCollapsedProjectIds((previous) => {
-      const next = new Set<string>()
-      for (const value of previous) {
-        const [accountId] = value.split('::')
-        if (availableAccountIds.includes(accountId)) {
-          next.add(value)
-        }
-      }
-      if (next.size === previous.size) {
-        return previous
-      }
-      return next
-    })
-  }, [availableAccountIds])
-
-  useEffect(() => {
     const previous = previousPageSizeRef.current
-    if (previous === pageSize) {
+    if (previous === effectivePageSize) {
       return
     }
-    previousPageSizeRef.current = pageSize
+    previousPageSizeRef.current = effectivePageSize
     setAccountStates(() => {
       const next: Record<string, AccountRuntimeState> = {}
       for (const account of availableAccounts) {
@@ -202,7 +198,7 @@ const Library: FC<LibraryProps> = ({
       }
       return next
     })
-  }, [availableAccounts, pageSize])
+  }, [availableAccounts, effectivePageSize])
 
   useEffect(() => {
     updateLibrary((previous) => {
@@ -219,6 +215,10 @@ const Library: FC<LibraryProps> = ({
           nextScrollPositions[accountId] = position
         }
       }
+      const nextProjectIds = previous.expandedProjectIds.filter((value) => {
+        const [accountId] = value.split('::')
+        return availableAccountIds.includes(accountId)
+      })
       const nextActiveAccountId =
         previous.activeAccountId && availableAccountIds.includes(previous.activeAccountId)
           ? previous.activeAccountId
@@ -227,7 +227,8 @@ const Library: FC<LibraryProps> = ({
         validExpanded.length !== previous.expandedAccountIds.length ||
         Object.keys(nextPageCounts).length !== Object.keys(previous.pageCounts).length ||
         Object.keys(nextScrollPositions).length !== Object.keys(previous.accountScrollPositions).length ||
-        nextActiveAccountId !== previous.activeAccountId
+        nextActiveAccountId !== previous.activeAccountId ||
+        nextProjectIds.length !== previous.expandedProjectIds.length
       if (!didChange) {
         return previous
       }
@@ -236,7 +237,8 @@ const Library: FC<LibraryProps> = ({
         expandedAccountIds: validExpanded,
         pageCounts: nextPageCounts,
         accountScrollPositions: nextScrollPositions,
-        activeAccountId: nextActiveAccountId
+        activeAccountId: nextActiveAccountId,
+        expandedProjectIds: nextProjectIds
       }
     })
   }, [availableAccountIds, updateLibrary])
@@ -311,7 +313,7 @@ const Library: FC<LibraryProps> = ({
         const cursor = reset ? null : current?.nextCursor ?? null
         const page: ClipPage = await fetchAccountClipsPage({
           accountId,
-          limit: pageSize,
+          limit: effectivePageSize,
           cursor
         })
 
@@ -379,7 +381,7 @@ const Library: FC<LibraryProps> = ({
         })
       }
     },
-    [pageSize, updateLibrary]
+    [effectivePageSize, updateLibrary]
   )
 
   useEffect(() => {
@@ -451,13 +453,30 @@ const Library: FC<LibraryProps> = ({
 
     const first = visible[0]
     updateLibrary((previous) => {
+      const projectKey = `${first.accountId}::${getProjectKey(first.clip)}`
+      const alreadyExpandedAccount = previous.expandedAccountIds.includes(first.accountId)
+      const expandedAccounts = alreadyExpandedAccount
+        ? previous.expandedAccountIds
+        : [...previous.expandedAccountIds, first.accountId]
+      const alreadyExpandedProject = previous.expandedProjectIds.includes(projectKey)
+      const expandedProjects = alreadyExpandedProject
+        ? previous.expandedProjectIds
+        : [...previous.expandedProjectIds, projectKey]
       if (
         previous.selectedClipId === first.clip.id &&
-        previous.activeAccountId === first.accountId
+        previous.activeAccountId === first.accountId &&
+        alreadyExpandedAccount &&
+        alreadyExpandedProject
       ) {
         return previous
       }
-      return { ...previous, selectedClipId: first.clip.id, activeAccountId: first.accountId }
+      return {
+        ...previous,
+        selectedClipId: first.clip.id,
+        activeAccountId: first.accountId,
+        expandedAccountIds: expandedAccounts,
+        expandedProjectIds: expandedProjects
+      }
     })
   }, [
     accountStates,
@@ -515,22 +534,29 @@ const Library: FC<LibraryProps> = ({
 
   const handleSelectClip = useCallback(
     (accountId: string, clip: Clip) => {
+      const projectKey = `${accountId}::${getProjectKey(clip)}`
       setIsVideoLoading((previous) => (clip.id === selectedClipId ? previous : true))
       updateLibrary((previous) => {
-        const alreadyExpanded = previous.expandedAccountIds.includes(accountId)
-        const nextExpanded = alreadyExpanded
+        const alreadyExpandedAccount = previous.expandedAccountIds.includes(accountId)
+        const nextExpandedAccounts = alreadyExpandedAccount
           ? previous.expandedAccountIds
           : [...previous.expandedAccountIds, accountId]
+        const alreadyExpandedProject = previous.expandedProjectIds.includes(projectKey)
+        const nextExpandedProjects = alreadyExpandedProject
+          ? previous.expandedProjectIds
+          : [...previous.expandedProjectIds, projectKey]
         if (
           previous.selectedClipId === clip.id &&
-          alreadyExpanded &&
+          alreadyExpandedAccount &&
+          alreadyExpandedProject &&
           previous.activeAccountId === accountId
         ) {
           return previous
         }
         return {
           ...previous,
-          expandedAccountIds: nextExpanded,
+          expandedAccountIds: nextExpandedAccounts,
+          expandedProjectIds: nextExpandedProjects,
           selectedClipId: clip.id,
           activeAccountId: accountId
         }
@@ -539,17 +565,24 @@ const Library: FC<LibraryProps> = ({
     [selectedClipId, updateLibrary]
   )
 
-  const toggleProjectCollapse = useCallback((id: string) => {
-    setCollapsedProjectIds((previous) => {
-      const next = new Set(previous)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
-  }, [])
+  const toggleProjectExpansion = useCallback(
+    (projectKey: string) => {
+      updateLibrary((previous) => {
+        const isExpanded = previous.expandedProjectIds.includes(projectKey)
+        const nextExpanded = isExpanded
+          ? previous.expandedProjectIds.filter((value) => value !== projectKey)
+          : [...previous.expandedProjectIds, projectKey]
+        if (
+          nextExpanded.length === previous.expandedProjectIds.length &&
+          nextExpanded.every((value, index) => value === previous.expandedProjectIds[index])
+        ) {
+          return previous
+        }
+        return { ...previous, expandedProjectIds: nextExpanded }
+      })
+    },
+    [updateLibrary]
+  )
 
   const handleToggleAccount = useCallback(
     (accountId: string) => {
@@ -562,6 +595,9 @@ const Library: FC<LibraryProps> = ({
           expanded.add(accountId)
         }
         const nextExpanded = Array.from(expanded)
+        const nextProjectIds = isExpanded
+          ? previous.expandedProjectIds.filter((value) => !value.startsWith(`${accountId}::`))
+          : previous.expandedProjectIds
         const nextActive = isExpanded
           ? previous.activeAccountId === accountId
             ? null
@@ -570,14 +606,16 @@ const Library: FC<LibraryProps> = ({
         if (
           nextExpanded.length === previous.expandedAccountIds.length &&
           nextExpanded.every((id, index) => id === previous.expandedAccountIds[index]) &&
-          nextActive === previous.activeAccountId
+          nextActive === previous.activeAccountId &&
+          nextProjectIds.length === previous.expandedProjectIds.length
         ) {
           return previous
         }
         return {
           ...previous,
           expandedAccountIds: nextExpanded,
-          activeAccountId: nextActive
+          activeAccountId: nextActive,
+          expandedProjectIds: nextProjectIds
         }
       })
       if (!isExpanded) {
@@ -648,7 +686,7 @@ const Library: FC<LibraryProps> = ({
           </div>
         </label>
         <div className="text-sm text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
-          Showing {pageSize} clips per page
+          Showing {effectivePageSize} clips per page
         </div>
       </div>
 
@@ -789,7 +827,7 @@ const Library: FC<LibraryProps> = ({
 
                       {projectGroups.map((group) => {
                         const projectKey = `${account.id}::${group.id}`
-                        const isProjectCollapsed = collapsedProjectIds.has(projectKey)
+                        const isProjectExpanded = expandedProjectIdSet.has(projectKey)
                         const clipCountLabel = `${group.totalClips} clip${group.totalClips === 1 ? '' : 's'}`
                         const pendingProject = pendingProjectLookup.get(
                           `${accountKeyForPending(account.id)}::${group.id}`
@@ -814,15 +852,15 @@ const Library: FC<LibraryProps> = ({
                             <div className="flex items-center justify-between">
                               <button
                                 type="button"
-                                onClick={() => toggleProjectCollapse(projectKey)}
+                                onClick={() => toggleProjectExpansion(projectKey)}
                                 className="group flex items-start gap-3 text-left text-[var(--fg)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
-                                aria-expanded={!isProjectCollapsed}
+                                aria-expanded={isProjectExpanded}
                               >
                                 <svg
                                   viewBox="0 0 20 20"
                                   aria-hidden="true"
                                   className={`mt-1 h-4 w-4 transform transition-transform text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)] ${
-                                    isProjectCollapsed ? '-rotate-90' : 'rotate-0'
+                                    isProjectExpanded ? 'rotate-0' : '-rotate-90'
                                   }`}
                                 >
                                   <path
@@ -858,7 +896,7 @@ const Library: FC<LibraryProps> = ({
                                 <span className="font-medium text-[var(--fg)]">{pendingLabel}</span>
                               </div>
                             ) : null}
-                            {!isProjectCollapsed ? (
+                            {isProjectExpanded ? (
                               group.clips.length > 0 ? (
                                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                                   {group.clips.map((clip) => (

@@ -5,6 +5,7 @@ const UI_STATE_STORAGE_KEY = 'atropos:uiState'
 
 type LibraryUiState = {
   expandedAccountIds: string[]
+  expandedProjectIds: string[]
   selectedClipId: string | null
   pageCounts: Record<string, number>
   scrollTop: number
@@ -24,6 +25,7 @@ const DEFAULT_UI_STATE: UiState = {
   activeAccountId: null,
   library: {
     expandedAccountIds: [],
+    expandedProjectIds: [],
     selectedClipId: null,
     pageCounts: {},
     scrollTop: 0,
@@ -56,6 +58,9 @@ const readStoredUiState = (): UiState => {
     const expandedAccountIds = Array.isArray(library.expandedAccountIds)
       ? library.expandedAccountIds.filter((value): value is string => typeof value === 'string')
       : []
+    const expandedProjectIds = Array.isArray(library.expandedProjectIds)
+      ? library.expandedProjectIds.filter((value): value is string => typeof value === 'string')
+      : []
     const pageCounts = library.pageCounts && typeof library.pageCounts === 'object'
       ? Object.fromEntries(
           Object.entries(library.pageCounts).map(([key, value]) => [
@@ -79,6 +84,7 @@ const readStoredUiState = (): UiState => {
         typeof parsed.activeAccountId === 'string' ? parsed.activeAccountId : DEFAULT_UI_STATE.activeAccountId,
       library: {
         expandedAccountIds,
+        expandedProjectIds,
         selectedClipId:
           typeof library.selectedClipId === 'string' ? library.selectedClipId : DEFAULT_UI_STATE.library.selectedClipId,
         pageCounts,
