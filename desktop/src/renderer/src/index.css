@@ -160,6 +160,34 @@ body {
   border-color: color-mix(in srgb, var(--edge) 60%, transparent) !important;
 }
 
+.marble-spinner__orb {
+  display: block;
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent) 40%, transparent) 0%, transparent 70%),
+    radial-gradient(circle at 70% 70%, color-mix(in srgb, var(--accent-contrast) 25%, transparent) 0%, transparent 65%),
+    color-mix(in srgb, var(--panel-strong) 75%, transparent);
+  box-shadow:
+    inset 0 0 18px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 0 12px color-mix(in srgb, var(--accent) 12%, transparent);
+  animation: marble-orbit 1.2s linear infinite;
+}
+
+@keyframes marble-orbit {
+  0% {
+    transform: rotate(0deg) scale(0.94);
+    filter: brightness(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.04);
+    filter: brightness(1.08);
+  }
+  100% {
+    transform: rotate(360deg) scale(0.94);
+    filter: brightness(1);
+  }
+}
+
 .border-white\/20,
 .hover\:border-white\/20:hover,
 .focus-visible\:border-white\/20:focus-visible {

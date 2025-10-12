@@ -77,6 +77,8 @@ export const advanceApiBaseUrl = (): string | null => {
   return null
 }
 
+const DEFAULT_ACCOUNT_PLACEHOLDER = '__default__'
+
 const rawMode = (import.meta.env.VITE_BACKEND_MODE ?? '').toLowerCase()
 const mode: BackendMode = rawMode === 'mock' ? 'mock' : 'api'
 
@@ -126,6 +128,32 @@ export const buildAccountUrl = (accountId: string): string => {
 
 export const buildAccountClipsUrl = (accountId: string): string => {
   const url = new URL(`/api/accounts/${encodeURIComponent(accountId)}/clips`, getApiBaseUrl())
+  return url.toString()
+}
+
+const normaliseAccountId = (accountId: string | null | undefined): string =>
+  accountId && accountId.length > 0 ? accountId : DEFAULT_ACCOUNT_PLACEHOLDER
+
+export const buildAccountClipThumbnailUrl = (accountId: string | null, clipId: string): string => {
+  const account = normaliseAccountId(accountId)
+  const url = new URL(
+    `/api/accounts/${encodeURIComponent(account)}/clips/${encodeURIComponent(clipId)}/thumbnail`,
+    getApiBaseUrl()
+  )
+  return url.toString()
+}
+
+export const buildClipsPageUrl = (
+  accountId: string,
+  limit: number,
+  cursor?: string | null
+): string => {
+  const url = new URL('/api/clips', getApiBaseUrl())
+  url.searchParams.set('accountId', accountId)
+  url.searchParams.set('limit', `${Math.max(1, Math.floor(limit))}`)
+  if (cursor) {
+    url.searchParams.set('cursor', cursor)
+  }
   return url.toString()
 }
 

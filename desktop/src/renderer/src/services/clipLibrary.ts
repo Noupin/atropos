@@ -1,6 +1,12 @@
-import { BACKEND_MODE, buildAccountClipsUrl } from '../config/backend'
+import {
+  BACKEND_MODE,
+  buildAccountClipThumbnailUrl,
+  buildAccountClipsUrl,
+  buildClipsPageUrl
+} from '../config/backend'
 import type { Clip } from '../types'
 import type { ClipAdjustmentPayload } from './pipelineApi'
+import { extractErrorMessage, requestWithFallback } from './http'
 
 type RawClipPayload = {
   id?: unknown
@@ -161,20 +167,232 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
   return clip
 }
 
-const fetchAccountClipsFromApi = async (accountId: string): Promise<Clip[]> => {
-  const url = buildAccountClipsUrl(accountId)
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`)
+const CURSOR_VERSION = 1
+
+const decodeCursorToken = (token: string | null | undefined): number => {
+  if (!token) {
+    return 0
   }
-  const payload = (await response.json()) as unknown
-  if (!Array.isArray(payload)) {
+  const padding = token.length % 4 === 0 ? '' : '='.repeat(4 - (token.length % 4))
+  const decoder = typeof globalThis.atob === 'function' ? globalThis.atob : null
+  if (!decoder) {
+    throw new Error('Unable to decode pagination cursor')
+  }
+  try {
+    const raw = decoder(token + padding)
+    const parsed = JSON.parse(raw) as { v?: unknown; o?: unknown }
+    if (
+      parsed &&
+      parsed.v === CURSOR_VERSION &&
+      typeof parsed.o === 'number' &&
+      Number.isFinite(parsed.o) &&
+      parsed.o >= 0
+    ) {
+      return Math.floor(parsed.o)
+    }
+  } catch (error) {
+    throw new Error('Invalid pagination cursor')
+  }
+  throw new Error('Invalid pagination cursor')
+}
+
+const encodeCursorToken = (offset: number): string => {
+  const encoder = typeof globalThis.btoa === 'function' ? globalThis.btoa : null
+  if (!encoder) {
+    throw new Error('Unable to encode pagination cursor')
+  }
+  const payload = JSON.stringify({ v: CURSOR_VERSION, o: Math.max(0, Math.floor(offset)) })
+  return encoder(payload).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+}
+
+export type ProjectSummary = {
+  id: string
+  title: string
+  totalClips: number
+  latestCreatedAt: string
+}
+
+type RawProjectSummary = {
+  id?: unknown
+  title?: unknown
+  totalClips?: unknown
+  total_clips?: unknown
+  latestCreatedAt?: unknown
+  latest_created_at?: unknown
+}
+
+type RawClipPagePayload = {
+  clips?: unknown
+  nextCursor?: unknown
+  next_cursor?: unknown
+  totalClips?: unknown
+  total_clips?: unknown
+  projects?: unknown
+}
+
+const parseProjectSummaries = (value: unknown): ProjectSummary[] => {
+  if (!Array.isArray(value)) {
     return []
   }
-  const clips = payload
+  const summaries: ProjectSummary[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') {
+      continue
+    }
+    const raw = entry as RawProjectSummary
+    const id = typeof raw.id === 'string' ? raw.id : null
+    const title = typeof raw.title === 'string' && raw.title.length > 0 ? raw.title : null
+    const totalRaw = typeof raw.totalClips === 'number' ? raw.totalClips : raw.total_clips
+    const totalClips = typeof totalRaw === 'number' && Number.isFinite(totalRaw) ? Math.max(0, Math.floor(totalRaw)) : null
+    const latestRaw =
+      typeof raw.latestCreatedAt === 'string'
+        ? raw.latestCreatedAt
+        : typeof raw.latest_created_at === 'string'
+        ? raw.latest_created_at
+        : null
+    if (!id || !title || totalClips === null || !latestRaw) {
+      continue
+    }
+    summaries.push({ id, title, totalClips, latestCreatedAt: latestRaw })
+  }
+  return summaries
+}
+
+const parseClipPagePayload = (
+  payload: unknown
+): { clips: Clip[]; nextCursor: string | null; totalClips: number | null; projects: ProjectSummary[] } => {
+  if (!payload || typeof payload !== 'object') {
+    return { clips: [], nextCursor: null, totalClips: null, projects: [] }
+  }
+  const record = payload as RawClipPagePayload
+  const items = Array.isArray(record.clips) ? record.clips : []
+  const clips = items
     .map((item) => (item && typeof item === 'object' ? normaliseClip(item as RawClipPayload) : null))
     .filter((clip): clip is Clip => clip !== null)
-  return clips
+  const nextCursorValue = record.nextCursor ?? record.next_cursor
+  const nextCursor = typeof nextCursorValue === 'string' && nextCursorValue.length > 0 ? nextCursorValue : null
+  const totalRaw = typeof record.totalClips === 'number' ? record.totalClips : record.total_clips
+  const totalClips = typeof totalRaw === 'number' && Number.isFinite(totalRaw) ? Math.max(0, Math.floor(totalRaw)) : null
+  const projects = parseProjectSummaries(record.projects)
+  return { clips, nextCursor, totalClips, projects }
+}
+
+const fetchAccountClipPageFromApi = async (
+  accountId: string,
+  limit: number,
+  cursor: string | null
+): Promise<{ clips: Clip[]; nextCursor: string | null; totalClips: number | null; projects: ProjectSummary[] }> => {
+  const response = await requestWithFallback(() => buildClipsPageUrl(accountId, limit, cursor))
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response))
+  }
+  const payload = (await response.json()) as unknown
+  return parseClipPagePayload(payload)
+}
+
+export type ClipPage = {
+  clips: Clip[]
+  nextCursor: string | null
+  totalClips: number | null
+  projects: ProjectSummary[]
+}
+
+const getProjectKey = (clip: Clip): string => {
+  if (typeof clip.videoId === 'string' && clip.videoId.length > 0) {
+    return clip.videoId
+  }
+  return clip.id
+}
+
+const summariseProjects = (clips: Clip[]): ProjectSummary[] => {
+  const groups = new Map<
+    string,
+    { title: string; total: number; latest: string }
+  >()
+  for (const clip of clips) {
+    const key = getProjectKey(clip)
+    const title = clip.videoTitle || clip.sourceTitle || clip.title
+    const latest = clip.createdAt
+    const existing = groups.get(key)
+    if (!existing) {
+      groups.set(key, { title, total: 1, latest })
+    } else {
+      existing.total += 1
+      if (latest > existing.latest) {
+        existing.latest = latest
+      }
+    }
+  }
+  return Array.from(groups.entries())
+    .map(([id, value]) => ({
+      id,
+      title: value.title,
+      totalClips: value.total,
+      latestCreatedAt: value.latest
+    }))
+    .sort((a, b) => (a.latestCreatedAt < b.latestCreatedAt ? 1 : -1))
+}
+
+const attachAccountMetadata = (clips: Clip[], accountId: string): Clip[] => {
+  return clips.map((clip) => {
+    const effectiveAccountId = clip.accountId && clip.accountId.length > 0 ? clip.accountId : accountId
+    const fallbackThumbnail =
+      !clip.thumbnail && effectiveAccountId
+        ? buildAccountClipThumbnailUrl(effectiveAccountId, clip.id)
+        : clip.thumbnail
+    return {
+      ...clip,
+      accountId: effectiveAccountId,
+      thumbnail: fallbackThumbnail ?? null
+    }
+  })
+}
+
+export const fetchAccountClipsPage = async ({
+  accountId,
+  limit,
+  cursor
+  }: {
+    accountId: string
+    limit: number
+    cursor?: string | null
+  }): Promise<ClipPage> => {
+  if (!accountId) {
+    return { clips: [], nextCursor: null, totalClips: null, projects: [] }
+  }
+
+  const pageSize = Math.max(1, Math.floor(limit))
+  if (BACKEND_MODE === 'api' || typeof window === 'undefined' || !window.api?.listAccountClips) {
+    try {
+      const page = await fetchAccountClipPageFromApi(accountId, pageSize, cursor ?? null)
+      return {
+        ...page,
+        clips: attachAccountMetadata(page.clips, accountId)
+      }
+    } catch (error) {
+      console.error('Unable to load clips from API library', error)
+      return { clips: [], nextCursor: null, totalClips: null, projects: [] }
+    }
+  }
+
+  try {
+    const rawClips = await window.api.listAccountClips(accountId)
+    const allClips = isClipArray(rawClips) ? rawClips : []
+    const offset = decodeCursorToken(cursor)
+    const start = Math.min(offset, allClips.length)
+    const end = Math.min(start + pageSize, allClips.length)
+    const slice = allClips.slice(start, end)
+    const nextCursor = end < allClips.length ? encodeCursorToken(end) : null
+    return {
+      clips: attachAccountMetadata(slice, accountId),
+      nextCursor,
+      totalClips: allClips.length,
+      projects: summariseProjects(allClips)
+    }
+  } catch (error) {
+    console.error('Unable to load clips from library bridge', error)
+    return { clips: [], nextCursor: null, totalClips: null, projects: [] }
+  }
 }
 
 export const listAccountClips = async (accountId: string | null): Promise<Clip[]> => {
@@ -182,22 +400,24 @@ export const listAccountClips = async (accountId: string | null): Promise<Clip[]
     return []
   }
 
-  if (BACKEND_MODE === 'api' || typeof window === 'undefined' || !window.api?.listAccountClips) {
-    try {
-      return await fetchAccountClipsFromApi(accountId)
-    } catch (error) {
-      console.error('Unable to load clips from API library', error)
-      return []
+  const clips: Clip[] = []
+  let cursor: string | null = null
+  const seen = new Set<string | null>()
+  const pageSize = 50
+
+  while (!seen.has(cursor)) {
+    seen.add(cursor)
+    const page = await fetchAccountClipsPage({ accountId, limit: pageSize, cursor })
+    if (page.clips.length > 0) {
+      clips.push(...page.clips)
     }
+    if (!page.nextCursor || page.nextCursor === cursor || page.clips.length === 0) {
+      break
+    }
+    cursor = page.nextCursor
   }
 
-  try {
-    const clips = await window.api.listAccountClips(accountId)
-    return isClipArray(clips) ? clips : []
-  } catch (error) {
-    console.error('Unable to load clips from library bridge', error)
-    return []
-  }
+  return clips
 }
 
 const isFolderBridgeAvailable = (): boolean => {

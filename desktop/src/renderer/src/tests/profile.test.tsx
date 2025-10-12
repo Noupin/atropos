@@ -111,7 +111,6 @@ describe('Profile page', () => {
   const renderProfile = (overrides: Partial<ComponentProps<typeof Profile>> = {}) =>
     render(
       <Profile
-        registerSearch={() => {}}
         accounts={sampleAccounts}
         accountsError={null}
         authStatus={sampleAuthStatus}

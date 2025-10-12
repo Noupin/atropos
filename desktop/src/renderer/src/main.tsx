@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { AccessProvider } from './state/access'
+import { UiStateProvider } from './state/uiState'
 
 const RootApp: FC = () => {
   const searchRef = useRef<HTMLInputElement | null>(null)
@@ -27,10 +28,12 @@ const RootApp: FC = () => {
   }, [])
 
   return (
-    <BrowserRouter>
-      <AccessProvider>
-        <App searchInputRef={searchRef} />
-      </AccessProvider>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <UiStateProvider>
+        <AccessProvider>
+          <App searchInputRef={searchRef} />
+        </AccessProvider>
+      </UiStateProvider>
     </BrowserRouter>
   )
 }

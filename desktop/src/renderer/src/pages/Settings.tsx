@@ -1,6 +1,6 @@
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { ChangeEvent, FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import type { FC } from 'react'
-import type { AccountSummary, SearchBridge } from '../types'
+import type { AccountSummary } from '../types'
 import { fetchConfigEntries, updateConfigEntries, type ConfigEntry } from '../services/configApi'
 import MarbleSelect from '../components/MarbleSelect'
 import {
@@ -24,6 +24,7 @@ import {
   rgbToHsl,
   rgbToHsv
 } from '../utils/colorSpaces'
+import { useLibraryUiState } from '../state/uiState'
 
 const TRUE_VALUES = new Set(['true', '1', 'yes', 'y', 'on'])
 const FALSE_VALUES = new Set(['false', '0', 'no', 'n', 'off'])
@@ -46,6 +47,9 @@ const isColorSpace = (value: string): value is ColorSpace => {
 }
 
 const DEFAULT_BGR: BgrColor = [255, 255, 255]
+
+const MIN_LIBRARY_PAGE_SIZE = 5
+const MAX_LIBRARY_PAGE_SIZE = 100
 
 type ColorControlProps = {
   id: string
@@ -434,7 +438,6 @@ export type SettingsHeaderAction = {
 }
 
 type SettingsProps = {
-  registerSearch: (bridge: SearchBridge | null) => void
   accounts: AccountSummary[]
   onRegisterHeaderAction?: (action: SettingsHeaderAction | null) => void
 }
@@ -470,7 +473,8 @@ const normaliseBooleanString = (value: string): boolean => {
   return TRUE_VALUES.has(value.toLowerCase())
 }
 
-const Settings: FC<SettingsProps> = ({ registerSearch, accounts, onRegisterHeaderAction }) => {
+const Settings: FC<SettingsProps> = ({ accounts, onRegisterHeaderAction }) => {
+  const { libraryState, updateLibrary } = useLibraryUiState()
   const [entries, setEntries] = useState<ConfigEntry[]>([])
   const [values, setValues] = useState<Record<string, string>>({})
   const [dirty, setDirty] = useState<Record<string, boolean>>({})
@@ -478,6 +482,76 @@ const Settings: FC<SettingsProps> = ({ registerSearch, accounts, onRegisterHeade
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [pageSizeInput, setPageSizeInput] = useState<string>(() => libraryState.pageSize.toString())
+  const [pageSizeError, setPageSizeError] = useState<string | null>(null)
+  const [pageSizeDirty, setPageSizeDirty] = useState(false)
+
+  const parsePageSize = useCallback((value: string): number | null => {
+    const trimmed = value.trim()
+    if (trimmed.length === 0) {
+      return null
+    }
+    const numeric = Number.parseInt(trimmed, 10)
+    if (!Number.isFinite(numeric)) {
+      return null
+    }
+    return clampNumber(numeric, MIN_LIBRARY_PAGE_SIZE, MAX_LIBRARY_PAGE_SIZE)
+  }, [])
+
+  const parsedPageSize = useMemo(() => parsePageSize(pageSizeInput), [pageSizeInput, parsePageSize])
+
+  useEffect(() => {
+    setPageSizeInput(libraryState.pageSize.toString())
+    setPageSizeDirty(false)
+    setPageSizeError(null)
+  }, [libraryState.pageSize])
+
+  const commitPageSize = useCallback(() => {
+    const parsed = parsePageSize(pageSizeInput)
+    if (parsed === null) {
+      setPageSizeError(`Enter a number between ${MIN_LIBRARY_PAGE_SIZE} and ${MAX_LIBRARY_PAGE_SIZE}.`)
+      return
+    }
+    updateLibrary((previous) => {
+      if (previous.pageSize === parsed) {
+        return previous
+      }
+      return { ...previous, pageSize: parsed }
+    })
+    setPageSizeInput(parsed.toString())
+    setPageSizeDirty(false)
+    setPageSizeError(null)
+  }, [pageSizeInput, parsePageSize, updateLibrary])
+
+  const handlePageSizeChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    setPageSizeInput(event.target.value)
+    setPageSizeDirty(true)
+    setPageSizeError(null)
+  }, [])
+
+  const handlePageSizeBlur = useCallback(() => {
+    if (!pageSizeDirty) {
+      return
+    }
+    commitPageSize()
+  }, [commitPageSize, pageSizeDirty])
+
+  const handlePageSizeKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        commitPageSize()
+      }
+    },
+    [commitPageSize]
+  )
+
+  const handleApplyPageSize = useCallback(() => {
+    commitPageSize()
+  }, [commitPageSize])
+
+  const isPageSizeApplyDisabled =
+    !pageSizeDirty || parsedPageSize === null || parsedPageSize === libraryState.pageSize
 
   const toneOverrides = useMemo(
     () => accounts.filter((account) => account.tone),
@@ -495,11 +569,6 @@ const Settings: FC<SettingsProps> = ({ registerSearch, accounts, onRegisterHeade
       }),
     [toneOverrides]
   )
-
-  useEffect(() => {
-    registerSearch(null)
-    return () => registerSearch(null)
-  }, [registerSearch])
 
   const entryMap = useMemo(() => {
     const map: Record<string, ConfigEntry> = {}
@@ -985,6 +1054,73 @@ const Settings: FC<SettingsProps> = ({ registerSearch, accounts, onRegisterHeade
           </div>
         )}
 
+        <section className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-5 shadow-sm">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-1">
+              <h3 className="text-lg font-semibold text-[var(--fg)]">Library preferences</h3>
+              <p className="text-sm text-[var(--muted)]">
+                Control how many clips the library fetches for each account at a time.
+              </p>
+            </div>
+            <div className="text-xs uppercase tracking-wide text-[var(--muted)]">Saved locally</div>
+          </div>
+          <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-[var(--fg)]" htmlFor="library-page-size">
+                Clips per page
+              </label>
+              <p className="max-w-2xl text-xs leading-relaxed text-[var(--muted)]">
+                Determines how many clip thumbnails are requested per page when expanding an account in the
+                library.
+              </p>
+              <p className="text-xs text-[color:color-mix(in_srgb,var(--muted)_82%,transparent)]">
+                Enter a value between {MIN_LIBRARY_PAGE_SIZE} and {MAX_LIBRARY_PAGE_SIZE} clips.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                id="library-page-size"
+                type="number"
+                min={MIN_LIBRARY_PAGE_SIZE}
+                max={MAX_LIBRARY_PAGE_SIZE}
+                step={1}
+                inputMode="numeric"
+                value={pageSizeInput}
+                onChange={handlePageSizeChange}
+                onBlur={handlePageSizeBlur}
+                onKeyDown={handlePageSizeKeyDown}
+                className={`${COMMON_INPUT_CLASS} w-full min-w-[120px] sm:w-auto`}
+                aria-describedby="library-page-size-helper"
+              />
+              <button
+                type="button"
+                onClick={handleApplyPageSize}
+                className="rounded-md border border-white/10 px-3 py-1.5 text-sm font-semibold text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isPageSizeApplyDisabled}
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+          {pageSizeError ? (
+            <p
+              id="library-page-size-helper"
+              className="mt-2 text-xs text-[color:color-mix(in_srgb,var(--error-strong)_80%,var(--accent-contrast))]"
+            >
+              {pageSizeError}
+            </p>
+          ) : (
+            <p
+              id="library-page-size-helper"
+              className="mt-2 text-xs text-[color:color-mix(in_srgb,var(--muted)_85%,transparent)]"
+            >
+              {pageSizeDirty && parsedPageSize !== null && parsedPageSize !== libraryState.pageSize
+                ? `Pending change to ${parsedPageSize} clips per page.`
+                : `Currently loading ${libraryState.pageSize} clips per page.`}
+            </p>
+          )}
+        </section>
+
         {isLoading ? (
           <div className="mt-10 rounded-lg border border-white/10 bg-white/5 px-4 py-10 text-center text-sm text-[var(--muted)]">
             Loading configuration…
@@ -1120,3 +1256,7 @@ const Settings: FC<SettingsProps> = ({ registerSearch, accounts, onRegisterHeade
 }
 
 export default Settings
+const LIBRARY_PAGE_SIZE_MIN = 5
+const LIBRARY_PAGE_SIZE_MAX = 60
+const LIBRARY_PAGE_SIZE_STEP = 5
+const LIBRARY_PAGE_SIZE_DEFAULT = 20

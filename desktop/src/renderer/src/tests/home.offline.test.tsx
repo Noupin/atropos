@@ -101,7 +101,6 @@ describe('Home offline access handling', () => {
     render(
       <MemoryRouter>
         <Home
-          registerSearch={() => {}}
           initialState={createInitialState({ videoUrl: 'https://youtu.be/example' })}
           onStateChange={() => {}}
           accounts={[AVAILABLE_ACCOUNT]}
@@ -141,7 +140,6 @@ describe('Home offline access handling', () => {
     render(
       <MemoryRouter>
         <Home
-          registerSearch={() => {}}
           initialState={createInitialState({ videoUrl: 'https://youtu.be/example' })}
           onStateChange={() => {}}
           accounts={[AVAILABLE_ACCOUNT]}
@@ -172,7 +170,6 @@ describe('Home offline access handling', () => {
     render(
       <MemoryRouter>
         <Home
-          registerSearch={() => {}}
           initialState={createInitialState({ videoUrl: 'https://youtu.be/example' })}
           onStateChange={() => {}}
           accounts={[AVAILABLE_ACCOUNT]}

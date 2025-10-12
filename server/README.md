@@ -59,6 +59,7 @@ Multiple account support expects the structure `out/<account>/<project>`. Tokens
 - `server/app.py` exposes REST and websocket endpoints for job management.
 - Real-time progress updates stream over `ws://<host>/ws/jobs/<job_id>`.
 - Jobs can also be polled via `GET /api/jobs/<job_id>` for completion status.
+- Library clients can request paginated clips via `GET /api/clips?accountId=<id>&limit=<n>&cursor=<token>`.
 
 ## Extending services
 

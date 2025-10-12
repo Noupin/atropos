@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FC, MouseEvent, RefObject } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import Search from './components/Search'
 import MarbleSelect from './components/MarbleSelect'
 import TrialBadge from './components/TrialBadge'
 import ClipPage from './pages/Clip'
@@ -20,13 +19,8 @@ import {
   summarisePipelineProgress,
   type PipelineOverallStatus
 } from './lib/pipelineProgress'
-import type {
-  AccountSummary,
-  AuthPingSummary,
-  HomePipelineState,
-  SearchBridge,
-  SupportedPlatform
-} from './types'
+import type { AccountSummary, AuthPingSummary, HomePipelineState, SupportedPlatform } from './types'
+import { useUiState } from './state/uiState'
 import {
   addPlatformToAccount,
   createAccount,
@@ -156,8 +150,6 @@ type AppProps = {
 }
 
 const App: FC<AppProps> = ({ searchInputRef }) => {
-  const [searchBridge, setSearchBridge] = useState<SearchBridge | null>(null)
-  const [searchValue, setSearchValue] = useState('')
   const [homeState, setHomeState] = useState<HomePipelineState>(() => ({
     videoUrl: '',
     urlError: null,
@@ -184,6 +176,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [settingsHeaderAction, setSettingsHeaderAction] = useState<SettingsHeaderAction | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
+  const { state: uiState, updateState } = useUiState()
   const { state: accessState, markTrialRunPending, finalizeTrialRun } = useAccess()
   const accessRestricted =
     !accessState.isLoading &&
@@ -194,6 +187,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const libraryNavigationDisabled = false
   const redirectedJobRef = useRef<string | null>(null)
   const lastActiveJobIdRef = useRef<string | null>(null)
+  const hasRestoredTabRef = useRef(false)
   const isOnHomePage = location.pathname === '/'
 
   const preventDisabledNavigation = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
@@ -201,6 +195,38 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   }, [])
 
   useNavigationHistory()
+
+  useEffect(() => {
+    if (hasRestoredTabRef.current) {
+      return
+    }
+    hasRestoredTabRef.current = true
+    const storedTab = uiState.activeTab
+    if (storedTab && storedTab !== location.pathname) {
+      navigate(storedTab, { replace: true })
+    }
+  }, [location.pathname, navigate, uiState.activeTab])
+
+  useEffect(() => {
+    if (!hasRestoredTabRef.current) {
+      return
+    }
+    updateState((previous) => {
+      if (previous.activeTab === location.pathname) {
+        return previous
+      }
+      return { ...previous, activeTab: location.pathname }
+    })
+  }, [location.pathname, updateState])
+
+  useEffect(() => {
+    updateState((previous) => {
+      if (previous.activeAccountId === homeState.selectedAccountId) {
+        return previous
+      }
+      return { ...previous, activeAccountId: homeState.selectedAccountId }
+    })
+  }, [homeState.selectedAccountId, updateState])
   useEffect(() => {
     if (!accessRestricted) {
       return
@@ -623,19 +649,6 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     [refreshAuthStatus]
   )
 
-  const registerSearch = useCallback((bridge: SearchBridge | null) => {
-    setSearchBridge(bridge)
-    setSearchValue(bridge?.getQuery() ?? '')
-  }, [])
-
-  const handleSearchChange = useCallback(
-    (value: string) => {
-      setSearchValue(value)
-      searchBridge?.onQueryChange(value)
-    },
-    [searchBridge]
-  )
-
   const toggleTheme = useCallback(() => {
     if (typeof document === 'undefined') {
       return
@@ -779,16 +792,6 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
               <TrialBadge />
             </div>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
-              {isLibraryRoute ? (
-                <div className="min-w-[220px] flex-1 basis-full sm:basis-auto sm:max-w-md">
-                  <Search
-                    ref={searchInputRef}
-                    value={searchValue}
-                    onChange={handleSearchChange}
-                    disabled={!searchBridge}
-                  />
-                </div>
-              ) : null}
               <div className="flex flex-wrap items-center gap-3">
                 {isSettingsRoute && settingsHeaderAction ? (
                   <button
@@ -839,7 +842,6 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
             path="/"
             element={
               <Home
-                registerSearch={registerSearch}
                 initialState={homeState}
                 onStateChange={setHomeState}
                 accounts={accounts}
@@ -852,20 +854,19 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
             path="/library"
             element={
               <Library
-                registerSearch={registerSearch}
+                searchInputRef={searchInputRef}
                 accounts={accounts}
                 isLoadingAccounts={isLoadingAccounts}
                 pendingProjects={pendingLibraryProjects}
               />
             }
           />
-          <Route path="/clip/:id" element={<ClipPage registerSearch={registerSearch} />} />
-          <Route path="/clip/:id/edit" element={<ClipEdit registerSearch={registerSearch} />} />
+          <Route path="/clip/:id" element={<ClipPage />} />
+          <Route path="/clip/:id/edit" element={<ClipEdit />} />
           <Route
             path="/settings"
             element={
               <Settings
-                registerSearch={registerSearch}
                 accounts={accounts}
                 onRegisterHeaderAction={setSettingsHeaderAction}
               />
@@ -875,7 +876,6 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
             path="/profile"
             element={
               <Profile
-                registerSearch={registerSearch}
                 accounts={accounts}
                 accountsError={accountsError}
                 authStatus={authStatus}
@@ -895,7 +895,6 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
             path="*"
             element={
               <Home
-                registerSearch={registerSearch}
                 initialState={homeState}
                 onStateChange={setHomeState}
                 accounts={accounts}
