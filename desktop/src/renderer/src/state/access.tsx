@@ -207,7 +207,9 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
           status = await fetchAccessStatus(hash)
         }
         if (!status) {
-          markFailure('Access record not found.')
+          markFailure(
+            "We're having trouble confirming your access. Please refresh or contact support if this continues."
+          )
           return
         }
         applyStatus(status)
@@ -221,7 +223,7 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
           return
         }
         console.error('Unexpected licensing error while loading access status.', error)
-        markFailure('Unexpected licensing error.')
+        markFailure('Something went wrong while checking your access. Please try again in a moment.')
       }
     },
     [applyStatus, markFailure, markOffline]
@@ -234,7 +236,7 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
       void loadStatus(hash, { allowCreateTrial: true })
     } catch (error) {
       console.error('Unable to initialise device hash.', error)
-      markFailure('Unable to initialise device identity.')
+      markFailure("We couldn't prepare this device for access. Restart Atropos and try again.")
     }
   }, [loadStatus, markFailure])
 
@@ -385,7 +387,7 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
         offlineExpiresAt: null,
         offlineRemainingMs: null,
         offlineLastVerifiedAt: null,
-        lastError: 'Unexpected licensing error.',
+        lastError: 'Something went wrong while finalizing your access. Please try again.',
         pendingConsumption: true,
         pendingConsumptionStage: 'finalizing'
       }))
