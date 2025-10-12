@@ -129,6 +129,7 @@ def test_list_account_clips(monkeypatch, tmp_path):
     assert clip["video_title"] == "Amazing Project"
     assert clip["playback_url"].endswith(f"/api/accounts/{account_id}/clips/{clip['id']}/video")
     assert clip["preview_url"].endswith(f"/api/accounts/{account_id}/clips/{clip['id']}/preview")
+    assert clip["thumbnail_url"].endswith(f"/api/accounts/{account_id}/clips/{clip['id']}/thumbnail")
 
 
 def test_paginated_clips_endpoint(monkeypatch, tmp_path):
@@ -142,9 +143,13 @@ def test_paginated_clips_endpoint(monkeypatch, tmp_path):
     first_page = client.get("/api/clips", params={"accountId": account_id, "limit": 2})
     assert first_page.status_code == 200
     first_payload = first_page.json()
-    assert set(first_payload.keys()) == {"clips", "nextCursor"}
+    assert set(first_payload.keys()) == {"clips", "nextCursor", "totalClips", "projects"}
     assert len(first_payload["clips"]) == 2
     assert isinstance(first_payload["nextCursor"], str)
+    assert first_payload["totalClips"] == 5
+    assert isinstance(first_payload["projects"], list)
+    assert first_payload["projects"]
+    assert all("id" in project and "totalClips" in project for project in first_payload["projects"])
 
     second_page = client.get(
         "/api/clips",
@@ -154,6 +159,7 @@ def test_paginated_clips_endpoint(monkeypatch, tmp_path):
     second_payload = second_page.json()
     assert len(second_payload["clips"]) == 2
     assert isinstance(second_payload.get("nextCursor"), str)
+    assert second_payload["totalClips"] == 5
 
     third_page = client.get(
         "/api/clips",
@@ -163,6 +169,7 @@ def test_paginated_clips_endpoint(monkeypatch, tmp_path):
     third_payload = third_page.json()
     assert len(third_payload["clips"]) == 1
     assert third_payload["nextCursor"] is None
+    assert third_payload["totalClips"] == 5
 
     bad_cursor = client.get(
         "/api/clips",
@@ -238,4 +245,31 @@ def test_get_account_clip_preview(monkeypatch, tmp_path):
     assert response.content == b"preview-bytes"
 
     missing = client.get(f"/api/accounts/{account_id}/clips/unknown/preview")
+    assert missing.status_code == 404
+
+
+def test_get_account_clip_thumbnail(monkeypatch, tmp_path):
+    out_root = tmp_path / "out"
+    monkeypatch.setenv("OUT_ROOT", str(out_root))
+    account_id, clip_path = _create_clip_structure(out_root)
+
+    relative = clip_path.relative_to(out_root)
+    clip_id = base64.urlsafe_b64encode(relative.as_posix().encode("utf-8")).decode("ascii").rstrip("=")
+
+    def _fake_generate_thumbnail(*_, **__):
+        target = clip_path.parent / "thumbnails" / "thumb.jpg"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"thumbnail-bytes")
+        return target
+
+    monkeypatch.setattr(server.app, "_generate_clip_thumbnail", _fake_generate_thumbnail)
+
+    client = TestClient(app)
+    response = client.get(f"/api/accounts/{account_id}/clips/{clip_id}/thumbnail")
+
+    assert response.status_code == 200
+    assert response.headers.get("content-type") == "image/jpeg"
+    assert response.content == b"thumbnail-bytes"
+
+    missing = client.get(f"/api/accounts/{account_id}/clips/unknown/thumbnail")
     assert missing.status_code == 404

@@ -112,6 +112,11 @@ class LibraryClip:
             account_id=self.account_id or DEFAULT_ACCOUNT_PLACEHOLDER,
             clip_id=self.clip_id,
         )
+        thumbnail_url = request.url_for(
+            "get_account_clip_thumbnail",
+            account_id=self.account_id or DEFAULT_ACCOUNT_PLACEHOLDER,
+            clip_id=self.clip_id,
+        )
 
         return {
             "id": self.clip_id,
@@ -135,7 +140,7 @@ class LibraryClip:
             "account": self.account_id,
             "timestamp_url": self.timestamp_url,
             "timestamp_seconds": self.timestamp_seconds,
-            "thumbnail_url": self.thumbnail_url,
+            "thumbnail_url": str(thumbnail_url),
             "start_seconds": self.start_seconds,
             "end_seconds": self.end_seconds,
             "original_start_seconds": self.original_start_seconds,
@@ -621,6 +626,40 @@ _CURSOR_VERSION = 1
 _MAX_PAGE_SIZE = 100
 
 
+def _summarize_projects(clips: List[LibraryClip]) -> list[dict[str, object]]:
+    """Return summary metadata for grouping clips by project/video."""
+
+    summaries: Dict[str, dict[str, object]] = {}
+    for clip in clips:
+        key = clip.video_id or clip.clip_id
+        title = clip.video_title or clip.source_title or clip.title
+        created_at = clip.created_at.isoformat()
+        if key not in summaries:
+            summaries[key] = {
+                "title": title,
+                "total_clips": 1,
+                "latest_created_at": created_at,
+            }
+            continue
+
+        entry = summaries[key]
+        entry["total_clips"] = int(entry.get("total_clips", 0)) + 1
+        if created_at > entry.get("latest_created_at", ""):
+            entry["latest_created_at"] = created_at
+
+    results = [
+        {
+            "id": key,
+            "title": value.get("title", key),
+            "total_clips": int(value.get("total_clips", 0)),
+            "latest_created_at": value.get("latest_created_at", ""),
+        }
+        for key, value in summaries.items()
+    ]
+    results.sort(key=lambda item: item["latest_created_at"], reverse=True)
+    return results
+
+
 def _encode_cursor(offset: int) -> str:
     payload = {"v": _CURSOR_VERSION, "o": int(offset)}
     raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
@@ -653,7 +692,7 @@ def paginate_account_clips_sync(
     *,
     limit: int,
     cursor: Optional[str],
-) -> tuple[list[LibraryClip], Optional[str]]:
+) -> tuple[list[LibraryClip], Optional[str], int, list[dict[str, object]]]:
     try:
         offset = _decode_cursor(cursor)
     except ValueError as exc:  # pragma: no cover - validated by endpoint tests
@@ -661,14 +700,15 @@ def paginate_account_clips_sync(
 
     size = max(1, min(int(limit), _MAX_PAGE_SIZE))
     clips = list_account_clips_sync(account_id)
+    project_summaries = _summarize_projects(clips)
 
     if offset >= len(clips):
-        return [], None
+        return [], None, len(clips), project_summaries
 
     end_index = min(offset + size, len(clips))
     page = clips[offset:end_index]
     next_cursor = _encode_cursor(end_index) if end_index < len(clips) else None
-    return page, next_cursor
+    return page, next_cursor, len(clips), project_summaries
 
 
 def paginate_account_clips(
@@ -676,8 +716,13 @@ def paginate_account_clips(
     *,
     limit: int,
     cursor: Optional[str],
-) -> asyncio.Future[tuple[list[LibraryClip], Optional[str]]]:
-    return asyncio.to_thread(paginate_account_clips_sync, account_id, limit=limit, cursor=cursor)
+) -> asyncio.Future[tuple[list[LibraryClip], Optional[str], int, list[dict[str, object]]]]:
+    return asyncio.to_thread(
+        paginate_account_clips_sync,
+        account_id,
+        limit=limit,
+        cursor=cursor,
+    )
 
 
 def list_account_clips(account_id: Optional[str]) -> asyncio.Future[List[LibraryClip]]:

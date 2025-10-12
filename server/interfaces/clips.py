@@ -13,6 +13,17 @@ from library import paginate_account_clips
 DEFAULT_PAGE_SIZE = 20
 
 
+class ProjectSummaryResponse(BaseModel):
+    """Summary payload describing clips grouped by project/video."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    title: str
+    total_clips: int = Field(alias="totalClips")
+    latest_created_at: str = Field(alias="latestCreatedAt")
+
+
 class PaginatedClipsResponse(BaseModel):
     """Response body describing a page of account clips."""
 
@@ -20,6 +31,8 @@ class PaginatedClipsResponse(BaseModel):
 
     clips: list[dict[str, object]]
     next_cursor: Optional[str] = Field(default=None, alias="nextCursor")
+    total_clips: int = Field(default=0, alias="totalClips")
+    projects: list[ProjectSummaryResponse] = Field(default_factory=list)
 
 
 router = APIRouter(tags=["clips"])
@@ -35,7 +48,7 @@ async def list_paginated_clips(
     """Return a paginated set of clips for the provided account."""
 
     try:
-        clips, next_cursor = await paginate_account_clips(
+        clips, next_cursor, total_clips, project_summaries = await paginate_account_clips(
             account_id, limit=limit, cursor=cursor
         )
     except HTTPException:
@@ -47,7 +60,13 @@ async def list_paginated_clips(
         ) from exc
 
     payload = [clip.to_payload(request) for clip in clips]
-    return PaginatedClipsResponse(clips=payload, nextCursor=next_cursor)
+    projects = [ProjectSummaryResponse.model_validate(summary) for summary in project_summaries]
+    return PaginatedClipsResponse(
+        clips=payload,
+        nextCursor=next_cursor,
+        totalClips=total_clips,
+        projects=projects,
+    )
 
 
 def register_legacy_routes(app: FastAPI) -> None:

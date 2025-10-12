@@ -200,15 +200,64 @@ const encodeCursorToken = (offset: number): string => {
   return encoder(payload).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
 }
 
+export type ProjectSummary = {
+  id: string
+  title: string
+  totalClips: number
+  latestCreatedAt: string
+}
+
+type RawProjectSummary = {
+  id?: unknown
+  title?: unknown
+  totalClips?: unknown
+  total_clips?: unknown
+  latestCreatedAt?: unknown
+  latest_created_at?: unknown
+}
+
 type RawClipPagePayload = {
   clips?: unknown
   nextCursor?: unknown
   next_cursor?: unknown
+  totalClips?: unknown
+  total_clips?: unknown
+  projects?: unknown
 }
 
-const parseClipPagePayload = (payload: unknown): { clips: Clip[]; nextCursor: string | null } => {
+const parseProjectSummaries = (value: unknown): ProjectSummary[] => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  const summaries: ProjectSummary[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') {
+      continue
+    }
+    const raw = entry as RawProjectSummary
+    const id = typeof raw.id === 'string' ? raw.id : null
+    const title = typeof raw.title === 'string' && raw.title.length > 0 ? raw.title : null
+    const totalRaw = typeof raw.totalClips === 'number' ? raw.totalClips : raw.total_clips
+    const totalClips = typeof totalRaw === 'number' && Number.isFinite(totalRaw) ? Math.max(0, Math.floor(totalRaw)) : null
+    const latestRaw =
+      typeof raw.latestCreatedAt === 'string'
+        ? raw.latestCreatedAt
+        : typeof raw.latest_created_at === 'string'
+        ? raw.latest_created_at
+        : null
+    if (!id || !title || totalClips === null || !latestRaw) {
+      continue
+    }
+    summaries.push({ id, title, totalClips, latestCreatedAt: latestRaw })
+  }
+  return summaries
+}
+
+const parseClipPagePayload = (
+  payload: unknown
+): { clips: Clip[]; nextCursor: string | null; totalClips: number | null; projects: ProjectSummary[] } => {
   if (!payload || typeof payload !== 'object') {
-    return { clips: [], nextCursor: null }
+    return { clips: [], nextCursor: null, totalClips: null, projects: [] }
   }
   const record = payload as RawClipPagePayload
   const items = Array.isArray(record.clips) ? record.clips : []
@@ -217,14 +266,17 @@ const parseClipPagePayload = (payload: unknown): { clips: Clip[]; nextCursor: st
     .filter((clip): clip is Clip => clip !== null)
   const nextCursorValue = record.nextCursor ?? record.next_cursor
   const nextCursor = typeof nextCursorValue === 'string' && nextCursorValue.length > 0 ? nextCursorValue : null
-  return { clips, nextCursor }
+  const totalRaw = typeof record.totalClips === 'number' ? record.totalClips : record.total_clips
+  const totalClips = typeof totalRaw === 'number' && Number.isFinite(totalRaw) ? Math.max(0, Math.floor(totalRaw)) : null
+  const projects = parseProjectSummaries(record.projects)
+  return { clips, nextCursor, totalClips, projects }
 }
 
 const fetchAccountClipPageFromApi = async (
   accountId: string,
   limit: number,
   cursor: string | null
-): Promise<{ clips: Clip[]; nextCursor: string | null }> => {
+): Promise<{ clips: Clip[]; nextCursor: string | null; totalClips: number | null; projects: ProjectSummary[] }> => {
   const response = await requestWithFallback(() => buildClipsPageUrl(accountId, limit, cursor))
   if (!response.ok) {
     throw new Error(await extractErrorMessage(response))
@@ -236,19 +288,57 @@ const fetchAccountClipPageFromApi = async (
 export type ClipPage = {
   clips: Clip[]
   nextCursor: string | null
+  totalClips: number | null
+  projects: ProjectSummary[]
+}
+
+const getProjectKey = (clip: Clip): string => {
+  if (typeof clip.videoId === 'string' && clip.videoId.length > 0) {
+    return clip.videoId
+  }
+  return clip.id
+}
+
+const summariseProjects = (clips: Clip[]): ProjectSummary[] => {
+  const groups = new Map<
+    string,
+    { title: string; total: number; latest: string }
+  >()
+  for (const clip of clips) {
+    const key = getProjectKey(clip)
+    const title = clip.videoTitle || clip.sourceTitle || clip.title
+    const latest = clip.createdAt
+    const existing = groups.get(key)
+    if (!existing) {
+      groups.set(key, { title, total: 1, latest })
+    } else {
+      existing.total += 1
+      if (latest > existing.latest) {
+        existing.latest = latest
+      }
+    }
+  }
+  return Array.from(groups.entries())
+    .map(([id, value]) => ({
+      id,
+      title: value.title,
+      totalClips: value.total,
+      latestCreatedAt: value.latest
+    }))
+    .sort((a, b) => (a.latestCreatedAt < b.latestCreatedAt ? 1 : -1))
 }
 
 export const fetchAccountClipsPage = async ({
   accountId,
   limit,
   cursor
-}: {
-  accountId: string
-  limit: number
-  cursor?: string | null
-}): Promise<ClipPage> => {
+  }: {
+    accountId: string
+    limit: number
+    cursor?: string | null
+  }): Promise<ClipPage> => {
   if (!accountId) {
-    return { clips: [], nextCursor: null }
+    return { clips: [], nextCursor: null, totalClips: null, projects: [] }
   }
 
   const pageSize = Math.max(1, Math.floor(limit))
@@ -257,7 +347,7 @@ export const fetchAccountClipsPage = async ({
       return await fetchAccountClipPageFromApi(accountId, pageSize, cursor ?? null)
     } catch (error) {
       console.error('Unable to load clips from API library', error)
-      return { clips: [], nextCursor: null }
+      return { clips: [], nextCursor: null, totalClips: null, projects: [] }
     }
   }
 
@@ -269,10 +359,15 @@ export const fetchAccountClipsPage = async ({
     const end = Math.min(start + pageSize, allClips.length)
     const slice = allClips.slice(start, end)
     const nextCursor = end < allClips.length ? encodeCursorToken(end) : null
-    return { clips: slice, nextCursor }
+    return {
+      clips: slice,
+      nextCursor,
+      totalClips: allClips.length,
+      projects: summariseProjects(allClips)
+    }
   } catch (error) {
     console.error('Unable to load clips from library bridge', error)
-    return { clips: [], nextCursor: null }
+    return { clips: [], nextCursor: null, totalClips: null, projects: [] }
   }
 }
 

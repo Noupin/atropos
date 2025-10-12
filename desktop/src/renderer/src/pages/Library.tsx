@@ -14,7 +14,8 @@ import { formatDuration, formatViews } from '../lib/format'
 import type { AccountSummary, Clip } from '../types'
 import {
   fetchAccountClipsPage,
-  type ClipPage
+  type ClipPage,
+  type ProjectSummary
 } from '../services/clipLibrary'
 import useSharedVolume from '../hooks/useSharedVolume'
 import { useLibraryUiState } from '../state/uiState'
@@ -28,12 +29,23 @@ type PendingLibraryProject = {
   totalClips: number | null
 }
 
+type ProjectGroup = {
+  id: string
+  title: string
+  clips: Clip[]
+  totalClips: number
+  latestCreatedAt: string
+  hasLoadedClips: boolean
+}
+
 type AccountRuntimeState = {
   clips: Clip[]
   nextCursor: string | null
   isLoading: boolean
   error: string | null
   loadedPages: number
+  totalClips: number | null
+  projectSummaries: Record<string, ProjectSummary>
 }
 
 type LibraryProps = {
@@ -50,7 +62,9 @@ const createDefaultAccountState = (): AccountRuntimeState => ({
   nextCursor: null,
   isLoading: false,
   error: null,
-  loadedPages: 0
+  loadedPages: 0,
+  totalClips: null,
+  projectSummaries: {}
 })
 
 const isAccountAvailable = (account: AccountSummary): boolean =>
@@ -97,6 +111,10 @@ const Library: FC<LibraryProps> = ({
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
   const scrollRestoredRef = useRef(false)
+  const [collapsedProjectIds, setCollapsedProjectIds] = useState<Set<string>>(
+    () => new Set<string>()
+  )
+  const pageSize = Math.max(1, Math.floor(libraryState.pageSize))
   const previousPageSizeRef = useRef(pageSize)
 
   const availableAccounts = useMemo(
@@ -112,12 +130,16 @@ const Library: FC<LibraryProps> = ({
     [libraryState.expandedAccountIds]
   )
   const selectedClipId = libraryState.selectedClipId
-  const pageSize = Math.max(1, Math.floor(libraryState.pageSize))
 
-  const pendingLookup = useMemo(() => {
+  const accountKeyForPending = useCallback(
+    (value: string | null | undefined) => value ?? UNKNOWN_ACCOUNT_ID,
+    []
+  )
+
+  const pendingByAccount = useMemo(() => {
     const map = new Map<string, PendingLibraryProject[]>()
     for (const project of pendingProjects) {
-      const key = project.accountId ?? UNKNOWN_ACCOUNT_ID
+      const key = accountKeyForPending(project.accountId)
       const entries = map.get(key)
       if (entries) {
         entries.push(project)
@@ -126,7 +148,16 @@ const Library: FC<LibraryProps> = ({
       }
     }
     return map
-  }, [pendingProjects])
+  }, [accountKeyForPending, pendingProjects])
+
+  const pendingProjectLookup = useMemo(() => {
+    const map = new Map<string, PendingLibraryProject>()
+    for (const project of pendingProjects) {
+      const key = `${accountKeyForPending(project.accountId)}::${project.projectId}`
+      map.set(key, project)
+    }
+    return map
+  }, [accountKeyForPending, pendingProjects])
 
   useEffect(() => {
     accountStatesRef.current = accountStates
@@ -141,6 +172,22 @@ const Library: FC<LibraryProps> = ({
       return next
     })
   }, [availableAccounts])
+
+  useEffect(() => {
+    setCollapsedProjectIds((previous) => {
+      const next = new Set<string>()
+      for (const value of previous) {
+        const [accountId] = value.split('::')
+        if (availableAccountIds.includes(accountId)) {
+          next.add(value)
+        }
+      }
+      if (next.size === previous.size) {
+        return previous
+      }
+      return next
+    })
+  }, [availableAccountIds])
 
   useEffect(() => {
     const previous = previousPageSizeRef.current
@@ -253,7 +300,9 @@ const Library: FC<LibraryProps> = ({
             nextCursor: reset ? null : existing.nextCursor,
             isLoading: true,
             error: null,
-            loadedPages: reset ? 0 : existing.loadedPages
+            loadedPages: reset ? 0 : existing.loadedPages,
+            totalClips: reset ? null : existing.totalClips,
+            projectSummaries: reset ? {} : existing.projectSummaries
           }
         }
       })
@@ -272,6 +321,18 @@ const Library: FC<LibraryProps> = ({
           const baseLoaded = reset ? 0 : existing.loadedPages
           nextLoadedPages = baseLoaded + 1
           const nextClips = reset ? page.clips : [...existing.clips, ...page.clips]
+          const nextTotal =
+            typeof page.totalClips === 'number' && Number.isFinite(page.totalClips)
+              ? page.totalClips
+              : reset
+              ? null
+              : existing.totalClips
+          const summaries =
+            page.projects.length > 0
+              ? mapProjectSummaries(page.projects)
+              : reset
+              ? {}
+              : existing.projectSummaries
           return {
             ...previous,
             [accountId]: {
@@ -279,7 +340,9 @@ const Library: FC<LibraryProps> = ({
               nextCursor: page.nextCursor,
               isLoading: false,
               error: null,
-              loadedPages: nextLoadedPages
+              loadedPages: nextLoadedPages,
+              totalClips: nextTotal,
+              projectSummaries: summaries
             }
           }
         })
@@ -350,6 +413,59 @@ const Library: FC<LibraryProps> = ({
   ])
 
   const normalisedQuery = useMemo(() => query.trim().toLowerCase(), [query])
+
+  useEffect(() => {
+    const visible: Array<{ accountId: string; clip: Clip }> = []
+    for (const account of availableAccounts) {
+      const state = accountStates[account.id]
+      if (!state) {
+        continue
+      }
+      const baseClips = state.clips
+      if (baseClips.length === 0) {
+        continue
+      }
+      const filtered = normalisedQuery
+        ? baseClips.filter((clip) => clipMatchesQuery(clip, normalisedQuery))
+        : baseClips
+      for (const clip of filtered) {
+        visible.push({ accountId: account.id, clip })
+      }
+    }
+
+    if (visible.length === 0) {
+      if (selectedClipId !== null) {
+        updateLibrary((previous) => {
+          if (previous.selectedClipId === null && previous.activeAccountId === null) {
+            return previous
+          }
+          return { ...previous, selectedClipId: null, activeAccountId: null }
+        })
+      }
+      return
+    }
+
+    if (visible.some((item) => item.clip.id === selectedClipId)) {
+      return
+    }
+
+    const first = visible[0]
+    updateLibrary((previous) => {
+      if (
+        previous.selectedClipId === first.clip.id &&
+        previous.activeAccountId === first.accountId
+      ) {
+        return previous
+      }
+      return { ...previous, selectedClipId: first.clip.id, activeAccountId: first.accountId }
+    })
+  }, [
+    accountStates,
+    availableAccounts,
+    normalisedQuery,
+    selectedClipId,
+    updateLibrary
+  ])
 
   const selectedContext = useMemo(() => {
     if (!selectedClipId) {
@@ -422,6 +538,18 @@ const Library: FC<LibraryProps> = ({
     },
     [selectedClipId, updateLibrary]
   )
+
+  const toggleProjectCollapse = useCallback((id: string) => {
+    setCollapsedProjectIds((previous) => {
+      const next = new Set(previous)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }, [])
 
   const handleToggleAccount = useCallback(
     (accountId: string) => {
@@ -545,11 +673,52 @@ const Library: FC<LibraryProps> = ({
             {normalisedAccounts.map((account) => {
               const state = accountStates[account.id] ?? createDefaultAccountState()
               const isExpanded = expandedAccountSet.has(account.id)
-              const pending = pendingLookup.get(account.id) ?? []
-              const filteredClips = normalisedQuery
-                ? state.clips.filter((clip) => clipMatchesQuery(clip, normalisedQuery))
-                : state.clips
+              const pending = pendingByAccount.get(accountKeyForPending(account.id)) ?? []
               const hasMore = state.nextCursor !== null
+              const summaries = Object.values(state.projectSummaries)
+              const effectiveSummaries =
+                summaries.length > 0 ? summaries : summariseProjectsFromClips(state.clips)
+              const projectGroups: ProjectGroup[] = effectiveSummaries
+                .map((summary) => {
+                  const loadedClips = state.clips.filter(
+                    (clip) => getProjectKey(clip) === summary.id
+                  )
+                  const clipsForGroup = normalisedQuery
+                    ? loadedClips.filter((clip) => clipMatchesQuery(clip, normalisedQuery))
+                    : loadedClips
+                  return {
+                    id: summary.id,
+                    title: summary.title,
+                    totalClips: summary.totalClips,
+                    latestCreatedAt: summary.latestCreatedAt,
+                    clips: clipsForGroup,
+                    hasLoadedClips: loadedClips.length > 0
+                  }
+                })
+                .filter((group) => (normalisedQuery ? group.clips.length > 0 : true))
+              const hasAnyProjects = projectGroups.length > 0
+              const totalFromSummaries = effectiveSummaries.reduce(
+                (sum, summary) => sum + summary.totalClips,
+                0
+              )
+              const totalClipsValue =
+                typeof state.totalClips === 'number' && Number.isFinite(state.totalClips)
+                  ? state.totalClips
+                  : totalFromSummaries > 0
+                  ? totalFromSummaries
+                  : state.clips.length > 0
+                  ? state.clips.length
+                  : null
+              const accountClipLabel =
+                totalClipsValue !== null
+                  ? totalClipsValue === 0
+                    ? 'No clips available yet'
+                    : `${totalClipsValue} clip${totalClipsValue === 1 ? '' : 's'} available`
+                  : state.isLoading
+                  ? 'Loading clip count…'
+                  : state.clips.length === 0
+                  ? 'No clips available yet'
+                  : 'Clip count unavailable'
               return (
                 <article
                   key={account.id}
@@ -560,25 +729,25 @@ const Library: FC<LibraryProps> = ({
                     onClick={() => handleToggleAccount(account.id)}
                     className="flex w-full items-center justify-between gap-3 text-left"
                   >
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-semibold transition ${
-                          isExpanded
-                            ? 'border-[color:var(--accent)] text-[color:var(--accent)]'
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-semibold transition ${
+                            isExpanded
+                              ? 'border-[color:var(--accent)] text-[color:var(--accent)]'
                             : 'border-[color:var(--edge-soft)] text-[color:var(--muted)]'
                         }`}
-                      >
-                        {isExpanded ? '–' : '+'}
-                      </span>
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold text-[var(--fg)]">{account.displayName}</span>
-                        <span className="text-xs text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                          {state.clips.length} clip{state.clips.length === 1 ? '' : 's'} loaded
+                        >
+                          {isExpanded ? '–' : '+'}
                         </span>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-semibold text-[var(--fg)]">{account.displayName}</span>
+                          <span className="text-xs text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                            {accountClipLabel}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                    {state.isLoading ? <MarbleSpinner size={20} label="Loading clips" /> : null}
-                  </button>
+                      {state.isLoading ? <MarbleSpinner size={20} label="Loading clips" /> : null}
+                    </button>
 
                   {isExpanded ? (
                     <div className="mt-4 space-y-4">
@@ -608,24 +777,116 @@ const Library: FC<LibraryProps> = ({
                         </div>
                       ) : null}
 
-                      {filteredClips.length === 0 && !state.isLoading ? (
+                      {!state.isLoading && !hasAnyProjects ? (
                         <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-4 py-6 text-sm text-[var(--muted)]">
-                          {state.clips.length === 0
-                            ? 'No clips have been loaded for this account yet.'
-                            : 'No clips match the current search.'}
+                          {totalClipsValue === 0
+                            ? 'No clips are available for this account yet.'
+                            : normalisedQuery
+                            ? 'No clips match the current search.'
+                            : 'No clips are available for this account yet.'}
                         </div>
                       ) : null}
 
-                      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                        {filteredClips.map((clip) => (
-                          <ClipCard
-                            key={clip.id}
-                            clip={clip}
-                            onClick={() => handleSelectClip(account.id, clip)}
-                            isActive={clip.id === selectedClipId}
-                          />
-                        ))}
-                      </div>
+                      {projectGroups.map((group) => {
+                        const projectKey = `${account.id}::${group.id}`
+                        const isProjectCollapsed = collapsedProjectIds.has(projectKey)
+                        const clipCountLabel = `${group.totalClips} clip${group.totalClips === 1 ? '' : 's'}`
+                        const pendingProject = pendingProjectLookup.get(
+                          `${accountKeyForPending(account.id)}::${group.id}`
+                        )
+                        const completedCount = pendingProject
+                          ? Math.max(
+                              1,
+                              Math.min(
+                                pendingProject.completedClips,
+                                pendingProject.totalClips ?? pendingProject.completedClips
+                              )
+                            )
+                          : 0
+                        const pendingLabel = pendingProject
+                          ? pendingProject.totalClips
+                            ? `${completedCount} of ${pendingProject.totalClips} ready`
+                            : `${completedCount} ready`
+                          : null
+
+                        return (
+                          <div key={projectKey} className="flex flex-col gap-3">
+                            <div className="flex items-center justify-between">
+                              <button
+                                type="button"
+                                onClick={() => toggleProjectCollapse(projectKey)}
+                                className="group flex items-start gap-3 text-left text-[var(--fg)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+                                aria-expanded={!isProjectCollapsed}
+                              >
+                                <svg
+                                  viewBox="0 0 20 20"
+                                  aria-hidden="true"
+                                  className={`mt-1 h-4 w-4 transform transition-transform text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)] ${
+                                    isProjectCollapsed ? '-rotate-90' : 'rotate-0'
+                                  }`}
+                                >
+                                  <path
+                                    fill="currentColor"
+                                    d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08Z"
+                                  />
+                                </svg>
+                                <div className="flex flex-col">
+                                  <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
+                                    Video
+                                  </span>
+                                  <span className="text-lg font-semibold leading-snug text-[var(--fg)] transition-colors group-hover:text-[color:var(--accent)]">
+                                    {group.title}
+                                  </span>
+                                </div>
+                              </button>
+                              <span className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
+                                {clipCountLabel}
+                              </span>
+                            </div>
+                            {pendingProject ? (
+                              <div
+                                className="flex items-center justify-between rounded-lg border border-dashed border-white/15 bg-[color:color-mix(in_srgb,var(--card)_72%,transparent)] px-3 py-2 text-xs"
+                                role="status"
+                              >
+                                <span className="flex items-center gap-2 text-[var(--fg)]">
+                                  <span
+                                    className="h-3 w-3 animate-spin rounded-full border-2 border-white/25 border-t-[color:var(--accent)]"
+                                    aria-hidden
+                                  />
+                                  Rendering additional clips…
+                                </span>
+                                <span className="font-medium text-[var(--fg)]">{pendingLabel}</span>
+                              </div>
+                            ) : null}
+                            {!isProjectCollapsed ? (
+                              group.clips.length > 0 ? (
+                                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                                  {group.clips.map((clip) => (
+                                    <ClipCard
+                                      key={clip.id}
+                                      clip={clip}
+                                      onClick={() => handleSelectClip(account.id, clip)}
+                                      isActive={clip.id === selectedClipId}
+                                    />
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-4 py-6 text-sm text-[var(--muted)]">
+                                  {normalisedQuery
+                                    ? 'No clips match the current search for this video.'
+                                    : state.isLoading
+                                    ? 'Loading clips for this video…'
+                                    : hasMore
+                                    ? 'Load more clips to reveal the rest of this video.'
+                                    : group.hasLoadedClips
+                                    ? 'No clips match the current filters.'
+                                    : 'No clips are available for this video yet.'}
+                                </div>
+                              )
+                            ) : null}
+                          </div>
+                        )
+                      })}
 
                       {state.isLoading ? (
                         <div className="flex items-center justify-center py-4">
@@ -787,3 +1048,45 @@ const Library: FC<LibraryProps> = ({
 }
 
 export default Library
+const getProjectKey = (clip: Clip): string => {
+  if (typeof clip.videoId === 'string' && clip.videoId.length > 0) {
+    return clip.videoId
+  }
+  return clip.id
+}
+
+const getProjectTitle = (clip: Clip): string => clip.videoTitle || clip.sourceTitle || clip.title
+
+const summariseProjectsFromClips = (clips: Clip[]): ProjectSummary[] => {
+  const map = new Map<string, { title: string; total: number; latest: string }>()
+  for (const clip of clips) {
+    const key = getProjectKey(clip)
+    const title = getProjectTitle(clip)
+    const latest = clip.createdAt
+    const entry = map.get(key)
+    if (!entry) {
+      map.set(key, { title, total: 1, latest })
+    } else {
+      entry.total += 1
+      if (latest > entry.latest) {
+        entry.latest = latest
+      }
+    }
+  }
+  return Array.from(map.entries())
+    .map(([id, value]) => ({
+      id,
+      title: value.title,
+      totalClips: value.total,
+      latestCreatedAt: value.latest
+    }))
+    .sort((a, b) => (a.latestCreatedAt < b.latestCreatedAt ? 1 : -1))
+}
+
+const mapProjectSummaries = (summaries: ProjectSummary[]): Record<string, ProjectSummary> => {
+  const next: Record<string, ProjectSummary> = {}
+  for (const summary of summaries) {
+    next[summary.id] = summary
+  }
+  return next
+}
