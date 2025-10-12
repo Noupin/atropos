@@ -20,19 +20,21 @@ export type UiState = {
   library: LibraryUiState
 }
 
+const createDefaultLibraryState = (): LibraryUiState => ({
+  expandedAccountIds: [],
+  expandedProjectIds: [],
+  selectedClipId: null,
+  pageCounts: {},
+  scrollTop: 0,
+  activeAccountId: null,
+  pageSize: 20,
+  accountScrollPositions: {}
+})
+
 const DEFAULT_UI_STATE: UiState = {
   activeTab: '/',
   activeAccountId: null,
-  library: {
-    expandedAccountIds: [],
-    expandedProjectIds: [],
-    selectedClipId: null,
-    pageCounts: {},
-    scrollTop: 0,
-    activeAccountId: null,
-    pageSize: 20,
-    accountScrollPositions: {}
-  }
+  library: createDefaultLibraryState()
 }
 
 const readStoredUiState = (): UiState => {
@@ -78,11 +80,13 @@ const readStoredUiState = (): UiState => {
         )
       : {}
 
+    const baseLibrary = createDefaultLibraryState()
     return {
       activeTab: typeof parsed.activeTab === 'string' ? parsed.activeTab : DEFAULT_UI_STATE.activeTab,
       activeAccountId:
         typeof parsed.activeAccountId === 'string' ? parsed.activeAccountId : DEFAULT_UI_STATE.activeAccountId,
       library: {
+        ...baseLibrary,
         expandedAccountIds,
         expandedProjectIds,
         selectedClipId:
@@ -185,7 +189,8 @@ export const useLibraryUiState = () => {
   const updateLibrary = useCallback(
     (updater: (prev: LibraryUiState) => LibraryUiState) => {
       updateState((previous) => {
-        const nextLibrary = updater(previous.library)
+        const previousLibrary = previous.library ?? createDefaultLibraryState()
+        const nextLibrary = updater(previousLibrary)
         if (nextLibrary === previous.library) {
           return previous
         }
@@ -195,7 +200,12 @@ export const useLibraryUiState = () => {
     [updateState]
   )
 
-  return { libraryState: state.library, updateLibrary }
+  const libraryState = useMemo(
+    () => state.library ?? createDefaultLibraryState(),
+    [state.library]
+  )
+
+  return { libraryState, updateLibrary }
 }
 
 export const resetUiState = (): void => {

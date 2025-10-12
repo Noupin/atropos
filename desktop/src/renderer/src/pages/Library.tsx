@@ -111,7 +111,10 @@ const Library: FC<LibraryProps> = ({
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
   const scrollRestoredRef = useRef(false)
-  const effectivePageSize = Math.max(1, Math.floor(libraryState.pageSize))
+  const effectivePageSize = useMemo(() => {
+    const value = typeof libraryState.pageSize === 'number' ? libraryState.pageSize : 20
+    return Math.max(1, Math.floor(Number.isFinite(value) ? value : 20))
+  }, [libraryState.pageSize])
   const previousPageSizeRef = useRef(effectivePageSize)
 
   const availableAccounts = useMemo(
