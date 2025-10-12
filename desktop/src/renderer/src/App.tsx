@@ -5,6 +5,7 @@ import MarbleSelect from './components/MarbleSelect'
 import TrialBadge from './components/TrialBadge'
 import ClipPage from './pages/Clip'
 import ClipEdit from './pages/ClipEdit'
+import VideoWorkspace from './pages/VideoWorkspace'
 import Home from './pages/Home'
 import Library from './pages/Library'
 import Profile from './pages/Profile'
@@ -19,7 +20,13 @@ import {
   summarisePipelineProgress,
   type PipelineOverallStatus
 } from './lib/pipelineProgress'
-import type { AccountSummary, AuthPingSummary, HomePipelineState, SupportedPlatform } from './types'
+import type {
+  AccountSummary,
+  AuthPingSummary,
+  Clip,
+  HomePipelineState,
+  SupportedPlatform
+} from './types'
 import { useUiState } from './state/uiState'
 import {
   addPlatformToAccount,
@@ -681,9 +688,32 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   )
 
   const isLibraryRoute = location.pathname.startsWith('/library')
+  const isVideoRoute = /^\/video\//.test(location.pathname)
   const isClipEditRoute = /^\/clip\/[^/]+\/edit$/.test(location.pathname)
   const isSettingsRoute = location.pathname.startsWith('/settings')
-  const showBackButton = location.pathname.startsWith('/clip/')
+  const showBackButton = location.pathname.startsWith('/clip/') || isVideoRoute
+
+  const videoLocationState =
+    (isVideoRoute ? (location.state as { clip?: Clip; clipTitle?: string } | null) : null) ?? null
+
+  const videoNavLabel = useMemo(() => {
+    if (!isVideoRoute) {
+      return null
+    }
+    const title = videoLocationState?.clip?.title ?? videoLocationState?.clipTitle ?? 'Video workspace'
+    if (title.length <= 24) {
+      return title
+    }
+    return `${title.slice(0, 21).trimEnd()}…`
+  }, [isVideoRoute, videoLocationState?.clip?.title, videoLocationState?.clipTitle])
+
+  const videoNavLinkClassName = useCallback(
+    ({ isActive }: { isActive: boolean }) => {
+      const base = navLinkClassName({ isActive })
+      return `${base} ml-1 before:absolute before:-left-3 before:top-1/2 before:h-6 before:w-6 before:-translate-y-1/2 before:rounded-full before:bg-[color:color-mix(in_srgb,var(--panel)_60%,transparent)] before:shadow-[0_10px_18px_rgba(43,42,40,0.14)] before:content-[''] after:absolute after:-left-1.5 after:top-1/2 after:h-0.5 after:w-3 after:-translate-y-1/2 after:bg-[color:var(--edge-soft)]`
+    },
+    [navLinkClassName]
+  )
 
   const accountSelectOptions = useMemo(() => {
     if (availableAccounts.length === 0) {
@@ -761,6 +791,20 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                     />
                   )}
                 </NavLink>
+                {isVideoRoute && videoNavLabel ? (
+                  <NavLink
+                    to={{ pathname: location.pathname, search: location.search, hash: location.hash }}
+                    className={videoNavLinkClassName}
+                  >
+                    {({ isActive }) => (
+                      <NavItemLabel
+                        label={videoNavLabel}
+                        isActive={isActive}
+                        badge={{ label: 'Video', variant: 'info' }}
+                      />
+                    )}
+                  </NavLink>
+                ) : null}
                 <NavLink
                   to="/library"
                   className={({ isActive }) =>
@@ -861,6 +905,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
               />
             }
           />
+          <Route path="/video/:id" element={<VideoWorkspace />} />
           <Route path="/clip/:id" element={<ClipPage />} />
           <Route path="/clip/:id/edit" element={<ClipEdit />} />
           <Route

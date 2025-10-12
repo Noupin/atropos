@@ -653,6 +653,19 @@ const Library: FC<LibraryProps> = ({
     [navigate]
   )
 
+  const handleOpenWorkspace = useCallback(
+    (clip: Clip, accountId: string | null) => {
+      navigate(`/video/${encodeURIComponent(clip.id)}`, {
+        state: {
+          clip,
+          accountId,
+          clipTitle: clip.title
+        }
+      })
+    },
+    [navigate]
+  )
+
   const hasAccounts = availableAccounts.length > 0
   const normalisedAccounts = availableAccounts
   const loadingAccountList = isLoadingAccounts && !hasAccounts
@@ -971,13 +984,22 @@ const Library: FC<LibraryProps> = ({
                       {selectedClip.channel}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleEditClip(selectedClip, selectedAccountId)}
-                    className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
-                  >
-                    Edit clip
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenWorkspace(selectedClip, selectedAccountId)}
+                      className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
+                    >
+                      Video workspace
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEditClip(selectedClip, selectedAccountId)}
+                      className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
+                    >
+                      Edit clip
+                    </button>
+                  </div>
                 </div>
                 <div className="relative overflow-hidden rounded-xl bg-black">
                   <video
