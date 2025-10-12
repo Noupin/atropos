@@ -13,41 +13,56 @@ type NavigationState = {
 
 const DEEP_LINK_SCHEME = 'atropos'
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+
+if (!gotSingleInstanceLock) {
+  app.quit()
+  process.exit(0)
+}
+
 let mainWindow: BrowserWindow | null = null
 let navigationState: NavigationState = { canGoBack: false, canGoForward: false }
-let pendingDeepLinks: string[] = []
+const pendingDeepLinks: string[] = []
+let hasMainWindowLoaded = false
+
+const getDeepLinkFromArgv = (argv: string[]): string | undefined => {
+  for (let index = argv.length - 1; index >= 0; index -= 1) {
+    const value = argv[index]
+    if (value.startsWith(`${DEEP_LINK_SCHEME}://`)) {
+      return value
+    }
+  }
+  return undefined
+}
+
+const initialDeepLink = getDeepLinkFromArgv(process.argv)
+if (initialDeepLink) {
+  pendingDeepLinks.push(initialDeepLink)
+}
 
 const focusMainWindow = (): void => {
   if (!mainWindow) {
     return
   }
+
   if (mainWindow.isDestroyed()) {
     mainWindow = null
     return
   }
+
   if (mainWindow.isMinimized()) {
     mainWindow.restore()
   }
+
   if (!mainWindow.isVisible()) {
     mainWindow.show()
   }
+
   mainWindow.focus()
 }
 
-const singleInstanceLock = app.requestSingleInstanceLock()
-
-if (!singleInstanceLock) {
-  app.quit()
-  process.exit(0)
-}
-
-const initialDeepLink = process.argv.find((arg) => arg.startsWith(`${DEEP_LINK_SCHEME}://`))
-if (initialDeepLink) {
-  pendingDeepLinks.push(initialDeepLink)
-}
-
 const sendNavigationCommand = (direction: NavigationCommand): void => {
-  if (!mainWindow) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
     return
   }
 
@@ -58,35 +73,49 @@ const enqueueDeepLink = (url: string): void => {
   if (!url.startsWith(`${DEEP_LINK_SCHEME}://`)) {
     return
   }
-  if (mainWindow) {
-    focusMainWindow()
-    mainWindow.webContents.send('deep-link', url)
+
+  if (!mainWindow || mainWindow.isDestroyed() || !hasMainWindowLoaded) {
+    pendingDeepLinks.push(url)
     return
   }
-  pendingDeepLinks.push(url)
-  if (app.isReady() && BrowserWindow.getAllWindows().length === 0) {
-    createWindow()
-  }
+
+  focusMainWindow()
+  mainWindow.webContents.send('deeplink', url)
 }
 
 const flushPendingDeepLinks = (): void => {
-  if (!mainWindow || pendingDeepLinks.length === 0) {
+  if (!mainWindow || mainWindow.isDestroyed() || pendingDeepLinks.length === 0) {
     return
   }
+
   focusMainWindow()
-  for (const url of pendingDeepLinks) {
-    mainWindow.webContents.send('deep-link', url)
+  const queuedUrls = pendingDeepLinks.splice(0, pendingDeepLinks.length)
+  for (const url of queuedUrls) {
+    mainWindow.webContents.send('deeplink', url)
   }
-  pendingDeepLinks = []
 }
 
-app.on('second-instance', (_event, argv) => {
-  if (mainWindow) {
-    focusMainWindow()
+const ensureDefaultProtocolClient = (): void => {
+  if (app.isDefaultProtocolClient(DEEP_LINK_SCHEME)) {
+    return
   }
-  const urlArg = argv.find((arg) => arg.startsWith(`${DEEP_LINK_SCHEME}://`))
-  if (urlArg) {
-    enqueueDeepLink(urlArg)
+
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME, process.execPath, [resolve(process.argv[1])])
+    }
+    return
+  }
+
+  app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME)
+}
+
+app.on('second-instance', (event, argv) => {
+  event.preventDefault()
+  focusMainWindow()
+  const deepLink = getDeepLinkFromArgv(argv)
+  if (deepLink) {
+    enqueueDeepLink(deepLink)
   }
 })
 
@@ -95,7 +124,11 @@ app.on('open-url', (event, url) => {
   enqueueDeepLink(url)
 })
 
-function createWindow(): void {
+const createMainWindow = (): BrowserWindow => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return mainWindow
+  }
+
   // Create the browser window.
   mainWindow = new BrowserWindow({
     width: 900,
@@ -111,10 +144,11 @@ function createWindow(): void {
   })
 
   navigationState = { canGoBack: false, canGoForward: false }
+  hasMainWindowLoaded = false
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
-    flushPendingDeepLinks()
+    focusMainWindow()
   })
 
   mainWindow.on('app-command', (_event, command) => {
@@ -161,6 +195,7 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.on('did-finish-load', () => {
+    hasMainWindowLoaded = true
     flushPendingDeepLinks()
   })
 
@@ -174,7 +209,10 @@ function createWindow(): void {
 
   mainWindow.on('closed', () => {
     mainWindow = null
+    hasMainWindowLoaded = false
   })
+
+  return mainWindow
 }
 
 // This method will be called when Electron has finished
@@ -185,13 +223,7 @@ app.whenReady().then(() => {
   app.setName('Atropos')
   electronApp.setAppUserModelId('com.atropos.app')
 
-  if (process.defaultApp) {
-    if (process.argv.length >= 2) {
-      app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME, process.execPath, [resolve(process.argv[1])])
-    }
-  } else {
-    app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME)
-  }
+  ensureDefaultProtocolClient()
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
@@ -231,14 +263,15 @@ app.whenReady().then(() => {
     }
   })
 
-  if (!mainWindow) {
-    createWindow()
-  }
+  createMainWindow()
 
-  app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  app.on('activate', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createMainWindow()
+      return
+    }
+
+    focusMainWindow()
   })
 })
 

@@ -22,8 +22,8 @@ const api = {
     const listener = (_event: IpcRendererEvent, url: string) => {
       callback(url)
     }
-    ipcRenderer.on('deep-link', listener)
-    return () => ipcRenderer.removeListener('deep-link', listener)
+    ipcRenderer.on('deeplink', listener)
+    return () => ipcRenderer.removeListener('deeplink', listener)
   },
   updateNavigationState: (state: { canGoBack: boolean; canGoForward: boolean }): void => {
     ipcRenderer.send('navigation:state', state)
