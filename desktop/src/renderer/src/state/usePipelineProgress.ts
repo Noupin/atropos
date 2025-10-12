@@ -13,7 +13,13 @@ import {
   subscribeToPipelineEvents,
   type PipelineEventMessage
 } from '../services/pipelineApi'
-import type { AccountSummary, HomePipelineState } from '../types'
+import type {
+  AccountSummary,
+  HomePipelineState,
+  PipelineStep,
+  PipelineStepStatus,
+  PipelineSubstep
+} from '../types'
 
 type UsePipelineProgressOptions = {
   state: HomePipelineState
@@ -143,7 +149,7 @@ export const usePipelineProgress = ({
 
         updateState((prev) => ({
           ...prev,
-          steps: prev.steps.map((step) => {
+          steps: prev.steps.map((step): PipelineStep => {
             if (location.kind === 'step') {
               if (step.id !== location.stepId) {
                 return step
@@ -179,7 +185,7 @@ export const usePipelineProgress = ({
             return {
               ...step,
               status: step.status === 'pending' ? 'running' : step.status,
-              substeps: step.substeps.map((substep) => {
+              substeps: step.substeps.map((substep): PipelineSubstep => {
                 if (substep.id !== location.substepId) {
                   return substep
                 }
@@ -225,10 +231,10 @@ export const usePipelineProgress = ({
                   (boundedTotal === 0 && totalValue !== null) ||
                   (boundedTotal > 0 && boundedCompleted >= boundedTotal)
 
-                const nextStatus = allDone
+                const nextStatus: PipelineStepStatus = allDone
                   ? 'completed'
                   : substep.status === 'pending' && !progressed && previousCompleted === 0
-                    ? substep.status
+                    ? 'pending'
                     : 'running'
 
                 const nextProgress = allDone ? 1 : progressed ? 0 : substep.progress
@@ -273,7 +279,7 @@ export const usePipelineProgress = ({
 
         updateState((prev) => ({
           ...prev,
-          steps: prev.steps.map((step, index) => {
+          steps: prev.steps.map((step, index): PipelineStep => {
             const shouldForceCompleted = index < targetIndex && step.status !== 'completed'
 
             if (location.kind === 'step') {
@@ -305,7 +311,7 @@ export const usePipelineProgress = ({
                 ? Math.max(1, location.clipIndex)
                 : null
 
-            const updatedSubsteps = step.substeps.map((substep) => {
+            const updatedSubsteps = step.substeps.map((substep): PipelineSubstep => {
               if (substep.id === location.substepId) {
                 if (event.type === 'step_started') {
                   const nextActiveClip =
@@ -560,7 +566,7 @@ export const usePipelineProgress = ({
             pipelineError: success ? null : errorMessage ?? 'Pipeline failed.',
             isProcessing: false,
             awaitingReview: false,
-            steps: prev.steps.map((step) => {
+            steps: prev.steps.map((step): PipelineStep => {
               if (success) {
                 if (step.status === 'completed' || step.status === 'failed') {
                   return { ...step, etaSeconds: null }

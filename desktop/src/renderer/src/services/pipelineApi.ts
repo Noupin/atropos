@@ -90,7 +90,13 @@ export const startPipelineJob = async (request: PipelineJobRequest): Promise<Pip
 export const normaliseJobClip = (payload: UnknownRecord): Clip | null => {
   const rawId = payload.id ?? payload.clip_id
   const id = typeof rawId === 'string' && rawId.length > 0 ? rawId : null
-  const title = typeof payload.title === 'string' && payload.title.length > 0 ? payload.title : id
+  if (!id) {
+    return null
+  }
+
+  const candidateTitle =
+    typeof payload.title === 'string' && payload.title.length > 0 ? payload.title : null
+  const title = candidateTitle ?? id
   const channel =
     typeof payload.channel === 'string' && payload.channel.length > 0 ? payload.channel : 'Unknown channel'
   const createdAt = typeof payload.created_at === 'string' ? payload.created_at : null
@@ -99,12 +105,13 @@ export const normaliseJobClip = (payload: UnknownRecord): Clip | null => {
   const playbackUrl = typeof payload.playback_url === 'string' ? payload.playback_url : null
   const previewUrlRaw = payload.preview_url
   const previewUrl =
-    typeof previewUrlRaw === 'string' && previewUrlRaw.length > 0
-      ? previewUrlRaw
-      : playbackUrl
+    typeof previewUrlRaw === 'string' && previewUrlRaw.length > 0 ? previewUrlRaw : playbackUrl
   const sourceUrl = typeof payload.source_url === 'string' ? payload.source_url : null
-  const sourceTitle = typeof payload.source_title === 'string' ? payload.source_title : title
-  if (!id || !title || !createdAt || durationSeconds === null || !description || !playbackUrl || !previewUrl || !sourceUrl) {
+  const sourceTitle =
+    typeof payload.source_title === 'string' && payload.source_title.length > 0
+      ? payload.source_title
+      : title
+  if (!title || !createdAt || durationSeconds === null || !description || !playbackUrl || !previewUrl || !sourceUrl) {
     return null
   }
 
@@ -116,7 +123,10 @@ export const normaliseJobClip = (payload: UnknownRecord): Clip | null => {
   const reason = typeof payload.reason === 'string' ? payload.reason : null
   const accountId = typeof payload.account === 'string' ? payload.account : null
   const videoId = typeof payload.video_id === 'string' ? payload.video_id : id
-  const videoTitle = typeof payload.video_title === 'string' ? payload.video_title : sourceTitle
+  const videoTitle =
+    typeof payload.video_title === 'string' && payload.video_title.length > 0
+      ? payload.video_title
+      : sourceTitle
 
   const { timestampUrl, timestampSeconds } = parseClipTimestamp(description)
 

@@ -2,7 +2,17 @@ import { useState } from 'react'
 import type { FC } from 'react'
 
 const Versions: FC = () => {
-  const [versions] = useState(window.electron.process.versions)
+  type VersionMap = Record<string, string | undefined>
+
+  const resolveVersions = (): VersionMap => {
+    const electronVersions = window.electron?.process?.versions
+    if (electronVersions) {
+      return electronVersions
+    }
+    return process.versions as VersionMap
+  }
+
+  const [versions] = useState<VersionMap>(resolveVersions)
 
   return (
     <ul className="versions">

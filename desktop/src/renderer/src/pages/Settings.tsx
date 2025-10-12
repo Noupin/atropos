@@ -12,6 +12,7 @@ import {
 import { formatConfigValue, formatNumberForStep } from '../utils/configFormatting'
 import { TONE_LABELS } from '../constants/tone'
 import {
+  type BgrColor,
   bgrToRgb,
   formatBgrString,
   hexToRgb,
@@ -44,6 +45,8 @@ const isColorSpace = (value: string): value is ColorSpace => {
   return COLOR_SPACE_OPTIONS.some((option) => option.value === value)
 }
 
+const DEFAULT_BGR: BgrColor = [255, 255, 255]
+
 type ColorControlProps = {
   id: string
   name: string
@@ -56,7 +59,7 @@ type ColorControlProps = {
 const ColorControl: FC<ColorControlProps> = ({ id, name, label, value, disabled, onChange }) => {
   const [space, setSpace] = useState<ColorSpace>('hex')
 
-  const bgr = useMemo(() => parseBgrString(value) ?? [255, 255, 255], [value])
+  const bgr = useMemo<BgrColor>(() => parseBgrString(value) ?? DEFAULT_BGR, [value])
   const rgb = useMemo(() => bgrToRgb(bgr), [bgr])
   const hsv = useMemo(() => rgbToHsv(rgb), [rgb])
   const hsl = useMemo(() => rgbToHsl(rgb), [rgb])
@@ -110,7 +113,7 @@ const ColorControl: FC<ColorControlProps> = ({ id, name, label, value, disabled,
       if (Number.isNaN(numeric)) {
         return
       }
-      const next = [...bgr] as typeof bgr
+      const next: BgrColor = [...bgr] as BgrColor
       next[index] = Math.min(Math.max(numeric, 0), 255)
       onChange(formatBgrString(next))
     },

@@ -92,7 +92,6 @@ const Home: FC<HomeProps> = ({
     activeJobId,
     reviewMode,
     awaitingReview,
-    lastRunProducedNoClips,
     lastRunClipSummary,
     lastRunClipStatus
   } = state

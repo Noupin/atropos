@@ -41,6 +41,13 @@ const multiStepBadgeSizeClasses = {
 
 const buildSubstepKey = (stepId: string, substepId: string): string => `${stepId}:${substepId}`
 
+type PipelineSnapshot = {
+  completedCount: number
+  progressPercent: number
+  activeStep: PipelineStep | null
+  hasFailure: boolean
+}
+
 const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(() => new Set())
   const [expandedSubsteps, setExpandedSubsteps] = useState<Set<string>>(() => new Set())
@@ -152,7 +159,7 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
     [stepDurations]
   )
 
-  const { completedCount, progressPercent, activeStep, hasFailure } = useMemo(() => {
+  const { completedCount, progressPercent, activeStep, hasFailure } = useMemo<PipelineSnapshot>(() => {
     if (totalSteps === 0 || totalDuration === 0) {
       return {
         completedCount: 0,

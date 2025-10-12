@@ -1,6 +1,8 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
-import { join, resolve } from 'path'
+import { app, shell, BrowserWindow, ipcMain, dialog, protocol } from 'electron'
+import { existsSync } from 'fs'
+import { join, resolve, dirname } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { pathToFileURL } from 'url'
 import icon from '../../resources/icon.png?asset'
 import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
 
@@ -16,6 +18,140 @@ const DEEP_LINK_SCHEME = 'atropos'
 let mainWindow: BrowserWindow | null = null
 let navigationState: NavigationState = { canGoBack: false, canGoForward: false }
 let pendingDeepLinks: string[] = []
+
+type RendererResolution = {
+  candidates: string[]
+  resolvedIndexPath: string | null
+  resolvedRootPath: string | null
+}
+
+let rendererResolution: RendererResolution | null = null
+let rendererMissingAlerted = false
+
+const buildRendererCandidates = (): string[] => {
+  const candidateBases = [
+    join(__dirname, '../renderer'),
+    join(__dirname, '../../renderer'),
+    join(process.resourcesPath, 'app.asar', 'out', 'renderer'),
+    join(process.resourcesPath, 'app.asar', 'renderer'),
+    join(process.resourcesPath, 'app', 'out', 'renderer'),
+    join(process.resourcesPath, 'out', 'renderer'),
+    join(process.resourcesPath, 'renderer')
+  ]
+
+  if (app.isReady()) {
+    const appPath = app.getAppPath()
+    candidateBases.push(join(appPath, 'out', 'renderer'))
+    candidateBases.push(join(appPath, 'renderer'))
+  }
+
+  const candidates = new Set<string>()
+  for (const base of candidateBases) {
+    candidates.add(join(base, 'index.html'))
+  }
+
+  return Array.from(candidates)
+}
+
+const resolveRendererPaths = (): RendererResolution => {
+  const candidates = buildRendererCandidates()
+
+  for (const candidate of candidates) {
+    try {
+      if (existsSync(candidate)) {
+        return {
+          candidates,
+          resolvedIndexPath: candidate,
+          resolvedRootPath: dirname(candidate)
+        }
+      }
+    } catch (error) {
+      console.error('[renderer-load] failed to stat candidate', candidate, error)
+    }
+  }
+
+  return {
+    candidates,
+    resolvedIndexPath: null,
+    resolvedRootPath: null
+  }
+}
+
+const notifyMissingRenderer = (candidates: string[]): void => {
+  if (rendererMissingAlerted) {
+    return
+  }
+  rendererMissingAlerted = true
+  const message = ['Renderer bundle not found. Checked paths:']
+    .concat(candidates)
+    .join('\n • ')
+  console.error('[renderer-load] renderer entry missing\n', message)
+  if (app.isReady()) {
+    dialog.showErrorBox('Renderer assets missing', message)
+  }
+}
+
+const getRendererResolution = (): RendererResolution => {
+  if (rendererResolution?.resolvedIndexPath && !existsSync(rendererResolution.resolvedIndexPath)) {
+    rendererResolution = null
+  }
+
+  if (!rendererResolution) {
+    rendererResolution = resolveRendererPaths()
+  }
+
+  return rendererResolution
+}
+
+const loadRenderer = async (window: BrowserWindow): Promise<void> => {
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    const devUrl = process.env['ELECTRON_RENDERER_URL']
+    console.info('[renderer-load] dev mode URL', devUrl)
+    await window.loadURL(devUrl)
+    return
+  }
+
+  const resolution = getRendererResolution()
+  console.info('[renderer-load] __dirname', __dirname)
+  console.info('[renderer-load] resourcesPath', process.resourcesPath)
+  console.info('[renderer-load] candidate paths', resolution.candidates)
+
+  if (resolution.resolvedIndexPath) {
+    console.info('[renderer-load] resolved index path', resolution.resolvedIndexPath)
+    const fileUrl = pathToFileURL(resolution.resolvedIndexPath).toString()
+    console.info('[renderer-load] attempting file URL', fileUrl)
+    try {
+      await window.loadURL(fileUrl)
+      console.info('[renderer-load] loaded renderer via file URL', fileUrl)
+      return
+    } catch (error) {
+      console.error('[renderer-load] failed to load file URL', fileUrl, error)
+    }
+  } else {
+    notifyMissingRenderer(resolution.candidates)
+  }
+
+  if (!resolution.resolvedRootPath) {
+    notifyMissingRenderer(resolution.candidates)
+  }
+
+  const fallbackUrl = 'app://index.html'
+  console.info('[renderer-load] falling back to app protocol', fallbackUrl)
+  await window.loadURL(fallbackUrl)
+  console.info('[renderer-load] loaded renderer via app protocol', fallbackUrl)
+}
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+      corsEnabled: true
+    }
+  }
+])
 
 const focusMainWindow = (): void => {
   if (!mainWindow) {
@@ -82,6 +218,10 @@ const flushPendingDeepLinks = (): void => {
 }
 
 app.on('second-instance', (_event, argv) => {
+  console.info('[deep-link] second-instance event', {
+    isReady: app.isReady(),
+    hasWindow: Boolean(mainWindow)
+  })
   if (mainWindow) {
     focusMainWindow()
   }
@@ -94,7 +234,10 @@ app.on('second-instance', (_event, argv) => {
 
 app.on('open-url', (event, url) => {
   event.preventDefault()
-  console.info('[deep-link] open-url event', url)
+  console.info('[deep-link] open-url event', url, {
+    isReady: app.isReady(),
+    hasWindow: Boolean(mainWindow)
+  })
   enqueueDeepLink(url)
 })
 
@@ -169,11 +312,7 @@ function createWindow(): void {
 
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  void loadRenderer(mainWindow)
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -235,6 +374,32 @@ app.whenReady().then(() => {
   })
 
   if (!mainWindow) {
+    const resolution = getRendererResolution()
+    protocol.registerFileProtocol('app', (request, callback) => {
+      const { resolvedRootPath } = getRendererResolution()
+      const requestUrl = request.url.replace(/^app:\/\//, '')
+      const [pathPart] = requestUrl.split('?')
+      let decodedPath = pathPart
+      try {
+        decodedPath = decodeURIComponent(pathPart)
+      } catch (error) {
+        console.error('[renderer-load] failed to decode app:// path', pathPart, error)
+      }
+      const sanitized = decodedPath.replace(/^\/+/, '')
+      const relativePath = sanitized.length === 0 ? 'index.html' : sanitized
+
+      if (!resolvedRootPath) {
+        notifyMissingRenderer(resolution.candidates)
+        callback({ error: -6 })
+        return
+      }
+
+      const filePath = join(resolvedRootPath, relativePath)
+      callback(filePath)
+    })
+    console.info('[renderer-load] registered app:// protocol', {
+      root: resolution.resolvedRootPath
+    })
     createWindow()
   }
 

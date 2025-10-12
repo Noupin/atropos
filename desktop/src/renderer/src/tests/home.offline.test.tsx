@@ -4,10 +4,11 @@ import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import Home from '../pages/Home'
 import { createInitialPipelineSteps } from '../data/pipeline'
-import type { HomePipelineState } from '../types'
+import type { AccountSummary, HomePipelineState } from '../types'
 import type { AccessState } from '../state/accessTypes'
+import type { TransferStatePayload } from '../services/licensing'
 
-const AVAILABLE_ACCOUNT = {
+const AVAILABLE_ACCOUNT: AccountSummary = {
   id: 'account-active',
   displayName: 'Creator Hub',
   description: null,
@@ -27,7 +28,7 @@ const AVAILABLE_ACCOUNT = {
   active: true,
   tone: null,
   effectiveTone: 'funny'
-} as const
+}
 
 const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePipelineState => ({
   videoUrl: '',
@@ -48,11 +49,21 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
   ...overrides
 })
 
+const defaultTransferState: TransferStatePayload = {
+  status: 'none',
+  email: null,
+  initiatedAt: null,
+  expiresAt: null,
+  completedAt: null,
+  targetDeviceHash: null
+}
+
 const baseAccessState: AccessState = {
   deviceHash: 'device-test',
   subscription: null,
   trial: { totalRuns: 3, remainingRuns: 1, startedAt: new Date().toISOString() },
   access: { source: 'trial', isActive: true },
+  transfer: defaultTransferState,
   isSubscriptionActive: false,
   isTrialActive: true,
   isAccessActive: false,

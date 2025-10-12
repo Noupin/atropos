@@ -3,6 +3,9 @@ productName: Atropos
 directories:
   buildResources: build
 files:
+  - out/
+  - node_modules/
+  - package.json
   - '!**/.vscode/*'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'

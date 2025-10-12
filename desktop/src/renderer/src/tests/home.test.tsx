@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ComponentProps } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import Home from '../pages/Home'
 import { createInitialPipelineSteps } from '../data/pipeline'
@@ -32,6 +32,14 @@ const licensingMocks = vi.hoisted(() => {
       remainingRuns: 3,
       isTrialAllowed: true,
       startedAt: new Date('2025-05-01T09:00:00Z').toISOString()
+    },
+    transfer: {
+      status: 'none',
+      email: null,
+      initiatedAt: null,
+      expiresAt: null,
+      completedAt: null,
+      targetDeviceHash: null
     }
   }
   return {
@@ -142,14 +150,25 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
   ...overrides
 })
 
-const renderHome = (props: ComponentProps<typeof Home>) =>
-  render(
+const renderHome = (props: Partial<ComponentProps<typeof Home>> = {}) => {
+  const mergedProps: ComponentProps<typeof Home> = {
+    registerSearch: () => {},
+    initialState: createInitialState(),
+    onStateChange: () => {},
+    accounts: [],
+    onStartPipeline: vi.fn(),
+    onResumePipeline: vi.fn(),
+    ...props
+  }
+
+  return render(
     <AccessProvider>
       <MemoryRouter>
-        <Home onStartPipeline={vi.fn()} onResumePipeline={vi.fn()} {...props} />
+        <Home {...mergedProps} />
       </MemoryRouter>
     </AccessProvider>
   )
+}
 
 afterEach(() => {
   cleanup()
@@ -159,13 +178,10 @@ describe('Home account selection', () => {
   it('requires an account selection before starting processing', () => {
     const startPipelineSpy = vi.fn()
     renderHome({
-      registerSearch: () => {},
       initialState: createInitialState(),
-      onStateChange: () => {},
       accounts: [AVAILABLE_ACCOUNT, ACCOUNT_WITHOUT_PLATFORMS],
-      onStartPipeline: startPipelineSpy,
-      onResumePipeline: vi.fn()
-    } as ComponentProps<typeof Home>)
+      onStartPipeline: startPipelineSpy
+    })
 
     const videoUrlInput = screen.getByLabelText(/video url/i)
     fireEvent.change(videoUrlInput, {
@@ -216,7 +232,7 @@ describe('Home account selection', () => {
     const form = videoUrlInput.closest('form')
     expect(form).not.toBeNull()
     await waitFor(() => {
-      const statusRegion = within(form as HTMLFormElement).getByText((content, element) => {
+      const statusRegion = within(form as HTMLFormElement).getByText((_content, element) => {
         return element?.getAttribute('aria-live') === 'polite'
       })
       expect(statusRegion).toHaveTextContent(/Processing as Creator Hub\./i)
