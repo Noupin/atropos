@@ -3,7 +3,8 @@ import { existsSync } from 'fs'
 import { join, resolve, dirname } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { pathToFileURL } from 'url'
-import icon from '../../resources/icon.png?asset'
+// Use Node.js path join to reference the icon file, as TypeScript does not support importing non-code assets.
+const icon = join(__dirname, '../../favicon.png')
 import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
 
 type NavigationCommand = 'back' | 'forward'
@@ -82,9 +83,7 @@ const notifyMissingRenderer = (candidates: string[]): void => {
     return
   }
   rendererMissingAlerted = true
-  const message = ['Renderer bundle not found. Checked paths:']
-    .concat(candidates)
-    .join('\n • ')
+  const message = ['Renderer bundle not found. Checked paths:'].concat(candidates).join('\n • ')
   console.error('[renderer-load] renderer entry missing\n', message)
   if (app.isReady()) {
     dialog.showErrorBox('Renderer assets missing', message)
@@ -249,7 +248,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     title: 'Atropos',
-    ...(process.platform === 'linux' ? { icon } : {}),
+    icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
