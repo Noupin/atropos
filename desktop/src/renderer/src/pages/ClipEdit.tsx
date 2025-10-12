@@ -7,6 +7,7 @@ import type {
 } from 'react'
 import { useLocation, useParams } from 'react-router-dom'
 import { formatDuration } from '../lib/format'
+import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import useSharedVolume from '../hooks/useSharedVolume'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
@@ -873,25 +874,8 @@ const ClipEdit: FC = () => {
     if (!clipState) {
       return ''
     }
-    const cacheKey = `${clipState.createdAt}-${clipState.startSeconds}-${clipState.endSeconds}`
-    try {
-      const absolute =
-        clipState.playbackUrl.startsWith('http://') ||
-        clipState.playbackUrl.startsWith('https://') ||
-        clipState.playbackUrl.startsWith('file://')
-          ? new URL(clipState.playbackUrl)
-          : typeof window !== 'undefined'
-            ? new URL(clipState.playbackUrl, window.location.origin)
-            : null
-      if (absolute) {
-        absolute.searchParams.set('_', cacheKey)
-        return absolute.toString()
-      }
-    } catch (error) {
-      // fall back to manual cache-busting below
-    }
-    const separator = clipState.playbackUrl.includes('?') ? '&' : '?'
-    return `${clipState.playbackUrl}${separator}_=${encodeURIComponent(cacheKey)}`
+    const cacheBusted = buildCacheBustedPlaybackUrl(clipState)
+    return cacheBusted.length > 0 ? cacheBusted : clipState.playbackUrl
   }, [clipState])
 
   const buildPreviewSrc = useCallback(

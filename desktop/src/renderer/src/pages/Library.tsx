@@ -11,6 +11,7 @@ import ClipCard from '../components/ClipCard'
 import ClipDescription from '../components/ClipDescription'
 import MarbleSpinner from '../components/MarbleSpinner'
 import { formatDuration, formatViews } from '../lib/format'
+import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import type { AccountSummary, Clip } from '../types'
 import {
   fetchAccountClipsPage,
@@ -658,6 +659,13 @@ const Library: FC<LibraryProps> = ({
 
   const selectedClip = selectedContext.clip
   const selectedAccountId = selectedContext.accountId
+  const selectedClipPlaybackSrc = useMemo(() => {
+    if (!selectedClip) {
+      return ''
+    }
+    const cacheBusted = buildCacheBustedPlaybackUrl(selectedClip)
+    return cacheBusted.length > 0 ? cacheBusted : selectedClip.playbackUrl
+  }, [selectedClip])
 
   return (
     <section className="flex w-full flex-1 flex-col gap-6 px-6 py-8 lg:px-8">
@@ -975,7 +983,7 @@ const Library: FC<LibraryProps> = ({
                   <video
                     key={selectedClip.id}
                     ref={previewVideoRef}
-                    src={selectedClip.playbackUrl}
+                    src={selectedClipPlaybackSrc}
                     poster={selectedClip.thumbnail ?? undefined}
                     controls
                     playsInline
