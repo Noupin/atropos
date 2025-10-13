@@ -84,6 +84,15 @@ type NavItemLabelProps = {
   children?: ReactNode
 }
 
+type LibraryAttachment = {
+  key: 'edit' | 'video'
+  label: string
+  ariaLabel: string
+  srText: string | null
+  variant: 'edit' | 'video'
+  indicator?: ReactNode
+}
+
 const badgeVariantClasses: Record<NavItemBadgeVariant, string> = {
   accent:
     'border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--accent)_80%,transparent)] text-[color:var(--accent-contrast)]',
@@ -708,6 +717,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const isClipEditRoute = /^\/clip\/[^/]+\/edit$/.test(location.pathname)
   const isSettingsRoute = location.pathname.startsWith('/settings')
   const showBackButton = location.pathname.startsWith('/clip/') || isVideoRoute
+  const isLibraryFamilyRoute = isLibraryRoute || isVideoRoute || isClipEditRoute
 
   const videoLocationState =
     (isVideoRoute ? (location.state as { clip?: Clip; clipTitle?: string } | null) : null) ?? null
@@ -743,19 +753,15 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   const libraryAttachments = useMemo(
     () => {
-      const attachments: Array<{
-        key: 'edit' | 'video'
-        label: string
-        ariaLabel: string
-        srText: string | null
-      }> = []
+      const attachments: LibraryAttachment[] = []
 
       if (isClipEditRoute) {
         attachments.push({
           key: 'edit',
           label: 'Edit',
           ariaLabel: clipEditClipTitle ? `Edit clip ${clipEditClipTitle}` : 'Edit clip',
-          srText: clipEditClipTitle ? `Current clip: ${clipEditClipTitle}` : null
+          srText: clipEditClipTitle ? `Current clip: ${clipEditClipTitle}` : null,
+          variant: 'edit'
         })
       }
 
@@ -764,7 +770,16 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
           key: 'video',
           label: 'Video',
           ariaLabel: videoClipTitle ? `Video workspace for ${videoClipTitle}` : 'Video workspace',
-          srText: videoClipTitle ? `Current clip: ${videoClipTitle}` : null
+          srText: videoClipTitle ? `Current clip: ${videoClipTitle}` : null,
+          variant: 'video',
+          indicator: (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -right-3 top-[7px] flex h-5 w-5 items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--accent)_68%,var(--accent-contrast))] text-[10px] font-semibold text-[color:var(--accent-contrast)] shadow-[0_10px_18px_rgba(43,42,40,0.18)]"
+            >
+              ▶
+            </span>
+          )
         })
       }
 
@@ -775,19 +790,36 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   const libraryNavLinkClassName = useCallback(
     ({ isActive }: { isActive: boolean }) => {
-      const base = navLinkClassName({ isActive, disabled: libraryNavigationDisabled })
+      const derivedActive = isActive || isLibraryFamilyRoute
+      const base = navLinkClassName({ isActive: derivedActive, disabled: libraryNavigationDisabled })
       if (libraryAttachments.length === 0) {
         return base
       }
-      return `${base} pr-6 after:pointer-events-none after:absolute after:-right-3.5 after:top-1/2 after:h-1 after:w-6 after:-translate-y-1/2 after:rounded-full after:bg-[color:var(--edge-soft)] after:opacity-70 after:content-['']`
+      return `${base} !bg-[color:color-mix(in_srgb,var(--panel)_76%,transparent)] !text-[var(--fg)] shadow-[0_18px_32px_rgba(43,42,40,0.18)] pr-6 after:pointer-events-none after:absolute after:-right-3.5 after:top-1/2 after:h-1 after:w-6 after:-translate-y-1/2 after:rounded-full after:bg-[color:color-mix(in_srgb,var(--edge-soft)_88%,transparent)] after:opacity-80 after:content-['']`
     },
-    [libraryAttachments.length, libraryNavigationDisabled, navLinkClassName]
+    [
+      isLibraryFamilyRoute,
+      libraryAttachments.length,
+      libraryNavigationDisabled,
+      navLinkClassName
+    ]
   )
 
   const libraryAttachmentNavLinkClassName = useCallback(
-    ({ isActive }: { isActive: boolean }) => {
+    ({ isActive, variant }: { isActive: boolean; variant: LibraryAttachment['variant'] }) => {
       const base = navLinkClassName({ isActive })
-      return `${base} ml-2 pl-6 before:pointer-events-none before:absolute before:-left-5 before:top-1/2 before:h-9 before:w-8 before:-translate-y-1/2 before:rounded-[16px] before:border before:border-[color:var(--edge-soft)] before:bg-[color:color-mix(in_srgb,var(--panel)_58%,transparent)] before:shadow-[0_12px_22px_rgba(43,42,40,0.14)] before:content-[''] before:-z-10 after:pointer-events-none after:absolute after:-left-2.5 after:top-1/2 after:h-1 after:w-4 after:-translate-y-1/2 after:rounded-full after:bg-[color:var(--edge-soft)] after:opacity-70 after:content-['']`
+      const shelfBase =
+        "ml-2 pl-6 !text-[var(--fg)] before:pointer-events-none before:absolute before:-left-5 before:top-1/2 before:h-9 before:w-8 before:-translate-y-1/2 before:rounded-[16px] before:border before:border-[color:color-mix(in_srgb,var(--edge-soft)_85%,transparent)] before:content-[''] before:-z-10 after:pointer-events-none after:absolute after:-left-2.5 after:top-1/2 after:h-1 after:w-4 after:-translate-y-1/2 after:rounded-full after:bg-[color:color-mix(in_srgb,var(--edge-soft)_90%,transparent)] after:opacity-80 after:content-['']"
+      const relief =
+        " before:shadow-[inset_1.5px_1.5px_4px_rgba(43,42,40,0.16),inset_-1.5px_-1.5px_4px_rgba(255,255,255,0.22)]"
+      const shadow = isActive
+        ? ' shadow-[0_18px_32px_rgba(43,42,40,0.18)]'
+        : ' shadow-[0_12px_24px_rgba(43,42,40,0.12)]'
+      const tone =
+        variant === 'video'
+          ? " !bg-[color:color-mix(in_srgb,var(--accent)_20%,var(--panel)_70%)] hover:!bg-[color:color-mix(in_srgb,var(--accent)_26%,var(--panel)_72%)] before:bg-[color:color-mix(in_srgb,var(--accent)_14%,var(--panel)_75%)]"
+          : " !bg-[color:color-mix(in_srgb,var(--panel)_76%,transparent)] hover:!bg-[color:color-mix(in_srgb,var(--panel-strong)_74%,transparent)] before:bg-[color:color-mix(in_srgb,var(--panel)_72%,transparent)]"
+      return `${base} ${shelfBase}${relief}${shadow}${tone}`
     },
     [navLinkClassName]
   )
@@ -878,7 +910,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                   {({ isActive }) => (
                     <NavItemLabel
                       label="Library"
-                      isActive={isActive}
+                      isActive={isActive || isLibraryFamilyRoute}
                     />
                   )}
                 </NavLink>
@@ -886,7 +918,9 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                   <NavLink
                     key={attachment.key}
                     to={currentLocationTarget}
-                    className={libraryAttachmentNavLinkClassName}
+                    className={({ isActive }) =>
+                      libraryAttachmentNavLinkClassName({ isActive, variant: attachment.variant })
+                    }
                     aria-label={attachment.ariaLabel}
                   >
                     {({ isActive }) => (
@@ -894,6 +928,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                         {attachment.srText ? (
                           <span className="sr-only">{attachment.srText}</span>
                         ) : null}
+                        {attachment.indicator ?? null}
                       </NavItemLabel>
                     )}
                   </NavLink>
