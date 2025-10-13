@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FC, MouseEvent, RefObject } from 'react'
-import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import MarbleSelect from './components/MarbleSelect'
 import TrialBadge from './components/TrialBadge'
 import ClipPage from './pages/Clip'
@@ -234,14 +234,26 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       return { ...previous, activeAccountId: homeState.selectedAccountId }
     })
   }, [homeState.selectedAccountId, updateState])
-  useEffect(() => {
-    if (!accessRestricted) {
-      return
+  const homeRouteElement = useMemo(() => {
+    if (accessRestricted) {
+      return <Navigate to="/profile" replace state={{ reason: 'subscription-required' }} />
     }
-    if (location.pathname === '/') {
-      navigate('/profile', { replace: true })
-    }
-  }, [location.pathname, navigate, accessRestricted])
+    return (
+      <Home
+        initialState={homeState}
+        onStateChange={setHomeState}
+        accounts={accounts}
+        onStartPipeline={startPipeline}
+        onResumePipeline={resumePipeline}
+      />
+    )
+  }, [
+    accessRestricted,
+    accounts,
+    homeState,
+    resumePipeline,
+    startPipeline
+  ])
 
   const availableAccounts = useMemo(
     () =>
@@ -880,18 +892,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       </header>
       <main className="flex-1 bg-[var(--bg)] text-[var(--fg)]">
         <Routes>
-          <Route
-            path="/"
-            element={
-              <Home
-                initialState={homeState}
-                onStateChange={setHomeState}
-                accounts={accounts}
-                onStartPipeline={startPipeline}
-                onResumePipeline={resumePipeline}
-              />
-            }
-          />
+          <Route path="/" element={homeRouteElement} />
           <Route
             path="/library"
             element={
@@ -934,18 +935,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
               />
             }
           />
-          <Route
-            path="*"
-            element={
-              <Home
-                initialState={homeState}
-                onStateChange={setHomeState}
-                accounts={accounts}
-                onStartPipeline={startPipeline}
-                onResumePipeline={resumePipeline}
-              />
-            }
-          />
+          <Route path="*" element={homeRouteElement} />
         </Routes>
       </main>
     </div>
