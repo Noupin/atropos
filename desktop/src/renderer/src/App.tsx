@@ -238,9 +238,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     if (!accessRestricted) {
       return
     }
-    const allowedPrefixes = ['/profile', '/settings', '/library']
-    const isAllowed = allowedPrefixes.some((prefix) => location.pathname.startsWith(prefix))
-    if (!isAllowed) {
+    if (location.pathname === '/') {
       navigate('/profile', { replace: true })
     }
   }, [location.pathname, navigate, accessRestricted])
