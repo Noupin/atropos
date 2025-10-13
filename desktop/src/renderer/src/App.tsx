@@ -63,6 +63,10 @@ type NavItemProgress = {
   srLabel?: string
 }
 
+type ClipEditLocationState = {
+  clip?: Clip | null
+}
+
 type PendingLibraryProject = {
   jobId: string
   accountId: string | null
@@ -707,6 +711,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   const videoLocationState =
     (isVideoRoute ? (location.state as { clip?: Clip; clipTitle?: string } | null) : null) ?? null
+  const clipEditLocationState =
+    (isClipEditRoute ? ((location.state as ClipEditLocationState | null) ?? null) : null)
 
   const videoClipTitle = useMemo(() => {
     if (!isVideoRoute) {
@@ -719,18 +725,66 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     return title.length <= 80 ? title : `${title.slice(0, 77).trimEnd()}…`
   }, [isVideoRoute, videoLocationState?.clip?.title, videoLocationState?.clipTitle])
 
+  const clipEditClipTitle = useMemo(() => {
+    if (!isClipEditRoute) {
+      return null
+    }
+    const title = clipEditLocationState?.clip?.title ?? null
+    if (!title) {
+      return null
+    }
+    return title.length <= 80 ? title : `${title.slice(0, 77).trimEnd()}…`
+  }, [isClipEditRoute, clipEditLocationState?.clip?.title])
+
+  const currentLocationTarget = useMemo(
+    () => ({ pathname: location.pathname, search: location.search, hash: location.hash }),
+    [location.pathname, location.search, location.hash]
+  )
+
+  const libraryAttachments = useMemo(
+    () => {
+      const attachments: Array<{
+        key: 'edit' | 'video'
+        label: string
+        ariaLabel: string
+        srText: string | null
+      }> = []
+
+      if (isClipEditRoute) {
+        attachments.push({
+          key: 'edit',
+          label: 'Edit',
+          ariaLabel: clipEditClipTitle ? `Edit clip ${clipEditClipTitle}` : 'Edit clip',
+          srText: clipEditClipTitle ? `Current clip: ${clipEditClipTitle}` : null
+        })
+      }
+
+      if (isVideoRoute) {
+        attachments.push({
+          key: 'video',
+          label: 'Video',
+          ariaLabel: videoClipTitle ? `Video workspace for ${videoClipTitle}` : 'Video workspace',
+          srText: videoClipTitle ? `Current clip: ${videoClipTitle}` : null
+        })
+      }
+
+      return attachments
+    },
+    [clipEditClipTitle, isClipEditRoute, isVideoRoute, videoClipTitle]
+  )
+
   const libraryNavLinkClassName = useCallback(
     ({ isActive }: { isActive: boolean }) => {
       const base = navLinkClassName({ isActive, disabled: libraryNavigationDisabled })
-      if (!isVideoRoute) {
+      if (libraryAttachments.length === 0) {
         return base
       }
       return `${base} pr-6 after:pointer-events-none after:absolute after:-right-3.5 after:top-1/2 after:h-1 after:w-6 after:-translate-y-1/2 after:rounded-full after:bg-[color:var(--edge-soft)] after:opacity-70 after:content-['']`
     },
-    [isVideoRoute, libraryNavigationDisabled, navLinkClassName]
+    [libraryAttachments.length, libraryNavigationDisabled, navLinkClassName]
   )
 
-  const videoNavLinkClassName = useCallback(
+  const libraryAttachmentNavLinkClassName = useCallback(
     ({ isActive }: { isActive: boolean }) => {
       const base = navLinkClassName({ isActive })
       return `${base} ml-2 pl-6 before:pointer-events-none before:absolute before:-left-5 before:top-1/2 before:h-9 before:w-8 before:-translate-y-1/2 before:rounded-[16px] before:border before:border-[color:var(--edge-soft)] before:bg-[color:color-mix(in_srgb,var(--panel)_58%,transparent)] before:shadow-[0_12px_22px_rgba(43,42,40,0.14)] before:content-[''] before:-z-10 after:pointer-events-none after:absolute after:-left-2.5 after:top-1/2 after:h-1 after:w-4 after:-translate-y-1/2 after:rounded-full after:bg-[color:var(--edge-soft)] after:opacity-70 after:content-['']`
@@ -825,36 +879,25 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                     <NavItemLabel
                       label="Library"
                       isActive={isActive}
-                      badge={
-                        isClipEditRoute
-                          ? ({ label: 'Edit mode', variant: 'info' } satisfies NavItemBadge)
-                          : null
-                      }
                     />
                   )}
                 </NavLink>
-                {isVideoRoute ? (
+                {libraryAttachments.map((attachment) => (
                   <NavLink
-                    to={{ pathname: location.pathname, search: location.search, hash: location.hash }}
-                    className={videoNavLinkClassName}
-                    aria-label={
-                      videoClipTitle
-                        ? `Video workspace for ${videoClipTitle}`
-                        : 'Video workspace'
-                    }
+                    key={attachment.key}
+                    to={currentLocationTarget}
+                    className={libraryAttachmentNavLinkClassName}
+                    aria-label={attachment.ariaLabel}
                   >
                     {({ isActive }) => (
-                      <NavItemLabel
-                        label="Video"
-                        isActive={isActive}
-                      >
-                        {videoClipTitle ? (
-                          <span className="sr-only">Current clip: {videoClipTitle}</span>
+                      <NavItemLabel label={attachment.label} isActive={isActive}>
+                        {attachment.srText ? (
+                          <span className="sr-only">{attachment.srText}</span>
                         ) : null}
                       </NavItemLabel>
                     )}
                   </NavLink>
-                ) : null}
+                ))}
                 <NavLink to="/profile" className={navLinkClassName}>
                   {({ isActive }) => <NavItemLabel label="Profile" isActive={isActive} />}
                 </NavLink>
