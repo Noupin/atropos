@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FC, MouseEvent, RefObject } from 'react'
+import type { FC, MouseEvent, ReactNode, RefObject } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import MarbleSelect from './components/MarbleSelect'
 import TrialBadge from './components/TrialBadge'
@@ -77,6 +77,7 @@ type NavItemLabelProps = {
   isActive: boolean
   badge?: NavItemBadge | null
   progress?: NavItemProgress | null
+  children?: ReactNode
 }
 
 const badgeVariantClasses: Record<NavItemBadgeVariant, string> = {
@@ -97,7 +98,7 @@ const progressStatusClasses: Record<PipelineOverallStatus, string> = {
   failed: 'bg-[color:var(--error-strong)]'
 }
 
-const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge, progress }) => {
+const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge, progress, children }) => {
   const resolvedBadge = badge ? { label: badge.label, variant: badge.variant ?? 'accent' } : null
   const srProgressLabel = progress?.srLabel
     ?? (progress
@@ -148,6 +149,7 @@ const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge, progress 
           }`}
         />
       )}
+      {children}
     </span>
   )
 }
@@ -706,21 +708,32 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const videoLocationState =
     (isVideoRoute ? (location.state as { clip?: Clip; clipTitle?: string } | null) : null) ?? null
 
-  const videoNavLabel = useMemo(() => {
+  const videoClipTitle = useMemo(() => {
     if (!isVideoRoute) {
       return null
     }
-    const title = videoLocationState?.clip?.title ?? videoLocationState?.clipTitle ?? 'Video workspace'
-    if (title.length <= 24) {
-      return title
+    const title = videoLocationState?.clip?.title ?? videoLocationState?.clipTitle ?? null
+    if (!title) {
+      return null
     }
-    return `${title.slice(0, 21).trimEnd()}…`
+    return title.length <= 80 ? title : `${title.slice(0, 77).trimEnd()}…`
   }, [isVideoRoute, videoLocationState?.clip?.title, videoLocationState?.clipTitle])
+
+  const libraryNavLinkClassName = useCallback(
+    ({ isActive }: { isActive: boolean }) => {
+      const base = navLinkClassName({ isActive, disabled: libraryNavigationDisabled })
+      if (!isVideoRoute) {
+        return base
+      }
+      return `${base} pr-6 after:pointer-events-none after:absolute after:-right-3.5 after:top-1/2 after:h-1 after:w-6 after:-translate-y-1/2 after:rounded-full after:bg-[color:var(--edge-soft)] after:opacity-70 after:content-['']`
+    },
+    [isVideoRoute, libraryNavigationDisabled, navLinkClassName]
+  )
 
   const videoNavLinkClassName = useCallback(
     ({ isActive }: { isActive: boolean }) => {
       const base = navLinkClassName({ isActive })
-      return `${base} ml-1 before:absolute before:-left-3 before:top-1/2 before:h-6 before:w-6 before:-translate-y-1/2 before:rounded-full before:bg-[color:color-mix(in_srgb,var(--panel)_60%,transparent)] before:shadow-[0_10px_18px_rgba(43,42,40,0.14)] before:content-[''] after:absolute after:-left-1.5 after:top-1/2 after:h-0.5 after:w-3 after:-translate-y-1/2 after:bg-[color:var(--edge-soft)]`
+      return `${base} ml-2 pl-6 before:pointer-events-none before:absolute before:-left-5 before:top-1/2 before:h-9 before:w-8 before:-translate-y-1/2 before:rounded-[16px] before:border before:border-[color:var(--edge-soft)] before:bg-[color:color-mix(in_srgb,var(--panel)_58%,transparent)] before:shadow-[0_12px_22px_rgba(43,42,40,0.14)] before:content-[''] before:-z-10 after:pointer-events-none after:absolute after:-left-2.5 after:top-1/2 after:h-1 after:w-4 after:-translate-y-1/2 after:rounded-full after:bg-[color:var(--edge-soft)] after:opacity-70 after:content-['']`
     },
     [navLinkClassName]
   )
@@ -801,25 +814,9 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                     />
                   )}
                 </NavLink>
-                {isVideoRoute && videoNavLabel ? (
-                  <NavLink
-                    to={{ pathname: location.pathname, search: location.search, hash: location.hash }}
-                    className={videoNavLinkClassName}
-                  >
-                    {({ isActive }) => (
-                      <NavItemLabel
-                        label={videoNavLabel}
-                        isActive={isActive}
-                        badge={{ label: 'Video', variant: 'info' }}
-                      />
-                    )}
-                  </NavLink>
-                ) : null}
                 <NavLink
                   to="/library"
-                  className={({ isActive }) =>
-                    navLinkClassName({ isActive, disabled: libraryNavigationDisabled })
-                  }
+                  className={({ isActive }) => libraryNavLinkClassName({ isActive })}
                   aria-disabled={libraryNavigationDisabled ? true : undefined}
                   tabIndex={libraryNavigationDisabled ? -1 : undefined}
                   onClick={libraryNavigationDisabled ? preventDisabledNavigation : undefined}
@@ -836,6 +833,28 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                     />
                   )}
                 </NavLink>
+                {isVideoRoute ? (
+                  <NavLink
+                    to={{ pathname: location.pathname, search: location.search, hash: location.hash }}
+                    className={videoNavLinkClassName}
+                    aria-label={
+                      videoClipTitle
+                        ? `Video workspace for ${videoClipTitle}`
+                        : 'Video workspace'
+                    }
+                  >
+                    {({ isActive }) => (
+                      <NavItemLabel
+                        label="Video"
+                        isActive={isActive}
+                      >
+                        {videoClipTitle ? (
+                          <span className="sr-only">Current clip: {videoClipTitle}</span>
+                        ) : null}
+                      </NavItemLabel>
+                    )}
+                  </NavLink>
+                ) : null}
                 <NavLink to="/profile" className={navLinkClassName}>
                   {({ isActive }) => <NavItemLabel label="Profile" isActive={isActive} />}
                 </NavLink>
