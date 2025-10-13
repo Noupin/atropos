@@ -234,27 +234,6 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       return { ...previous, activeAccountId: homeState.selectedAccountId }
     })
   }, [homeState.selectedAccountId, updateState])
-  const homeRouteElement = useMemo(() => {
-    if (accessRestricted) {
-      return <Navigate to="/profile" replace state={{ reason: 'subscription-required' }} />
-    }
-    return (
-      <Home
-        initialState={homeState}
-        onStateChange={setHomeState}
-        accounts={accounts}
-        onStartPipeline={startPipeline}
-        onResumePipeline={resumePipeline}
-      />
-    )
-  }, [
-    accessRestricted,
-    accounts,
-    homeState,
-    resumePipeline,
-    startPipeline
-  ])
-
   const availableAccounts = useMemo(
     () =>
       accounts.filter(
@@ -382,6 +361,27 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     onFirstClipReady: handleFirstClipReady,
     onPipelineFinished: handlePipelineFinished
   })
+
+  const homeRouteElement = useMemo(() => {
+    if (accessRestricted) {
+      return <Navigate to="/profile" replace state={{ reason: 'subscription-required' }} />
+    }
+    return (
+      <Home
+        initialState={homeState}
+        onStateChange={setHomeState}
+        accounts={accounts}
+        onStartPipeline={startPipeline}
+        onResumePipeline={resumePipeline}
+      />
+    )
+  }, [
+    accessRestricted,
+    accounts,
+    homeState,
+    resumePipeline,
+    startPipeline
+  ])
 
   useEffect(() => {
     const currentJobId = homeState.activeJobId
