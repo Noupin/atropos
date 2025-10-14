@@ -93,6 +93,15 @@ type LibraryAttachment = {
   indicator?: ReactNode
 }
 
+type LibraryAttachmentLabelProps = {
+  label: string
+  srText: string | null
+  variant: LibraryAttachment['variant']
+  isActive: boolean
+  showConnector: boolean
+  indicator?: ReactNode
+}
+
 const badgeVariantClasses: Record<NavItemBadgeVariant, string> = {
   accent:
     'border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--accent)_80%,transparent)] text-[color:var(--accent-contrast)]',
@@ -163,6 +172,45 @@ const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge, progress,
         />
       )}
       {children}
+    </span>
+  )
+}
+
+const LibraryAttachmentLabel: FC<LibraryAttachmentLabelProps> = ({
+  label,
+  srText,
+  variant,
+  isActive,
+  showConnector,
+  indicator
+}) => {
+  const connector = showConnector
+    ? "before:pointer-events-none before:absolute before:-left-3 before:top-1/2 before:h-7 before:w-7 before:-translate-y-1/2 before:rounded-full before:border before:border-[color:color-mix(in_srgb,var(--edge-soft)_82%,transparent)] before:bg-[color:color-mix(in_srgb,var(--panel)_74%,transparent)] before:shadow-[inset_2px_2px_5px_rgba(43,42,40,0.16),inset_-2px_-2px_5px_rgba(255,255,255,0.24)] before:content-['']"
+    : ''
+  const surfaceTone =
+    variant === 'video'
+      ? 'bg-[color:color-mix(in_srgb,var(--accent)_12%,var(--panel)_78%)] hover:bg-[color:color-mix(in_srgb,var(--accent)_18%,var(--panel)_80%)]'
+      : 'bg-[color:color-mix(in_srgb,var(--panel)_78%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_74%,transparent)]'
+  const insetShadow = isActive
+    ? 'shadow-[inset_2px_2px_6px_rgba(43,42,40,0.2),inset_-2px_-2px_6px_rgba(255,255,255,0.26),0_12px_26px_rgba(43,42,40,0.18)]'
+    : 'shadow-[inset_2px_2px_6px_rgba(43,42,40,0.16),inset_-2px_-2px_6px_rgba(255,255,255,0.22)]'
+
+  return (
+    <span className={`pointer-events-none relative inline-flex h-10 items-center ${connector}`}>
+      <span
+        aria-hidden
+        className={`pointer-events-none inline-flex h-10 min-w-[72px] items-center justify-center rounded-[16px] border border-[color:color-mix(in_srgb,var(--edge-soft)_82%,transparent)] px-5 text-sm font-medium leading-none text-[var(--fg)] transition ${surfaceTone} ${insetShadow}`}
+      >
+        <span className="flex items-center gap-2">
+          <span>{label}</span>
+          {indicator ? (
+            <span className="pointer-events-none inline-flex items-center justify-center text-[10px] font-semibold">
+              {indicator}
+            </span>
+          ) : null}
+        </span>
+      </span>
+      {srText ? <span className="sr-only">{srText}</span> : null}
     </span>
   )
 }
@@ -775,7 +823,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
           indicator: (
             <span
               aria-hidden
-              className="pointer-events-none absolute -right-3 top-[7px] flex h-5 w-5 items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--accent)_68%,var(--accent-contrast))] text-[10px] font-semibold text-[color:var(--accent-contrast)] shadow-[0_10px_18px_rgba(43,42,40,0.18)]"
+              className="pointer-events-none inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--accent)_70%,var(--accent-contrast))] px-1 text-[10px] font-semibold text-[color:var(--accent-contrast)] shadow-[0_8px_16px_rgba(43,42,40,0.18)]"
             >
               ▶
             </span>
@@ -795,7 +843,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       if (libraryAttachments.length === 0) {
         return base
       }
-      return `${base} !bg-[color:color-mix(in_srgb,var(--panel)_76%,transparent)] !text-[var(--fg)] shadow-[0_18px_32px_rgba(43,42,40,0.18)] pr-6 after:pointer-events-none after:absolute after:-right-3.5 after:top-1/2 after:h-1 after:w-6 after:-translate-y-1/2 after:rounded-full after:bg-[color:color-mix(in_srgb,var(--edge-soft)_88%,transparent)] after:opacity-80 after:content-['']`
+      return `${base} !bg-[color:color-mix(in_srgb,var(--panel)_76%,transparent)] !text-[var(--fg)] shadow-[0_18px_32px_rgba(43,42,40,0.18)] pr-5 after:pointer-events-none after:absolute after:-right-3 after:top-1/2 after:h-7 after:w-7 after:-translate-y-1/2 after:rounded-full after:border after:border-[color:color-mix(in_srgb,var(--edge-soft)_85%,transparent)] after:bg-[color:color-mix(in_srgb,var(--panel)_72%,transparent)] after:shadow-[inset_2px_2px_5px_rgba(43,42,40,0.16),inset_-2px_-2px_5px_rgba(255,255,255,0.24)] after:content-['']`
     },
     [
       isLibraryFamilyRoute,
@@ -806,22 +854,11 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   )
 
   const libraryAttachmentNavLinkClassName = useCallback(
-    ({ isActive, variant }: { isActive: boolean; variant: LibraryAttachment['variant'] }) => {
-      const base = navLinkClassName({ isActive })
-      const shelfBase =
-        "ml-2 pl-6 !text-[var(--fg)] before:pointer-events-none before:absolute before:-left-5 before:top-1/2 before:h-9 before:w-8 before:-translate-y-1/2 before:rounded-[16px] before:border before:border-[color:color-mix(in_srgb,var(--edge-soft)_85%,transparent)] before:content-[''] before:-z-10 after:pointer-events-none after:absolute after:-left-2.5 after:top-1/2 after:h-1 after:w-4 after:-translate-y-1/2 after:rounded-full after:bg-[color:color-mix(in_srgb,var(--edge-soft)_90%,transparent)] after:opacity-80 after:content-['']"
-      const relief =
-        " before:shadow-[inset_1.5px_1.5px_4px_rgba(43,42,40,0.16),inset_-1.5px_-1.5px_4px_rgba(255,255,255,0.22)]"
-      const shadow = isActive
-        ? ' shadow-[0_18px_32px_rgba(43,42,40,0.18)]'
-        : ' shadow-[0_12px_24px_rgba(43,42,40,0.12)]'
-      const tone =
-        variant === 'video'
-          ? " !bg-[color:color-mix(in_srgb,var(--accent)_20%,var(--panel)_70%)] hover:!bg-[color:color-mix(in_srgb,var(--accent)_26%,var(--panel)_72%)] before:bg-[color:color-mix(in_srgb,var(--accent)_14%,var(--panel)_75%)]"
-          : " !bg-[color:color-mix(in_srgb,var(--panel)_76%,transparent)] hover:!bg-[color:color-mix(in_srgb,var(--panel-strong)_74%,transparent)] before:bg-[color:color-mix(in_srgb,var(--panel)_72%,transparent)]"
-      return `${base} ${shelfBase}${relief}${shadow}${tone}`
+    ({ index }: { index: number }) => {
+      const offsetClass = index === 0 ? '-ml-3 pl-1' : 'ml-2'
+      return `group relative inline-flex h-10 items-center ${offsetClass} focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--accent)]`
     },
-    [navLinkClassName]
+    []
   )
 
   const accountSelectOptions = useMemo(() => {
@@ -914,22 +951,22 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                     />
                   )}
                 </NavLink>
-                {libraryAttachments.map((attachment) => (
+                {libraryAttachments.map((attachment, index) => (
                   <NavLink
                     key={attachment.key}
                     to={currentLocationTarget}
-                    className={({ isActive }) =>
-                      libraryAttachmentNavLinkClassName({ isActive, variant: attachment.variant })
-                    }
+                    className={() => libraryAttachmentNavLinkClassName({ index })}
                     aria-label={attachment.ariaLabel}
                   >
                     {({ isActive }) => (
-                      <NavItemLabel label={attachment.label} isActive={isActive}>
-                        {attachment.srText ? (
-                          <span className="sr-only">{attachment.srText}</span>
-                        ) : null}
-                        {attachment.indicator ?? null}
-                      </NavItemLabel>
+                      <LibraryAttachmentLabel
+                        label={attachment.label}
+                        srText={attachment.srText}
+                        variant={attachment.variant}
+                        isActive={isActive}
+                        showConnector={index === 0}
+                        indicator={attachment.indicator}
+                      />
                     )}
                   </NavLink>
                 ))}
