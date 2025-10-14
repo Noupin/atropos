@@ -177,9 +177,20 @@ const VideoWorkspace: FC = () => {
     })
   }, [accountIdFromState, clipFromState, clipId, navigate])
 
+  const handleBack = useCallback(() => {
+    navigate(-1)
+  }, [navigate])
+
   return (
     <section className="flex w-full flex-1 flex-col gap-6 px-6 py-8 lg:px-8">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={handleBack}
+          className="rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        >
+          Back
+        </button>
         {clipId ? (
           <button
             type="button"

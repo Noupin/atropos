@@ -768,7 +768,6 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const isVideoRoute = /^\/video\//.test(location.pathname)
   const isClipEditRoute = /^\/clip\/[^/]+\/edit$/.test(location.pathname)
   const isSettingsRoute = location.pathname.startsWith('/settings')
-  const showBackButton = location.pathname.startsWith('/clip/') || isVideoRoute
   const isLibraryFamilyRoute = isLibraryRoute || isVideoRoute || isClipEditRoute
 
   const videoLocationState =
@@ -893,25 +892,12 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     [handleSelectAccount]
   )
 
-  const handleHeaderBack = useCallback(() => {
-    navigate(-1)
-  }, [navigate])
-
   return (
     <div className="flex min-h-full flex-col bg-[var(--bg)] text-[var(--fg)]">
       <header className="sticky top-0 z-[60] border-b border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] backdrop-blur-md">
         <div className="flex w-full flex-col gap-4 px-6 py-5 lg:px-8">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex flex-wrap items-center gap-3">
-              {showBackButton ? (
-                <button
-                  type="button"
-                  onClick={handleHeaderBack}
-                  className="inline-flex items-center justify-center rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] px-3 py-1.5 text-sm font-medium text-[var(--fg)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_75%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--panel)]"
-                >
-                  Back
-                </button>
-              ) : null}
               <h1 className="inline-flex items-center text-3xl font-semibold leading-none tracking-tight text-[var(--fg)]">
                 Atropos
               </h1>

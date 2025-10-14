@@ -5,7 +5,7 @@ import type {
   PointerEvent as ReactPointerEvent,
   KeyboardEvent as ReactKeyboardEvent
 } from 'react'
-import { useLocation, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatDuration } from '../lib/format'
 import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import useSharedVolume from '../hooks/useSharedVolume'
@@ -132,6 +132,7 @@ const delay = (ms: number): Promise<void> =>
 const ClipEdit: FC = () => {
   const { id } = useParams<{ id: string }>()
   const location = useLocation()
+  const navigate = useNavigate()
   const state = (location.state as ClipEditLocationState | null) ?? null
 
   const sourceClip = state?.clip && (!id || state.clip.id === id) ? state.clip : null
@@ -194,6 +195,23 @@ const ClipEdit: FC = () => {
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const [isVideoBuffering, setIsVideoBuffering] = useState(false)
   const [saveSteps, setSaveSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
+
+  const handleBack = useCallback(() => {
+    navigate(-1)
+  }, [navigate])
+
+  const handleGoToVideoView = useCallback(() => {
+    if (!clipState) {
+      return
+    }
+    navigate(`/video/${encodeURIComponent(clipState.id)}`, {
+      state: {
+        clip: clipState,
+        accountId: state?.accountId ?? clipState.accountId ?? null,
+        clipTitle: clipState.title
+      }
+    })
+  }, [clipState, navigate, state?.accountId])
 
   useEffect(() => {
     let isActive = true
@@ -1266,6 +1284,22 @@ const ClipEdit: FC = () => {
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={handleBack}
+          className="rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        >
+          Back
+        </button>
+        <button
+          type="button"
+          onClick={handleGoToVideoView}
+          className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
+        >
+          Go to video view
+        </button>
+      </div>
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="flex-1 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
           <div className="flex h-full flex-col gap-4">
