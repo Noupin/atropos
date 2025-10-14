@@ -803,22 +803,22 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     [location.pathname, location.search, location.hash]
   )
 
-  const libraryAttachments = useMemo(
-    () => {
-      const attachments: LibraryAttachment[] = []
-
-      if (isClipEditRoute) {
-        attachments.push({
+  const libraryAttachments = useMemo(() => {
+    if (isClipEditRoute) {
+      return [
+        {
           key: 'edit',
           label: 'Edit',
           ariaLabel: clipEditClipTitle ? `Edit clip ${clipEditClipTitle}` : 'Edit clip',
           srText: clipEditClipTitle ? `Current clip: ${clipEditClipTitle}` : null,
           variant: 'edit'
-        })
-      }
+        } satisfies LibraryAttachment
+      ]
+    }
 
-      if (isVideoRoute) {
-        attachments.push({
+    if (isVideoRoute) {
+      return [
+        {
           key: 'video',
           label: 'Video',
           ariaLabel: videoClipTitle ? `Video workspace for ${videoClipTitle}` : 'Video workspace',
@@ -832,13 +832,12 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
               ▶
             </span>
           )
-        })
-      }
+        } satisfies LibraryAttachment
+      ]
+    }
 
-      return attachments
-    },
-    [clipEditClipTitle, isClipEditRoute, isVideoRoute, videoClipTitle]
-  )
+    return [] as LibraryAttachment[]
+  }, [clipEditClipTitle, isClipEditRoute, isVideoRoute, videoClipTitle])
 
   const libraryNavLinkClassName = useCallback(
     ({ isActive }: { isActive: boolean }) => {

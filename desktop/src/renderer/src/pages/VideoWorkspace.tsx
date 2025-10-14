@@ -30,7 +30,7 @@ type WorkspaceLocationState = {
   clipTitle?: string
 }
 
-type WorkspaceMode = 'edit' | 'upload'
+type WorkspaceMode = 'metadata' | 'upload'
 
 const VideoWorkspace: FC = () => {
   const { id } = useParams<{ id: string }>()
@@ -40,32 +40,23 @@ const VideoWorkspace: FC = () => {
 
   const clipFromState = state?.clip && (!id || state.clip.id === id) ? state.clip : null
   const clipTitle = clipFromState?.title ?? state?.clipTitle ?? 'Video workspace'
+  const accountIdFromState = state?.accountId ?? null
+  const clipId = clipFromState?.id ?? id ?? null
 
   const [title, setTitle] = useState<string>(clipTitle)
   const [description, setDescription] = useState<string>(clipFromState?.description ?? '')
   const [callToAction, setCallToAction] = useState<string>('Invite viewers to subscribe for more highlights.')
   const [tags, setTags] = useState<string>('clips, highlights, community')
-  const [trimStart, setTrimStart] = useState<number>(clipFromState?.startSeconds ?? 0)
-  const [trimEnd, setTrimEnd] = useState<number>(
-    clipFromState?.endSeconds ?? clipFromState?.durationSec ?? Math.max((clipFromState?.durationSec ?? 60) * 0.8, 30)
-  )
   const [selectedPlatforms, setSelectedPlatforms] = useState<SupportedPlatform[]>([...SUPPORTED_PLATFORMS])
   const [platformNotes, setPlatformNotes] = useState<string>('Share with the community playlist and pin on the channel page.')
   const [captionStrategy, setCaptionStrategy] = useState<CaptionStrategy>('auto')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'ready' | 'scheduled'>(clipFromState ? 'ready' : 'idle')
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
-  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(clipFromState ? 'edit' : 'upload')
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(clipFromState ? 'metadata' : 'upload')
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const previousClipIdRef = useRef<string | null>(null)
-
-  const maxDuration = useMemo(() => {
-    const intrinsic = clipFromState?.sourceDurationSeconds ?? clipFromState?.durationSec ?? 120
-    return Math.max(intrinsic, trimStart, trimEnd, 30)
-  }, [clipFromState?.durationSec, clipFromState?.sourceDurationSeconds, trimEnd, trimStart])
-
-  const trimmedDuration = useMemo(() => Math.max(0, trimEnd - trimStart), [trimEnd, trimStart])
 
   useEffect(() => {
     if (!clipFromState) {
@@ -77,10 +68,9 @@ const VideoWorkspace: FC = () => {
     previousClipIdRef.current = clipFromState.id
     setTitle(clipFromState.title)
     setDescription(clipFromState.description ?? '')
-    setTrimStart(clipFromState.startSeconds)
-    setTrimEnd(clipFromState.endSeconds)
     setStatusMessage(null)
     setUploadStatus('ready')
+    setWorkspaceMode('metadata')
   }, [clipFromState])
 
   useEffect(() => {
@@ -132,22 +122,6 @@ const VideoWorkspace: FC = () => {
     [title]
   )
 
-  const handleApplyTrim = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault()
-      if (trimEnd <= trimStart) {
-        setStatusMessage('Choose an end time that comes after the start time to keep the pacing upbeat.')
-        return
-      }
-      if (trimEnd > maxDuration) {
-        setStatusMessage('The end time goes beyond the available footage. Pull it back slightly and try again.')
-        return
-      }
-      setStatusMessage('Trim applied. We will use this segment for previews and exports.')
-    },
-    [maxDuration, trimEnd, trimStart]
-  )
-
   const handleSaveDistribution = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
@@ -192,6 +166,20 @@ const VideoWorkspace: FC = () => {
   const handleBack = useCallback(() => {
     navigate(-1)
   }, [navigate])
+
+  const handleOpenClipEditor = useCallback(() => {
+    if (!clipId) {
+      return
+    }
+    navigate(`/clip/${encodeURIComponent(clipId)}/edit`, {
+      state: {
+        ...(clipFromState ? { clip: clipFromState } : {}),
+        accountId: accountIdFromState,
+        jobId: null,
+        context: 'library'
+      }
+    })
+  }, [accountIdFromState, clipFromState, clipId, navigate])
 
   return (
     <section className="flex w-full flex-1 flex-col gap-6 px-6 py-8 lg:px-8">
@@ -250,24 +238,24 @@ const VideoWorkspace: FC = () => {
               <p className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
                 Workspace mode
               </p>
-              <h2 className="text-lg font-semibold text-[var(--fg)]">What would you like to work on?</h2>
+              <h2 className="text-lg font-semibold text-[var(--fg)]">What would you like to update?</h2>
             </header>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
-                Switch between editing details or preparing uploads. The preview stays put.
+                Switch between polishing metadata or preparing uploads. The preview stays put.
               </p>
               <div className="flex overflow-hidden rounded-lg border border-white/10">
                 <button
                   type="button"
-                  onClick={() => setWorkspaceMode('edit')}
+                  onClick={() => setWorkspaceMode('metadata')}
                   className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
-                    workspaceMode === 'edit'
+                    workspaceMode === 'metadata'
                       ? 'bg-[color:color-mix(in_srgb,var(--muted)_45%,transparent)] text-[var(--fg)]'
                       : 'text-[var(--fg)] hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)]'
                   }`}
-                  aria-pressed={workspaceMode === 'edit'}
+                  aria-pressed={workspaceMode === 'metadata'}
                 >
-                  Editing
+                  Metadata
                 </button>
                 <button
                   type="button"
@@ -285,17 +273,28 @@ const VideoWorkspace: FC = () => {
             </div>
           </div>
 
-          {workspaceMode === 'edit' ? (
+          {workspaceMode === 'metadata' ? (
             <>
               <form
                 className="space-y-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] p-6 shadow-[0_18px_34px_rgba(43,42,40,0.18)]"
                 onSubmit={handleSaveDetails}
               >
-                <header className="space-y-1">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                    Video details
-                  </p>
-                  <h2 className="text-xl font-semibold text-[var(--fg)]">Craft your story</h2>
+                <header className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                      Metadata
+                    </p>
+                    <h2 className="text-xl font-semibold text-[var(--fg)]">Polish how the video is presented</h2>
+                  </div>
+                  {clipId ? (
+                    <button
+                      type="button"
+                      onClick={handleOpenClipEditor}
+                      className="marble-button marble-button--ghost px-3 py-2 text-xs font-semibold"
+                    >
+                      Open full editor
+                    </button>
+                  ) : null}
                 </header>
                 <label className="flex flex-col gap-2">
                   <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
@@ -349,69 +348,6 @@ const VideoWorkspace: FC = () => {
                     className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
                   >
                     Save details
-                  </button>
-                </div>
-              </form>
-
-              <form
-                className="space-y-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] p-6 shadow-[0_18px_34px_rgba(43,42,40,0.18)]"
-                onSubmit={handleApplyTrim}
-              >
-                <header className="space-y-1">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                    Timing
-                  </p>
-                  <h2 className="text-xl font-semibold text-[var(--fg)]">Fine-tune the cut</h2>
-                </header>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="flex flex-col gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
-                      Start at (seconds)
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.1}
-                      value={trimStart}
-                      onChange={(event) => setTrimStart(Math.max(0, Number(event.target.value)))}
-                      className="rounded-xl border border-white/10 bg-[color:var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    />
-                  </label>
-                  <label className="flex flex-col gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
-                      End at (seconds)
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={maxDuration}
-                      step={0.1}
-                      value={trimEnd}
-                      onChange={(event) => setTrimEnd(Math.max(0, Number(event.target.value)))}
-                      className="rounded-xl border border-white/10 bg-[color:var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-[0_12px_22px_rgba(43,42,40,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    />
-                  </label>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl border border-white/10 bg-[color:var(--panel)] px-4 py-3 text-sm text-[var(--fg)]">
-                    <span className="block text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
-                      Trimmed duration
-                    </span>
-                    <span className="text-base font-semibold">{formatDuration(Math.max(1, Math.round(trimmedDuration)))}</span>
-                  </div>
-                  <div className="rounded-xl border border-white/10 bg-[color:var(--panel)] px-4 py-3 text-sm text-[var(--fg)]">
-                    <span className="block text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
-                      Full length
-                    </span>
-                    <span className="text-base font-semibold">{formatDuration(Math.round(maxDuration))}</span>
-                  </div>
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    className="marble-button marble-button--outline px-4 py-2 text-sm font-semibold"
-                  >
-                    Apply trim
                   </button>
                 </div>
               </form>
