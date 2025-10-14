@@ -497,18 +497,18 @@ def _build_clip(
     start: Optional[float]
     end: Optional[float]
     rating: Optional[float]
-    candidate: Optional[CandidateMetadata]
+    candidate_metadata: Optional[CandidateMetadata]
     original_start: Optional[float]
     original_end: Optional[float]
     if parsed:
         start, end, rating = parsed
         key = _format_candidate_key(start, end)
-        candidate = candidate_map.get(key)
+        candidate_metadata = candidate_map.get(key)
         original_start = start
         original_end = end
     else:
         start = end = rating = None
-        candidate = None
+        candidate_metadata = None
         original_start = None
         original_end = None
 
@@ -555,7 +555,7 @@ def _build_clip(
         )
     )
     project_title = project_info.title or project_dir.name
-    title = candidate.quote or project_title or stem
+    title = (candidate_metadata.quote if candidate_metadata else None) or project_title or stem
     timestamp_url = description_metadata.timestamp_url
     if (
         not timestamp_url
@@ -593,11 +593,14 @@ def _build_clip(
     project_files: Dict[str, ProjectFileMetadata] = {}
     for key, suffix in PROJECT_FILE_SUFFIXES.items():
         try:
-            candidate = clip_path.with_suffix(suffix)
+            project_file_path = clip_path.with_suffix(suffix)
         except ValueError:
             continue
-        if candidate.exists() and candidate.is_file():
-            project_files[key] = ProjectFileMetadata(path=candidate, filename=candidate.name)
+        if project_file_path.exists() and project_file_path.is_file():
+            project_files[key] = ProjectFileMetadata(
+                path=project_file_path,
+                filename=project_file_path.name,
+            )
     return LibraryClip(
         clip_id=clip_id,
         title=title,
@@ -613,9 +616,9 @@ def _build_clip(
         source_published_at=project_info.published_at,
         video_id=video_id,
         video_title=project_title,
-        rating=candidate.rating if candidate else rating,
-        quote=candidate.quote if candidate else None,
-        reason=candidate.reason if candidate else None,
+        rating=candidate_metadata.rating if candidate_metadata else rating,
+        quote=candidate_metadata.quote if candidate_metadata else None,
+        reason=candidate_metadata.reason if candidate_metadata else None,
         account_id=account_id,
         timestamp_url=timestamp_url,
         timestamp_seconds=timestamp_seconds,

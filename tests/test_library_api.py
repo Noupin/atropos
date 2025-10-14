@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 import server.app
 from server.app import app
+from server.helpers.project_files import PROJECT_FILE_SUFFIXES
 
 
 def _create_clip_structure(base: Path) -> tuple[str, Path]:
@@ -176,6 +177,33 @@ def test_paginated_clips_endpoint(monkeypatch, tmp_path):
         params={"accountId": account_id, "limit": 2, "cursor": "not-a-valid-cursor"},
     )
     assert bad_cursor.status_code == 400
+
+
+def test_paginated_clips_include_project_files(monkeypatch, tmp_path):
+    out_root = tmp_path / "out"
+    monkeypatch.setenv("OUT_ROOT", str(out_root))
+    account_id, clip_path = _create_clip_structure(out_root)
+
+    for suffix in PROJECT_FILE_SUFFIXES.values():
+        clip_path.with_suffix(suffix).write_text("<xml/>", encoding="utf-8")
+
+    client = TestClient(app)
+    response = client.get("/api/clips", params={"accountId": account_id, "limit": 5})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["clips"], "Expected at least one clip in response"
+
+    clip = payload["clips"][0]
+    assert clip["rating"] == 9.0
+    project_files = clip.get("project_files")
+    assert isinstance(project_files, dict) and project_files
+
+    for key, suffix in PROJECT_FILE_SUFFIXES.items():
+        entry = project_files.get(key)
+        assert entry is not None, f"Missing project file metadata for {key}"
+        assert entry["filename"] == f"{clip_path.stem}{suffix}"
+        assert entry["url"].endswith(f"/project-files/{key}")
 
 
 def test_get_account_clip(monkeypatch, tmp_path):
