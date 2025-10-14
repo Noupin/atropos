@@ -290,7 +290,7 @@ const VideoWorkspace: FC = () => {
                     <button
                       type="button"
                       onClick={handleOpenClipEditor}
-                      className="marble-button marble-button--ghost px-3 py-2 text-xs font-semibold"
+                      className="marble-button px-3 py-2 text-xs font-semibold"
                     >
                       Open full editor
                     </button>
