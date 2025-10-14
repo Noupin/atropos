@@ -163,10 +163,6 @@ const VideoWorkspace: FC = () => {
     return 'No upload planned yet.'
   }, [uploadStatus])
 
-  const handleBack = useCallback(() => {
-    navigate(-1)
-  }, [navigate])
-
   const handleOpenClipEditor = useCallback(() => {
     if (!clipId) {
       return
@@ -183,13 +179,17 @@ const VideoWorkspace: FC = () => {
 
   return (
     <section className="flex w-full flex-1 flex-col gap-6 px-6 py-8 lg:px-8">
-      <button
-        type="button"
-        onClick={handleBack}
-        className="self-start rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-      >
-        Back
-      </button>
+      <div className="flex items-center justify-end">
+        {clipId ? (
+          <button
+            type="button"
+            onClick={handleOpenClipEditor}
+            className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
+          >
+            Open full editor
+          </button>
+        ) : null}
+      </div>
       {statusMessage ? (
         <div className="rounded-xl border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-4 py-3 text-sm text-[var(--fg)] shadow-[0_12px_24px_rgba(43,42,40,0.16)]">
           {statusMessage}
@@ -279,22 +279,11 @@ const VideoWorkspace: FC = () => {
                 className="space-y-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] p-6 shadow-[0_18px_34px_rgba(43,42,40,0.18)]"
                 onSubmit={handleSaveDetails}
               >
-                <header className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="space-y-1">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                      Metadata
-                    </p>
-                    <h2 className="text-xl font-semibold text-[var(--fg)]">Polish how the video is presented</h2>
-                  </div>
-                  {clipId ? (
-                    <button
-                      type="button"
-                      onClick={handleOpenClipEditor}
-                      className="marble-button px-3 py-2 text-xs font-semibold"
-                    >
-                      Open full editor
-                    </button>
-                  ) : null}
+                <header className="space-y-1">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                    Metadata
+                  </p>
+                  <h2 className="text-xl font-semibold text-[var(--fg)]">Polish how the video is presented</h2>
                 </header>
                 <label className="flex flex-col gap-2">
                   <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
