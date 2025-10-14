@@ -9,6 +9,7 @@ import { useLocation, useParams } from 'react-router-dom'
 import { formatDuration } from '../lib/format'
 import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import useSharedVolume from '../hooks/useSharedVolume'
+import VideoPreviewStage from '../components/VideoPreviewStage'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
 import { fetchConfigEntries } from '../services/configApi'
@@ -1268,10 +1269,7 @@ const ClipEdit: FC = () => {
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="flex-1 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
           <div className="flex h-full flex-col gap-4">
-            <div
-              className="relative flex w-full items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black"
-              style={{ height: 'clamp(240px, 70vh, 720px)' }}
-            >
+            <VideoPreviewStage>
               <video
                 ref={previewVideoRef}
                 key={videoKey}
@@ -1301,7 +1299,7 @@ const ClipEdit: FC = () => {
                   />
                 </div>
               ) : null}
-            </div>
+            </VideoPreviewStage>
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">

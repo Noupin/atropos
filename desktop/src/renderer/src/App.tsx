@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { FC, MouseEvent, RefObject } from 'react'
-import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import type { FC, MouseEvent, ReactNode, RefObject } from 'react'
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import MarbleSelect from './components/MarbleSelect'
 import TrialBadge from './components/TrialBadge'
 import ClipPage from './pages/Clip'
 import ClipEdit from './pages/ClipEdit'
+import VideoWorkspace from './pages/VideoWorkspace'
 import Home from './pages/Home'
 import Library from './pages/Library'
 import Profile from './pages/Profile'
@@ -19,7 +20,13 @@ import {
   summarisePipelineProgress,
   type PipelineOverallStatus
 } from './lib/pipelineProgress'
-import type { AccountSummary, AuthPingSummary, HomePipelineState, SupportedPlatform } from './types'
+import type {
+  AccountSummary,
+  AuthPingSummary,
+  Clip,
+  HomePipelineState,
+  SupportedPlatform
+} from './types'
 import { useUiState } from './state/uiState'
 import {
   addPlatformToAccount,
@@ -56,6 +63,10 @@ type NavItemProgress = {
   srLabel?: string
 }
 
+type ClipEditLocationState = {
+  clip?: Clip | null
+}
+
 type PendingLibraryProject = {
   jobId: string
   accountId: string | null
@@ -70,6 +81,25 @@ type NavItemLabelProps = {
   isActive: boolean
   badge?: NavItemBadge | null
   progress?: NavItemProgress | null
+  children?: ReactNode
+}
+
+type LibraryAttachment = {
+  key: 'edit' | 'video'
+  label: string
+  ariaLabel: string
+  srText: string | null
+  variant: 'edit' | 'video'
+  indicator?: ReactNode
+}
+
+type LibraryAttachmentLabelProps = {
+  label: string
+  srText: string | null
+  variant: LibraryAttachment['variant']
+  isActive: boolean
+  isLastAttachment: boolean
+  indicator?: ReactNode
 }
 
 const badgeVariantClasses: Record<NavItemBadgeVariant, string> = {
@@ -90,7 +120,7 @@ const progressStatusClasses: Record<PipelineOverallStatus, string> = {
   failed: 'bg-[color:var(--error-strong)]'
 }
 
-const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge, progress }) => {
+const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge, progress, children }) => {
   const resolvedBadge = badge ? { label: badge.label, variant: badge.variant ?? 'accent' } : null
   const srProgressLabel = progress?.srLabel
     ?? (progress
@@ -141,6 +171,50 @@ const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge, progress 
           }`}
         />
       )}
+      {children}
+    </span>
+  )
+}
+
+const LibraryAttachmentLabel: FC<LibraryAttachmentLabelProps> = ({
+  label,
+  srText,
+  variant,
+  isActive,
+  isLastAttachment,
+  indicator
+}) => {
+  const surfaceTone =
+    variant === 'video'
+      ? 'bg-[color:color-mix(in_srgb,var(--accent)_12%,var(--panel)_78%)] hover:bg-[color:color-mix(in_srgb,var(--accent)_18%,var(--panel)_80%)]'
+      : 'bg-[color:color-mix(in_srgb,var(--panel)_78%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_74%,transparent)]'
+  const insetShadow = isActive
+    ? 'shadow-[inset_2px_2px_6px_rgba(43,42,40,0.2),inset_-2px_-2px_6px_rgba(255,255,255,0.26),0_12px_26px_rgba(43,42,40,0.18)]'
+    : 'shadow-[inset_2px_2px_6px_rgba(43,42,40,0.16),inset_-2px_-2px_6px_rgba(255,255,255,0.22)]'
+  const edgeRounding = [
+    'rounded-[16px]',
+    'rounded-l-none',
+    !isLastAttachment ? 'rounded-r-none' : null
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  return (
+    <span className="pointer-events-none relative inline-flex h-10 items-center">
+      <span
+        aria-hidden
+        className={`pointer-events-none inline-flex h-10 min-w-[72px] items-center justify-center border border-[color:color-mix(in_srgb,var(--edge-soft)_82%,transparent)] px-5 text-sm font-medium leading-none text-[var(--fg)] transition ${surfaceTone} ${insetShadow} ${edgeRounding}`}
+      >
+        <span className="flex items-center gap-2">
+          <span>{label}</span>
+          {indicator ? (
+            <span className="pointer-events-none inline-flex items-center justify-center text-[10px] font-semibold">
+              {indicator}
+            </span>
+          ) : null}
+        </span>
+      </span>
+      {srText ? <span className="sr-only">{srText}</span> : null}
     </span>
   )
 }
@@ -227,17 +301,6 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       return { ...previous, activeAccountId: homeState.selectedAccountId }
     })
   }, [homeState.selectedAccountId, updateState])
-  useEffect(() => {
-    if (!accessRestricted) {
-      return
-    }
-    const allowedPrefixes = ['/profile', '/settings', '/library']
-    const isAllowed = allowedPrefixes.some((prefix) => location.pathname.startsWith(prefix))
-    if (!isAllowed) {
-      navigate('/profile', { replace: true })
-    }
-  }, [location.pathname, navigate, accessRestricted])
-
   const availableAccounts = useMemo(
     () =>
       accounts.filter(
@@ -365,6 +428,27 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     onFirstClipReady: handleFirstClipReady,
     onPipelineFinished: handlePipelineFinished
   })
+
+  const homeRouteElement = useMemo(() => {
+    if (accessRestricted) {
+      return <Navigate to="/profile" replace state={{ reason: 'subscription-required' }} />
+    }
+    return (
+      <Home
+        initialState={homeState}
+        onStateChange={setHomeState}
+        accounts={accounts}
+        onStartPipeline={startPipeline}
+        onResumePipeline={resumePipeline}
+      />
+    )
+  }, [
+    accessRestricted,
+    accounts,
+    homeState,
+    resumePipeline,
+    startPipeline
+  ])
 
   useEffect(() => {
     const currentJobId = homeState.activeJobId
@@ -681,9 +765,103 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   )
 
   const isLibraryRoute = location.pathname.startsWith('/library')
+  const isVideoRoute = /^\/video\//.test(location.pathname)
   const isClipEditRoute = /^\/clip\/[^/]+\/edit$/.test(location.pathname)
   const isSettingsRoute = location.pathname.startsWith('/settings')
-  const showBackButton = location.pathname.startsWith('/clip/')
+  const showBackButton = location.pathname.startsWith('/clip/') || isVideoRoute
+  const isLibraryFamilyRoute = isLibraryRoute || isVideoRoute || isClipEditRoute
+
+  const videoLocationState =
+    (isVideoRoute ? (location.state as { clip?: Clip; clipTitle?: string } | null) : null) ?? null
+  const clipEditLocationState =
+    (isClipEditRoute ? ((location.state as ClipEditLocationState | null) ?? null) : null)
+
+  const videoClipTitle = useMemo(() => {
+    if (!isVideoRoute) {
+      return null
+    }
+    const title = videoLocationState?.clip?.title ?? videoLocationState?.clipTitle ?? null
+    if (!title) {
+      return null
+    }
+    return title.length <= 80 ? title : `${title.slice(0, 77).trimEnd()}…`
+  }, [isVideoRoute, videoLocationState?.clip?.title, videoLocationState?.clipTitle])
+
+  const clipEditClipTitle = useMemo(() => {
+    if (!isClipEditRoute) {
+      return null
+    }
+    const title = clipEditLocationState?.clip?.title ?? null
+    if (!title) {
+      return null
+    }
+    return title.length <= 80 ? title : `${title.slice(0, 77).trimEnd()}…`
+  }, [isClipEditRoute, clipEditLocationState?.clip?.title])
+
+  const currentLocationTarget = useMemo(
+    () => ({ pathname: location.pathname, search: location.search, hash: location.hash }),
+    [location.pathname, location.search, location.hash]
+  )
+
+  const libraryAttachments = useMemo(
+    () => {
+      const attachments: LibraryAttachment[] = []
+
+      if (isClipEditRoute) {
+        attachments.push({
+          key: 'edit',
+          label: 'Edit',
+          ariaLabel: clipEditClipTitle ? `Edit clip ${clipEditClipTitle}` : 'Edit clip',
+          srText: clipEditClipTitle ? `Current clip: ${clipEditClipTitle}` : null,
+          variant: 'edit'
+        })
+      }
+
+      if (isVideoRoute) {
+        attachments.push({
+          key: 'video',
+          label: 'Video',
+          ariaLabel: videoClipTitle ? `Video workspace for ${videoClipTitle}` : 'Video workspace',
+          srText: videoClipTitle ? `Current clip: ${videoClipTitle}` : null,
+          variant: 'video',
+          indicator: (
+            <span
+              aria-hidden
+              className="pointer-events-none inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--accent)_70%,var(--accent-contrast))] px-1 text-[10px] font-semibold text-[color:var(--accent-contrast)] shadow-[0_8px_16px_rgba(43,42,40,0.18)]"
+            >
+              ▶
+            </span>
+          )
+        })
+      }
+
+      return attachments
+    },
+    [clipEditClipTitle, isClipEditRoute, isVideoRoute, videoClipTitle]
+  )
+
+  const libraryNavLinkClassName = useCallback(
+    ({ isActive }: { isActive: boolean }) => {
+      const derivedActive = isActive || isLibraryFamilyRoute
+      const base = navLinkClassName({ isActive: derivedActive, disabled: libraryNavigationDisabled })
+      if (libraryAttachments.length === 0) {
+        return base
+      }
+      return `${base} !rounded-r-none !bg-[color:color-mix(in_srgb,var(--panel)_76%,transparent)] !pr-4 !text-[var(--fg)] shadow-[0_18px_32px_rgba(43,42,40,0.18)]`
+    },
+    [
+      isLibraryFamilyRoute,
+      libraryAttachments.length,
+      libraryNavigationDisabled,
+      navLinkClassName
+    ]
+  )
+
+  const libraryAttachmentNavLinkClassName = useCallback(
+    (_: { isActive: boolean }) =>
+      'group relative inline-flex h-10 items-center -ml-2 mr-2 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--accent)]',
+    []
+  )
 
   const accountSelectOptions = useMemo(() => {
     if (availableAccounts.length === 0) {
@@ -763,9 +941,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 </NavLink>
                 <NavLink
                   to="/library"
-                  className={({ isActive }) =>
-                    navLinkClassName({ isActive, disabled: libraryNavigationDisabled })
-                  }
+                  className={({ isActive }) => libraryNavLinkClassName({ isActive })}
                   aria-disabled={libraryNavigationDisabled ? true : undefined}
                   tabIndex={libraryNavigationDisabled ? -1 : undefined}
                   onClick={libraryNavigationDisabled ? preventDisabledNavigation : undefined}
@@ -773,15 +949,29 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                   {({ isActive }) => (
                     <NavItemLabel
                       label="Library"
-                      isActive={isActive}
-                      badge={
-                        isClipEditRoute
-                          ? ({ label: 'Edit mode', variant: 'info' } satisfies NavItemBadge)
-                          : null
-                      }
+                      isActive={isActive || isLibraryFamilyRoute}
                     />
                   )}
                 </NavLink>
+                {libraryAttachments.map((attachment, index) => (
+                  <NavLink
+                    key={attachment.key}
+                    to={currentLocationTarget}
+                    className={libraryAttachmentNavLinkClassName}
+                    aria-label={attachment.ariaLabel}
+                  >
+                    {({ isActive }) => (
+                      <LibraryAttachmentLabel
+                        label={attachment.label}
+                        srText={attachment.srText}
+                        variant={attachment.variant}
+                        isActive={isActive}
+                        isLastAttachment={index === libraryAttachments.length - 1}
+                        indicator={attachment.indicator}
+                      />
+                    )}
+                  </NavLink>
+                ))}
                 <NavLink to="/profile" className={navLinkClassName}>
                   {({ isActive }) => <NavItemLabel label="Profile" isActive={isActive} />}
                 </NavLink>
@@ -838,18 +1028,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       </header>
       <main className="flex-1 bg-[var(--bg)] text-[var(--fg)]">
         <Routes>
-          <Route
-            path="/"
-            element={
-              <Home
-                initialState={homeState}
-                onStateChange={setHomeState}
-                accounts={accounts}
-                onStartPipeline={startPipeline}
-                onResumePipeline={resumePipeline}
-              />
-            }
-          />
+          <Route path="/" element={homeRouteElement} />
           <Route
             path="/library"
             element={
@@ -861,6 +1040,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
               />
             }
           />
+          <Route path="/video/:id" element={<VideoWorkspace />} />
           <Route path="/clip/:id" element={<ClipPage />} />
           <Route path="/clip/:id/edit" element={<ClipEdit />} />
           <Route
@@ -891,18 +1071,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
               />
             }
           />
-          <Route
-            path="*"
-            element={
-              <Home
-                initialState={homeState}
-                onStateChange={setHomeState}
-                accounts={accounts}
-                onStartPipeline={startPipeline}
-                onResumePipeline={resumePipeline}
-              />
-            }
-          />
+          <Route path="*" element={homeRouteElement} />
         </Routes>
       </main>
     </div>
