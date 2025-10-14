@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import math
 import shutil
@@ -10,10 +11,8 @@ import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterable, Optional
-
-import opentimelineio as otio
-from opentimelineio.opentime import RationalTime, TimeRange
+from types import ModuleType
+from typing import Dict, Optional
 
 import config as pipeline_config
 from helpers.media import VideoStreamMetadata, probe_video_stream
@@ -44,6 +43,23 @@ class ExportedProject:
 
 class ProjectExportError(RuntimeError):
     """Raised when project export fails due to missing data or IO errors."""
+
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code or 400
+
+
+def _load_otio() -> ModuleType:
+    """Return the ``opentimelineio`` module or raise a helpful error."""
+
+    try:
+        return importlib.import_module("opentimelineio")
+    except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
+        raise ProjectExportError(
+            "Project export requires the optional 'opentimelineio' dependency. "
+            "Install it with `pip install opentimelineio[fcpxml]` and try again.",
+            status_code=503,
+        ) from exc
 
 
 def _build_export_folder_name(clip: LibraryClip) -> str:
@@ -104,9 +120,12 @@ def _probe_transform_metadata(meta: VideoStreamMetadata) -> Dict[str, object]:
     }
 
 
-def _seconds_to_time_range(seconds: float, fps: float) -> TimeRange:
+def _seconds_to_time_range(seconds: float, fps: float, otio: ModuleType):
     frames = max(1, int(round(seconds * fps)))
-    return TimeRange(start_time=RationalTime(0, fps), duration=RationalTime(frames, fps))
+    return otio.opentime.TimeRange(
+        start_time=otio.opentime.RationalTime(0, fps),
+        duration=otio.opentime.RationalTime(frames, fps),
+    )
 
 
 def _build_timeline(
@@ -115,7 +134,9 @@ def _build_timeline(
     subtitle_cues: list[SubtitleCue],
     transform_metadata: Dict[str, object],
     video_metadata: VideoStreamMetadata,
-) -> otio.schema.Timeline:
+    *,
+    otio: ModuleType,
+):
     fps = float(pipeline_config.OUTPUT_FPS or 30.0)
     duration_seconds = (
         video_metadata.duration
@@ -127,7 +148,7 @@ def _build_timeline(
 
     timeline = otio.schema.Timeline(name=clip.title)
 
-    available_range = _seconds_to_time_range(duration_seconds, fps)
+    available_range = _seconds_to_time_range(duration_seconds, fps, otio)
     media_reference = otio.schema.ExternalReference(
         target_url=media_relative_path.as_posix(),
         available_range=available_range,
@@ -155,12 +176,12 @@ def _build_timeline(
             cue_duration = max(0.0, cue.end - cue.start)
             if cue_duration <= 0:
                 continue
-            start_time = RationalTime(int(round(cue.start * fps)), fps)
+            start_time = otio.opentime.RationalTime(int(round(cue.start * fps)), fps)
             marker = otio.schema.Marker(
                 name=cue.text,
-                marked_range=TimeRange(
+                marked_range=otio.opentime.TimeRange(
                     start_time=start_time,
-                    duration=RationalTime(int(round(cue_duration * fps)), fps),
+                    duration=otio.opentime.RationalTime(int(round(cue_duration * fps)), fps),
                 ),
                 color=otio.schema.MarkerColor.CYAN,
                 metadata={"atropos": {"text": cue.text}},
@@ -176,7 +197,12 @@ def _build_timeline(
     return timeline
 
 
-def _write_project_files(timeline: otio.schema.Timeline, export_dir: Path) -> Dict[str, str]:
+def _write_project_files(
+    timeline,  # type: ignore[no-untyped-def]
+    export_dir: Path,
+    *,
+    otio: ModuleType,
+) -> Dict[str, str]:
     files: Dict[str, str] = {}
 
     universal_path = export_dir / UNIVERSAL_XML_NAME
@@ -251,7 +277,9 @@ def build_clip_project_export(
     clips = list_account_clips_sync(account_id)
     clip = next((entry for entry in clips if entry.clip_id == clip_id), None)
     if clip is None:
-        raise ProjectExportError("Clip not found for export")
+        raise ProjectExportError("Clip not found for export", status_code=404)
+
+    otio = _load_otio()
 
     project_dir = clip.playback_path.parent.parent
     if not project_dir.exists():
@@ -296,9 +324,10 @@ def build_clip_project_export(
         subtitle_cues,
         transform_metadata,
         video_metadata,
+        otio=otio,
     )
 
-    project_files = _write_project_files(timeline, export_folder)
+    project_files = _write_project_files(timeline, export_folder, otio=otio)
 
     media_manifest = {
         "raw": copied_raw.relative_to(export_folder),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import re
 import zipfile
@@ -13,6 +14,9 @@ sys.path.append("server")
 
 from common.exports import ProjectExportError, build_clip_project_export
 from library import list_account_clips_sync
+
+
+OTIO_AVAILABLE = importlib.util.find_spec("opentimelineio") is not None
 
 
 def _write(path: Path, content: str | bytes) -> None:
@@ -60,6 +64,7 @@ def _build_sample_project(base: Path) -> tuple[str, Path, Path, Path]:
     return stem, vertical, raw, subtitle
 
 
+@pytest.mark.skipif(not OTIO_AVAILABLE, reason="opentimelineio dependency is unavailable")
 def test_builds_project_archive(tmp_path, monkeypatch):
     monkeypatch.setenv("OUT_ROOT", str(tmp_path))
     _stem, vertical, raw, subtitle = _build_sample_project(tmp_path)
@@ -107,6 +112,7 @@ def test_missing_clip_raises(tmp_path, monkeypatch):
         build_clip_project_export(None, "unknown")
 
 
+@pytest.mark.skipif(not OTIO_AVAILABLE, reason="opentimelineio dependency is unavailable")
 def test_premiere_falls_back_to_universal(tmp_path, monkeypatch):
     monkeypatch.setenv("OUT_ROOT", str(tmp_path))
     _stem, vertical, raw, subtitle = _build_sample_project(tmp_path)
@@ -139,3 +145,27 @@ def test_premiere_falls_back_to_universal(tmp_path, monkeypatch):
         assert f"{media_dir}/{raw.name}" in archive.namelist()
         assert f"{media_dir}/{vertical.name}" in archive.namelist()
         assert f"{media_dir}/{subtitle.name}" in archive.namelist()
+
+
+def test_missing_dependency_surfaces_helpful_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUT_ROOT", str(tmp_path))
+    _build_sample_project(tmp_path)
+
+    original_import = importlib.import_module
+
+    def fake_import(name, package=None):  # type: ignore[no-untyped-def]
+        if name == "opentimelineio":
+            raise ModuleNotFoundError("mocked missing dependency")
+        return original_import(name, package)
+
+    monkeypatch.setattr("common.exports.project_exporter.importlib.import_module", fake_import)
+
+    clips = list_account_clips_sync(None)
+    clip_id = clips[0].clip_id
+
+    with pytest.raises(ProjectExportError) as excinfo:
+        build_clip_project_export(None, clip_id)
+
+    message = str(excinfo.value)
+    assert "opentimelineio" in message
+    assert excinfo.value.status_code == 503

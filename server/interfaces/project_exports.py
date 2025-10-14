@@ -30,8 +30,10 @@ async def export_clip_project(account_id: str, clip_id: str) -> FileResponse:
             build_clip_project_export, normalised_account, clip_id
         )
     except ProjectExportError as exc:
+        status_code_override = getattr(exc, "status_code", None)
+        http_status = status_code_override or status.HTTP_404_NOT_FOUND
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=http_status,
             detail=str(exc) or "Clip could not be exported.",
         ) from exc
     except Exception as exc:  # pragma: no cover - defensive guard

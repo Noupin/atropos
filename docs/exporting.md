@@ -27,6 +27,11 @@ errors are shown inline with guidance to retry.
 - **Route:** `/api/accounts/{accountId}/clips/{clipId}/export`
 - **Response:** streamed zip file containing the export folder
 
+The backend requires the optional `opentimelineio` package (install with
+`pip install opentimelineio[fcpxml]`) to generate the editor timelines. Without
+it the API responds with a `503 Service Unavailable` error explaining how to
+install the missing dependency.
+
 `accountId` accepts the special token `__default__` for the default output root.
 The archive overwrites any previous export for the same clip.
 
