@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from custom_types.ETone import Tone
 from interfaces.clips import router as clips_router, register_legacy_routes as register_clip_legacy_routes
+from interfaces.project_exports import router as project_exports_router
 from interfaces.progress import PipelineEvent, PipelineEventType, PipelineObserver
 from pipeline import GENERIC_HASHTAGS, process_video
 from library import (
@@ -82,6 +83,7 @@ app.add_middleware(
 )
 
 app.include_router(clips_router, prefix="/api")
+app.include_router(project_exports_router, prefix="/api")
 register_clip_legacy_routes(app)
 
 

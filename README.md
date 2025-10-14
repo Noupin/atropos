@@ -9,6 +9,7 @@ Atropos is a hybrid desktop + cloud platform for planning, rendering, and licens
 - 🧭 [Contribution guidelines](CONTRIBUTING.md)
 - 📜 [Architecture decision records](docs/ADRS)
 - 🗒️ [Changelog](CHANGELOG.md)
+- 🎬 [Project export guide](docs/exporting.md)
 
 ## Run modes
 

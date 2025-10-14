@@ -1,0 +1,4 @@
+# Generated example exports live here and should not be checked into git.
+*
+!.gitignore
+!README.md
