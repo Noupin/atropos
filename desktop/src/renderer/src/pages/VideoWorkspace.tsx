@@ -10,6 +10,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatDuration, formatViews, timeAgo } from '../lib/format'
 import useSharedVolume from '../hooks/useSharedVolume'
 import VideoPreviewStage from '../components/VideoPreviewStage'
+import ProjectExportButton from '../components/ProjectExportButton'
 import {
   PLATFORM_LABELS,
   SUPPORTED_PLATFORMS,
@@ -53,6 +54,8 @@ const VideoWorkspace: FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'ready' | 'scheduled'>(clipFromState ? 'ready' : 'idle')
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const [exportSuccess, setExportSuccess] = useState<string | null>(null)
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>(clipFromState ? 'metadata' : 'upload')
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -71,6 +74,8 @@ const VideoWorkspace: FC = () => {
     setStatusMessage(null)
     setUploadStatus('ready')
     setWorkspaceMode('metadata')
+    setExportError(null)
+    setExportSuccess(null)
   }, [clipFromState])
 
   useEffect(() => {
@@ -177,6 +182,19 @@ const VideoWorkspace: FC = () => {
     })
   }, [accountIdFromState, clipFromState, clipId, navigate])
 
+  const handleExportStart = useCallback(() => {
+    setExportError(null)
+    setExportSuccess(null)
+  }, [])
+
+  const handleExportSuccess = useCallback((message: string) => {
+    setExportSuccess(message)
+  }, [])
+
+  const handleExportError = useCallback((message: string) => {
+    setExportError(message)
+  }, [])
+
   const handleBack = useCallback(() => {
     navigate(-1)
   }, [navigate])
@@ -191,19 +209,41 @@ const VideoWorkspace: FC = () => {
         >
           Back
         </button>
-        {clipId ? (
-          <button
-            type="button"
-            onClick={handleOpenClipEditor}
-            className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
-          >
-            Open full editor
-          </button>
-        ) : null}
+        <div className="flex items-center gap-3">
+          <ProjectExportButton
+            clipId={clipId}
+            clipTitle={clipFromState?.title ?? clipTitle}
+            accountId={accountIdFromState ?? clipFromState?.accountId ?? null}
+            disabled={!clipId}
+            size="small"
+            onStart={handleExportStart}
+            onSuccess={handleExportSuccess}
+            onError={handleExportError}
+          />
+          {clipId ? (
+            <button
+              type="button"
+              onClick={handleOpenClipEditor}
+              className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
+            >
+              Open full editor
+            </button>
+          ) : null}
+        </div>
       </div>
       {statusMessage ? (
         <div className="rounded-xl border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-4 py-3 text-sm text-[var(--fg)] shadow-[0_12px_24px_rgba(43,42,40,0.16)]">
           {statusMessage}
+        </div>
+      ) : null}
+      {exportError ? (
+        <div className="rounded-xl border border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] px-4 py-3 text-sm text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))] shadow-[0_12px_24px_rgba(43,42,40,0.16)]">
+          {exportError}
+        </div>
+      ) : null}
+      {exportSuccess ? (
+        <div className="rounded-xl border border-[color:color-mix(in_srgb,var(--success-strong)_45%,var(--edge))] bg-[color:var(--success-soft)] px-4 py-3 text-sm text-[color:color-mix(in_srgb,var(--success-strong)_82%,var(--accent-contrast))] shadow-[0_12px_24px_rgba(43,42,40,0.16)]">
+          {exportSuccess}
         </div>
       ) : null}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">

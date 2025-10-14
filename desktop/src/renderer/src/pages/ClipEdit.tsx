@@ -13,7 +13,7 @@ import VideoPreviewStage from '../components/VideoPreviewStage'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
 import { fetchConfigEntries } from '../services/configApi'
-import { exportClipProject, triggerDownload } from '../services/projectExports'
+import ProjectExportButton from '../components/ProjectExportButton'
 import type { Clip } from '../types'
 
 type ClipEditLocationState = {
@@ -185,7 +185,6 @@ const ClipEdit: FC = () => {
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
-  const [isExporting, setIsExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [exportSuccess, setExportSuccess] = useState<string | null>(null)
   const [previewMode, setPreviewMode] = useState<'adjusted' | 'original' | 'rendered'>(() =>
@@ -217,33 +216,18 @@ const ClipEdit: FC = () => {
     })
   }, [clipState, navigate, state?.accountId])
 
-  const handleExportProject = useCallback(async () => {
-    if (!clipState) {
-      return
-    }
-    const accountId = state?.accountId ?? clipState.accountId ?? null
+  const handleExportStart = useCallback(() => {
     setExportError(null)
     setExportSuccess(null)
-    setIsExporting(true)
-    try {
-      const payload = await exportClipProject({
-        accountId,
-        clipId: clipState.id,
-        clipTitle: clipState.title
-      })
-      triggerDownload(payload)
-      setExportSuccess('Project package downloaded. Open it in your editor to keep polishing the clip.')
-    } catch (error) {
-      console.error('Project export failed', error)
-      const message =
-        error instanceof Error && error.message
-          ? error.message
-          : 'We could not export the project. Please try again.'
-      setExportError(message)
-    } finally {
-      setIsExporting(false)
-    }
-  }, [clipState, state?.accountId])
+  }, [])
+
+  const handleExportSuccess = useCallback((message: string) => {
+    setExportSuccess(message)
+  }, [])
+
+  const handleExportError = useCallback((message: string) => {
+    setExportError(message)
+  }, [])
 
   useEffect(() => {
     let isActive = true
@@ -1729,14 +1713,15 @@ const ClipEdit: FC = () => {
             >
               {isSaving ? 'Saving…' : 'Save adjustments'}
             </button>
-            <button
-              type="button"
-              onClick={handleExportProject}
-              disabled={isExporting || isLoadingClip}
-              className="inline-flex items-center justify-center rounded-[14px] border border-[var(--ring)] px-4 py-2 text-sm font-semibold text-[var(--ring)] shadow-[0_12px_24px_rgba(15,23,42,0.18)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--ring)_12%,transparent)] hover:text-[color:var(--accent)] hover:shadow-[0_18px_36px_rgba(15,23,42,0.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isExporting ? 'Exporting…' : 'Export project'}
-            </button>
+            <ProjectExportButton
+              clipId={clipState?.id ?? null}
+              clipTitle={clipState?.title ?? null}
+              accountId={state?.accountId ?? clipState?.accountId ?? null}
+              disabled={isLoadingClip || !clipState}
+              onStart={handleExportStart}
+              onSuccess={handleExportSuccess}
+              onError={handleExportError}
+            />
             <button
               type="button"
               onClick={handleReset}
