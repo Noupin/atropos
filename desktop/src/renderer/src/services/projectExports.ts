@@ -1,6 +1,8 @@
 import { buildClipExportUrl } from '../config/backend'
 import { extractErrorMessage, requestWithFallback } from './http'
 
+export type ExportProjectTarget = 'premiere' | 'resolve' | 'final_cut' | 'universal'
+
 const parseFilenameFromDisposition = (value: string | null): string | null => {
   if (!value) {
     return null
@@ -20,13 +22,21 @@ const parseFilenameFromDisposition = (value: string | null): string | null => {
   return null
 }
 
-const buildFallbackFilename = (title: string): string => {
+const FALLBACK_SUFFIX: Record<ExportProjectTarget, string> = {
+  premiere: 'premiere',
+  resolve: 'resolve',
+  final_cut: 'final-cut',
+  universal: 'universal'
+}
+
+const buildFallbackFilename = (title: string, target?: ExportProjectTarget | null): string => {
   const slug = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
   const trimmed = slug.slice(0, 40)
-  return `${trimmed || 'clip'}-export.zip`
+  const suffix = target ? FALLBACK_SUFFIX[target] : 'export'
+  return `${trimmed || 'clip'}-${suffix}.zip`
 }
 
 export type ProjectExportPayload = {
@@ -37,14 +47,16 @@ export type ProjectExportPayload = {
 export const exportClipProject = async ({
   accountId,
   clipId,
-  clipTitle
+  clipTitle,
+  target
 }: {
   accountId: string | null
   clipId: string
   clipTitle: string
+  target?: ExportProjectTarget | null
 }): Promise<ProjectExportPayload> => {
   const response = await requestWithFallback(
-    () => buildClipExportUrl(accountId, clipId),
+    () => buildClipExportUrl(accountId, clipId, target ?? null),
     { method: 'POST' }
   )
 
@@ -54,7 +66,7 @@ export const exportClipProject = async ({
 
   const blob = await response.blob()
   const headerFilename = parseFilenameFromDisposition(response.headers.get('Content-Disposition'))
-  const filename = headerFilename || buildFallbackFilename(clipTitle)
+  const filename = headerFilename || buildFallbackFilename(clipTitle, target ?? null)
 
   return { blob, filename }
 }

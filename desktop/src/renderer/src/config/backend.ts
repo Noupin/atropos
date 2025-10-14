@@ -143,12 +143,19 @@ export const buildAccountClipThumbnailUrl = (accountId: string | null, clipId: s
   return url.toString()
 }
 
-export const buildClipExportUrl = (accountId: string | null, clipId: string): string => {
+export const buildClipExportUrl = (
+  accountId: string | null,
+  clipId: string,
+  target?: string | null
+): string => {
   const account = normaliseAccountId(accountId)
   const url = new URL(
     `/api/accounts/${encodeURIComponent(account)}/clips/${encodeURIComponent(clipId)}/export`,
     getApiBaseUrl()
   )
+  if (target && target.length > 0) {
+    url.searchParams.set('target', target)
+  }
   return url.toString()
 }
 
