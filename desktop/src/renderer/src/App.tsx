@@ -98,7 +98,7 @@ type LibraryAttachmentLabelProps = {
   srText: string | null
   variant: LibraryAttachment['variant']
   isActive: boolean
-  showConnector: boolean
+  isLastAttachment: boolean
   indicator?: ReactNode
 }
 
@@ -181,12 +181,9 @@ const LibraryAttachmentLabel: FC<LibraryAttachmentLabelProps> = ({
   srText,
   variant,
   isActive,
-  showConnector,
+  isLastAttachment,
   indicator
 }) => {
-  const connector = showConnector
-    ? "before:pointer-events-none before:absolute before:-left-3 before:top-1/2 before:h-7 before:w-7 before:-translate-y-1/2 before:rounded-full before:border before:border-[color:color-mix(in_srgb,var(--edge-soft)_82%,transparent)] before:bg-[color:color-mix(in_srgb,var(--panel)_74%,transparent)] before:shadow-[inset_2px_2px_5px_rgba(43,42,40,0.16),inset_-2px_-2px_5px_rgba(255,255,255,0.24)] before:content-['']"
-    : ''
   const surfaceTone =
     variant === 'video'
       ? 'bg-[color:color-mix(in_srgb,var(--accent)_12%,var(--panel)_78%)] hover:bg-[color:color-mix(in_srgb,var(--accent)_18%,var(--panel)_80%)]'
@@ -194,12 +191,19 @@ const LibraryAttachmentLabel: FC<LibraryAttachmentLabelProps> = ({
   const insetShadow = isActive
     ? 'shadow-[inset_2px_2px_6px_rgba(43,42,40,0.2),inset_-2px_-2px_6px_rgba(255,255,255,0.26),0_12px_26px_rgba(43,42,40,0.18)]'
     : 'shadow-[inset_2px_2px_6px_rgba(43,42,40,0.16),inset_-2px_-2px_6px_rgba(255,255,255,0.22)]'
+  const edgeRounding = [
+    'rounded-[16px]',
+    'rounded-l-none',
+    !isLastAttachment ? 'rounded-r-none' : null
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
-    <span className={`pointer-events-none relative inline-flex h-10 items-center ${connector}`}>
+    <span className="pointer-events-none relative inline-flex h-10 items-center">
       <span
         aria-hidden
-        className={`pointer-events-none inline-flex h-10 min-w-[72px] items-center justify-center rounded-[16px] border border-[color:color-mix(in_srgb,var(--edge-soft)_82%,transparent)] px-5 text-sm font-medium leading-none text-[var(--fg)] transition ${surfaceTone} ${insetShadow}`}
+        className={`pointer-events-none inline-flex h-10 min-w-[72px] items-center justify-center border border-[color:color-mix(in_srgb,var(--edge-soft)_82%,transparent)] px-5 text-sm font-medium leading-none text-[var(--fg)] transition ${surfaceTone} ${insetShadow} ${edgeRounding}`}
       >
         <span className="flex items-center gap-2">
           <span>{label}</span>
@@ -843,7 +847,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       if (libraryAttachments.length === 0) {
         return base
       }
-      return `${base} !bg-[color:color-mix(in_srgb,var(--panel)_76%,transparent)] !text-[var(--fg)] shadow-[0_18px_32px_rgba(43,42,40,0.18)] pr-5 after:pointer-events-none after:absolute after:-right-3 after:top-1/2 after:h-7 after:w-7 after:-translate-y-1/2 after:rounded-full after:border after:border-[color:color-mix(in_srgb,var(--edge-soft)_85%,transparent)] after:bg-[color:color-mix(in_srgb,var(--panel)_72%,transparent)] after:shadow-[inset_2px_2px_5px_rgba(43,42,40,0.16),inset_-2px_-2px_5px_rgba(255,255,255,0.24)] after:content-['']`
+      return `${base} !rounded-r-none !bg-[color:color-mix(in_srgb,var(--panel)_76%,transparent)] !pr-4 !text-[var(--fg)] shadow-[0_18px_32px_rgba(43,42,40,0.18)]`
     },
     [
       isLibraryFamilyRoute,
@@ -854,10 +858,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   )
 
   const libraryAttachmentNavLinkClassName = useCallback(
-    ({ index }: { index: number }) => {
-      const offsetClass = index === 0 ? '-ml-3 pl-1' : 'ml-2'
-      return `group relative inline-flex h-10 items-center ${offsetClass} focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--accent)]`
-    },
+    (_: { isActive: boolean }) =>
+      'group relative inline-flex h-10 items-center -ml-2 mr-2 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--accent)]',
     []
   )
 
@@ -955,7 +957,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                   <NavLink
                     key={attachment.key}
                     to={currentLocationTarget}
-                    className={() => libraryAttachmentNavLinkClassName({ index })}
+                    className={libraryAttachmentNavLinkClassName}
                     aria-label={attachment.ariaLabel}
                   >
                     {({ isActive }) => (
@@ -964,7 +966,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                         srText={attachment.srText}
                         variant={attachment.variant}
                         isActive={isActive}
-                        showConnector={index === 0}
+                        isLastAttachment={index === libraryAttachments.length - 1}
                         indicator={attachment.indicator}
                       />
                     )}
