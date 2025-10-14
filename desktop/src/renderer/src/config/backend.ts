@@ -108,6 +108,20 @@ export const buildJobClipVideoUrl = (jobId: string, clipId: string): string => {
   return url.toString()
 }
 
+export const buildJobClipProjectFileUrl = (
+  jobId: string,
+  clipId: string,
+  target: string
+): string => {
+  const url = new URL(
+    `/api/jobs/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/project-files/${encodeURIComponent(
+      target
+    )}`,
+    getApiBaseUrl()
+  )
+  return url.toString()
+}
+
 export const buildJobClipUploadUrl = (jobId: string, clipId: string): string => {
   const url = new URL(
     `/api/jobs/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/upload`,
