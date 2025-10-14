@@ -17,7 +17,7 @@ from fastapi import HTTPException, status
 
 from schedule_upload import get_out_root
 from helpers.media import probe_media_duration
-from helpers.project_files import PROJECT_FILE_SUFFIXES
+from helpers.project_files import PROJECT_FILE_SUFFIXES, ensure_project_file
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_ACCOUNT_PLACEHOLDER = "__default__"
@@ -596,11 +596,10 @@ def _build_clip(
             project_file_path = clip_path.with_suffix(suffix)
         except ValueError:
             continue
-        if project_file_path.exists() and project_file_path.is_file():
-            project_files[key] = ProjectFileMetadata(
-                path=project_file_path,
-                filename=project_file_path.name,
-            )
+        project_files[key] = ProjectFileMetadata(
+            path=project_file_path,
+            filename=project_file_path.name,
+        )
     return LibraryClip(
         clip_id=clip_id,
         title=title,
@@ -782,14 +781,23 @@ def resolve_clip_video_path(account_id: Optional[str], clip_id: str) -> Path:
 def resolve_clip_project_file_path(account_id: Optional[str], clip_id: str, target: str) -> Path:
     if target not in PROJECT_FILE_SUFFIXES:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project file not found")
-    clip_path = resolve_clip_video_path(account_id, clip_id)
-    try:
-        candidate = clip_path.with_suffix(PROJECT_FILE_SUFFIXES[target])
-    except ValueError as exc:  # pragma: no cover - defensive guard
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project file not found") from exc
-    if not candidate.exists() or not candidate.is_file():
+
+    clips = list_account_clips_sync(account_id)
+    clip = next((item for item in clips if item.clip_id == clip_id), None)
+    if clip is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project file not found")
-    return candidate
+
+    try:
+        details = ensure_project_file(
+            target,
+            title=clip.title,
+            video_path=clip.playback_path,
+            duration_seconds=clip.duration_seconds,
+        )
+    except KeyError as exc:  # pragma: no cover - defensive guard
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project file not found") from exc
+
+    return details.path
 
 
 __all__ = [

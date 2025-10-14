@@ -85,7 +85,7 @@ from steps.candidates import ClipCandidate
 from helpers.cleanup import cleanup_project_dir
 from common.caption_utils import prepare_hashtags
 from helpers.hashtags import generate_hashtag_strings
-from helpers.project_files import generate_project_files
+from helpers.project_files import PROJECT_FILE_SPECS
 
 
 GENERIC_HASHTAGS = ["foryou", "fyp", "viral", "trending"]
@@ -1135,24 +1135,20 @@ def process_video(
 
         clip_title = (candidate.quote or "").strip() or f"{source_title} — Clip {idx}"
         duration_seconds = max(0.0, candidate.end - candidate.start)
-        project_file_records = generate_project_files(
-            title=clip_title,
-            video_path=vertical_output,
-            duration_seconds=duration_seconds,
-            output_dir=shorts_dir,
-        )
         project_file_payload: dict[str, dict[str, str]] = {}
-        for key, details in project_file_records.items():
+        for key, spec in PROJECT_FILE_SPECS.items():
+            filename = f"{vertical_output.stem}{spec.suffix}"
+            target_path = shorts_dir / filename
             try:
-                relative_path = details.path.relative_to(project_dir)
+                relative_path = target_path.relative_to(project_dir)
                 project_file_payload[key] = {
                     "path": relative_path.as_posix(),
-                    "filename": details.filename,
+                    "filename": filename,
                 }
             except ValueError:
                 project_file_payload[key] = {
-                    "path": details.path.name,
-                    "filename": details.filename,
+                    "path": target_path.name,
+                    "filename": filename,
                 }
 
         if observer:

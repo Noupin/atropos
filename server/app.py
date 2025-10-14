@@ -48,7 +48,7 @@ from steps.render_layouts import get_layout
 from helpers.description import maybe_append_website_link
 from common.caption_utils import prepare_hashtags
 from helpers.hashtags import generate_hashtag_strings
-from helpers.project_files import PROJECT_FILE_SPECS
+from helpers.project_files import PROJECT_FILE_SPECS, ensure_project_file
 from helpers.formatting import youtube_timestamp_url
 from auth.accounts import (
     AccountCreateRequest,
@@ -578,33 +578,15 @@ class JobState:
             return
 
         project_files: Dict[str, ProjectFileArtifact] = {}
-        raw_project_files = data.get("project_files")
-        if isinstance(raw_project_files, dict):
-            for key, entry in raw_project_files.items():
-                if not isinstance(key, str) or key not in _PROJECT_FILE_KEYS:
-                    continue
-                path_value: str | None = None
-                filename_value: str | None = None
-                if isinstance(entry, dict):
-                    raw_path = entry.get("path")
-                    raw_name = entry.get("filename")
-                    if isinstance(raw_path, str):
-                        path_value = raw_path
-                    if isinstance(raw_name, str):
-                        filename_value = raw_name
-                elif isinstance(entry, str):
-                    path_value = entry
-                if not path_value:
-                    continue
-                try:
-                    candidate_path = (base / path_value).resolve()
-                    candidate_path.relative_to(base)
-                except (OSError, ValueError):
-                    continue
-                if not candidate_path.exists() or not candidate_path.is_file():
-                    continue
-                filename = filename_value or candidate_path.name
-                project_files[key] = ProjectFileArtifact(path=candidate_path, filename=filename)
+        for key, spec in PROJECT_FILE_SPECS.items():
+            try:
+                candidate_path = video_path.with_name(f"{video_path.stem}{spec.suffix}")
+            except ValueError:
+                continue
+            project_files[key] = ProjectFileArtifact(
+                path=candidate_path,
+                filename=candidate_path.name,
+            )
 
         created_at = _parse_datetime(data.get("created_at"))
         duration_value = _safe_float(data.get("duration_seconds"))
@@ -1262,13 +1244,25 @@ async def get_job_clip_project_file(job_id: str, clip_id: str, target: str) -> F
 
     with state.lock:
         clip = state.clips.get(clip_id)
-        record = clip.project_files.get(target) if clip else None
 
-    if clip is None or record is None:
+    if clip is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project file not found")
 
-    if not record.path.exists() or not record.path.is_file():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project file not found")
+    try:
+        details = ensure_project_file(
+            target,
+            title=clip.title,
+            video_path=clip.video_path,
+            duration_seconds=clip.duration_seconds,
+        )
+    except KeyError as exc:  # pragma: no cover - validated earlier
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project file not found") from exc
+
+    record = ProjectFileArtifact(path=details.path, filename=details.filename)
+    with state.lock:
+        existing = state.clips.get(clip_id)
+        if existing is not None:
+            existing.project_files[target] = record
 
     return FileResponse(
         path=record.path,

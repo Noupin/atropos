@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 import server.app
 import server.config as pipeline_config
 import server.library
+from server.helpers.project_files import PROJECT_FILE_SUFFIXES
 from interfaces.progress import PipelineEvent, PipelineEventType
 
 
@@ -148,9 +149,6 @@ def test_clip_endpoints_expose_rendered_clips(
     premiere_path = shorts_dir / "clip-1.premiere.xml"
     resolve_path = shorts_dir / "clip-1.resolve.fcpxml"
     final_cut_path = shorts_dir / "clip-1.finalcut.fcpxml"
-    premiere_path.write_text("<xmeml/>", encoding="utf-8")
-    resolve_path.write_text("<fcpxml/>", encoding="utf-8")
-    final_cut_path.write_text("<fcpxml version=\"1.9\"/>", encoding="utf-8")
     description = "Full video: https://youtube.com/watch?v=abc\n#space"
     created_at = datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -255,7 +253,11 @@ def test_clip_endpoints_expose_rendered_clips(
 
     project_file_response = client.get(f"/api/jobs/{job_id}/clips/clip-1/project-files/premiere")
     assert project_file_response.status_code == 200
-    assert project_file_response.content == premiere_path.read_bytes()
+    body_text = project_file_response.text
+    assert "<xmeml" in body_text
+    assert video_path.name in body_text
+    assert "Space wonders" in body_text
+    assert premiere_path.exists()
 
     state = server.app._get_job(job_id)
     if state and state.thread is not None:
@@ -321,6 +323,13 @@ def test_adjust_job_clip_rebuilds_assets(monkeypatch, tmp_path: Path) -> None:
     state = server.app.JobState(loop=loop)
     state.project_dir = project_dir
     clip_id = stem
+    project_files = {
+        key: server.app.ProjectFileArtifact(
+            path=vertical_path.with_suffix(suffix),
+            filename=vertical_path.with_suffix(suffix).name,
+        )
+        for key, suffix in PROJECT_FILE_SUFFIXES.items()
+    }
     clip = server.app.ClipArtifact(
         clip_id=clip_id,
         title="Highlight",
@@ -341,6 +350,7 @@ def test_adjust_job_clip_rebuilds_assets(monkeypatch, tmp_path: Path) -> None:
         end_seconds=15.0,
         original_start_seconds=5.0,
         original_end_seconds=15.0,
+        project_files=project_files,
     )
     state.clips[clip_id] = clip
 

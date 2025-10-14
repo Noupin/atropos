@@ -222,6 +222,36 @@ PROJECT_FILE_SUFFIXES: Dict[str, str] = {
 }
 
 
+def _build_target_path(video_path: Path, suffix: str) -> Path:
+    """Return the on-disk location for a project file next to ``video_path``."""
+
+    # ``with_name`` avoids retaining the original suffix when the rendered short is
+    # multi-suffixed (e.g. ``.clip.mp4``) while keeping the file in the same
+    # directory as the rendered video.
+    return video_path.with_name(f"{video_path.stem}{suffix}")
+
+
+def ensure_project_file(
+    target: str,
+    *,
+    title: str,
+    video_path: Path,
+    duration_seconds: float,
+) -> ProjectFileDetails:
+    """Render (or re-render) a project file for ``target`` and return its details."""
+
+    spec = PROJECT_FILE_SPECS.get(target)
+    if spec is None:
+        raise KeyError(f"Unsupported project file target: {target}")
+
+    context = ProjectContext(title=title, video_path=video_path, duration_seconds=duration_seconds)
+    target_path = _build_target_path(video_path, spec.suffix)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    xml_content = spec.generator(context)
+    target_path.write_text(xml_content, encoding="utf-8")
+    return ProjectFileDetails(path=target_path, filename=target_path.name)
+
+
 def generate_project_files(
     *,
     title: str,
@@ -231,16 +261,23 @@ def generate_project_files(
 ) -> Dict[str, ProjectFileDetails]:
     """Generate editor project files for ``video_path`` and return their locations."""
 
-    context = ProjectContext(title=title, video_path=video_path, duration_seconds=duration_seconds)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
     results: Dict[str, ProjectFileDetails] = {}
-    for key, spec in PROJECT_FILE_SPECS.items():
-        filename = f"{video_path.stem}{spec.suffix}"
-        target_path = output_dir / filename
-        xml_content = spec.generator(context)
-        target_path.write_text(xml_content, encoding="utf-8")
-        results[key] = ProjectFileDetails(path=target_path, filename=filename)
+    for key in PROJECT_FILE_SPECS:
+        details = ensure_project_file(
+            key,
+            title=title,
+            video_path=video_path,
+            duration_seconds=duration_seconds,
+        )
+        # ``ensure_project_file`` already writes next to ``video_path``; relocate the
+        # file if a distinct ``output_dir`` is requested for backwards compatibility.
+        if details.path.parent != output_dir:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            relocated = output_dir / details.filename
+            if details.path != relocated:
+                relocated.write_text(details.path.read_text(encoding="utf-8"), encoding="utf-8")
+                details = ProjectFileDetails(path=relocated, filename=details.filename)
+        results[key] = details
 
     return results
 
@@ -249,5 +286,6 @@ __all__ = [
     "PROJECT_FILE_SPECS",
     "PROJECT_FILE_SUFFIXES",
     "ProjectFileDetails",
+    "ensure_project_file",
     "generate_project_files",
 ]
