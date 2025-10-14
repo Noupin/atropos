@@ -229,6 +229,16 @@ const ClipEdit: FC = () => {
     setExportError(message)
   }, [])
 
+  const exportButtonProps = {
+    clipId: clipState?.id ?? null,
+    clipTitle: clipState?.title ?? null,
+    accountId: state?.accountId ?? clipState?.accountId ?? null,
+    disabled: isLoadingClip || !clipState,
+    onStart: handleExportStart,
+    onSuccess: handleExportSuccess,
+    onError: handleExportError
+  }
+
   useEffect(() => {
     let isActive = true
 
@@ -1428,12 +1438,20 @@ const ClipEdit: FC = () => {
           </div>
         </div>
         <div className="flex w-full max-w-xl flex-col gap-6">
-          <div className="space-y-2">
-            <h1 className="text-2xl font-semibold text-[var(--fg)]">Refine clip boundaries</h1>
-            <p className="text-sm text-[var(--muted)]">
-              Drag the handles or enter precise timestamps to trim the clip before regenerating
-              subtitles and renders.
-            </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-2">
+              <h1 className="text-2xl font-semibold text-[var(--fg)]">Refine clip boundaries</h1>
+              <p className="text-sm text-[var(--muted)]">
+                Drag the handles or enter precise timestamps to trim the clip before regenerating
+                subtitles and renders.
+              </p>
+            </div>
+            <ProjectExportButton
+              {...exportButtonProps}
+              variant="primary"
+              size="small"
+              className="whitespace-nowrap"
+            />
           </div>
           <div className="space-y-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
             <div className="space-y-2">
@@ -1713,15 +1731,7 @@ const ClipEdit: FC = () => {
             >
               {isSaving ? 'Saving…' : 'Save adjustments'}
             </button>
-            <ProjectExportButton
-              clipId={clipState?.id ?? null}
-              clipTitle={clipState?.title ?? null}
-              accountId={state?.accountId ?? clipState?.accountId ?? null}
-              disabled={isLoadingClip || !clipState}
-              onStart={handleExportStart}
-              onSuccess={handleExportSuccess}
-              onError={handleExportError}
-            />
+            <ProjectExportButton {...exportButtonProps} />
             <button
               type="button"
               onClick={handleReset}
