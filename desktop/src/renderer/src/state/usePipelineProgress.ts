@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 
-import { buildJobClipVideoUrl } from '../config/backend'
+import { buildJobClipProjectFileUrl, buildJobClipVideoUrl } from '../config/backend'
 import {
   createInitialPipelineSteps,
   PIPELINE_STEP_DEFINITIONS,
@@ -15,11 +15,14 @@ import {
 } from '../services/pipelineApi'
 import type {
   AccountSummary,
+  ClipProjectTarget,
   HomePipelineState,
   PipelineStep,
   PipelineStepStatus,
   PipelineSubstep
 } from '../types'
+
+const PROJECT_FILE_TARGETS: ClipProjectTarget[] = ['premiere', 'resolve', 'final_cut']
 
 type UsePipelineProgressOptions = {
   state: HomePipelineState
@@ -457,6 +460,38 @@ export const usePipelineProgress = ({
           created_at: createdAt,
           source_url: sourceUrl,
           source_title: sourceTitle
+        }
+
+        const rawProjectFiles = payload.project_files
+        if (rawProjectFiles && typeof rawProjectFiles === 'object') {
+          const projectFiles: Record<string, { url: string; filename: string }> = {}
+          for (const target of PROJECT_FILE_TARGETS) {
+            const entry = (rawProjectFiles as Record<string, unknown>)[target]
+            if (!entry) {
+              continue
+            }
+            let filename: string | null = null
+            if (typeof entry === 'string') {
+              filename = entry.split('/').pop() ?? null
+            } else if (typeof entry === 'object') {
+              const record = entry as Record<string, unknown>
+              if (typeof record.filename === 'string') {
+                filename = record.filename
+              } else if (typeof record.path === 'string') {
+                filename = record.path.split('/').pop() ?? null
+              }
+            }
+            if (!filename) {
+              continue
+            }
+            projectFiles[target] = {
+              url: buildJobClipProjectFileUrl(jobId, clipId, target),
+              filename
+            }
+          }
+          if (Object.keys(projectFiles).length > 0) {
+            manifestPayload.project_files = projectFiles
+          }
         }
 
         const incomingClip = normaliseJobClip(manifestPayload)

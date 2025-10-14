@@ -2,11 +2,12 @@ import { contextBridge, ipcRenderer, shell } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { ElectronAPIWithShell } from '../types/electron'
+import type { RendererBridgeAPI, SaveDialogOptions } from '../types/bridge'
 
 // Custom APIs for renderer
 type Clip = import('../renderer/src/types').Clip
 
-const api = {
+const api: RendererBridgeAPI = {
   listAccountClips: (accountId: string | null): Promise<Clip[]> =>
     ipcRenderer.invoke('clips:list', accountId),
   openAccountClipsFolder: (accountId: string): Promise<boolean> =>
@@ -28,7 +29,11 @@ const api = {
   },
   updateNavigationState: (state: { canGoBack: boolean; canGoForward: boolean }): void => {
     ipcRenderer.send('navigation:state', state)
-  }
+  },
+  chooseExportPath: (options: SaveDialogOptions): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:save', options),
+  writeFile: (path: string, data: Uint8Array): Promise<boolean> =>
+    ipcRenderer.invoke('fs:write-file', path, Buffer.from(data))
 }
 
 const extendedElectronAPI: ElectronAPIWithShell = {

@@ -85,6 +85,7 @@ from steps.candidates import ClipCandidate
 from helpers.cleanup import cleanup_project_dir
 from common.caption_utils import prepare_hashtags
 from helpers.hashtags import generate_hashtag_strings
+from helpers.project_files import generate_project_files
 
 
 GENERIC_HASHTAGS = ["foryou", "fyp", "viral", "trending"]
@@ -1132,6 +1133,28 @@ def process_video(
                 extra={"completed": produced_count, "total": total_candidates},
             )
 
+        clip_title = (candidate.quote or "").strip() or f"{source_title} — Clip {idx}"
+        duration_seconds = max(0.0, candidate.end - candidate.start)
+        project_file_records = generate_project_files(
+            title=clip_title,
+            video_path=vertical_output,
+            duration_seconds=duration_seconds,
+            output_dir=shorts_dir,
+        )
+        project_file_payload: dict[str, dict[str, str]] = {}
+        for key, details in project_file_records.items():
+            try:
+                relative_path = details.path.relative_to(project_dir)
+                project_file_payload[key] = {
+                    "path": relative_path.as_posix(),
+                    "filename": details.filename,
+                }
+            except ValueError:
+                project_file_payload[key] = {
+                    "path": details.path.name,
+                    "filename": details.filename,
+                }
+
         if observer:
             try:
                 description_text = description_path.read_text(encoding="utf-8").strip()
@@ -1143,8 +1166,6 @@ def process_video(
             except ValueError:
                 short_path_str = vertical_output.name
 
-            clip_title = (candidate.quote or "").strip() or f"{source_title} — Clip {idx}"
-            duration_seconds = max(0.0, candidate.end - candidate.start)
             observer.handle_event(
                 PipelineEvent(
                     type=PipelineEventType.CLIP_READY,
@@ -1174,6 +1195,7 @@ def process_video(
                             if source_duration_seconds is not None
                             else None
                         ),
+                        "project_files": project_file_payload,
                     },
                 )
             )

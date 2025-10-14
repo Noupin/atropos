@@ -26,7 +26,17 @@ export interface Clip {
   originalStartSeconds: number
   originalEndSeconds: number
   hasAdjustments: boolean
+  projectFiles?: ClipProjectFiles
 }
+
+export type ClipProjectTarget = 'premiere' | 'resolve' | 'final_cut'
+
+export type ClipProjectFile = {
+  url: string
+  filename: string
+}
+
+export type ClipProjectFiles = Partial<Record<ClipProjectTarget, ClipProjectFile>>
 
 export type SupportedPlatform = 'tiktok' | 'youtube' | 'instagram'
 

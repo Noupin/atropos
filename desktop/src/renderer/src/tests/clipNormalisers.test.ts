@@ -18,13 +18,17 @@ describe('clip normalisers', () => {
     end_seconds: 25,
     original_start_seconds: 5,
     original_end_seconds: 25,
-    has_adjustments: false
+    has_adjustments: false,
+    project_files: {
+      premiere: { url: 'http://localhost/premiere.xml', filename: 'clip.premiere.xml' }
+    }
   }
 
   it('falls back to the playback URL when preview_url is missing for job clips', () => {
     const clip = normaliseJobClip({ ...baseJobPayload })
     expect(clip).not.toBeNull()
     expect(clip?.previewUrl).toBe(baseJobPayload.playback_url)
+    expect(clip?.projectFiles?.premiere?.filename).toBe('clip.premiere.xml')
   })
 
   const baseLibraryPayload = {
@@ -42,12 +46,16 @@ describe('clip normalisers', () => {
     end_seconds: 45,
     original_start_seconds: 0,
     original_end_seconds: 45,
-    has_adjustments: false
+    has_adjustments: false,
+    project_files: {
+      resolve: { url: 'http://localhost/resolve.fcpxml', filename: 'clip.resolve.fcpxml' }
+    }
   }
 
   it('falls back to the playback URL when preview_url is missing for library clips', () => {
     const clip = normaliseClip({ ...baseLibraryPayload })
     expect(clip).not.toBeNull()
     expect(clip?.previewUrl).toBe(baseLibraryPayload.playback_url)
+    expect(clip?.projectFiles?.resolve?.filename).toBe('clip.resolve.fcpxml')
   })
 })

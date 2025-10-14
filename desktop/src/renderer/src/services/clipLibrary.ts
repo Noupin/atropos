@@ -4,7 +4,7 @@ import {
   buildAccountClipsUrl,
   buildClipsPageUrl
 } from '../config/backend'
-import type { Clip } from '../types'
+import type { Clip, ClipProjectFiles, ClipProjectTarget } from '../types'
 import type { ClipAdjustmentPayload } from './pipelineApi'
 import { extractErrorMessage, requestWithFallback } from './http'
 
@@ -36,10 +36,35 @@ type RawClipPayload = {
   original_start_seconds?: unknown
   original_end_seconds?: unknown
   has_adjustments?: unknown
+  project_files?: unknown
 }
 
 const isClipArray = (value: unknown): value is Clip[] => {
   return Array.isArray(value) && value.every((item) => typeof item === 'object' && item !== null && 'id' in item)
+}
+
+const PROJECT_FILE_TARGETS: ClipProjectTarget[] = ['premiere', 'resolve', 'final_cut']
+
+const parseProjectFiles = (value: unknown): ClipProjectFiles | undefined => {
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+
+  const result: ClipProjectFiles = {}
+  for (const key of PROJECT_FILE_TARGETS) {
+    const entry = (value as Record<string, unknown>)[key]
+    if (!entry || typeof entry !== 'object') {
+      continue
+    }
+    const record = entry as Record<string, unknown>
+    const url = typeof record.url === 'string' ? record.url : null
+    const filename = typeof record.filename === 'string' ? record.filename : null
+    if (url && filename) {
+      result[key] = { url, filename }
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined
 }
 
 export const normaliseClip = (payload: RawClipPayload): Clip | null => {
@@ -70,7 +95,8 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
     end_seconds: endSecondsRaw,
     original_start_seconds: originalStartSecondsRaw,
     original_end_seconds: originalEndSecondsRaw,
-    has_adjustments: hasAdjustmentsRaw
+    has_adjustments: hasAdjustmentsRaw,
+    project_files: projectFilesRaw
   } = payload
 
   if (typeof id !== 'string' || id.length === 0) {
@@ -123,6 +149,7 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
       ? Math.max(originalStartSeconds, originalEndSecondsRaw)
       : endSeconds
   const hasAdjustments = hasAdjustmentsRaw === true
+  const projectFiles = parseProjectFiles(projectFilesRaw)
 
   const sourceDurationSeconds =
     typeof sourceDurationSecondsRaw === 'number' && Number.isFinite(sourceDurationSecondsRaw)
@@ -161,7 +188,8 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
     endSeconds,
     originalStartSeconds,
     originalEndSeconds,
-    hasAdjustments
+    hasAdjustments,
+    projectFiles
   }
 
   return clip

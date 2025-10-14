@@ -1,8 +1,32 @@
 import { advanceApiBaseUrl, buildJobUrl, buildWebSocketUrl, getApiBaseUrl } from '../config/backend'
 import { parseClipTimestamp } from '../lib/clipMetadata'
-import type { Clip, PipelineEventType } from '../types'
+import type { Clip, ClipProjectFiles, ClipProjectTarget, PipelineEventType } from '../types'
 
 type UnknownRecord = Record<string, unknown>
+
+const PROJECT_FILE_KEYS: ClipProjectTarget[] = ['premiere', 'resolve', 'final_cut']
+
+const parseProjectFiles = (value: unknown): ClipProjectFiles | undefined => {
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+
+  const result: ClipProjectFiles = {}
+  for (const key of PROJECT_FILE_KEYS) {
+    const entry = (value as Record<string, unknown>)[key]
+    if (!entry || typeof entry !== 'object') {
+      continue
+    }
+    const record = entry as Record<string, unknown>
+    const url = typeof record.url === 'string' ? record.url : null
+    const filename = typeof record.filename === 'string' ? record.filename : null
+    if (url && filename) {
+      result[key] = { url, filename }
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined
+}
 
 export type PipelineJobRequest = {
   url: string
@@ -152,6 +176,7 @@ export const normaliseJobClip = (payload: UnknownRecord): Clip | null => {
       ? Math.max(originalStartSeconds, payload.original_end_seconds)
       : endSeconds
   const hasAdjustments = payload.has_adjustments === true
+  const projectFiles = parseProjectFiles(payload.project_files)
 
   const clip: Clip = {
     id,
@@ -180,7 +205,8 @@ export const normaliseJobClip = (payload: UnknownRecord): Clip | null => {
     endSeconds,
     originalStartSeconds,
     originalEndSeconds,
-    hasAdjustments
+    hasAdjustments,
+    projectFiles
   }
 
   return clip

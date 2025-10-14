@@ -14,11 +14,21 @@ import { BACKEND_MODE } from '../config/backend'
 import { createInitialPipelineSteps, PIPELINE_STEP_DEFINITIONS } from '../data/pipeline'
 import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
-import type { AccountSummary, HomePipelineState } from '../types'
+import { exportProjectFile } from '../services/exporter'
+import type { AccountSummary, ClipProjectTarget, HomePipelineState } from '../types'
 import { useAccess } from '../state/access'
 import { formatOfflineCountdown } from '../state/accessFormatting'
 
 const SUPPORTED_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv'] as const
+
+const PROJECT_EXPORT_OPTIONS: Array<{ target: ClipProjectTarget; label: string }> = [
+  { target: 'premiere', label: 'Premiere Pro' },
+  { target: 'resolve', label: 'DaVinci Resolve' },
+  { target: 'final_cut', label: 'Final Cut Pro' }
+]
+
+const findExportLabel = (target: ClipProjectTarget): string =>
+  PROJECT_EXPORT_OPTIONS.find((option) => option.target === target)?.label ?? target
 
 const isValidVideoUrl = (value: string): boolean => {
   try {
@@ -52,6 +62,10 @@ const Home: FC<HomeProps> = ({
   const [folderMessage, setFolderMessage] = useState<string | null>(null)
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
   const [isOpeningFolder, setIsOpeningFolder] = useState(false)
+  const [exportStatusMessage, setExportStatusMessage] = useState<string | null>(null)
+  const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null)
+  const [exportingClipId, setExportingClipId] = useState<string | null>(null)
+  const [exportingTarget, setExportingTarget] = useState<ClipProjectTarget | null>(null)
   const canAttemptToOpenFolder = useMemo(() => canOpenAccountClipsFolder(), [])
   const { state: accessState, markTrialRunPending, finalizeTrialRun } = useAccess()
 
@@ -465,6 +479,42 @@ const Home: FC<HomeProps> = ({
     }
   }, [canAttemptToOpenFolder, selectedAccountId])
 
+  const handleExportClip = useCallback(
+    async (clipId: string, target: ClipProjectTarget) => {
+      const clip = state.clips.find((item) => item.id === clipId)
+      const projectFile = clip?.projectFiles?.[target]
+      if (!clip || !projectFile) {
+        setExportStatusMessage(null)
+        setExportErrorMessage('This project file is not available yet. Run the pipeline again to regenerate it.')
+        return
+      }
+
+      const label = findExportLabel(target)
+      setExportErrorMessage(null)
+      setExportStatusMessage(`Preparing the ${label} project file…`)
+      setExportingClipId(clipId)
+      setExportingTarget(target)
+      try {
+        const result = await exportProjectFile({ file: projectFile })
+        if (result === 'cancelled') {
+          setExportStatusMessage('Export cancelled.')
+        } else if (result === 'saved') {
+          setExportStatusMessage(`Saved the ${label} project file to your chosen folder.`)
+        } else {
+          setExportStatusMessage(`Downloaded the ${label} project file.`)
+        }
+      } catch (error) {
+        console.error('Unable to export project file', error)
+        setExportStatusMessage(null)
+        setExportErrorMessage('Unable to export that project file right now. Please try again in a moment.')
+      } finally {
+        setExportingClipId(null)
+        setExportingTarget(null)
+      }
+    },
+    [state.clips]
+  )
+
   const handleReviewClip = useCallback(
     (clipId: string) => {
       const clip = clips.find((item) => item.id === clipId)
@@ -765,6 +815,16 @@ const Home: FC<HomeProps> = ({
                 Fine-tune the start and end points to give each highlight a polished finish.
               </p>
             </div>
+            {exportStatusMessage ? (
+              <p className="mt-3 text-sm text-[color:color-mix(in_srgb,var(--success-strong)_78%,var(--accent-contrast))]">
+                {exportStatusMessage}
+              </p>
+            ) : null}
+            {exportErrorMessage ? (
+              <p className="mt-3 text-sm text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
+                {exportErrorMessage}
+              </p>
+            ) : null}
             {clips.length > 0 ? (
               <ul className="mt-4 flex flex-col gap-4">
                 {clips.map((clip) => {
@@ -798,6 +858,25 @@ const Home: FC<HomeProps> = ({
                             {clip.accountId}
                           </span>
                         ) : null}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+                        <span className="font-medium text-[var(--fg)]">Export for:</span>
+                        {PROJECT_EXPORT_OPTIONS.map(({ target, label }) => {
+                          const projectFile = clip.projectFiles?.[target]
+                          const isBusy = exportingClipId === clip.id && exportingTarget === target
+                          const isDisabled = !projectFile || (exportingClipId !== null && !isBusy)
+                          return (
+                            <button
+                              key={target}
+                              type="button"
+                              onClick={() => handleExportClip(clip.id, target)}
+                              disabled={isDisabled}
+                              className="inline-flex items-center justify-center rounded-lg border border-white/20 px-3 py-1.5 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isBusy ? 'Saving…' : label}
+                            </button>
+                          )
+                        })}
                       </div>
                     </li>
                   )

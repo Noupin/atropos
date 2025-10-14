@@ -145,6 +145,12 @@ def test_clip_endpoints_expose_rendered_clips(
     video_path = shorts_dir / "clip-1.mp4"
     video_bytes = b"fake-video"
     video_path.write_bytes(video_bytes)
+    premiere_path = shorts_dir / "clip-1.premiere.xml"
+    resolve_path = shorts_dir / "clip-1.resolve.fcpxml"
+    final_cut_path = shorts_dir / "clip-1.finalcut.fcpxml"
+    premiere_path.write_text("<xmeml/>", encoding="utf-8")
+    resolve_path.write_text("<fcpxml/>", encoding="utf-8")
+    final_cut_path.write_text("<fcpxml version=\"1.9\"/>", encoding="utf-8")
     description = "Full video: https://youtube.com/watch?v=abc\n#space"
     created_at = datetime(2024, 6, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -185,6 +191,20 @@ def test_clip_endpoints_expose_rendered_clips(
                     "rating": 4.5,
                     "quote": "Mind-blowing fact",
                     "reason": "High energy moment",
+                    "project_files": {
+                        "premiere": {
+                            "path": premiere_path.relative_to(project_dir).as_posix(),
+                            "filename": premiere_path.name,
+                        },
+                        "resolve": {
+                            "path": resolve_path.relative_to(project_dir).as_posix(),
+                            "filename": resolve_path.name,
+                        },
+                        "final_cut": {
+                            "path": final_cut_path.relative_to(project_dir).as_posix(),
+                            "filename": final_cut_path.name,
+                        },
+                    },
                 },
             )
         )
@@ -218,6 +238,8 @@ def test_clip_endpoints_expose_rendered_clips(
     assert len(payload) == 1
     clip_manifest = payload[0]
     assert clip_manifest["id"] == "clip-1"
+    assert set(clip_manifest["project_files"].keys()) == {"premiere", "resolve", "final_cut"}
+    assert clip_manifest["project_files"]["premiere"]["filename"] == premiere_path.name
     assert clip_manifest["description"] == description
     assert clip_manifest["account"] == "account-1"
     assert clip_manifest["playback_url"].endswith("/clips/clip-1/video")
@@ -230,6 +252,10 @@ def test_clip_endpoints_expose_rendered_clips(
     video_response = client.get(f"/api/jobs/{job_id}/clips/clip-1/video")
     assert video_response.status_code == 200
     assert video_response.content == video_bytes
+
+    project_file_response = client.get(f"/api/jobs/{job_id}/clips/clip-1/project-files/premiere")
+    assert project_file_response.status_code == 200
+    assert project_file_response.content == premiere_path.read_bytes()
 
     state = server.app._get_job(job_id)
     if state and state.thread is not None:
@@ -263,6 +289,12 @@ def test_adjust_job_clip_rebuilds_assets(monkeypatch, tmp_path: Path) -> None:
     )
     vertical_path = shorts_dir / f"{stem}.mp4"
     vertical_path.write_bytes(b"vertical")
+    premiere_path = shorts_dir / f"{stem}.premiere.xml"
+    resolve_path = shorts_dir / f"{stem}.resolve.fcpxml"
+    final_cut_path = shorts_dir / f"{stem}.finalcut.fcpxml"
+    premiere_path.write_text("<xmeml/>", encoding="utf-8")
+    resolve_path.write_text("<fcpxml/>", encoding="utf-8")
+    final_cut_path.write_text("<fcpxml version=\"1.9\"/>", encoding="utf-8")
     description_path = shorts_dir / f"{stem}.txt"
     description_path.write_text(
         "Full video: https://youtube.com/watch?v=abc&t=5\nCredit: Creator\nMade by Atropos",
@@ -419,6 +451,7 @@ def test_adjust_library_clip_updates_files(monkeypatch, tmp_path: Path) -> None:
     )
     assert response.status_code == 200
     payload = response.json()
+    assert set(payload["project_files"].keys()) == {"premiere", "resolve", "final_cut"}
     assert payload["duration_seconds"] == pytest.approx(14.0)
     assert "t=6" in payload["description"].lower()
     assert payload["start_seconds"] == pytest.approx(6.0)
@@ -432,6 +465,12 @@ def test_adjust_library_clip_updates_files(monkeypatch, tmp_path: Path) -> None:
     preview_response = client.get(preview_path, params={"start": 6.0, "end": 20.0})
     assert preview_response.status_code == 200
     assert preview_response.content == b"preview-bytes"
+
+    project_file_response = client.get(
+        f"/api/accounts/account-1/clips/{clip_id}/project-files/premiere"
+    )
+    assert project_file_response.status_code == 200
+    assert project_file_response.content == premiere_path.read_bytes()
 
     refreshed_description = description_path.read_text(encoding="utf-8")
     assert "t=6" in refreshed_description.lower()

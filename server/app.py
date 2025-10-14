@@ -37,6 +37,7 @@ from library import (
     DEFAULT_ACCOUNT_PLACEHOLDER,
     list_account_clips,
     list_account_clips_sync,
+    resolve_clip_project_file_path,
     resolve_clip_video_path,
     write_adjustment_metadata,
 )
@@ -47,6 +48,7 @@ from steps.render_layouts import get_layout
 from helpers.description import maybe_append_website_link
 from common.caption_utils import prepare_hashtags
 from helpers.hashtags import generate_hashtag_strings
+from helpers.project_files import PROJECT_FILE_SPECS
 from helpers.formatting import youtube_timestamp_url
 from auth.accounts import (
     AccountCreateRequest,
@@ -103,6 +105,7 @@ for dataclass_name in _CONFIG_DATACLASS_NAMES:
 
 
 _CLIP_ID_PATTERN = re.compile(r"clip_(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)", re.IGNORECASE)
+_PROJECT_FILE_KEYS = set(PROJECT_FILE_SPECS.keys())
 
 
 def _parse_clip_bounds_from_id(clip_id: str) -> tuple[float, float] | None:
@@ -381,6 +384,12 @@ def _ensure_str(value: Any) -> str | None:
 
 
 @dataclass
+class ProjectFileArtifact:
+    path: Path
+    filename: str
+
+
+@dataclass
 class ClipArtifact:
     """Metadata describing a rendered clip for playback and export."""
 
@@ -404,6 +413,12 @@ class ClipArtifact:
     original_start_seconds: float = 0.0
     original_end_seconds: float = 0.0
     source_duration_seconds: float | None = None
+    project_files: Dict[str, ProjectFileArtifact] = field(default_factory=dict)
+
+
+class ProjectFileResponse(BaseModel):
+    url: str
+    filename: str
 
 
 class ClipManifest(BaseModel):
@@ -431,6 +446,7 @@ class ClipManifest(BaseModel):
     original_start_seconds: float = Field(..., ge=0)
     original_end_seconds: float = Field(..., ge=0)
     has_adjustments: bool = False
+    project_files: Dict[str, ProjectFileResponse] = Field(default_factory=dict)
 
 
 class LibraryClipManifest(ClipManifest):
@@ -448,6 +464,19 @@ def _clip_to_payload(clip: ClipArtifact, request: Request, job_id: str) -> Dict[
         math.isclose(clip.start_seconds, clip.original_start_seconds, abs_tol=1e-3)
         and math.isclose(clip.end_seconds, clip.original_end_seconds, abs_tol=1e-3)
     )
+
+    project_files: Dict[str, Dict[str, str]] = {}
+    for key, record in clip.project_files.items():
+        try:
+            url = request.url_for(
+                "get_job_clip_project_file",
+                job_id=job_id,
+                clip_id=clip.clip_id,
+                target=key,
+            )
+        except KeyError:
+            continue
+        project_files[key] = {"url": str(url), "filename": record.filename}
 
     return {
         "id": clip.clip_id,
@@ -476,6 +505,7 @@ def _clip_to_payload(clip: ClipArtifact, request: Request, job_id: str) -> Dict[
         "original_start_seconds": clip.original_start_seconds,
         "original_end_seconds": clip.original_end_seconds,
         "has_adjustments": has_adjustments,
+        "project_files": project_files,
     }
 
 
@@ -547,6 +577,35 @@ class JobState:
         except (OSError, ValueError):
             return
 
+        project_files: Dict[str, ProjectFileArtifact] = {}
+        raw_project_files = data.get("project_files")
+        if isinstance(raw_project_files, dict):
+            for key, entry in raw_project_files.items():
+                if not isinstance(key, str) or key not in _PROJECT_FILE_KEYS:
+                    continue
+                path_value: str | None = None
+                filename_value: str | None = None
+                if isinstance(entry, dict):
+                    raw_path = entry.get("path")
+                    raw_name = entry.get("filename")
+                    if isinstance(raw_path, str):
+                        path_value = raw_path
+                    if isinstance(raw_name, str):
+                        filename_value = raw_name
+                elif isinstance(entry, str):
+                    path_value = entry
+                if not path_value:
+                    continue
+                try:
+                    candidate_path = (base / path_value).resolve()
+                    candidate_path.relative_to(base)
+                except (OSError, ValueError):
+                    continue
+                if not candidate_path.exists() or not candidate_path.is_file():
+                    continue
+                filename = filename_value or candidate_path.name
+                project_files[key] = ProjectFileArtifact(path=candidate_path, filename=filename)
+
         created_at = _parse_datetime(data.get("created_at"))
         duration_value = _safe_float(data.get("duration_seconds"))
         if duration_value is None:
@@ -609,6 +668,7 @@ class JobState:
             original_start_seconds=max(0.0, original_start_value),
             original_end_seconds=max(0.0, original_end_value),
             source_duration_seconds=source_duration,
+            project_files=project_files,
         )
 
         self.project_dir = base
@@ -1189,6 +1249,34 @@ async def get_job_clip_preview(
     )
 
 
+@app.get("/api/jobs/{job_id}/clips/{clip_id}/project-files/{target}")
+async def get_job_clip_project_file(job_id: str, clip_id: str, target: str) -> FileResponse:
+    """Return a generated project file for the specified editor target."""
+
+    if target not in _PROJECT_FILE_KEYS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project file not found")
+
+    state = _get_job(job_id)
+    if state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    with state.lock:
+        clip = state.clips.get(clip_id)
+        record = clip.project_files.get(target) if clip else None
+
+    if clip is None or record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project file not found")
+
+    if not record.path.exists() or not record.path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project file not found")
+
+    return FileResponse(
+        path=record.path,
+        media_type="application/xml",
+        filename=record.filename,
+    )
+
+
 def _generate_clip_thumbnail(
     *,
     project_dir: Path,
@@ -1318,6 +1406,7 @@ async def adjust_job_clip(
         original_start_seconds=clip.original_start_seconds,
         original_end_seconds=clip.original_end_seconds,
         source_duration_seconds=clip.source_duration_seconds,
+        project_files=clip.project_files,
     )
 
     with state.lock:
@@ -1431,6 +1520,15 @@ async def get_account_clip_video(account_id: str, clip_id: str) -> FileResponse:
     account_value = None if account_id == DEFAULT_ACCOUNT_PLACEHOLDER else account_id
     clip_path = resolve_clip_video_path(account_value, clip_id)
     return FileResponse(path=clip_path, media_type="video/mp4", filename=clip_path.name)
+
+
+@app.get("/api/accounts/{account_id}/clips/{clip_id}/project-files/{target}")
+async def get_account_clip_project_file(account_id: str, clip_id: str, target: str) -> FileResponse:
+    """Return a stored project file for the requested clip."""
+
+    account_value = None if account_id == DEFAULT_ACCOUNT_PLACEHOLDER else account_id
+    project_path = resolve_clip_project_file_path(account_value, clip_id, target)
+    return FileResponse(path=project_path, media_type="application/xml", filename=project_path.name)
 
 
 @app.get("/api/accounts/{account_id}/clips/{clip_id}/preview")

@@ -17,6 +17,7 @@ from fastapi import HTTPException, status
 
 from schedule_upload import get_out_root
 from helpers.media import probe_media_duration
+from helpers.project_files import PROJECT_FILE_SUFFIXES
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_ACCOUNT_PLACEHOLDER = "__default__"
@@ -69,6 +70,12 @@ class AdjustmentMetadata:
 
 
 @dataclass
+class ProjectFileMetadata:
+    path: Path
+    filename: str
+
+
+@dataclass
 class LibraryClip:
     clip_id: str
     title: str
@@ -95,6 +102,7 @@ class LibraryClip:
     original_start_seconds: float
     original_end_seconds: float
     has_adjustments: bool
+    project_files: Dict[str, ProjectFileMetadata]
 
     def to_payload(self, request) -> Dict[str, object]:  # type: ignore[override]
         from fastapi import Request  # local import to avoid circular for typing
@@ -117,6 +125,21 @@ class LibraryClip:
             account_id=self.account_id or DEFAULT_ACCOUNT_PLACEHOLDER,
             clip_id=self.clip_id,
         )
+
+        project_files: Dict[str, Dict[str, str]] = {}
+        for key, record in self.project_files.items():
+            if key not in PROJECT_FILE_SUFFIXES:
+                continue
+            try:
+                file_url = request.url_for(
+                    "get_account_clip_project_file",
+                    account_id=self.account_id or DEFAULT_ACCOUNT_PLACEHOLDER,
+                    clip_id=self.clip_id,
+                    target=key,
+                )
+            except KeyError:
+                continue
+            project_files[key] = {"url": str(file_url), "filename": record.filename}
 
         return {
             "id": self.clip_id,
@@ -146,6 +169,7 @@ class LibraryClip:
             "original_start_seconds": self.original_start_seconds,
             "original_end_seconds": self.original_end_seconds,
             "has_adjustments": self.has_adjustments,
+            "project_files": project_files,
         }
 
 
@@ -566,6 +590,14 @@ def _build_clip(
     project_relative = project_dir.relative_to(base)
     video_id = _encode_clip_id(project_relative)
     created_at = datetime.fromtimestamp(stats.st_mtime, tz=timezone.utc)
+    project_files: Dict[str, ProjectFileMetadata] = {}
+    for key, suffix in PROJECT_FILE_SUFFIXES.items():
+        try:
+            candidate = clip_path.with_suffix(suffix)
+        except ValueError:
+            continue
+        if candidate.exists() and candidate.is_file():
+            project_files[key] = ProjectFileMetadata(path=candidate, filename=candidate.name)
     return LibraryClip(
         clip_id=clip_id,
         title=title,
@@ -594,6 +626,7 @@ def _build_clip(
         original_start_seconds=original_start_value,
         original_end_seconds=original_end_value,
         has_adjustments=has_adjustments,
+        project_files=project_files,
     )
 
 
@@ -743,6 +776,19 @@ def resolve_clip_video_path(account_id: Optional[str], clip_id: str) -> Path:
     return clip_path
 
 
+def resolve_clip_project_file_path(account_id: Optional[str], clip_id: str, target: str) -> Path:
+    if target not in PROJECT_FILE_SUFFIXES:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project file not found")
+    clip_path = resolve_clip_video_path(account_id, clip_id)
+    try:
+        candidate = clip_path.with_suffix(PROJECT_FILE_SUFFIXES[target])
+    except ValueError as exc:  # pragma: no cover - defensive guard
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project file not found") from exc
+    if not candidate.exists() or not candidate.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project file not found")
+    return candidate
+
+
 __all__ = [
     "LibraryClip",
     "DEFAULT_ACCOUNT_PLACEHOLDER",
@@ -752,6 +798,7 @@ __all__ = [
     "paginate_account_clips",
     "paginate_account_clips_sync",
     "resolve_clip_video_path",
+    "resolve_clip_project_file_path",
     "load_adjustment_metadata",
     "write_adjustment_metadata",
 ]

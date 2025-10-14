@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, protocol } from 'electron'
-import { existsSync } from 'fs'
+import type { FileFilter } from 'electron'
+import { existsSync, promises as fsPromises } from 'fs'
 import { join, resolve, dirname } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { pathToFileURL } from 'url'
@@ -370,6 +371,29 @@ app.whenReady().then(() => {
       console.error('Failed to open clips folder', error)
       return false
     }
+  })
+  ipcMain.handle('dialog:save', async (_event, options: { defaultFileName?: string; filters?: FileFilter[] }) => {
+    const browserWindow = BrowserWindow.getFocusedWindow() ?? mainWindow ?? undefined
+    const downloadsDir = app.getPath('downloads')
+    const defaultName = options?.defaultFileName && options.defaultFileName.length > 0 ? options.defaultFileName : 'project-file.xml'
+    const defaultPath = join(downloadsDir, defaultName)
+    const result = await dialog.showSaveDialog(browserWindow, {
+      defaultPath,
+      filters: options?.filters
+    })
+    if (result.canceled || !result.filePath) {
+      return null
+    }
+    return result.filePath
+  })
+  ipcMain.handle('fs:write-file', async (_event, targetPath: string, data: Buffer | Uint8Array) => {
+    if (typeof targetPath !== 'string' || targetPath.trim().length === 0) {
+      throw new Error('Invalid file path provided for export')
+    }
+    const payload = Buffer.isBuffer(data) ? data : Buffer.from(data)
+    await fsPromises.mkdir(dirname(targetPath), { recursive: true })
+    await fsPromises.writeFile(targetPath, payload)
+    return true
   })
 
   if (!mainWindow) {
