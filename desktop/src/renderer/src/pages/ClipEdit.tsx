@@ -7,13 +7,15 @@ import type {
 } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { formatDuration } from '../lib/format'
+import { getProjectExportLabel, PROJECT_EXPORT_OPTIONS } from '../lib/projectExports'
 import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import useSharedVolume from '../hooks/useSharedVolume'
 import VideoPreviewStage from '../components/VideoPreviewStage'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
 import { fetchConfigEntries } from '../services/configApi'
-import type { Clip } from '../types'
+import { exportProjectFile } from '../services/exporter'
+import type { Clip, ClipProjectTarget } from '../types'
 
 type ClipEditLocationState = {
   clip?: Clip
@@ -195,10 +197,120 @@ const ClipEdit: FC = () => {
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const [isVideoBuffering, setIsVideoBuffering] = useState(false)
   const [saveSteps, setSaveSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false)
+  const [exportingTarget, setExportingTarget] = useState<ClipProjectTarget | null>(null)
+  const [exportStatusMessage, setExportStatusMessage] = useState<string | null>(null)
+  const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null)
+  const exportMenuButtonRef = useRef<HTMLButtonElement | null>(null)
+  const exportMenuRef = useRef<HTMLDivElement | null>(null)
+
+  const activeClip = clipState ?? sourceClip ?? null
+  const activeProjectFiles = activeClip?.projectFiles ?? null
+  const hasAnyProjectFiles = useMemo(
+    () => PROJECT_EXPORT_OPTIONS.some(({ target }) => Boolean(activeProjectFiles?.[target])),
+    [activeProjectFiles]
+  )
+  const clipIdentifier = activeClip?.id ?? null
+
+  useEffect(() => {
+    if (!isExportMenuOpen) {
+      return undefined
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null
+      if (
+        target &&
+        !exportMenuButtonRef.current?.contains(target) &&
+        !exportMenuRef.current?.contains(target)
+      ) {
+        setIsExportMenuOpen(false)
+      }
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsExportMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isExportMenuOpen])
+
+  useEffect(() => {
+    setIsExportMenuOpen(false)
+    setExportingTarget(null)
+    setExportStatusMessage(null)
+    setExportErrorMessage(null)
+  }, [clipIdentifier])
 
   const handleBack = useCallback(() => {
     navigate(-1)
   }, [navigate])
+
+  const handleToggleExportMenu = useCallback(() => {
+    if (exportingTarget) {
+      return
+    }
+    setIsExportMenuOpen((prev) => !prev)
+    setExportErrorMessage(null)
+  }, [exportingTarget])
+
+  const handleExportProjectFile = useCallback(
+    async (target: ClipProjectTarget) => {
+      if (exportingTarget) {
+        return
+      }
+
+      const clip = clipState ?? sourceClip ?? null
+      const projectFile = clip?.projectFiles?.[target]
+      if (!clip || !projectFile) {
+        setExportStatusMessage(null)
+        setExportErrorMessage(
+          'This project file is not ready yet. Save the clip and run the export again to regenerate it.'
+        )
+        return
+      }
+
+      const label = getProjectExportLabel(target)
+      setExportStatusMessage(`Preparing the ${label} project file…`)
+      setExportErrorMessage(null)
+      setExportingTarget(target)
+      setIsExportMenuOpen(false)
+
+      try {
+        const result = await exportProjectFile({ file: projectFile })
+        if (result === 'cancelled') {
+          setExportStatusMessage('Export cancelled.')
+        } else if (result === 'saved') {
+          setExportStatusMessage(`Saved the ${label} project file to your chosen folder.`)
+        } else {
+          setExportStatusMessage(`Downloaded the ${label} project file.`)
+        }
+      } catch (error) {
+        console.error('Unable to export project file', error)
+        setExportStatusMessage(null)
+        setExportErrorMessage(
+          'Unable to export that project file right now. Please try again in a moment.'
+        )
+      } finally {
+        setExportingTarget(null)
+      }
+    },
+    [clipState, exportingTarget, sourceClip]
+  )
+
+  const handleSelectExportTarget = useCallback(
+    (target: ClipProjectTarget) => {
+      void handleExportProjectFile(target)
+    },
+    [handleExportProjectFile]
+  )
 
   const handleGoToVideoView = useCallback(() => {
     if (!clipState) {
@@ -1683,22 +1795,80 @@ const ClipEdit: FC = () => {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isSaving || isLoadingClip}
-              className="inline-flex items-center justify-center rounded-[14px] border border-transparent bg-[color:var(--ring)] px-4 py-2 text-sm font-semibold text-[color:var(--accent-contrast)] shadow-[0_18px_36px_rgba(15,23,42,0.28)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--ring-strong)_75%,var(--ring))] hover:shadow-[0_24px_48px_rgba(15,23,42,0.36)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSaving ? 'Saving…' : 'Save adjustments'}
-            </button>
-            <button
-              type="button"
-              onClick={handleReset}
-              className="inline-flex items-center justify-center rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--fg)] shadow-[0_12px_24px_rgba(15,23,42,0.2)] transition hover:-translate-y-0.5 hover:border-[var(--ring)] hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_72%,transparent)] hover:text-[color:var(--accent)] hover:shadow-[0_18px_36px_rgba(15,23,42,0.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
-            >
-              Reset to original
-            </button>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving || isLoadingClip}
+                className="inline-flex items-center justify-center rounded-[14px] border border-transparent bg-[color:var(--ring)] px-4 py-2 text-sm font-semibold text-[color:var(--accent-contrast)] shadow-[0_18px_36px_rgba(15,23,42,0.28)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--ring-strong)_75%,var(--ring))] hover:shadow-[0_24px_48px_rgba(15,23,42,0.36)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSaving ? 'Saving…' : 'Save adjustments'}
+              </button>
+              <button
+                type="button"
+                onClick={handleReset}
+                className="inline-flex items-center justify-center rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--fg)] shadow-[0_12px_24px_rgba(15,23,42,0.2)] transition hover:-translate-y-0.5 hover:border-[var(--ring)] hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_72%,transparent)] hover:text-[color:var(--accent)] hover:shadow-[0_18px_36px_rgba(15,23,42,0.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
+              >
+                Reset to original
+              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  ref={exportMenuButtonRef}
+                  onClick={handleToggleExportMenu}
+                  disabled={isLoadingClip || exportingTarget !== null || !activeClip}
+                  className="inline-flex items-center gap-2 rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--fg)] shadow-[0_12px_24px_rgba(15,23,42,0.2)] transition hover:-translate-y-0.5 hover:border-[var(--ring)] hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_72%,transparent)] hover:text-[color:var(--accent)] hover:shadow-[0_18px_36px_rgba(15,23,42,0.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {exportingTarget ? 'Preparing export…' : 'Export project file'}
+                  <span aria-hidden="true" className="text-xs text-[var(--muted)]">
+                    ▾
+                  </span>
+                </button>
+                {isExportMenuOpen ? (
+                  <div
+                    ref={exportMenuRef}
+                    className="absolute left-0 z-20 mt-2 w-60 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_85%,transparent)] p-2 text-sm text-[var(--muted)] shadow-[0_16px_32px_rgba(15,23,42,0.35)]"
+                  >
+                    <p className="px-2 pt-1 text-xs font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                      Choose your editor
+                    </p>
+                    <ul className="mt-1 space-y-1">
+                      {PROJECT_EXPORT_OPTIONS.map(({ target, label }) => {
+                        const projectFile = activeProjectFiles?.[target] ?? null
+                        const isBusy = exportingTarget === target
+                        const isDisabled = !projectFile || (exportingTarget !== null && !isBusy)
+                        return (
+                          <li key={target}>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectExportTarget(target)}
+                              disabled={isDisabled}
+                              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-semibold text-[var(--fg)] transition hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_72%,transparent)] hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <span>{label}</span>
+                              <span className="text-xs font-normal text-[var(--muted)]">
+                                {isBusy ? 'Preparing…' : projectFile ? 'Ready' : 'Unavailable'}
+                              </span>
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                    {!hasAnyProjectFiles ? (
+                      <p className="px-2 pb-1 pt-2 text-xs">
+                        Project files will appear after this clip finishes rendering. Save any changes and rerun the export to refresh them.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            {!hasAnyProjectFiles && activeClip ? (
+              <p className="text-xs text-[var(--muted)]">
+                Project files will appear here once this clip has been rendered.
+              </p>
+            ) : null}
           </div>
           {shouldShowSaveSteps ? (
             <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-4 text-sm text-[var(--muted)]">
@@ -1740,6 +1910,14 @@ const ClipEdit: FC = () => {
                 })}
               </ol>
             </div>
+          ) : null}
+          {exportStatusMessage ? (
+            <p className="text-sm text-[var(--muted)]">{exportStatusMessage}</p>
+          ) : null}
+          {exportErrorMessage ? (
+            <p className="text-sm text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
+              {exportErrorMessage}
+            </p>
           ) : null}
           {saveError ? (
             <p className="text-sm text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">

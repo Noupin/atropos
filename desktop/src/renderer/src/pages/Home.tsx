@@ -13,6 +13,7 @@ import PipelineProgress from '../components/PipelineProgress'
 import { BACKEND_MODE } from '../config/backend'
 import { createInitialPipelineSteps, PIPELINE_STEP_DEFINITIONS } from '../data/pipeline'
 import { formatDuration, timeAgo } from '../lib/format'
+import { getProjectExportLabel, PROJECT_EXPORT_OPTIONS } from '../lib/projectExports'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
 import { exportProjectFile } from '../services/exporter'
 import type { AccountSummary, ClipProjectTarget, HomePipelineState } from '../types'
@@ -20,15 +21,6 @@ import { useAccess } from '../state/access'
 import { formatOfflineCountdown } from '../state/accessFormatting'
 
 const SUPPORTED_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv'] as const
-
-const PROJECT_EXPORT_OPTIONS: Array<{ target: ClipProjectTarget; label: string }> = [
-  { target: 'premiere', label: 'Premiere Pro' },
-  { target: 'resolve', label: 'DaVinci Resolve' },
-  { target: 'final_cut', label: 'Final Cut Pro' }
-]
-
-const findExportLabel = (target: ClipProjectTarget): string =>
-  PROJECT_EXPORT_OPTIONS.find((option) => option.target === target)?.label ?? target
 
 const isValidVideoUrl = (value: string): boolean => {
   try {
@@ -489,7 +481,7 @@ const Home: FC<HomeProps> = ({
         return
       }
 
-      const label = findExportLabel(target)
+      const label = getProjectExportLabel(target)
       setExportErrorMessage(null)
       setExportStatusMessage(`Preparing the ${label} project file…`)
       setExportingClipId(clipId)
