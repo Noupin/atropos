@@ -330,15 +330,21 @@ def _build_timeline(
             if cue_duration <= 0:
                 continue
             start_time = otio.opentime.RationalTime(int(round(cue.start * fps)), fps)
+            subtitle_duration = otio.opentime.RationalTime(int(round(cue_duration * fps)), fps)
+            subtitle_reference = otio.schema.GeneratorReference(
+                generator_kind="text",
+                parameters={"text": cue.text},
+                available_range=otio.opentime.TimeRange(
+                    start_time=start_time,
+                    duration=subtitle_duration,
+                ),
+            )
             subtitle_clip = otio.schema.Clip(
                 name=f"Subtitle {idx}",
-                media_reference=otio.schema.GeneratorReference(
-                    generator_kind="text",
-                    parameters={"text": cue.text},
-                ),
+                media_reference=subtitle_reference,
                 source_range=otio.opentime.TimeRange(
                     start_time=start_time,
-                    duration=otio.opentime.RationalTime(int(round(cue_duration * fps)), fps),
+                    duration=subtitle_duration,
                 ),
                 metadata={
                     "atropos": {
@@ -361,6 +367,7 @@ def _build_timeline(
         media_reference=otio.schema.GeneratorReference(
             generator_kind="effect",
             parameters={"type": "transform"},
+            available_range=available_range,
         ),
         source_range=available_range,
         metadata={"atropos": {"effects": transform_metadata, "role": "transform"}},
