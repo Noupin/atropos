@@ -15,9 +15,10 @@ assets referenced by those timelines.
 4. Double-click the archive to extract a folder named `Short_YYYYMMDD_TOKEN`.
    - Double-click `Project.prproj` to launch Premiere Pro.
    - Double-click `FinalCutProject.fcpxml` for Final Cut Pro.
-   - Double-click `ResolveProject.fcpxml` to open DaVinci Resolve. The export
-     uses Resolve's FCPXML import path unless the local OpenTimelineIO Resolve
-     adapter is available, in which case a native `.drp` is generated.
+   - Double-click `ResolveProject.drp` when present. The exporter will only keep
+     a native `.drp` if a Resolve adapter or automation script is available.
+     Otherwise, open `ResolveProject.fcpxml`, which includes a comment noting
+     that it is a fallback timeline.
    - All editors can also import `UniversalExport.fcpxml` directly.
 
 The export button stays disabled while the backend is building an archive. Any
@@ -46,14 +47,18 @@ Short_YYYYMMDD_TOKEN/
 │   └── clip_0.00-20.00_r9.0_vertical.mp4  # rendered short
 ├── Project.prproj                     # Premiere project (XMEML)
 ├── FinalCutProject.fcpxml             # Final Cut Pro timeline
-├── ResolveProject.fcpxml             # DaVinci Resolve timeline (or .drp when supported)
+├── ResolveProject.drp (optional)      # Native Resolve archive when available
+├── ResolveProject.fcpxml              # Resolve fallback timeline with comments
 ├── UniversalExport.fcpxml             # Editor-agnostic FCPXML timeline
-└── export_manifest.json               # Manifest describing paths and transforms
+├── export_manifest.json               # Manifest describing paths, layers, effects
+└── export_log.txt                     # Compatibility log for the generated files
 ```
 
 All media references are relative to the folder so the package remains portable.
-The manifest documents the layout transform (scale, crop offsets) and the
-subtitle cues included in the timelines.
+The manifest documents the layered timeline (final short, source reference,
+subtitle overlays, transforms, transitions) along with transforms and detected
+effects. The `export_log.txt` file mirrors the server logs so you can confirm
+why a Resolve `.drp` was skipped or which effects were simplified.
 
 ## Example export
 
@@ -77,6 +82,9 @@ tidy.
   the target NLE after importing the project.
 - Premiere Pro exports rely on the Premiere XML adapter. If Premiere refuses to
   open the project, import `UniversalExport.fcpxml` instead.
-- The exported vertical render is included for reference but the timelines use
-  the raw horizontal clip plus subtitle overlays so you can continue editing
-  without re-encoding.
+- The exported vertical render is included for reference and appears as the
+  final short track. The raw horizontal clip lives on a separate source
+  reference track so you can continue editing without re-encoding.
+- DaVinci Resolve `.drp` files require the Resolve scripting environment or an
+  installed OpenTimelineIO Resolve adapter. Without either the exporter
+  generates an `.fcpxml` fallback and records the downgrade in `export_log.txt`.

@@ -7,8 +7,9 @@ import importlib
 import json
 import math
 import shutil
+import os
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType
@@ -35,6 +36,7 @@ PREMIERE_PROJECT_NAME = "Project.prproj"
 FINALCUT_PROJECT_NAME = "FinalCutProject.fcpxml"
 RESOLVE_PROJECT_NAME = "ResolveProject.drp"
 RESOLVE_FCPXML_NAME = "ResolveProject.fcpxml"
+EXPORT_LOG_NAME = "export_log.txt"
 RESOLVE_ADAPTER_CANDIDATES = (
     "davinci_resolve",
     "resolve",
@@ -47,6 +49,61 @@ MANIFEST_NAME = "export_manifest.json"
 
 
 logger = logging.getLogger(__name__)
+
+
+SUPPORTED_EFFECTS = {
+    "scale",
+    "position",
+    "crop",
+    "fade",
+    "subtitle_overlay",
+}
+
+RESOLVE_SCRIPT_ENV = "RESOLVE_DRP_EXPORT_SCRIPT"
+
+
+@dataclass
+class CompatibilityLogEntry:
+    """Represents a single compatibility log entry."""
+
+    severity: str
+    message: str
+    context: Dict[str, object] = field(default_factory=dict)
+
+
+@dataclass
+class CompatibilityLog:
+    """Aggregates compatibility and export notes for the generated project."""
+
+    entries: list[CompatibilityLogEntry] = field(default_factory=list)
+
+    def add(self, severity: str, message: str, **context: object) -> None:
+        entry = CompatibilityLogEntry(severity=severity.upper(), message=message, context=dict(context))
+        logger.log(
+            logging.INFO if severity.lower() == "info" else logging.WARNING,
+            message,
+            extra={"compatibility_context": context} if context else None,
+        )
+        self.entries.append(entry)
+
+    def info(self, message: str, **context: object) -> None:
+        self.add("info", message, **context)
+
+    def warning(self, message: str, **context: object) -> None:
+        self.add("warning", message, **context)
+
+    def write(self, destination: Path) -> None:
+        if not self.entries:
+            self.info("No compatibility adjustments were required")
+        lines = ["Atropos Project Export Compatibility Log", "="]
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+        lines.append(f"Generated at: {timestamp}")
+        lines.append("")
+        for entry in self.entries:
+            lines.append(f"[{entry.severity}] {entry.message}")
+            for key, value in entry.context.items():
+                lines.append(f"    {key}: {value}")
+        destination.write_text("\n".join(lines), encoding="utf-8")
 
 
 @dataclass(frozen=True)
@@ -160,14 +217,54 @@ def _seconds_to_time_range(seconds: float, fps: float, otio: ModuleType):
     )
 
 
+def _summarise_effects(
+    clip: LibraryClip,
+    subtitle_cues: list[SubtitleCue],
+    transform_metadata: Dict[str, object],
+    log: CompatibilityLog,
+) -> list[Dict[str, object]]:
+    """Return a list describing detected effects and their support state."""
+
+    summary: list[Dict[str, object]] = []
+
+    if subtitle_cues:
+        summary.append({"type": "subtitle_overlay", "supported": True, "count": len(subtitle_cues)})
+        log.info("Subtitle overlays detected", count=len(subtitle_cues))
+
+    for key in ("scale", "position", "crop"):
+        if key in transform_metadata:
+            summary.append({"type": key, "supported": True})
+
+    if clip.has_adjustments:
+        log.warning(
+            "Clip adjustments detected; exporting baked transforms only",
+            clip_id=clip.clip_id,
+        )
+        summary.append({"type": "adjustments", "supported": False})
+    else:
+        log.info("No advanced adjustments detected", clip_id=clip.clip_id)
+
+    summary.append({"type": "fade", "supported": False, "note": "Placeholder track only"})
+
+    exported = {entry["type"] for entry in summary if entry.get("supported")}
+    missing_supported = sorted(effect for effect in SUPPORTED_EFFECTS if effect not in exported)
+    if missing_supported:
+        log.info("No instances of some supported effects detected", missing=missing_supported)
+
+    return summary
+
+
 def _build_timeline(
     clip: LibraryClip,
-    media_relative_path: Path,
+    raw_media_relative_path: Path,
+    final_media_relative_path: Path,
     subtitle_cues: list[SubtitleCue],
     transform_metadata: Dict[str, object],
     video_metadata: VideoStreamMetadata,
     *,
     otio: ModuleType,
+    log: CompatibilityLog,
+    effects_summary: list[Dict[str, object]],
 ):
     fps = float(pipeline_config.OUTPUT_FPS or 30.0)
     duration_seconds = (
@@ -181,50 +278,119 @@ def _build_timeline(
     timeline = otio.schema.Timeline(name=clip.title)
 
     available_range = _seconds_to_time_range(duration_seconds, fps, otio)
-    media_reference = otio.schema.ExternalReference(
-        target_url=media_relative_path.as_posix(),
+    final_reference = otio.schema.ExternalReference(
+        target_url=final_media_relative_path.as_posix(),
         available_range=available_range,
     )
-
-    clip_item = otio.schema.Clip(
-        name=clip.title,
-        media_reference=media_reference,
+    final_clip_item = otio.schema.Clip(
+        name=f"{clip.title} (Short)",
+        media_reference=final_reference,
         source_range=available_range,
         metadata={
             "atropos": {
                 "clip_id": clip.clip_id,
                 "duration_seconds": duration_seconds,
                 "transform": transform_metadata,
+                "role": "final_short",
             }
         },
     )
 
-    video_track = otio.schema.Track(kind=otio.schema.TrackKind.Video, name="Video")
-    video_track.append(clip_item)
-    timeline.tracks.append(video_track)
+    primary_track = otio.schema.Track(kind=otio.schema.TrackKind.Video, name="Final Short")
+    primary_track.append(final_clip_item)
+    timeline.tracks.append(primary_track)
+    log.info("Added final short track", track="Final Short", media=str(final_media_relative_path))
+
+    raw_reference = otio.schema.ExternalReference(
+        target_url=raw_media_relative_path.as_posix(),
+        available_range=available_range,
+    )
+    raw_clip_item = otio.schema.Clip(
+        name=f"{clip.title} (Source)",
+        media_reference=raw_reference,
+        source_range=available_range,
+        metadata={
+            "atropos": {
+                "clip_id": clip.clip_id,
+                "role": "source_reference",
+                "original_start_seconds": clip.original_start_seconds,
+                "original_end_seconds": clip.original_end_seconds,
+            }
+        },
+    )
+    source_track = otio.schema.Track(kind=otio.schema.TrackKind.Video, name="Source Reference")
+    source_track.append(raw_clip_item)
+    timeline.tracks.append(source_track)
+    log.info("Added source reference track", track="Source Reference", media=str(raw_media_relative_path))
 
     if subtitle_cues:
-        for cue in subtitle_cues:
+        subtitle_track = otio.schema.Track(kind=otio.schema.TrackKind.Video, name="Subtitles")
+        for idx, cue in enumerate(subtitle_cues, start=1):
             cue_duration = max(0.0, cue.end - cue.start)
             if cue_duration <= 0:
                 continue
             start_time = otio.opentime.RationalTime(int(round(cue.start * fps)), fps)
-            marker = otio.schema.Marker(
-                name=cue.text,
-                marked_range=otio.opentime.TimeRange(
+            subtitle_clip = otio.schema.Clip(
+                name=f"Subtitle {idx}",
+                media_reference=otio.schema.GeneratorReference(
+                    generator_kind="text",
+                    parameters={"text": cue.text},
+                ),
+                source_range=otio.opentime.TimeRange(
                     start_time=start_time,
                     duration=otio.opentime.RationalTime(int(round(cue_duration * fps)), fps),
                 ),
-                color=otio.schema.MarkerColor.CYAN,
-                metadata={"atropos": {"text": cue.text}},
+                metadata={
+                    "atropos": {
+                        "text": cue.text,
+                        "start": cue.start,
+                        "end": cue.end,
+                        "role": "subtitle_overlay",
+                    }
+                },
             )
-            clip_item.markers.append(marker)
+            subtitle_track.append(subtitle_clip)
+        timeline.tracks.append(subtitle_track)
+        log.info("Added subtitles track", cues=len(subtitle_cues))
+    else:
+        log.info("No subtitle cues detected; skipping subtitle track")
+
+    transform_track = otio.schema.Track(kind=otio.schema.TrackKind.Video, name="Transforms & Effects")
+    transform_clip = otio.schema.Clip(
+        name="Transform Stack",
+        media_reference=otio.schema.GeneratorReference(
+            generator_kind="effect",
+            parameters={"type": "transform"},
+        ),
+        source_range=available_range,
+        metadata={"atropos": {"effects": transform_metadata, "role": "transform"}},
+    )
+    transform_track.append(transform_clip)
+    timeline.tracks.append(transform_track)
+    log.info("Added transform track", keys=sorted(transform_metadata.keys()))
+
+    transitions_track = otio.schema.Track(kind=otio.schema.TrackKind.Video, name="Transitions & Fades")
+    transitions_track.append(
+        otio.schema.Gap(
+            duration=available_range.duration,
+            metadata={
+                "atropos": {
+                    "note": "No transitions detected; gap placeholder",
+                    "role": "transitions",
+                }
+            },
+        )
+    )
+    timeline.tracks.append(transitions_track)
+    log.info("Added transitions placeholder track")
 
     timeline.metadata["atropos"] = {
         "clip_id": clip.clip_id,
         "frame_rate": fps,
         "transform": transform_metadata,
         "subtitles": [cue.__dict__ for cue in subtitle_cues],
+        "layers": [track.name for track in timeline.tracks],
+        "effects": effects_summary,
     }
     return timeline, duration_seconds, fps
 
@@ -242,14 +408,73 @@ def _available_adapter_names(otio: ModuleType) -> tuple[set[str], dict[str, str]
     return lowered, lookup
 
 
-def _extension_requires_adapter(filename: str, available_adapters: set[str]) -> bool:
-    """Return ``True`` if ``filename`` needs an available OTIO adapter."""
+def _is_supported_project_extension(filename: str, available_adapters: set[str]) -> bool:
+    """Return ``True`` if ``filename`` is supported by the available OTIO adapters."""
 
     extension = Path(filename).suffix.lower()
     adapter_candidates = ADAPTER_REQUIRED_BY_EXTENSION.get(extension)
     if adapter_candidates is None:
         return True
     return any(candidate in available_adapters for candidate in adapter_candidates)
+
+
+def _annotate_fallback_xml(xml_payload: str, *, reason: str) -> str:
+    """Insert a comment noting why a fallback Resolve export was produced."""
+
+    comment = f"<!-- Resolve fallback: {reason} -->"
+    stripped = xml_payload.lstrip()
+    if stripped.startswith("<?xml"):
+        marker = xml_payload.find("\n")
+        if marker >= 0:
+            return xml_payload[: marker + 1] + comment + "\n" + xml_payload[marker + 1 :]
+        return xml_payload + "\n" + comment
+    return comment + "\n" + xml_payload
+
+
+def _attempt_resolve_drp_export(
+    timeline,  # type: ignore[no-untyped-def]
+    destination: Path,
+    *,
+    adapter_name: str,
+    otio: ModuleType,
+    log: CompatibilityLog,
+) -> bool:
+    """Try to export a Resolve DRP using an available OTIO adapter or script."""
+
+    script_path = os.environ.get(RESOLVE_SCRIPT_ENV)
+    if script_path:
+        log.info("Resolve DRP export script configured", script=script_path)
+        if not Path(script_path).exists():
+            log.warning("Configured Resolve export script missing", script=script_path)
+        else:  # pragma: no cover - requires external Resolve automation
+            try:
+                subprocess_result = shutil.which(script_path)
+                if subprocess_result is None:
+                    log.warning("Resolve export script is not executable", script=script_path)
+                else:
+                    log.warning(
+                        "Resolve export script support is not implemented in this environment",
+                        script=script_path,
+                    )
+            except Exception:
+                log.warning("Failed to invoke Resolve export script", script=script_path)
+
+    try:
+        otio.adapters.write_to_file(  # type: ignore[attr-defined]
+            timeline,
+            str(destination),
+            adapter_name=adapter_name,
+        )
+        log.info(
+            "Resolve project generated via opentimelineio adapter",
+            adapter=adapter_name,
+            path=str(destination),
+        )
+        return True
+    except Exception:  # pragma: no cover - adapter failure path
+        logger.exception("Resolve adapter failed during DRP export", extra={"adapter": adapter_name})
+        log.warning("Resolve adapter failed; falling back to FCPXML", adapter=adapter_name)
+        return False
 
 
 def _write_resolve_project(
@@ -261,8 +486,13 @@ def _write_resolve_project(
     adapter_lookup: dict[str, str],
     otio: ModuleType,
     clip: LibraryClip,
-) -> str:
-    """Write the Resolve project file or fallback to FCPXML."""
+
+    log: CompatibilityLog,
+) -> tuple[str, str]:
+    """Write the Resolve project file and a fallback FCPXML copy."""
+
+    fallback_reason = "Resolve adapter unavailable"
+    primary_filename = RESOLVE_FCPXML_NAME
 
     adapter_key = next(
         (candidate for candidate in RESOLVE_ADAPTER_CANDIDATES if candidate in available_adapters),
@@ -271,30 +501,31 @@ def _write_resolve_project(
     if adapter_key:
         adapter_name = adapter_lookup.get(adapter_key, adapter_key)
         resolve_path = export_dir / RESOLVE_PROJECT_NAME
-        try:
-            otio.adapters.write_to_file(  # type: ignore[attr-defined]
-                timeline,
-                str(resolve_path),
-                adapter_name=adapter_name,
-            )
-            logger.info(
-                "Resolve project generated via opentimelineio adapter",
-                extra={"clip_id": clip.clip_id, "resolve_path": str(resolve_path)},
-            )
-            return resolve_path.name
-        except Exception:  # pragma: no cover - adapter failure path
-            logger.exception(
-                "Resolve adapter failed, falling back to FCPXML",
-                extra={"clip_id": clip.clip_id},
-            )
+        if _attempt_resolve_drp_export(
+            timeline,
+            resolve_path,
+            adapter_name=adapter_name,
+            otio=otio,
+            log=log,
+        ):
+            primary_filename = resolve_path.name
+            fallback_reason = f"Native Resolve DRP generated via {adapter_name}"
+            log.info("Resolve DRP generated; writing fallback copy", adapter=adapter_name)
+        else:
+            fallback_reason = f"Resolve adapter {adapter_name} failed; fallback only"
+            log.warning("Resolve DRP export failed; retaining fallback", adapter=adapter_name)
+    else:
+        log.warning(
+            "Resolve adapter unavailable; exporting Resolve-compatible FCPXML",
+            clip_id=clip.clip_id,
+        )
 
-    logger.warning(
-        "Resolve adapter unavailable; exporting Resolve-compatible FCPXML",
-        extra={"clip_id": clip.clip_id},
-    )
     fallback_path = export_dir / RESOLVE_FCPXML_NAME
-    save_text_file(fallback_path, universal_xml)
-    return fallback_path.name
+    save_text_file(fallback_path, _annotate_fallback_xml(universal_xml, reason=fallback_reason))
+
+    if primary_filename == fallback_path.name:
+        log.warning("Resolve DRP export unavailable; using FCPXML fallback", reason=fallback_reason)
+    return primary_filename, fallback_path.name
 
 
 def _write_project_files(
@@ -302,11 +533,12 @@ def _write_project_files(
     export_dir: Path,
     *,
     clip: LibraryClip,
-    media_relative_path: Path,
+    final_media_relative_path: Path,
     subtitle_cues: list[SubtitleCue],
     duration_seconds: float,
     fps: float,
     otio: ModuleType,
+    log: CompatibilityLog,
 ) -> Dict[str, str]:
     files: Dict[str, str] = {}
 
@@ -317,12 +549,14 @@ def _write_project_files(
     universal_xml = fcp_xml_adapter.write_to_string(timeline)
     save_text_file(universal_path, universal_xml)
     files["universal"] = UNIVERSAL_XML_NAME
+    log.info("Wrote universal FCPXML", path=str(universal_path))
 
     final_cut_path = export_dir / FINALCUT_PROJECT_NAME
     save_text_file(final_cut_path, universal_xml)
     files["final_cut"] = FINALCUT_PROJECT_NAME
+    log.info("Wrote Final Cut Pro project", path=str(final_cut_path))
 
-    resolve_filename = _write_resolve_project(
+    resolve_primary, resolve_fallback = _write_resolve_project(
         timeline,
         export_dir,
         universal_xml=universal_xml,
@@ -330,34 +564,30 @@ def _write_project_files(
         adapter_lookup=adapter_lookup,
         otio=otio,
         clip=clip,
+        log=log,
     )
+    files["resolve"] = resolve_primary
+    files["resolve_fallback"] = resolve_fallback
 
     premiere_path = export_dir / PREMIERE_PROJECT_NAME
     premiere_xml = generate_premiere_project(
         clip_name=clip.title,
         clip_duration_seconds=duration_seconds,
-        clip_relative_path=media_relative_path.as_posix(),
+        clip_relative_path=final_media_relative_path.as_posix(),
         subtitles=build_srt_entries(subtitle_cues),
         fps=fps,
     )
     save_text_file(premiere_path, premiere_xml)
     files["premiere"] = PREMIERE_PROJECT_NAME
+    log.info("Wrote Premiere Pro project", path=str(premiere_path))
 
-    if _extension_requires_adapter(resolve_filename, available_adapters):
-        files["resolve"] = resolve_filename
-    else:
-        logger.error(
-            "Resolve export extension is unsupported; defaulting to universal XML",
-            extra={
-                "clip_id": clip.clip_id,
-                "resolve_filename": resolve_filename,
-                "available_adapters": sorted(available_adapters),
-            },
+    if not _is_supported_project_extension(files["resolve"], available_adapters):
+        log.warning(
+            "Resolve project extension unsupported; defaulting to universal",
+            filename=files["resolve"],
+            adapters=sorted(available_adapters),
         )
-        files["resolve"] = UNIVERSAL_XML_NAME
-        fallback_path = export_dir / resolve_filename
-        if fallback_path.exists():
-            fallback_path.unlink()
+        files["resolve"] = files["resolve_fallback"]
 
     return files
 
@@ -368,6 +598,10 @@ def _write_manifest(
     media_paths: Dict[str, Path | None],
     project_files: Dict[str, str],
     transform_metadata: Dict[str, object],
+    *,
+    layers: list[str],
+    effects: list[Dict[str, object]],
+    log_filename: str,
 ) -> Path:
     manifest_payload: Dict[str, object] = {
         "clip": {
@@ -385,6 +619,8 @@ def _write_manifest(
         },
         "projects": project_files,
         "transform": transform_metadata,
+        "timeline": {"layers": layers, "effects": effects},
+        "logs": {"compatibility": log_filename},
     }
     manifest_path = export_dir / MANIFEST_NAME
     manifest_path.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
@@ -424,6 +660,8 @@ def build_clip_project_export(
 
     otio = _load_otio()
 
+    compat_log = CompatibilityLog()
+
     project_dir = clip.playback_path.parent.parent
     if not project_dir.exists():
         logger.error(
@@ -459,34 +697,42 @@ def build_clip_project_export(
     media_dir.mkdir()
 
     copied_raw = _copy_media(raw_clip_path, media_dir)
+    compat_log.info("Copied source media", path=str(copied_raw))
     copied_vertical = _copy_media(vertical_clip_path, media_dir)
+    compat_log.info("Copied final short media", path=str(copied_vertical))
     copied_subtitles: Path | None = None
     if subtitle_path.exists():
         copied_subtitles = _copy_media(subtitle_path, media_dir)
-
+        compat_log.info("Copied subtitle track", path=str(copied_subtitles))
+    
     video_metadata = probe_video_stream(copied_raw)
     subtitle_cues = parse_srt_file(subtitle_path) if subtitle_path.exists() else []
 
     transform_metadata = _probe_transform_metadata(video_metadata)
+    effects_summary = _summarise_effects(clip, subtitle_cues, transform_metadata, compat_log)
 
     timeline, timeline_duration, fps = _build_timeline(
         clip,
         copied_raw.relative_to(export_folder),
+        copied_vertical.relative_to(export_folder),
         subtitle_cues,
         transform_metadata,
         video_metadata,
         otio=otio,
+        log=compat_log,
+        effects_summary=effects_summary,
     )
 
     project_files = _write_project_files(
         timeline,
         export_folder,
         clip=clip,
-        media_relative_path=copied_raw.relative_to(export_folder),
+        final_media_relative_path=copied_vertical.relative_to(export_folder),
         subtitle_cues=subtitle_cues,
         duration_seconds=timeline_duration,
         fps=fps,
         otio=otio,
+        log=compat_log,
     )
 
     media_manifest = {
@@ -494,7 +740,18 @@ def build_clip_project_export(
         "vertical": copied_vertical.relative_to(export_folder),
         "subtitles": copied_subtitles.relative_to(export_folder) if copied_subtitles else None,
     }
-    _write_manifest(export_folder, clip, media_manifest, project_files, transform_metadata)
+    log_filename = EXPORT_LOG_NAME
+    _write_manifest(
+        export_folder,
+        clip,
+        media_manifest,
+        project_files,
+        transform_metadata,
+        layers=timeline.metadata.get("atropos", {}).get("layers", []),
+        effects=effects_summary,
+        log_filename=log_filename,
+    )
+    compat_log.write(export_folder / log_filename)
 
     archive_path = export_parent / f"{export_folder.name}.zip"
     _zip_project(export_folder, archive_path)

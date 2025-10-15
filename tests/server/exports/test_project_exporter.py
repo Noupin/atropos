@@ -13,6 +13,14 @@ import sys
 sys.path.append("server")
 
 from common.exports import ProjectExportError, build_clip_project_export
+from common.exports.project_exporter import (
+    EXPORT_LOG_NAME,
+    MANIFEST_NAME,
+    PREMIERE_PROJECT_NAME,
+    RESOLVE_FCPXML_NAME,
+    RESOLVE_PROJECT_NAME,
+    UNIVERSAL_XML_NAME,
+)
 from library import list_account_clips_sync
 
 
@@ -89,18 +97,40 @@ def test_builds_project_archive(tmp_path, monkeypatch):
         assert f"{media_dir}/{vertical.name}" in members
         assert f"{media_dir}/{subtitle.name}" in members
 
-        universal_entry = f"{root_folder}/UniversalExport.fcpxml"
-        manifest_entry = f"{root_folder}/export_manifest.json"
-        premiere_entry = f"{root_folder}/Project.prproj"
-        resolve_entry = f"{root_folder}/ResolveProject.fcpxml"
+        universal_entry = f"{root_folder}/{UNIVERSAL_XML_NAME}"
+        manifest_entry = f"{root_folder}/{MANIFEST_NAME}"
+        premiere_entry = f"{root_folder}/{PREMIERE_PROJECT_NAME}"
+        resolve_entry = f"{root_folder}/{RESOLVE_FCPXML_NAME}"
+        log_entry = f"{root_folder}/{EXPORT_LOG_NAME}"
         assert universal_entry in members
         assert premiere_entry in members
         assert resolve_entry in members
         assert manifest_entry in members
+        assert log_entry in members
+        assert f"{root_folder}/{RESOLVE_PROJECT_NAME}" not in members
 
         manifest = json.loads(archive.read(manifest_entry).decode("utf-8"))
         assert manifest["media"]["raw"].endswith(raw.name)
-        assert manifest["projects"]["universal"] == "UniversalExport.fcpxml"
+        assert manifest["media"]["vertical"].endswith(vertical.name)
+        assert manifest["projects"]["universal"] == UNIVERSAL_XML_NAME
+        assert manifest["projects"]["resolve"] == RESOLVE_FCPXML_NAME
+        assert manifest["projects"]["resolve_fallback"] == RESOLVE_FCPXML_NAME
+
+        layers = manifest["timeline"]["layers"]
+        assert "Final Short" in layers
+        assert "Source Reference" in layers
+        assert "Subtitles" in layers
+        assert "Transforms & Effects" in layers
+        assert "Transitions & Fades" in layers
+
+        effects = manifest["timeline"]["effects"]
+        effect_types = {entry["type"] for entry in effects}
+        assert "subtitle_overlay" in effect_types
+        assert "scale" in effect_types
+        assert "fade" in effect_types
+
+        log_contents = archive.read(log_entry).decode("utf-8")
+        assert "Resolve DRP export unavailable" in log_contents
 
         universal_xml = archive.read(universal_entry).decode("utf-8")
         assert raw.name in universal_xml
@@ -109,7 +139,7 @@ def test_builds_project_archive(tmp_path, monkeypatch):
         assert "<xmeml" in premiere_xml
 
         resolve_xml = archive.read(resolve_entry).decode("utf-8")
-        assert raw.name in resolve_xml
+        assert "<!-- Resolve fallback" in resolve_xml
 
 
 def test_missing_clip_raises(tmp_path, monkeypatch):
