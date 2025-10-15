@@ -18,6 +18,13 @@ import logging
 import config as pipeline_config
 from helpers.media import VideoStreamMetadata, probe_video_stream
 from library import DEFAULT_ACCOUNT_PLACEHOLDER, LibraryClip, list_account_clips_sync
+from .native_projects import (
+    build_srt_entries,
+    generate_premiere_project,
+    generate_resolve_project,
+    save_text_file,
+)
+from .vendor.otio_fcp_adapter import fcp_xml as fcp_xml_adapter
 from .srt import SubtitleCue, parse_srt_file
 
 
@@ -28,7 +35,7 @@ MEDIA_DIRECTORY_NAME = "Media"
 UNIVERSAL_XML_NAME = "UniversalExport.fcpxml"
 PREMIERE_PROJECT_NAME = "Project.prproj"
 FINALCUT_PROJECT_NAME = "FinalCutProject.fcpxml"
-RESOLVE_PROJECT_NAME = "ResolveProject.fcpxml"
+RESOLVE_PROJECT_NAME = "ResolveProject.drp"
 MANIFEST_NAME = "export_manifest.json"
 
 
@@ -204,40 +211,50 @@ def _build_timeline(
         "transform": transform_metadata,
         "subtitles": [cue.__dict__ for cue in subtitle_cues],
     }
-    return timeline
+    return timeline, duration_seconds, fps
 
 
 def _write_project_files(
     timeline,  # type: ignore[no-untyped-def]
     export_dir: Path,
     *,
-    otio: ModuleType,
+    clip: LibraryClip,
+    media_relative_path: Path,
+    subtitle_cues: list[SubtitleCue],
+    duration_seconds: float,
+    fps: float,
 ) -> Dict[str, str]:
     files: Dict[str, str] = {}
 
     universal_path = export_dir / UNIVERSAL_XML_NAME
-    otio.adapters.write_to_file(timeline, str(universal_path), adapter_name="fcp_xml")
+    universal_xml = fcp_xml_adapter.write_to_string(timeline)
+    save_text_file(universal_path, universal_xml)
     files["universal"] = UNIVERSAL_XML_NAME
 
     final_cut_path = export_dir / FINALCUT_PROJECT_NAME
-    shutil.copy2(universal_path, final_cut_path)
+    save_text_file(final_cut_path, universal_xml)
     files["final_cut"] = FINALCUT_PROJECT_NAME
 
     resolve_path = export_dir / RESOLVE_PROJECT_NAME
-    shutil.copy2(universal_path, resolve_path)
+    generate_resolve_project(
+        clip_name=clip.title,
+        clip_duration_seconds=duration_seconds,
+        clip_relative_path=media_relative_path.as_posix(),
+        subtitles=build_srt_entries(subtitle_cues),
+        fps=fps,
+        destination_path=resolve_path,
+    )
     files["resolve"] = RESOLVE_PROJECT_NAME
 
     premiere_path = export_dir / PREMIERE_PROJECT_NAME
-    try:
-        otio.adapters.write_to_file(timeline, str(premiere_path), adapter_name="premiere_xml")
-    except Exception:
-        # Fallback to the universal XML so users can still import the project.
-        logger.warning(
-            "Falling back to universal XML for Premiere project",
-            exc_info=True,
-            extra={"premiere_path": str(premiere_path)},
-        )
-        shutil.copy2(universal_path, premiere_path)
+    premiere_xml = generate_premiere_project(
+        clip_name=clip.title,
+        clip_duration_seconds=duration_seconds,
+        clip_relative_path=media_relative_path.as_posix(),
+        subtitles=build_srt_entries(subtitle_cues),
+        fps=fps,
+    )
+    save_text_file(premiere_path, premiere_xml)
     files["premiere"] = PREMIERE_PROJECT_NAME
 
     return files
@@ -350,7 +367,7 @@ def build_clip_project_export(
 
     transform_metadata = _probe_transform_metadata(video_metadata)
 
-    timeline = _build_timeline(
+    timeline, timeline_duration, fps = _build_timeline(
         clip,
         copied_raw.relative_to(export_folder),
         subtitle_cues,
@@ -359,7 +376,15 @@ def build_clip_project_export(
         otio=otio,
     )
 
-    project_files = _write_project_files(timeline, export_folder, otio=otio)
+    project_files = _write_project_files(
+        timeline,
+        export_folder,
+        clip=clip,
+        media_relative_path=copied_raw.relative_to(export_folder),
+        subtitle_cues=subtitle_cues,
+        duration_seconds=timeline_duration,
+        fps=fps,
+    )
 
     media_manifest = {
         "raw": copied_raw.relative_to(export_folder),

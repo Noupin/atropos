@@ -15,7 +15,7 @@ assets referenced by those timelines.
 4. Double-click the archive to extract a folder named `Short_YYYYMMDD_TOKEN`.
    - Double-click `Project.prproj` to launch Premiere Pro.
    - Double-click `FinalCutProject.fcpxml` for Final Cut Pro.
-   - Import `ResolveProject.fcpxml` into DaVinci Resolve.
+   - Double-click `ResolveProject.drp` to open DaVinci Resolve.
    - All editors can also import `UniversalExport.fcpxml` directly.
 
 The export button stays disabled while the backend is building an archive. Any
@@ -27,10 +27,9 @@ errors are shown inline with guidance to retry.
 - **Route:** `/api/accounts/{accountId}/clips/{clipId}/export`
 - **Response:** streamed zip file containing the export folder
 
-The backend requires the optional `opentimelineio` package (install with
-`pip install opentimelineio[fcpxml]`) to generate the editor timelines. Without
-it the API responds with a `503 Service Unavailable` error explaining how to
-install the missing dependency.
+Install the base `opentimelineio` package to enable timeline generation. If the
+dependency is missing the API responds with a `503 Service Unavailable` error
+describing how to install it before retrying the export.
 
 `accountId` accepts the special token `__default__` for the default output root.
 The archive overwrites any previous export for the same clip.
@@ -43,9 +42,9 @@ Short_YYYYMMDD_TOKEN/
 │   ├── clip_0.00-20.00_r9.0.mp4       # raw horizontal clip
 │   ├── clip_0.00-20.00_r9.0.srt       # subtitle cues
 │   └── clip_0.00-20.00_r9.0_vertical.mp4  # rendered short
-├── Project.prproj                     # Premiere project (Premiere XML)
+├── Project.prproj                     # Premiere project (XMEML)
 ├── FinalCutProject.fcpxml             # Final Cut Pro timeline
-├── ResolveProject.fcpxml              # DaVinci Resolve import
+├── ResolveProject.drp                 # DaVinci Resolve project archive
 ├── UniversalExport.fcpxml             # Editor-agnostic FCPXML timeline
 └── export_manifest.json               # Manifest describing paths and transforms
 ```

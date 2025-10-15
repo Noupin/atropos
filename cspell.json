@@ -33,6 +33,7 @@
     "ollama",
     "opentimelineio",
     "prproj",
+    "XMEML",
     "opencl",
     "pytest",
     "PYTHONUNBUFFERED",
