@@ -227,6 +227,9 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const [homeState, setHomeState] = useState<HomePipelineState>(() => ({
     videoUrl: '',
     urlError: null,
+    fileError: null,
+    selectedFileName: null,
+    inputMode: 'url',
     pipelineError: null,
     steps: createInitialPipelineSteps(),
     isProcessing: false,

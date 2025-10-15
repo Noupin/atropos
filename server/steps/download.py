@@ -199,12 +199,26 @@ def download_audio(
     except Exception as e:
         print(f"Error: {str(e)}")
 
-def extract_audio_from_video(video_path, audio_output_path='extracted_audio.mp3'):
+def extract_audio_from_video(video_path, audio_output_path='extracted_audio.wav'):
     try:
-        # Use ffmpeg to extract audio from the video file
         subprocess.run(
-            ['ffmpeg', '-i', video_path, '-vn', '-acodec', 'libmp3lame', audio_output_path],
-            check=True
+            [
+                'ffmpeg',
+                '-y',
+                '-i',
+                video_path,
+                '-vn',
+                '-acodec',
+                'pcm_s16le',
+                '-ar',
+                '16000',
+                '-ac',
+                '1',
+                audio_output_path,
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
         print(f"Extracted audio to {audio_output_path}")
     except Exception as e:

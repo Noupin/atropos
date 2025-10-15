@@ -48,7 +48,10 @@ describe('startPipelineJob', () => {
 
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await startPipelineJob({ url: 'https://example.com/video.mp4' })
+    const result = await startPipelineJob({
+      source: { kind: 'url', url: 'https://example.com/video.mp4' },
+      reviewMode: false
+    })
 
     expect(result).toEqual({ jobId: 'abc123' })
     expect(fetchMock).toHaveBeenCalledTimes(2)
@@ -75,7 +78,10 @@ describe('startPipelineJob', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(
-      startPipelineJob({ url: 'https://example.com/video.mp4' })
+      startPipelineJob({
+        source: { kind: 'url', url: 'https://example.com/video.mp4' },
+        reviewMode: false
+      })
     ).rejects.toThrow(
       'Unable to reach the pipeline service at http://127.0.0.1:8000/api/jobs (connect ECONNREFUSED 127.0.0.1:8000). Please ensure the backend server is running and accessible.'
     )

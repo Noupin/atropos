@@ -16,6 +16,7 @@ import {
 import type {
   AccountSummary,
   HomePipelineState,
+  PipelineSourceSelection,
   PipelineStep,
   PipelineStepStatus,
   PipelineSubstep
@@ -35,7 +36,7 @@ type UsePipelineProgressOptions = {
 }
 
 type UsePipelineProgressResult = {
-  startPipeline: (url: string, accountId: string, reviewMode: boolean) => Promise<void>
+  startPipeline: (source: PipelineSourceSelection, accountId: string, reviewMode: boolean) => Promise<void>
   resumePipeline: () => Promise<void>
   cleanup: () => void
 }
@@ -657,7 +658,7 @@ export const usePipelineProgress = ({
   }, [cleanupConnection, isMockBackend, state.activeJobId, subscribeToJob])
 
   const startPipeline = useCallback(
-    async (url: string, accountId: string, reviewMode: boolean) => {
+    async (source: PipelineSourceSelection, accountId: string, reviewMode: boolean) => {
       if (isMockBackend) {
         return
       }
@@ -688,7 +689,7 @@ export const usePipelineProgress = ({
       try {
         const toneOverride = availableAccounts.find((account) => account.id === accountId)?.tone ?? null
         const { jobId } = await startPipelineJob({
-          url,
+          source,
           account: accountId,
           tone: toneOverride,
           reviewMode

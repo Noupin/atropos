@@ -8,8 +8,8 @@ import type {
 export const PIPELINE_STEP_DEFINITIONS: PipelineStepDefinition[] = [
   {
     id: 'download-video',
-    title: 'Download source video',
-    description: 'Retrieve the original YouTube or Twitch video file for processing.',
+    title: 'Ingest source video',
+    description: 'Download the source video or prepare an uploaded file for processing.',
     durationMs: 3200
   },
   {

@@ -3,7 +3,8 @@ load_dotenv(dotenv_path="../.env")
 
 import json
 import math
-from typing import Any, Callable, TypeVar
+from dataclasses import dataclass
+from typing import Any, Callable, Literal, TypeVar
 
 import config
 
@@ -65,6 +66,7 @@ from config import (
 import sys
 import time
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -93,8 +95,43 @@ GENERIC_HASHTAGS = ["foryou", "fyp", "viral", "trending"]
 TStepResult = TypeVar("TStepResult")
 
 
+@dataclass(frozen=True)
+class PipelineSource:
+    """Describe the origin of a pipeline run."""
+
+    kind: Literal["url", "upload"]
+    url: str | None = None
+    path: Path | None = None
+    filename: str | None = None
+
+    @classmethod
+    def from_url(cls, url: str) -> "PipelineSource":
+        return cls(kind="url", url=url)
+
+    @classmethod
+    def from_upload(cls, path: Path, filename: str | None = None) -> "PipelineSource":
+        return cls(kind="upload", path=path, filename=filename)
+
+    @property
+    def display_name(self) -> str:
+        if self.kind == "url" and self.url:
+            return self.url
+        if self.filename:
+            return self.filename
+        if self.path:
+            return str(self.path)
+        return "uploaded video"
+
+    def event_payload(self) -> dict[str, str | None]:
+        return {
+            "kind": self.kind,
+            "url": self.url,
+            "filename": self.filename or (self.path.name if self.path else None),
+        }
+
+
 def process_video(
-    yt_url: str,
+    source_input: str | PipelineSource,
     account: str | None = None,
     tone: Tone | None = None,
     observer: PipelineObserver | None = None,
@@ -102,21 +139,28 @@ def process_video(
     pause_for_review: bool = False,
     review_gate: Callable[[], None] | None = None,
 ) -> None:
-    """Run the clipping pipeline for ``yt_url``.
+    """Run the clipping pipeline for a remote URL or uploaded file.
 
     Parameters
     ----------
-    yt_url:
-        YouTube or Twitch URL to process.
+    source_input:
+        Either a supported video URL or a :class:`PipelineSource` describing an uploaded file.
     account:
         Optional account name to namespace outputs under ``out/<account>``.
     tone:
         Optional tone override. When omitted, :data:`config.CLIP_TYPE` is used.
     """
 
+    if isinstance(source_input, PipelineSource):
+        source = source_input
+    else:
+        source = PipelineSource.from_url(source_input)
+
     overall_start = time.perf_counter()
     ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
     step_timers: dict[str, float] = {}
+    source_label = source.display_name
+    source_url = source.url
 
     def emit_log(message: str, level: str = "info") -> None:
         print(message)
@@ -191,23 +235,51 @@ def process_video(
                 type=PipelineEventType.PIPELINE_STARTED,
                 message="Pipeline started",
                 data={
-                    "url": yt_url,
+                    "url": source_url,
                     "account": account,
                     "tone": tone.value if tone else None,
+                    "source": source.event_payload(),
                 },
             )
         )
 
-    twitch = is_twitch_url(yt_url)
-    transcript_source = "whisper" if twitch else TRANSCRIPT_SOURCE
+    twitch = bool(source_url and is_twitch_url(source_url))
+    transcript_source = "whisper" if twitch or source.kind == "upload" else TRANSCRIPT_SOURCE
 
     def should_run(step: int) -> bool:
         return START_AT_STEP <= step
 
-    video_info = get_video_info(yt_url)
+    if source.kind == "url" and source_url:
+        video_info = get_video_info(source_url)
+    else:
+        if source.path is None or not source.path.exists():
+            message = (
+                f"{Fore.RED}Uploaded video file is no longer available at {source.path}{Style.RESET_ALL}"
+            )
+            emit_log(message, level="error")
+            if observer:
+                observer.handle_event(
+                    PipelineEvent(
+                        type=PipelineEventType.PIPELINE_COMPLETED,
+                        message="Pipeline failed",
+                        data={
+                            "success": False,
+                            "error": "Uploaded video file could not be accessed",
+                        },
+                    )
+                )
+            return
+
+        probed_duration = probe_media_duration(source.path)
+        video_info = {
+            "title": source.filename or source.path.stem,
+            "upload_date": datetime.utcnow().strftime("%Y%m%d"),
+            "uploader": "Uploaded video",
+            "duration": probed_duration,
+        }
 
     if not video_info:
-        message = f"{Fore.RED}Failed to retrieve video information.{Style.RESET_ALL}"
+        message = f"{Fore.RED}Failed to retrieve video information for {source_label}.{Style.RESET_ALL}"
         emit_log(message, level="error")
         if observer:
             observer.handle_event(
@@ -256,7 +328,11 @@ def process_video(
     # ----------------------
     # STEP 1: Download Video
     # ----------------------
-    video_output_path = project_dir / f"{non_suffix_filename}.mp4"
+    video_extension = ".mp4"
+    if source.kind == "upload" and source.path is not None:
+        suffix = source.path.suffix
+        video_extension = suffix if suffix else ".mp4"
+    video_output_path = project_dir / f"{non_suffix_filename}{video_extension}"
 
     def update_source_duration_from_file() -> None:
         nonlocal source_duration_seconds
@@ -277,9 +353,22 @@ def process_video(
                 1.0,
                 message="Video already downloaded",
             )
+        elif source.kind == "upload":
+            assert source.path is not None
+            emit_log(
+                f"{Fore.CYAN}STEP 1: Copying uploaded video -> {video_output_path}{Style.RESET_ALL}"
+            )
+            shutil.copy2(source.path, video_output_path)
+            notify_progress(
+                "step_1_download",
+                1.0,
+                message="Uploaded file saved",
+            )
         else:
+            if not source_url:
+                raise ValueError("Pipeline source URL is required for remote downloads")
             download_video(
-                yt_url,
+                source_url,
                 str(video_output_path),
                 progress_callback=lambda fraction, status: notify_progress(
                     "step_1_download",
@@ -307,11 +396,11 @@ def process_video(
     # ----------------------
     # STEP 2: Acquire Audio
     # ----------------------
-    audio_output_path = project_dir / f"{non_suffix_filename}.mp3"
+    audio_output_path = project_dir / f"{non_suffix_filename}.wav"
 
     def step_audio() -> bool:
         return ensure_audio(
-            yt_url,
+            source_url,
             str(audio_output_path),
             str(video_output_path),
             progress_callback=lambda fraction, stage, status=None: notify_progress(
@@ -339,7 +428,7 @@ def process_video(
             )
             send_failure_email(
                 "Audio acquisition failed",
-                f"Failed to acquire audio for video {yt_url}",
+                f"Failed to acquire audio for video {source_label}",
             )
     else:
         audio_ok = audio_output_path.exists()
@@ -360,13 +449,19 @@ def process_video(
     transcript_output_path = project_dir / f"{non_suffix_filename}.txt"
 
     def step_download_transcript(step_key: str = "step_3_download_transcript") -> bool:
+        if not source_url:
+            emit_log(
+                f"{Fore.YELLOW}STEP 3: Transcript download skipped because no source URL is available.{Style.RESET_ALL}",
+                level="warning",
+            )
+            return False
         notify_progress(
             step_key,
             0.05,
             message="Requesting transcript from source",
         )
         success = download_transcript(
-            yt_url,
+            source_url,
             str(transcript_output_path),
             languages=["en", "en-US", "en-GB"],
         )
@@ -439,7 +534,7 @@ def process_video(
                 )
                 send_failure_email(
                     "Transcript unavailable",
-                    f"No transcript could be retrieved or generated for video {yt_url} because audio acquisition failed.",
+                    f"No transcript could be retrieved or generated for video {source_label} because audio acquisition failed.",
                 )
         else:
             yt_ok = run_pipeline_step(
@@ -476,7 +571,7 @@ def process_video(
                     )
                     send_failure_email(
                         "Transcript unavailable",
-                        f"No transcript could be retrieved or generated for video {yt_url} because audio acquisition failed.",
+                        f"No transcript could be retrieved or generated for video {source_label} because audio acquisition failed.",
                     )
                 else:
                     run_pipeline_step(
@@ -815,7 +910,7 @@ def process_video(
             )
             send_failure_email(
                 "No clip candidates found",
-                f"No clip candidates were found for video {yt_url}",
+                f"No clip candidates were found for video {source_label}",
             )
             # sys.exit()
 
@@ -985,7 +1080,7 @@ def process_video(
                 )
                 send_failure_email(
                     "Clip cutting failed",
-                    f"Failed to cut clip {idx} for video {yt_url}",
+                    f"Failed to cut clip {idx} for video {source_label}",
                 )
                 continue
         else:
@@ -1076,7 +1171,7 @@ def process_video(
             if not tags:
                 send_failure_email(
                     "Hashtag generation failed",
-                    f"No hashtags generated for clip {idx} of video {yt_url}",
+                    f"No hashtags generated for clip {idx} of video {source_label}",
                 )
             fallback_words: list[str] = []
             if not tags:
@@ -1090,11 +1185,12 @@ def process_video(
                 video_info.get("uploader"),
             )
             hashtags.extend(["#shorts", "#withatropos"])
-            full_video_link = youtube_timestamp_url(yt_url, candidate.start)
+            full_video_link = youtube_timestamp_url(source_url, candidate.start) if source_url else None
             credited_channel = video_info.get("uploader", "Unknown Channel")
             credited_title = video_info.get("title") or "Original video"
+            link_prefix = f"Full video: {full_video_link}\n\n" if full_video_link else ""
             description = (
-                f"Full video: {full_video_link}\n\n"
+                f"{link_prefix}"
                 f"Credit: {credited_channel} — {credited_title}\n"
                 "Made by Atropos\n"
             )
@@ -1156,7 +1252,7 @@ def process_video(
                         "description": description_text,
                         "duration_seconds": duration_seconds,
                         "created_at": datetime.now(timezone.utc).isoformat(),
-                        "source_url": yt_url,
+                        "source_url": source_url or video_output_path.as_posix(),
                         "source_title": source_title,
                         "source_published_at": published_iso,
                         "short_path": short_path_str,

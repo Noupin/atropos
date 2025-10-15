@@ -14,7 +14,12 @@ import { BACKEND_MODE } from '../config/backend'
 import { createInitialPipelineSteps, PIPELINE_STEP_DEFINITIONS } from '../data/pipeline'
 import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
-import type { AccountSummary, HomePipelineState } from '../types'
+import type {
+  AccountSummary,
+  HomePipelineState,
+  PipelineInputMode,
+  PipelineSourceSelection
+} from '../types'
 import { useAccess } from '../state/access'
 import { formatOfflineCountdown } from '../state/accessFormatting'
 
@@ -36,7 +41,11 @@ type HomeProps = {
   initialState: HomePipelineState
   onStateChange: (state: HomePipelineState) => void
   accounts: AccountSummary[]
-  onStartPipeline: (url: string, accountId: string, reviewMode: boolean) => Promise<void> | void
+  onStartPipeline: (
+    source: PipelineSourceSelection,
+    accountId: string,
+    reviewMode: boolean
+  ) => Promise<void> | void
   onResumePipeline: () => Promise<void> | void
 }
 
@@ -52,6 +61,7 @@ const Home: FC<HomeProps> = ({
   const [folderMessage, setFolderMessage] = useState<string | null>(null)
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
   const [isOpeningFolder, setIsOpeningFolder] = useState(false)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const canAttemptToOpenFolder = useMemo(() => canOpenAccountClipsFolder(), [])
   const { state: accessState, markTrialRunPending, finalizeTrialRun } = useAccess()
 
@@ -80,6 +90,7 @@ const Home: FC<HomeProps> = ({
   const {
     videoUrl,
     urlError,
+    fileError,
     pipelineError,
     steps,
     isProcessing,
@@ -91,13 +102,80 @@ const Home: FC<HomeProps> = ({
     reviewMode,
     awaitingReview,
     lastRunClipSummary,
-    lastRunClipStatus
+    lastRunClipStatus,
+    selectedFileName,
+    inputMode
   } = state
 
   useEffect(() => {
     setFolderMessage(null)
     setFolderErrorMessage(null)
   }, [selectedAccountId])
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const handleInputModeChange = useCallback(
+    (mode: PipelineInputMode) => {
+      if (mode === inputMode) {
+        return
+      }
+
+      if (mode === 'url') {
+        setSelectedFile(null)
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ''
+        }
+      }
+
+      updateState((prev) => ({
+        ...prev,
+        inputMode: mode,
+        urlError: null,
+        fileError: null,
+        selectedFileName: mode === 'file' ? prev.selectedFileName : null
+      }))
+    },
+    [inputMode, updateState]
+  )
+
+  const handleFileChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0] ?? null
+      setSelectedFile(file)
+
+      updateState((prev) => {
+        if (!file) {
+          return { ...prev, fileError: null, selectedFileName: null }
+        }
+
+        if (file.size === 0) {
+          return {
+            ...prev,
+            fileError: 'The selected file is empty. Choose a different video file.',
+            selectedFileName: file.name,
+            urlError: null
+          }
+        }
+
+        if (file.type && !file.type.startsWith('video/')) {
+          return {
+            ...prev,
+            fileError: 'That file type is not supported. Pick a standard video file such as MP4 or MOV.',
+            selectedFileName: file.name,
+            urlError: null
+          }
+        }
+
+        return {
+          ...prev,
+          fileError: null,
+          selectedFileName: file.name,
+          urlError: null
+        }
+      })
+    },
+    [updateState]
+  )
 
   const availableAccounts = useMemo(
     () =>
@@ -238,7 +316,8 @@ const Home: FC<HomeProps> = ({
       updateState((prev) => ({
         ...prev,
         videoUrl: value,
-        urlError: prev.urlError ? null : prev.urlError
+        urlError: null,
+        fileError: null
       }))
     },
     [updateState]
@@ -309,11 +388,9 @@ const Home: FC<HomeProps> = ({
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
-      const trimmed = videoUrl.trim()
       const accountId = selectedAccountId
-      const isUrlPresent = trimmed.length > 0
-      const isUrlValid = isUrlPresent && isValidVideoUrl(trimmed)
       let hasError = false
+      let source: PipelineSourceSelection | null = null
 
       if (!accountId) {
         hasError = true
@@ -326,21 +403,49 @@ const Home: FC<HomeProps> = ({
         }))
       }
 
-      if (!isUrlPresent) {
-        hasError = true
-        updateState((prev) => ({
-          ...prev,
-          urlError: 'Enter a video URL to start processing.'
-        }))
-      } else if (!isUrlValid) {
-        hasError = true
-        updateState((prev) => ({
-          ...prev,
-          urlError: 'Enter a valid YouTube or Twitch URL.'
-        }))
+      if (inputMode === 'url') {
+        const trimmed = videoUrl.trim()
+        if (!trimmed) {
+          hasError = true
+          updateState((prev) => ({
+            ...prev,
+            urlError: 'Enter a video URL to start processing.'
+          }))
+        } else if (!isValidVideoUrl(trimmed)) {
+          hasError = true
+          updateState((prev) => ({
+            ...prev,
+            urlError: 'Enter a valid YouTube or Twitch URL.'
+          }))
+        } else {
+          source = { kind: 'url', url: trimmed }
+        }
+      } else {
+        const file = selectedFile
+        if (!file) {
+          hasError = true
+          updateState((prev) => ({
+            ...prev,
+            fileError: 'Choose a video file to start processing.'
+          }))
+        } else if (file.size === 0) {
+          hasError = true
+          updateState((prev) => ({
+            ...prev,
+            fileError: 'The selected file is empty. Choose a different video file.'
+          }))
+        } else if (file.type && !file.type.startsWith('video/')) {
+          hasError = true
+          updateState((prev) => ({
+            ...prev,
+            fileError: 'That file type is not supported. Pick a standard video file such as MP4 or MOV.'
+          }))
+        } else {
+          source = { kind: 'file', file }
+        }
       }
 
-      if (hasError || !accountId || !isUrlValid) {
+      if (hasError || !accountId || !source) {
         return
       }
 
@@ -373,6 +478,7 @@ const Home: FC<HomeProps> = ({
       updateState((prev) => ({
         ...prev,
         urlError: null,
+        fileError: null,
         pipelineError: null,
         clips: [],
         selectedClipId: null,
@@ -383,7 +489,9 @@ const Home: FC<HomeProps> = ({
         awaitingReview: false,
         lastRunProducedNoClips: false,
         lastRunClipSummary: null,
-        lastRunClipStatus: null
+        lastRunClipStatus: null,
+        selectedFileName: source.kind === 'file' ? source.file.name : null,
+        videoUrl: source.kind === 'url' ? source.url : prev.videoUrl
       }))
 
       if (isMockBackend) {
@@ -395,15 +503,17 @@ const Home: FC<HomeProps> = ({
         return
       }
 
-      void onStartPipeline(trimmed, accountId, reviewMode)
+      void onStartPipeline(source, accountId, reviewMode)
     },
     [
       availableAccounts.length,
       clearTimers,
+      inputMode,
       finalizeTrialRun,
       isMockBackend,
       markTrialRunPending,
       selectedAccountId,
+      selectedFile,
       onStartPipeline,
       reviewMode,
       offlineRestrictionMessage,
@@ -417,6 +527,10 @@ const Home: FC<HomeProps> = ({
 
   const handleReset = useCallback(() => {
     clearTimers()
+    setSelectedFile(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
     updateState((prev) => ({
       ...prev,
       steps: createInitialPipelineSteps(),
@@ -424,15 +538,17 @@ const Home: FC<HomeProps> = ({
       clips: [],
       pipelineError: null,
       urlError: null,
+      fileError: null,
       selectedClipId: null,
       accountError: null,
       activeJobId: null,
       awaitingReview: false,
       lastRunProducedNoClips: false,
       lastRunClipSummary: null,
-      lastRunClipStatus: null
+      lastRunClipStatus: null,
+      selectedFileName: null
     }))
-  }, [clearTimers, updateState])
+  }, [clearTimers, fileInputRef, setSelectedFile, updateState])
 
   const handleOpenClipsFolder = useCallback(async () => {
     if (!canAttemptToOpenFolder) {
@@ -598,7 +714,7 @@ const Home: FC<HomeProps> = ({
     if (clipStatusDetails) {
       return clipStatusDetails.shortMessage
     }
-    return 'Paste a supported link to kick off the Atropos pipeline.'
+    return 'Paste a supported link or upload a video file to kick off the Atropos pipeline.'
   }, [
     awaitingReview,
     clipStatusDetails,
@@ -611,6 +727,13 @@ const Home: FC<HomeProps> = ({
     accessState.pendingConsumption,
     accessState.pendingConsumptionStage
   ])
+
+  const canStartPipeline = useMemo(() => {
+    if (inputMode === 'url') {
+      return videoUrl.trim().length > 0
+    }
+    return Boolean(selectedFile) && !fileError
+  }, [fileError, inputMode, selectedFile, videoUrl])
 
   return (
     <section className="flex w-full flex-1 flex-col gap-6 px-6 py-8 lg:px-8">
@@ -639,7 +762,7 @@ const Home: FC<HomeProps> = ({
             <div className="flex flex-col gap-1">
               <h2 className="text-lg font-semibold text-[var(--fg)]">Process a new video</h2>
               <p className="text-sm text-[var(--muted)]">
-                Select an account from the top navigation, paste a link, and start the pipeline when you are ready.
+                Select an account from the top navigation, choose a video source, and start the pipeline when you are ready.
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -665,22 +788,76 @@ const Home: FC<HomeProps> = ({
                   </p>
                 ) : null}
               </div>
-              <label className="sr-only" htmlFor="video-url">
-                Video URL
-              </label>
-              <input
-                id="video-url"
-                type="url"
-                value={videoUrl}
-                onChange={handleUrlChange}
-                placeholder="https://www.youtube.com/watch?v=..."
-                className="flex-1 rounded-lg border border-white/10 bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm placeholder:text-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              />
-                <div className="flex items-center gap-2">
+              <div className="flex w-full flex-1 flex-col gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
+                  Input source
+                </span>
+                <div className="inline-flex w-full gap-2 rounded-lg bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] p-1">
+                  <button
+                    type="button"
+                    onClick={() => handleInputModeChange('url')}
+                    aria-pressed={inputMode === 'url'}
+                    className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                      inputMode === 'url'
+                        ? 'bg-[color:color-mix(in_srgb,var(--ring)_18%,transparent)] text-[var(--fg)] shadow-sm'
+                        : 'text-[var(--muted)] hover:text-[var(--fg)]'
+                    }`}
+                  >
+                    From URL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleInputModeChange('file')}
+                    aria-pressed={inputMode === 'file'}
+                    className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                      inputMode === 'file'
+                        ? 'bg-[color:color-mix(in_srgb,var(--ring)_18%,transparent)] text-[var(--fg)] shadow-sm'
+                        : 'text-[var(--muted)] hover:text-[var(--fg)]'
+                    }`}
+                  >
+                    Upload file
+                  </button>
+                </div>
+                {inputMode === 'url' ? (
+                  <>
+                    <label className="sr-only" htmlFor="video-url">
+                      Video URL
+                    </label>
+                    <input
+                      id="video-url"
+                      type="url"
+                      value={videoUrl}
+                      onChange={handleUrlChange}
+                      placeholder="https://www.youtube.com/watch?v=..."
+                      className="rounded-lg border border-white/10 bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm placeholder:text-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    />
+                  </>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <label className="sr-only" htmlFor="video-upload">
+                      Video file
+                    </label>
+                    <input
+                      id="video-upload"
+                      ref={fileInputRef}
+                      type="file"
+                      accept="video/*"
+                      onChange={handleFileChange}
+                      className="rounded-lg border border-dashed border-white/16 bg-[color:color-mix(in_srgb,var(--panel)_80%,transparent)] px-4 py-3 text-sm text-[var(--fg)] shadow-sm file:mr-4 file:cursor-pointer file:rounded-md file:border-0 file:bg-[var(--ring)] file:px-3 file:py-2 file:font-semibold file:text-[var(--accent-contrast)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    />
+                    <p className="text-xs text-[var(--muted)]">
+                      {selectedFileName
+                        ? `Selected file: ${selectedFileName}`
+                        : 'Choose an MP4, MOV, or similar video from your computer.'}
+                    </p>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
                   <button
                     type="submit"
                     disabled={
-                      !videoUrl.trim() ||
+                      !canStartPipeline ||
                       isProcessing ||
                       accessState.pendingConsumption ||
                       Boolean(offlineRestrictionMessage)
@@ -697,7 +874,7 @@ const Home: FC<HomeProps> = ({
                   >
                     Reset
                   </button>
-                </div>
+              </div>
             </div>
             <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
               <input
@@ -714,7 +891,7 @@ const Home: FC<HomeProps> = ({
               </p>
             ) : null}
             <div className="text-xs text-[var(--muted)]">
-              Supports YouTube and Twitch URLs. The pipeline runs{' '}
+              Supports YouTube and Twitch URLs or local video uploads. The pipeline runs{' '}
               {isMockBackend
                 ? 'in simulation mode with mocked events.'
                 : 'against the backend API for live progress updates.'}
@@ -730,6 +907,11 @@ const Home: FC<HomeProps> = ({
             {urlError ? (
               <p className="text-xs font-medium text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
                 {urlError}
+              </p>
+            ) : null}
+            {fileError ? (
+              <p className="text-xs font-medium text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
+                {fileError}
               </p>
             ) : null}
           </form>

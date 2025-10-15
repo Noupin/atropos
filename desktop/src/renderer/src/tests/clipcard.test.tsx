@@ -38,7 +38,7 @@ describe('ClipCard', () => {
     expect(handleClick).toHaveBeenCalledTimes(1)
   })
 
-  it('falls back to inline video preview when thumbnail is missing', () => {
+  it('shows a placeholder when thumbnail is missing', () => {
     const clipWithoutThumbnail: Clip = {
       ...mockClip,
       id: 'clip-without-thumbnail',
@@ -49,9 +49,7 @@ describe('ClipCard', () => {
     const { container } = render(<ClipCard clip={clipWithoutThumbnail} onClick={() => {}} />)
 
     expect(container.querySelector('img')).toBeNull()
-    const video = container.querySelector('video')
-    expect(video).not.toBeNull()
-    expect(video?.getAttribute('src')).toBe(clipWithoutThumbnail.playbackUrl)
+    expect(screen.getByText(/No thumbnail/i)).toBeInTheDocument()
   })
 
   it('shows an adjusted badge when the clip has been modified', () => {

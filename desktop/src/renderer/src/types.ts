@@ -123,9 +123,18 @@ export type PipelineClipOutcome = {
 
 export type PipelineClipStatus = 'none_to_render' | 'rendered_none' | null
 
+export type PipelineSourceSelection =
+  | { kind: 'url'; url: string }
+  | { kind: 'file'; file: File }
+
+export type PipelineInputMode = PipelineSourceSelection['kind']
+
 export interface HomePipelineState {
   videoUrl: string
   urlError: string | null
+  fileError: string | null
+  selectedFileName: string | null
+  inputMode: PipelineInputMode
   pipelineError: string | null
   steps: PipelineStep[]
   isProcessing: boolean

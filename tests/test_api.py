@@ -7,12 +7,22 @@ import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+import sys
 from typing import List
 from urllib.parse import urlparse
 
 import pytest
 
+try:
+    import cv2  # noqa: F401
+except Exception as exc:  # pragma: no cover - environment guard
+    pytest.skip(f"OpenCV not available: {exc}", allow_module_level=True)
+
 from fastapi.testclient import TestClient
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "server"))
 
 import server.app
 import server.config as pipeline_config
@@ -31,7 +41,7 @@ def test_job_lifecycle(monkeypatch) -> None:
     ]
 
     def _fake_process(
-        url: str,
+        source,
         account=None,
         tone=None,
         observer=None,
@@ -72,7 +82,7 @@ def test_job_lifecycle(monkeypatch) -> None:
 
 def test_job_resume_unblocks_review_mode(monkeypatch) -> None:
     def _fake_process(
-        url: str,
+        source,
         account=None,
         tone=None,
         observer=None,
@@ -81,10 +91,14 @@ def test_job_resume_unblocks_review_mode(monkeypatch) -> None:
         review_gate=None,
     ) -> None:
         assert observer is not None
+        if hasattr(source, "url"):
+            url_value = source.url
+        else:
+            url_value = source
         observer.handle_event(
             PipelineEvent(
                 type=PipelineEventType.PIPELINE_STARTED,
-                data={"url": url},
+                data={"url": url_value},
             )
         )
         if pause_for_review and review_gate is not None:

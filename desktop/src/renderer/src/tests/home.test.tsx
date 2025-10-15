@@ -134,6 +134,9 @@ const SECONDARY_AVAILABLE_ACCOUNT: AccountSummary = {
 const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePipelineState => ({
   videoUrl: '',
   urlError: null,
+  fileError: null,
+  selectedFileName: null,
+  inputMode: 'url',
   pipelineError: null,
   steps: createInitialPipelineSteps(),
   isProcessing: false,
@@ -239,7 +242,11 @@ describe('Home account selection', () => {
     fireEvent.submit(form as HTMLFormElement)
 
     await waitFor(() => expect(startPipelineSpy).toHaveBeenCalledTimes(1))
-    expect(startPipelineSpy).toHaveBeenCalledWith(videoUrl, accountId, false)
+    expect(startPipelineSpy).toHaveBeenCalledWith(
+      { kind: 'url', url: videoUrl },
+      accountId,
+      false
+    )
   })
 
   it('surfaces guidance when no active accounts are available', () => {
@@ -297,6 +304,32 @@ describe('Home account selection', () => {
     )
 
     expect(screen.getByDisplayValue(videoUrl)).toBeInTheDocument()
+  })
+
+  it('starts the pipeline with an uploaded file when file mode is selected', () => {
+    const startPipelineSpy = vi.fn()
+    const file = new File(['content'], 'clip.mp4', { type: 'video/mp4' })
+
+    renderHome({
+      initialState: createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id }),
+      accounts: [AVAILABLE_ACCOUNT],
+      onStartPipeline: startPipelineSpy
+    })
+
+    const uploadToggle = screen.getByRole('button', { name: /upload file/i })
+    fireEvent.click(uploadToggle)
+
+    const fileInput = screen.getByLabelText(/video file/i) as HTMLInputElement
+    fireEvent.change(fileInput, { target: { files: [file] } })
+
+    const startButton = screen.getByRole('button', { name: /start processing/i })
+    fireEvent.click(startButton)
+
+    expect(startPipelineSpy).toHaveBeenCalledWith(
+      { kind: 'file', file },
+      AVAILABLE_ACCOUNT.id,
+      false
+    )
   })
 })
 

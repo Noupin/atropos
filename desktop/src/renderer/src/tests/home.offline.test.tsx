@@ -33,6 +33,9 @@ const AVAILABLE_ACCOUNT: AccountSummary = {
 const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePipelineState => ({
   videoUrl: '',
   urlError: null,
+  fileError: null,
+  selectedFileName: null,
+  inputMode: 'url',
   pipelineError: null,
   steps: createInitialPipelineSteps(),
   isProcessing: false,

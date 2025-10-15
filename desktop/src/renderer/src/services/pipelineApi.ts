@@ -1,11 +1,11 @@
 import { advanceApiBaseUrl, buildJobUrl, buildWebSocketUrl, getApiBaseUrl } from '../config/backend'
 import { parseClipTimestamp } from '../lib/clipMetadata'
-import type { Clip, PipelineEventType } from '../types'
+import type { Clip, PipelineEventType, PipelineSourceSelection } from '../types'
 
 type UnknownRecord = Record<string, unknown>
 
 export type PipelineJobRequest = {
-  url: string
+  source: PipelineSourceSelection
   account?: string | null
   tone?: string | null
   reviewMode?: boolean
@@ -39,17 +39,41 @@ export const startPipelineJob = async (request: PipelineJobRequest): Promise<Pip
   while (true) {
     const url = buildJobUrl()
     try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          url: request.url,
+      const body: BodyInit = (() => {
+        if (request.source.kind === 'file') {
+          const formData = new FormData()
+          formData.set('review_mode', String(request.reviewMode ?? false))
+          if (request.account) {
+            formData.set('account', request.account)
+          }
+          if (request.tone) {
+            formData.set('tone', request.tone)
+          }
+          formData.set('input_mode', 'file')
+          formData.set('video', request.source.file, request.source.file.name)
+          if (request.source.file.type) {
+            formData.set('file_type', request.source.file.type)
+          }
+          return formData
+        }
+
+        return JSON.stringify({
+          url: request.source.url,
           account: request.account ?? null,
           tone: request.tone ?? null,
           review_mode: request.reviewMode ?? false
         })
+      })()
+
+      response = await fetch(url, {
+        method: 'POST',
+        headers:
+          request.source.kind === 'file'
+            ? undefined
+            : {
+                'Content-Type': 'application/json'
+              },
+        body
       })
       break
     } catch (error) {

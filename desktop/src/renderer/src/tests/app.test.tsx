@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import type { HomePipelineState, PipelineStep } from '../types'
+import type { UiState } from '../state/uiState'
 
 const navigateMock = vi.fn()
 let capturedOptions: any = null
@@ -25,6 +26,28 @@ vi.mock('react-router-dom', async () => {
     useNavigate: () => navigateMock
   }
 })
+
+const defaultUiState: UiState = {
+  activeTab: '/',
+  activeAccountId: null,
+  library: {
+    expandedAccountIds: [],
+    expandedProjectIds: [],
+    selectedClipId: null,
+    pageCounts: {},
+    scrollTop: 0,
+    activeAccountId: null,
+    pageSize: 20,
+    accountScrollPositions: {}
+  }
+}
+
+vi.mock('../state/uiState', () => ({
+  useUiState: () => ({
+    state: defaultUiState,
+    updateState: vi.fn()
+  })
+}))
 
 vi.mock('../state/usePipelineProgress', () => ({
   __esModule: true,

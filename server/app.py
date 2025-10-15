@@ -8,6 +8,7 @@ import logging
 import math
 import re
 import subprocess
+import tempfile
 import threading
 import uuid
 from dataclasses import dataclass, field, fields, is_dataclass
@@ -21,18 +22,19 @@ from fastapi import (
     Query,
     Request,
     Response,
+    UploadFile,
     WebSocket,
     WebSocketDisconnect,
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from custom_types.ETone import Tone
 from interfaces.clips import router as clips_router, register_legacy_routes as register_clip_legacy_routes
 from interfaces.progress import PipelineEvent, PipelineEventType, PipelineObserver
-from pipeline import GENERIC_HASHTAGS, process_video
+from pipeline import GENERIC_HASHTAGS, PipelineSource, process_video
 from library import (
     DEFAULT_ACCOUNT_PLACEHOLDER,
     list_account_clips,
@@ -981,23 +983,122 @@ def _generate_preview_clip(
 
 
 @app.post("/api/jobs", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED)
-async def start_job(payload: RunRequest) -> RunResponse:
-    """Start processing ``payload.url`` in a background thread."""
+async def start_job(request: Request) -> RunResponse:
+    """Start processing a remote video or uploaded file in a background thread."""
+
+    content_type = request.headers.get("content-type", "")
+    account: str | None = None
+    tone: Tone | None = None
+    review_mode = False
+
+    if content_type.startswith("application/json"):
+        payload_data = await request.json()
+        try:
+            payload = RunRequest.model_validate(payload_data)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=exc.errors(),
+            ) from exc
+        account = payload.account
+        tone = payload.tone
+        review_mode = payload.review_mode
+        pipeline_source = PipelineSource.from_url(payload.url)
+    else:
+        form = await request.form()
+        raw_account = form.get("account")
+        if isinstance(raw_account, str):
+            stripped = raw_account.strip()
+            account = stripped or None
+
+        tone_value = form.get("tone")
+        if tone_value:
+            try:
+                tone = Tone(tone_value)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(exc),
+                ) from exc
+
+        review_value = form.get("review_mode")
+        if isinstance(review_value, str):
+            review_mode = review_value.strip().lower() in {"1", "true", "yes", "on"}
+        elif isinstance(review_value, bool):
+            review_mode = bool(review_value)
+
+        upload = form.get("video")
+        if isinstance(upload, UploadFile) and upload.filename:
+            content_hint = upload.content_type or ""
+            if content_hint and not content_hint.startswith("video/"):
+                await upload.close()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Uploaded file must be a video.",
+                )
+
+            temp_dir = Path(tempfile.mkdtemp(prefix="atropos-upload-"))
+            safe_name = Path(upload.filename).name or f"upload-{uuid.uuid4().hex}.mp4"
+            temp_path = temp_dir / safe_name
+            size = 0
+            try:
+                with temp_path.open("wb") as buffer:
+                    while True:
+                        chunk = await upload.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        buffer.write(chunk)
+                        size += len(chunk)
+            finally:
+                await upload.close()
+
+            if size == 0:
+                temp_path.unlink(missing_ok=True)
+                try:
+                    temp_dir.rmdir()
+                except OSError:
+                    pass
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Uploaded file is empty.",
+                )
+
+            pipeline_source = PipelineSource.from_upload(temp_path, upload.filename)
+        else:
+            url_value = form.get("url")
+            if isinstance(url_value, str) and url_value.strip():
+                pipeline_source = PipelineSource.from_url(url_value.strip())
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Provide a video URL or upload a video file.",
+                )
 
     job_id = uuid.uuid4().hex
     loop = asyncio.get_running_loop()
-    state = JobState(loop=loop, review_mode=payload.review_mode)
-    if payload.review_mode:
+    state = JobState(loop=loop, review_mode=review_mode)
+    if review_mode:
         state.resume_event = threading.Event()
     observer = BroadcastObserver(state)
 
     account_details: AccountResponse | None = None
-    if payload.account:
-        account_details = ensure_account_available(payload.account)
+    if account:
+        account_details = ensure_account_available(account)
+
+    def cleanup_uploaded_file() -> None:
+        if pipeline_source.kind == "upload" and pipeline_source.path is not None:
+            try:
+                pipeline_source.path.unlink()
+            except FileNotFoundError:
+                pass
+            try:
+                pipeline_source.path.parent.rmdir()
+            except OSError:
+                pass
 
     def runner() -> None:
         try:
-            selected_tone = payload.tone
+            selected_tone = tone
             if (
                 selected_tone is None
                 and account_details is not None
@@ -1005,12 +1106,12 @@ async def start_job(payload: RunRequest) -> RunResponse:
             ):
                 selected_tone = account_details.tone
             process_video(
-                payload.url,
-                account=payload.account,
+                pipeline_source,
+                account=account,
                 tone=selected_tone,
                 observer=observer,
-                pause_for_review=payload.review_mode,
-                review_gate=state.wait_for_resume if payload.review_mode else None,
+                pause_for_review=review_mode,
+                review_gate=state.wait_for_resume if review_mode else None,
             )
         except Exception as exc:  # pragma: no cover - exercised in integration
             logger.exception("Pipeline job %s failed", job_id)
@@ -1021,6 +1122,8 @@ async def start_job(payload: RunRequest) -> RunResponse:
                     data={"success": False, "error": str(exc)},
                 )
             )
+        finally:
+            cleanup_uploaded_file()
 
     thread = threading.Thread(target=runner, name=f"pipeline-{job_id}", daemon=True)
     state.thread = thread
