@@ -1463,6 +1463,8 @@ def _build_file(media_reference, br_map):
     file_e = _element_with_item_metadata("file", media_reference)
 
     available_range = media_reference.available_range
+    url_path = None
+    fallback_file_name = media_reference.name
 
     # If the media reference is of one of the supported types, populate
     # the appropriate source info element
@@ -1472,10 +1474,8 @@ def _build_file(media_reference, br_map):
         )
         url_path = _url_to_path(media_reference.target_url)
 
-        fallback_file_name = (
-            media_reference.name if media_reference.name
-            else os.path.basename(url_path)
-        )
+        if not fallback_file_name:
+            fallback_file_name = os.path.basename(url_path)
     elif isinstance(media_reference, schema.ImageSequenceReference):
         _append_new_sub_element(
             file_e, 'pathurl', text=media_reference.abstract_target_url(
@@ -1485,20 +1485,22 @@ def _build_file(media_reference, br_map):
             f"%0{media_reference.frame_zero_padding}d")
         )
 
-        fallback_file_name = (
-            media_reference.name if media_reference.name
-            else os.path.basename(url_path)
-        )
+        if not fallback_file_name:
+            fallback_file_name = os.path.basename(url_path)
     elif isinstance(media_reference, schema.GeneratorReference):
         _append_new_sub_element(
             file_e, 'mediaSource', text=media_reference.generator_kind
         )
-        fallback_file_name = media_reference.generator_kind
+        if not fallback_file_name:
+            fallback_file_name = media_reference.generator_kind
+
+    if fallback_file_name is None:
+        fallback_file_name = "media"
 
     _append_new_sub_element(
         file_e,
         'name',
-        text=(media_reference.name or fallback_file_name),
+        text=fallback_file_name,
     )
 
     # timing info
@@ -1525,7 +1527,10 @@ def _build_file(media_reference, br_map):
         file_media_e = _get_or_create_subelement(file_e, "media")
 
         audio_exts = {'.wav', '.aac', '.mp3', '.aif', '.aiff', '.m4a'}
-        has_video = (os.path.splitext(url_path)[1].lower() not in audio_exts)
+        if url_path:
+            has_video = (os.path.splitext(url_path)[1].lower() not in audio_exts)
+        else:
+            has_video = True
         if has_video and file_media_e.find("video") is None:
             _append_new_sub_element(file_media_e, "video")
 

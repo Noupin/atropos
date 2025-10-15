@@ -26,6 +26,12 @@ from library import list_account_clips_sync
 
 OTIO_AVAILABLE = importlib.util.find_spec("opentimelineio") is not None
 
+if OTIO_AVAILABLE:
+    import opentimelineio as otio
+    from common.exports.vendor.otio_fcp_adapter import fcp_xml
+else:  # pragma: no cover - optional dependency path
+    fcp_xml = None  # type: ignore[assignment]
+
 
 def _write(path: Path, content: str | bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -172,3 +178,26 @@ def test_missing_dependency_surfaces_helpful_error(tmp_path, monkeypatch):
     message = str(excinfo.value)
     assert "opentimelineio" in message
     assert excinfo.value.status_code == 503
+
+
+@pytest.mark.skipif(not OTIO_AVAILABLE, reason="opentimelineio dependency is unavailable")
+def test_fcp_xml_handles_generator_reference():
+    assert fcp_xml is not None
+
+    timeline = otio.schema.Timeline(name="Generator overlay")
+    track = otio.schema.Track(name="Text")
+    generator_clip = otio.schema.Clip(name="Overlay")
+    generator_clip.media_reference = otio.schema.GeneratorReference(
+        name="Overlay",
+        generator_kind="text",
+        available_range=otio.opentime.TimeRange(
+            start_time=otio.opentime.RationalTime(0, 24),
+            duration=otio.opentime.RationalTime(48, 24),
+        ),
+    )
+    track.append(generator_clip)
+    timeline.tracks.append(track)
+
+    xml = fcp_xml.write_to_string(timeline)
+
+    assert "<mediaSource" in xml
