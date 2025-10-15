@@ -14,9 +14,10 @@ from pathlib import Path
 from types import ModuleType
 from typing import Dict, Optional
 
+import logging
 import config as pipeline_config
 from helpers.media import VideoStreamMetadata, probe_video_stream
-from library import LibraryClip, list_account_clips_sync
+from library import DEFAULT_ACCOUNT_PLACEHOLDER, LibraryClip, list_account_clips_sync
 from .srt import SubtitleCue, parse_srt_file
 
 
@@ -29,6 +30,9 @@ PREMIERE_PROJECT_NAME = "Project.prproj"
 FINALCUT_PROJECT_NAME = "FinalCutProject.fcpxml"
 RESOLVE_PROJECT_NAME = "ResolveProject.fcpxml"
 MANIFEST_NAME = "export_manifest.json"
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -52,9 +56,14 @@ class ProjectExportError(RuntimeError):
 def _load_otio() -> ModuleType:
     """Return the ``opentimelineio`` module or raise a helpful error."""
 
+    logger.debug("Attempting to import opentimelineio for project export")
     try:
         return importlib.import_module("opentimelineio")
     except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
+        logger.warning(
+            "Optional dependency opentimelineio is unavailable",
+            exc_info=True,
+        )
         raise ProjectExportError(
             "Project export requires the optional 'opentimelineio' dependency. "
             "Install it with `pip install opentimelineio[fcpxml]` and try again.",
@@ -75,6 +84,7 @@ def _ensure_directory(path: Path) -> None:
 
 def _copy_media(source: Path, destination_dir: Path) -> Path:
     if not source.exists():
+        logger.error("Required media asset missing for export", extra={"path": str(source)})
         raise ProjectExportError(f"Required media asset not found: {source}")
     destination = destination_dir / source.name
     shutil.copy2(source, destination)
@@ -222,6 +232,11 @@ def _write_project_files(
         otio.adapters.write_to_file(timeline, str(premiere_path), adapter_name="premiere_xml")
     except Exception:
         # Fallback to the universal XML so users can still import the project.
+        logger.warning(
+            "Falling back to universal XML for Premiere project",
+            exc_info=True,
+            extra={"premiere_path": str(premiere_path)},
+        )
         shutil.copy2(universal_path, premiere_path)
     files["premiere"] = PREMIERE_PROJECT_NAME
 
@@ -274,15 +289,28 @@ def build_clip_project_export(
 ) -> ExportedProject:
     """Generate a zipped project export for ``clip_id``."""
 
+    account_log = account_id or DEFAULT_ACCOUNT_PLACEHOLDER
+    logger.info(
+        "Building project export",
+        extra={"account_id": account_log, "clip_id": clip_id},
+    )
     clips = list_account_clips_sync(account_id)
     clip = next((entry for entry in clips if entry.clip_id == clip_id), None)
     if clip is None:
+        logger.warning(
+            "Clip not found for project export",
+            extra={"account_id": account_log, "clip_id": clip_id},
+        )
         raise ProjectExportError("Clip not found for export", status_code=404)
 
     otio = _load_otio()
 
     project_dir = clip.playback_path.parent.parent
     if not project_dir.exists():
+        logger.error(
+            "Project directory is unavailable",
+            extra={"project_dir": str(project_dir), "clip_id": clip_id},
+        )
         raise ProjectExportError("Project directory is unavailable")
 
     stem = clip.playback_path.stem
@@ -301,6 +329,10 @@ def build_clip_project_export(
 
     export_folder = export_parent / _build_export_folder_name(clip)
     if export_folder.exists():
+        logger.info(
+            "Replacing existing export folder",
+            extra={"export_folder": str(export_folder)},
+        )
         shutil.rmtree(export_folder)
     export_folder.mkdir(parents=True)
 
@@ -339,6 +371,15 @@ def build_clip_project_export(
     archive_path = export_parent / f"{export_folder.name}.zip"
     _zip_project(export_folder, archive_path)
 
+    logger.info(
+        "Project export complete",
+        extra={
+            "account_id": account_log,
+            "clip_id": clip.clip_id,
+            "export_folder": str(export_folder),
+            "archive_path": str(archive_path),
+        },
+    )
     return ExportedProject(
         folder_path=export_folder,
         archive_path=archive_path,
