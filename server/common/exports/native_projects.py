@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import zipfile
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
@@ -102,59 +101,6 @@ def generate_premiere_project(
             _append_log_info(marker)
 
     return ET.tostring(root, encoding="utf-8").decode("utf-8")
-
-
-def generate_resolve_project(
-    *,
-    clip_name: str,
-    clip_duration_seconds: float,
-    clip_relative_path: str,
-    subtitles: Sequence[Mapping[str, str | float]],
-    fps: float,
-    destination_path: Path,
-) -> None:
-    """Create a Resolve ``.drp`` archive compatible with project import."""
-
-    duration_frames = max(1, int(round(clip_duration_seconds * fps)))
-    project_root = ET.Element("DaVinciResolveProject", version="17.4")
-    project = ET.SubElement(project_root, "Project", name=clip_name)
-    mediapool = ET.SubElement(project, "MediaPool")
-    master_clips = ET.SubElement(mediapool, "MasterClips")
-    clip_el = ET.SubElement(
-        master_clips,
-        "Clip",
-        id="clip-1",
-        name=clip_name,
-        path=Path(clip_relative_path).as_posix(),
-    )
-    clip_el.set("durationFrames", str(duration_frames))
-
-    timeline = ET.SubElement(project, "Timeline", name=clip_name)
-    timeline.set("frameRate", f"{fps:.3f}")
-    track = ET.SubElement(timeline, "Track", type="Video", index="1")
-    ET.SubElement(track, "ClipRef", ref="clip-1", startFrame="0", endFrame=str(duration_frames))
-
-    if subtitles:
-        sub_track = ET.SubElement(project, "SubtitleTrack", index="1")
-        for idx, cue in enumerate(subtitles, start=1):
-            element = ET.SubElement(sub_track, "Subtitle", id=f"subtitle-{idx}")
-            element.set("startFrame", str(int(round(float(cue.get("start", 0)) * fps))))
-            element.set("endFrame", str(int(round(float(cue.get("end", 0)) * fps))))
-            element.text = str(cue.get("text", ""))
-
-    xml_payload = ET.tostring(project_root, encoding="utf-8", xml_declaration=True)
-
-    config_root = ET.Element("Config")
-    ET.SubElement(config_root, "Property", name="TimelineFrameRate").text = f"{fps:.3f}"
-    ET.SubElement(config_root, "Property", name="TimelineName").text = clip_name
-    config_payload = ET.tostring(config_root, encoding="utf-8", xml_declaration=True)
-
-    user_config = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><UserConfig/>"
-
-    with zipfile.ZipFile(destination_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("Resolve Project/Project.xml", xml_payload)
-        archive.writestr("Resolve Project/Config.cdr", config_payload)
-        archive.writestr("Resolve Project/UserConfig.cfg", user_config)
 
 
 def save_text_file(path: Path, payload: str) -> None:

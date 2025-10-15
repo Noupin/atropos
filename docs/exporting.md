@@ -15,9 +15,9 @@ assets referenced by those timelines.
 4. Double-click the archive to extract a folder named `Short_YYYYMMDD_TOKEN`.
    - Double-click `Project.prproj` to launch Premiere Pro.
    - Double-click `FinalCutProject.fcpxml` for Final Cut Pro.
-   - Double-click `ResolveProject.drp` to open DaVinci Resolve. The archive
-     embeds Resolve's `Project.xml` along with placeholder config files so the
-     application recognises the package when imported.
+   - Double-click `ResolveProject.fcpxml` to open DaVinci Resolve. The export
+     uses Resolve's FCPXML import path unless the local OpenTimelineIO Resolve
+     adapter is available, in which case a native `.drp` is generated.
    - All editors can also import `UniversalExport.fcpxml` directly.
 
 The export button stays disabled while the backend is building an archive. Any
@@ -46,7 +46,7 @@ Short_YYYYMMDD_TOKEN/
 │   └── clip_0.00-20.00_r9.0_vertical.mp4  # rendered short
 ├── Project.prproj                     # Premiere project (XMEML)
 ├── FinalCutProject.fcpxml             # Final Cut Pro timeline
-├── ResolveProject.drp                 # DaVinci Resolve project archive
+├── ResolveProject.fcpxml             # DaVinci Resolve timeline (or .drp when supported)
 ├── UniversalExport.fcpxml             # Editor-agnostic FCPXML timeline
 └── export_manifest.json               # Manifest describing paths and transforms
 ```

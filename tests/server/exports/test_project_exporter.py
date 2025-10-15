@@ -92,7 +92,7 @@ def test_builds_project_archive(tmp_path, monkeypatch):
         universal_entry = f"{root_folder}/UniversalExport.fcpxml"
         manifest_entry = f"{root_folder}/export_manifest.json"
         premiere_entry = f"{root_folder}/Project.prproj"
-        resolve_entry = f"{root_folder}/ResolveProject.drp"
+        resolve_entry = f"{root_folder}/ResolveProject.fcpxml"
         assert universal_entry in members
         assert premiere_entry in members
         assert resolve_entry in members
@@ -108,12 +108,8 @@ def test_builds_project_archive(tmp_path, monkeypatch):
         premiere_xml = archive.read(premiere_entry).decode("utf-8")
         assert "<xmeml" in premiere_xml
 
-        with archive.open(resolve_entry) as resolve_file:
-            with zipfile.ZipFile(resolve_file) as resolve_zip:
-                members = set(resolve_zip.namelist())
-                assert "Resolve Project/Project.xml" in members
-                assert "Resolve Project/Config.cdr" in members
-                assert "Resolve Project/UserConfig.cfg" in members
+        resolve_xml = archive.read(resolve_entry).decode("utf-8")
+        assert raw.name in resolve_xml
 
 
 def test_missing_clip_raises(tmp_path, monkeypatch):

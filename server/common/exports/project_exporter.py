@@ -21,10 +21,8 @@ from library import DEFAULT_ACCOUNT_PLACEHOLDER, LibraryClip, list_account_clips
 from .native_projects import (
     build_srt_entries,
     generate_premiere_project,
-    generate_resolve_project,
     save_text_file,
 )
-from .vendor.otio_fcp_adapter import fcp_xml as fcp_xml_adapter
 from .srt import SubtitleCue, parse_srt_file
 
 
@@ -36,6 +34,15 @@ UNIVERSAL_XML_NAME = "UniversalExport.fcpxml"
 PREMIERE_PROJECT_NAME = "Project.prproj"
 FINALCUT_PROJECT_NAME = "FinalCutProject.fcpxml"
 RESOLVE_PROJECT_NAME = "ResolveProject.drp"
+RESOLVE_FCPXML_NAME = "ResolveProject.fcpxml"
+RESOLVE_ADAPTER_CANDIDATES = (
+    "davinci_resolve",
+    "resolve",
+    "davinciresolve",
+)
+ADAPTER_REQUIRED_BY_EXTENSION = {
+    ".drp": RESOLVE_ADAPTER_CANDIDATES,
+}
 MANIFEST_NAME = "export_manifest.json"
 
 
@@ -76,6 +83,14 @@ def _load_otio() -> ModuleType:
             "Install it with `pip install opentimelineio[fcpxml]` and try again.",
             status_code=503,
         ) from exc
+
+
+def _load_fcp_xml_adapter() -> ModuleType:
+    """Return the vendored FCPXML adapter bound to opentimelineio."""
+
+    return importlib.import_module(
+        "common.exports.vendor.otio_fcp_adapter.fcp_xml"
+    )
 
 
 def _build_export_folder_name(clip: LibraryClip) -> str:
@@ -214,6 +229,74 @@ def _build_timeline(
     return timeline, duration_seconds, fps
 
 
+def _available_adapter_names(otio: ModuleType) -> tuple[set[str], dict[str, str]]:
+    """Return adapter names plus a case-insensitive lookup."""
+
+    try:
+        adapters = otio.adapters.available_adapter_names()
+    except Exception:  # pragma: no cover - defensive guard
+        logger.exception("Failed to read opentimelineio adapters", exc_info=True)
+        return set(), {}
+    lowered = {name.lower() for name in adapters}
+    lookup = {name.lower(): name for name in adapters}
+    return lowered, lookup
+
+
+def _extension_requires_adapter(filename: str, available_adapters: set[str]) -> bool:
+    """Return ``True`` if ``filename`` needs an available OTIO adapter."""
+
+    extension = Path(filename).suffix.lower()
+    adapter_candidates = ADAPTER_REQUIRED_BY_EXTENSION.get(extension)
+    if adapter_candidates is None:
+        return True
+    return any(candidate in available_adapters for candidate in adapter_candidates)
+
+
+def _write_resolve_project(
+    timeline,  # type: ignore[no-untyped-def]
+    export_dir: Path,
+    *,
+    universal_xml: str,
+    available_adapters: set[str],
+    adapter_lookup: dict[str, str],
+    otio: ModuleType,
+    clip: LibraryClip,
+) -> str:
+    """Write the Resolve project file or fallback to FCPXML."""
+
+    adapter_key = next(
+        (candidate for candidate in RESOLVE_ADAPTER_CANDIDATES if candidate in available_adapters),
+        None,
+    )
+    if adapter_key:
+        adapter_name = adapter_lookup.get(adapter_key, adapter_key)
+        resolve_path = export_dir / RESOLVE_PROJECT_NAME
+        try:
+            otio.adapters.write_to_file(  # type: ignore[attr-defined]
+                timeline,
+                str(resolve_path),
+                adapter_name=adapter_name,
+            )
+            logger.info(
+                "Resolve project generated via opentimelineio adapter",
+                extra={"clip_id": clip.clip_id, "resolve_path": str(resolve_path)},
+            )
+            return resolve_path.name
+        except Exception:  # pragma: no cover - adapter failure path
+            logger.exception(
+                "Resolve adapter failed, falling back to FCPXML",
+                extra={"clip_id": clip.clip_id},
+            )
+
+    logger.warning(
+        "Resolve adapter unavailable; exporting Resolve-compatible FCPXML",
+        extra={"clip_id": clip.clip_id},
+    )
+    fallback_path = export_dir / RESOLVE_FCPXML_NAME
+    save_text_file(fallback_path, universal_xml)
+    return fallback_path.name
+
+
 def _write_project_files(
     timeline,  # type: ignore[no-untyped-def]
     export_dir: Path,
@@ -223,8 +306,12 @@ def _write_project_files(
     subtitle_cues: list[SubtitleCue],
     duration_seconds: float,
     fps: float,
+    otio: ModuleType,
 ) -> Dict[str, str]:
     files: Dict[str, str] = {}
+
+    available_adapters, adapter_lookup = _available_adapter_names(otio)
+    fcp_xml_adapter = _load_fcp_xml_adapter()
 
     universal_path = export_dir / UNIVERSAL_XML_NAME
     universal_xml = fcp_xml_adapter.write_to_string(timeline)
@@ -235,16 +322,15 @@ def _write_project_files(
     save_text_file(final_cut_path, universal_xml)
     files["final_cut"] = FINALCUT_PROJECT_NAME
 
-    resolve_path = export_dir / RESOLVE_PROJECT_NAME
-    generate_resolve_project(
-        clip_name=clip.title,
-        clip_duration_seconds=duration_seconds,
-        clip_relative_path=media_relative_path.as_posix(),
-        subtitles=build_srt_entries(subtitle_cues),
-        fps=fps,
-        destination_path=resolve_path,
+    resolve_filename = _write_resolve_project(
+        timeline,
+        export_dir,
+        universal_xml=universal_xml,
+        available_adapters=available_adapters,
+        adapter_lookup=adapter_lookup,
+        otio=otio,
+        clip=clip,
     )
-    files["resolve"] = RESOLVE_PROJECT_NAME
 
     premiere_path = export_dir / PREMIERE_PROJECT_NAME
     premiere_xml = generate_premiere_project(
@@ -256,6 +342,22 @@ def _write_project_files(
     )
     save_text_file(premiere_path, premiere_xml)
     files["premiere"] = PREMIERE_PROJECT_NAME
+
+    if _extension_requires_adapter(resolve_filename, available_adapters):
+        files["resolve"] = resolve_filename
+    else:
+        logger.error(
+            "Resolve export extension is unsupported; defaulting to universal XML",
+            extra={
+                "clip_id": clip.clip_id,
+                "resolve_filename": resolve_filename,
+                "available_adapters": sorted(available_adapters),
+            },
+        )
+        files["resolve"] = UNIVERSAL_XML_NAME
+        fallback_path = export_dir / resolve_filename
+        if fallback_path.exists():
+            fallback_path.unlink()
 
     return files
 
@@ -384,6 +486,7 @@ def build_clip_project_export(
         subtitle_cues=subtitle_cues,
         duration_seconds=timeline_duration,
         fps=fps,
+        otio=otio,
     )
 
     media_manifest = {
