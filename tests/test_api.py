@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import time
 from datetime import datetime, timezone
@@ -28,6 +29,7 @@ import server.app
 import server.config as pipeline_config
 import server.library
 from interfaces.progress import PipelineEvent, PipelineEventType
+from pipeline import PipelineSource
 
 
 def test_job_lifecycle(monkeypatch) -> None:
@@ -76,6 +78,66 @@ def test_job_lifecycle(monkeypatch) -> None:
     assert types[0] == PipelineEventType.PIPELINE_STARTED.value
     assert types[-1] == PipelineEventType.PIPELINE_COMPLETED.value
 
+    with server.app._jobs_lock:
+        server.app._jobs.clear()
+
+
+def test_start_job_accepts_generic_file_upload(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_process(
+        source,
+        account=None,
+        tone=None,
+        observer=None,
+        *,
+        pause_for_review: bool = False,
+        review_gate=None,
+    ) -> None:
+        assert observer is not None
+        assert isinstance(source, PipelineSource)
+        assert source.kind == "upload"
+        assert source.filename == "sample.mp4"
+        assert source.path is not None and source.path.exists()
+        captured["path"] = source.path
+        observer.handle_event(
+            PipelineEvent(
+                type=PipelineEventType.PIPELINE_COMPLETED,
+                data={"success": True, "project_dir": str(tmp_path)},
+            )
+        )
+
+    monkeypatch.setattr(server.app, "process_video", _fake_process)
+
+    client = TestClient(server.app.app)
+    response = client.post(
+        "/api/jobs",
+        files={
+            "video": (
+                "sample.mp4",
+                io.BytesIO(b"not really a video but fine for tests"),
+                "application/octet-stream",
+            )
+        },
+    )
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+
+    for _ in range(100):
+        status_response = client.get(f"/api/jobs/{job_id}")
+        assert status_response.status_code == 200
+        if status_response.json()["finished"]:
+            break
+        time.sleep(0.01)
+    else:  # pragma: no cover - defensive guard
+        raise AssertionError("Pipeline job did not finish")
+
+    state = server.app._get_job(job_id)
+    if state and state.thread is not None:
+        state.thread.join(timeout=1)
+    uploaded_path = captured.get("path")
+    assert isinstance(uploaded_path, Path)
+    assert not uploaded_path.exists()
     with server.app._jobs_lock:
         server.app._jobs.clear()
 

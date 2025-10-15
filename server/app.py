@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 import hashlib
 import logging
 import math
@@ -1029,16 +1030,23 @@ async def start_job(request: Request) -> RunResponse:
 
         upload = form.get("video")
         if isinstance(upload, UploadFile) and upload.filename:
-            content_hint = upload.content_type or ""
+            safe_name = Path(upload.filename).name or f"upload-{uuid.uuid4().hex}.mp4"
+            content_hint = (upload.content_type or "").lower()
             if content_hint and not content_hint.startswith("video/"):
-                await upload.close()
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Uploaded file must be a video.",
-                )
+                guessed_type, _ = mimetypes.guess_type(safe_name)
+                if guessed_type:
+                    guessed_type = guessed_type.lower()
+                if not (
+                    (guessed_type and guessed_type.startswith("video/"))
+                    or content_hint in {"application/octet-stream", "application/mp4"}
+                ):
+                    await upload.close()
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Uploaded file must be a video.",
+                    )
 
             temp_dir = Path(tempfile.mkdtemp(prefix="atropos-upload-"))
-            safe_name = Path(upload.filename).name or f"upload-{uuid.uuid4().hex}.mp4"
             temp_path = temp_dir / safe_name
             size = 0
             try:
