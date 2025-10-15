@@ -113,11 +113,11 @@ def generate_resolve_project(
     fps: float,
     destination_path: Path,
 ) -> None:
-    """Create a lightweight Resolve ``.drp`` archive."""
+    """Create a Resolve ``.drp`` archive compatible with project import."""
 
     duration_frames = max(1, int(round(clip_duration_seconds * fps)))
-    root = ET.Element("DaVinciResolveProject", version="17.4")
-    project = ET.SubElement(root, "Project", name=clip_name)
+    project_root = ET.Element("DaVinciResolveProject", version="17.4")
+    project = ET.SubElement(project_root, "Project", name=clip_name)
     mediapool = ET.SubElement(project, "MediaPool")
     master_clips = ET.SubElement(mediapool, "MasterClips")
     clip_el = ET.SubElement(
@@ -142,10 +142,19 @@ def generate_resolve_project(
             element.set("endFrame", str(int(round(float(cue.get("end", 0)) * fps))))
             element.text = str(cue.get("text", ""))
 
-    xml_payload = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    xml_payload = ET.tostring(project_root, encoding="utf-8", xml_declaration=True)
+
+    config_root = ET.Element("Config")
+    ET.SubElement(config_root, "Property", name="TimelineFrameRate").text = f"{fps:.3f}"
+    ET.SubElement(config_root, "Property", name="TimelineName").text = clip_name
+    config_payload = ET.tostring(config_root, encoding="utf-8", xml_declaration=True)
+
+    user_config = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><UserConfig/>"
 
     with zipfile.ZipFile(destination_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("Project.xml", xml_payload)
+        archive.writestr("Resolve Project/Project.xml", xml_payload)
+        archive.writestr("Resolve Project/Config.cdr", config_payload)
+        archive.writestr("Resolve Project/UserConfig.cfg", user_config)
 
 
 def save_text_file(path: Path, payload: str) -> None:

@@ -15,7 +15,9 @@ assets referenced by those timelines.
 4. Double-click the archive to extract a folder named `Short_YYYYMMDD_TOKEN`.
    - Double-click `Project.prproj` to launch Premiere Pro.
    - Double-click `FinalCutProject.fcpxml` for Final Cut Pro.
-   - Double-click `ResolveProject.drp` to open DaVinci Resolve.
+   - Double-click `ResolveProject.drp` to open DaVinci Resolve. The archive
+     embeds Resolve's `Project.xml` along with placeholder config files so the
+     application recognises the package when imported.
    - All editors can also import `UniversalExport.fcpxml` directly.
 
 The export button stays disabled while the backend is building an archive. Any

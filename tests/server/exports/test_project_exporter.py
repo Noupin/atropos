@@ -110,7 +110,10 @@ def test_builds_project_archive(tmp_path, monkeypatch):
 
         with archive.open(resolve_entry) as resolve_file:
             with zipfile.ZipFile(resolve_file) as resolve_zip:
-                assert "Project.xml" in resolve_zip.namelist()
+                members = set(resolve_zip.namelist())
+                assert "Resolve Project/Project.xml" in members
+                assert "Resolve Project/Config.cdr" in members
+                assert "Resolve Project/UserConfig.cfg" in members
 
 
 def test_missing_clip_raises(tmp_path, monkeypatch):
