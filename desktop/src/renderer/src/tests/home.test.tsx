@@ -240,7 +240,8 @@ describe('Home account selection', () => {
       const statusRegion = within(form as HTMLFormElement).getByText((_content, element) => {
         return element?.getAttribute('aria-live') === 'polite'
       })
-      expect(statusRegion).toHaveTextContent(/Processing as Creator Hub\./i)
+      expect(statusRegion).toHaveTextContent(/Account · Creator Hub/i)
+      expect(statusRegion).toHaveTextContent(/Tone · Funny/i)
     })
     fireEvent.change(videoUrlInput, { target: { value: videoUrl } })
     fireEvent.submit(form as HTMLFormElement)
@@ -263,9 +264,15 @@ describe('Home account selection', () => {
         onStartPipeline: startPipelineSpy
       })
 
+      const localFileTab = screen.getByRole('tab', { name: /local file/i })
+      fireEvent.click(localFileTab)
+
       const chooseButton = screen.getByRole('button', { name: /choose local video/i })
       fireEvent.click(chooseButton)
       await waitFor(() => expect(openVideoFile).toHaveBeenCalledTimes(1))
+
+      const startButton = screen.getByRole('button', { name: /start processing/i })
+      await waitFor(() => expect(startButton).not.toBeDisabled())
 
       const form = chooseButton.closest('form')
       expect(form).not.toBeNull()
