@@ -10,8 +10,10 @@ import {
 import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PipelineProgress from '../components/PipelineProgress'
-import { BACKEND_MODE } from '../config/backend'
+import { getBadgeClassName } from '../components/badgeStyles'
+import { BACKEND_MODE, getApiBaseUrl } from '../config/backend'
 import { createInitialPipelineSteps, PIPELINE_STEP_DEFINITIONS } from '../data/pipeline'
+import { TONE_LABELS } from '../constants/tone'
 import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
 import type { AccountSummary, HomePipelineState } from '../types'
@@ -32,11 +34,17 @@ const isValidVideoUrl = (value: string): boolean => {
 
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value))
 
+type SourceMode = 'url' | 'file'
+
 type HomeProps = {
   initialState: HomePipelineState
   onStateChange: (state: HomePipelineState) => void
   accounts: AccountSummary[]
-  onStartPipeline: (url: string, accountId: string, reviewMode: boolean) => Promise<void> | void
+  onStartPipeline: (
+    source: { url?: string | null; filePath?: string | null },
+    accountId: string,
+    reviewMode: boolean
+  ) => Promise<void> | void
   onResumePipeline: () => Promise<void> | void
 }
 
@@ -52,12 +60,21 @@ const Home: FC<HomeProps> = ({
   const [folderMessage, setFolderMessage] = useState<string | null>(null)
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
   const [isOpeningFolder, setIsOpeningFolder] = useState(false)
+  const [fileSelectionError, setFileSelectionError] = useState<string | null>(null)
+  const [sourceMode, setSourceMode] = useState<SourceMode>(
+    initialState.localFilePath ? 'file' : 'url'
+  )
   const canAttemptToOpenFolder = useMemo(() => canOpenAccountClipsFolder(), [])
   const { state: accessState, markTrialRunPending, finalizeTrialRun } = useAccess()
 
   useEffect(() => {
     setState(initialState)
+    setFileSelectionError(null)
   }, [initialState])
+
+  useEffect(() => {
+    setSourceMode(initialState.localFilePath ? 'file' : 'url')
+  }, [initialState.localFilePath])
 
   const updateState = useCallback(
     (updater: (prev: HomePipelineState) => HomePipelineState) => {
@@ -79,6 +96,7 @@ const Home: FC<HomeProps> = ({
 
   const {
     videoUrl,
+    localFilePath,
     urlError,
     pipelineError,
     steps,
@@ -91,8 +109,12 @@ const Home: FC<HomeProps> = ({
     reviewMode,
     awaitingReview,
     lastRunClipSummary,
-    lastRunClipStatus
+    lastRunClipStatus,
+    downloads
   } = state
+
+  const isFileMode = sourceMode === 'file'
+  const trimmedVideoUrl = videoUrl.trim()
 
   useEffect(() => {
     setFolderMessage(null)
@@ -110,6 +132,45 @@ const Home: FC<HomeProps> = ({
   const selectedAccount = useMemo(
     () => availableAccounts.find((account) => account.id === selectedAccountId) ?? null,
     [availableAccounts, selectedAccountId]
+  )
+
+  const accountToneLabel = useMemo(() => {
+    if (!selectedAccount) {
+      return null
+    }
+    const toneKey = selectedAccount.effectiveTone
+    if (!toneKey) {
+      return 'Default tone'
+    }
+    return TONE_LABELS[toneKey] ?? toneKey
+  }, [selectedAccount])
+
+  const resolveDownloadUrl = useCallback((path: string | null) => {
+    if (!path) {
+      return null
+    }
+    try {
+      return new URL(path, getApiBaseUrl()).toString()
+    } catch (error) {
+      console.error('Failed to resolve download URL', error)
+      return null
+    }
+  }, [])
+
+  const audioDownloadUrl = useMemo(
+    () => resolveDownloadUrl(downloads.audioUrl),
+    [downloads.audioUrl, resolveDownloadUrl]
+  )
+  const transcriptDownloadUrl = useMemo(
+    () => resolveDownloadUrl(downloads.transcriptUrl),
+    [downloads.transcriptUrl, resolveDownloadUrl]
+  )
+  const subtitlesDownloadUrl = useMemo(
+    () => resolveDownloadUrl(downloads.subtitlesUrl),
+    [downloads.subtitlesUrl, resolveDownloadUrl]
+  )
+  const hasDownloadLinks = Boolean(
+    audioDownloadUrl || transcriptDownloadUrl || subtitlesDownloadUrl
   )
 
   useEffect(() => {
@@ -244,13 +305,50 @@ const Home: FC<HomeProps> = ({
     [updateState]
   )
 
-  const handleReviewModeChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const { checked } = event.target
-      updateState((prev) => ({ ...prev, reviewMode: checked }))
+  const handleSourceModeChange = useCallback(
+    (mode: SourceMode) => {
+      setSourceMode(mode)
+      if (mode === 'file') {
+        updateState((prev) => ({ ...prev, urlError: null }))
+      }
+      if (mode === 'url') {
+        setFileSelectionError(null)
+      }
     },
     [updateState]
   )
+
+  const handleSelectLocalFile = useCallback(() => {
+    const picker = window?.api?.openVideoFile
+    if (!picker) {
+      setFileSelectionError('We could not access the file picker. Restart the app and try again.')
+      return
+    }
+
+    setFileSelectionError(null)
+    picker()
+      .then((selectedPath) => {
+        if (!selectedPath) {
+          return
+        }
+        updateState((prev) => ({
+          ...prev,
+          localFilePath: selectedPath,
+          urlError: null
+        }))
+        setSourceMode('file')
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to select local video', error)
+        setFileSelectionError('We could not access the file picker. Restart the app and try again.')
+      })
+  }, [updateState])
+
+  const handleClearLocalFile = useCallback(() => {
+    setFileSelectionError(null)
+    updateState((prev) => ({ ...prev, localFilePath: null }))
+    setSourceMode('url')
+  }, [updateState])
 
   const offlineRestrictionMessage = useMemo(() => {
     if (!accessState.isOffline) {
@@ -287,6 +385,12 @@ const Home: FC<HomeProps> = ({
     accessState.offlineRemainingMs
   ])
 
+  const isStartDisabled =
+    (isFileMode ? !localFilePath : trimmedVideoUrl.length === 0) ||
+    isProcessing ||
+    accessState.pendingConsumption ||
+    Boolean(offlineRestrictionMessage)
+
   useEffect(() => {
     if (!offlineRestrictionMessage) {
       const lastMessage = offlineRestrictionMessageRef.current
@@ -310,10 +414,15 @@ const Home: FC<HomeProps> = ({
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
       const trimmed = videoUrl.trim()
+      const selectedFile = (localFilePath ?? '').trim()
       const accountId = selectedAccountId
+      const hasLocalSource = selectedFile.length > 0
       const isUrlPresent = trimmed.length > 0
       const isUrlValid = isUrlPresent && isValidVideoUrl(trimmed)
+      const isUrlMode = sourceMode === 'url'
       let hasError = false
+
+      setFileSelectionError(null)
 
       if (!accountId) {
         hasError = true
@@ -326,21 +435,46 @@ const Home: FC<HomeProps> = ({
         }))
       }
 
-      if (!isUrlPresent) {
-        hasError = true
-        updateState((prev) => ({
-          ...prev,
-          urlError: 'Enter a video URL to start processing.'
-        }))
-      } else if (!isUrlValid) {
-        hasError = true
-        updateState((prev) => ({
-          ...prev,
-          urlError: 'Enter a valid YouTube or Twitch URL.'
-        }))
+      if (isFileMode) {
+        if (!hasLocalSource) {
+          hasError = true
+          setFileSelectionError('Choose a local video before starting.')
+        }
+        updateState((prev) => ({ ...prev, urlError: null }))
+      } else if (!hasLocalSource) {
+        if (!isUrlPresent) {
+          hasError = true
+          updateState((prev) => ({
+            ...prev,
+            urlError: 'Enter a video URL to start processing.'
+          }))
+        } else if (!isUrlValid) {
+          hasError = true
+          updateState((prev) => ({
+            ...prev,
+            urlError: 'Enter a valid YouTube or Twitch URL.'
+          }))
+        } else {
+          updateState((prev) => ({ ...prev, urlError: null }))
+        }
+      } else if (isUrlMode) {
+        if (isUrlPresent && !isUrlValid) {
+          hasError = true
+          updateState((prev) => ({
+            ...prev,
+            urlError: 'Enter a valid YouTube or Twitch URL.'
+          }))
+        } else {
+          updateState((prev) => ({ ...prev, urlError: null }))
+        }
       }
 
-      if (hasError || !accountId || !isUrlValid) {
+      if (
+        hasError ||
+        !accountId ||
+        (!hasLocalSource && !isUrlValid) ||
+        (isFileMode && !hasLocalSource)
+      ) {
         return
       }
 
@@ -369,6 +503,16 @@ const Home: FC<HomeProps> = ({
         return
       }
 
+      const sourcePayload: { url?: string | null; filePath?: string | null } = {}
+      if (hasLocalSource) {
+        sourcePayload.filePath = selectedFile
+      }
+      if (isUrlValid) {
+        sourcePayload.url = trimmed
+      } else if (!hasLocalSource) {
+        sourcePayload.url = trimmed
+      }
+
       clearTimers()
       updateState((prev) => ({
         ...prev,
@@ -383,7 +527,13 @@ const Home: FC<HomeProps> = ({
         awaitingReview: false,
         lastRunProducedNoClips: false,
         lastRunClipSummary: null,
-        lastRunClipStatus: null
+        lastRunClipStatus: null,
+        downloads: {
+          audioUrl: null,
+          transcriptUrl: null,
+          subtitlesUrl: null,
+          sourceKind: null
+        }
       }))
 
       if (isMockBackend) {
@@ -395,7 +545,7 @@ const Home: FC<HomeProps> = ({
         return
       }
 
-      void onStartPipeline(trimmed, accountId, reviewMode)
+      void onStartPipeline(sourcePayload, accountId, reviewMode)
     },
     [
       availableAccounts.length,
@@ -411,12 +561,16 @@ const Home: FC<HomeProps> = ({
       accessState.pendingConsumption,
       accessState.pendingConsumptionStage,
       updateState,
-      videoUrl
+      videoUrl,
+      localFilePath,
+      sourceMode
     ]
   )
 
   const handleReset = useCallback(() => {
     clearTimers()
+    setFileSelectionError(null)
+    setSourceMode('url')
     updateState((prev) => ({
       ...prev,
       steps: createInitialPipelineSteps(),
@@ -424,13 +578,20 @@ const Home: FC<HomeProps> = ({
       clips: [],
       pipelineError: null,
       urlError: null,
+      localFilePath: null,
       selectedClipId: null,
       accountError: null,
       activeJobId: null,
       awaitingReview: false,
       lastRunProducedNoClips: false,
       lastRunClipSummary: null,
-      lastRunClipStatus: null
+      lastRunClipStatus: null,
+      downloads: {
+        audioUrl: null,
+        transcriptUrl: null,
+        subtitlesUrl: null,
+        sourceKind: null
+      }
     }))
   }, [clearTimers, updateState])
 
@@ -634,85 +795,177 @@ const Home: FC<HomeProps> = ({
           ) : null}
           <form
             onSubmit={handleSubmit}
-            className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]"
+            className="flex flex-col gap-5 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]"
           >
-            <div className="flex flex-col gap-1">
-              <h2 className="text-lg font-semibold text-[var(--fg)]">Process a new video</h2>
-              <p className="text-sm text-[var(--muted)]">
-                Select an account from the top navigation, paste a link, and start the pipeline when you are ready.
-              </p>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-lg font-semibold text-[var(--fg)]">Process a new video</h2>
+                  <p className="text-sm text-[var(--muted)]">
+                    Select an account, paste a link, or choose a local file. Local videos are processed directly without an extra download.
+                  </p>
+                </div>
+                <div
+                  aria-live="polite"
+                  className="flex flex-col items-start gap-2 text-left sm:items-end sm:text-right"
+                >
+                  {selectedAccount ? (
+                    <div className="flex flex-col items-start gap-1 sm:items-end">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <span
+                          className={getBadgeClassName(
+                            'accent',
+                            'max-w-full truncate text-[0.7rem] sm:text-xs'
+                          )}
+                          title={`Account ${selectedAccount.displayName}`}
+                        >
+                          Account · {selectedAccount.displayName}
+                        </span>
+                        <span
+                          className={getBadgeClassName(
+                            selectedAccount.tone ? 'info' : 'neutral',
+                            'text-[0.7rem] sm:text-xs'
+                          )}
+                          title={
+                            selectedAccount.tone
+                              ? 'Using an account-specific tone override'
+                              : 'Using the default clip tone'
+                          }
+                        >
+                          Tone · {accountToneLabel ?? 'Default tone'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
+                        Clips will render with this account&apos;s settings.
+                      </p>
+                    </div>
+                  ) : availableAccounts.length === 0 ? (
+                    <p className="text-xs text-[var(--muted)]">No active accounts available.</p>
+                  ) : (
+                    <p className="text-xs text-[var(--muted)]">
+                      Select an account from the top navigation to start processing.
+                    </p>
+                  )}
+                </div>
+              </div>
+              {availableAccounts.length === 0 ? (
+                <p className="text-xs text-[color:color-mix(in_srgb,var(--warning-strong)_72%,var(--accent-contrast))]">
+                  Enable an account with an active platform from your profile before starting the pipeline.
+                </p>
+              ) : null}
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-              <div className="flex w-full flex-col gap-2 sm:max-w-xs">
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
-                  Account
+                  Video source
                 </span>
                 <div
-                  className={`rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] px-4 py-2 text-sm text-[var(--fg)] shadow-[0_12px_22px_rgba(43,42,40,0.12)] ${
-                    accountError ? 'ring-2 ring-[var(--ring-strong)] ring-offset-2 ring-offset-[color:var(--panel)]' : ''
-                  }`}
-                  aria-live="polite"
+                  role="tablist"
+                  aria-label="Video source"
+                  className="inline-flex w-full max-w-full items-center rounded-full border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-1 text-xs"
                 >
-                  {selectedAccount
-                    ? `Processing as ${selectedAccount.displayName}.`
-                    : availableAccounts.length === 0
-                      ? 'No active accounts available.'
-                      : 'Select an account from the top navigation before starting.'}
-                </div>
-                {availableAccounts.length === 0 ? (
-                  <p className="text-xs text-[color:color-mix(in_srgb,var(--warning-strong)_72%,var(--accent-contrast))]">
-                    Enable an account with an active platform from your profile before starting the pipeline.
-                  </p>
-                ) : null}
-              </div>
-              <label className="sr-only" htmlFor="video-url">
-                Video URL
-              </label>
-              <input
-                id="video-url"
-                type="url"
-                value={videoUrl}
-                onChange={handleUrlChange}
-                placeholder="https://www.youtube.com/watch?v=..."
-                className="flex-1 rounded-lg border border-white/10 bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm placeholder:text-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              />
-                <div className="flex items-center gap-2">
                   <button
-                    type="submit"
-                    disabled={
-                      !videoUrl.trim() ||
-                      isProcessing ||
-                      accessState.pendingConsumption ||
-                      Boolean(offlineRestrictionMessage)
-                    }
-                    className="marble-button marble-button--primary whitespace-nowrap px-5 py-2.5 text-sm font-semibold sm:px-6 sm:py-2.5 sm:text-base"
+                    type="button"
+                    role="tab"
+                    aria-selected={!isFileMode}
+                    onClick={() => handleSourceModeChange('url')}
+                    className={`flex-1 rounded-full px-3 py-1.5 font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                      !isFileMode
+                        ? 'bg-[color:var(--ring)] text-[color:var(--accent-contrast)] shadow-sm'
+                        : 'text-[var(--muted)]'
+                    }`}
                   >
-                    {isProcessing ? 'Processing…' : 'Start processing'}
+                    Link
                   </button>
                   <button
                     type="button"
-                    onClick={handleReset}
-                    disabled={!hasProgress && clips.length === 0 && !pipelineError}
-                    className="marble-button marble-button--outline whitespace-nowrap px-4 py-2.5 text-sm font-semibold sm:px-5"
+                    role="tab"
+                    aria-selected={isFileMode}
+                    onClick={() => handleSourceModeChange('file')}
+                    className={`flex-1 rounded-full px-3 py-1.5 font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                      isFileMode
+                        ? 'bg-[color:var(--ring)] text-[color:var(--accent-contrast)] shadow-sm'
+                        : 'text-[var(--muted)]'
+                    }`}
                   >
-                    Reset
+                    Local file
                   </button>
                 </div>
+              </div>
+              {sourceMode === 'url' ? (
+                <div className="flex flex-col gap-2">
+                  <label className="sr-only" htmlFor="video-url">
+                    Video URL
+                  </label>
+                  <input
+                    id="video-url"
+                    type="url"
+                    value={videoUrl}
+                    onChange={handleUrlChange}
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    className="w-full max-w-full rounded-lg border border-white/10 bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm placeholder:text-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  />
+                  {urlError ? (
+                    <p className="text-xs font-medium text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
+                      {urlError}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] px-3 py-3 text-sm text-[var(--fg)] shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-semibold">Local video</span>
+                    <button
+                      type="button"
+                      onClick={handleSelectLocalFile}
+                      className="marble-button marble-button--outline whitespace-nowrap px-3 py-1.5 text-xs font-semibold"
+                    >
+                      Choose local video…
+                    </button>
+                  </div>
+                  {localFilePath ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)] sm:text-sm">
+                      <span className="min-w-0 flex-1 truncate" title={localFilePath}>
+                        {localFilePath}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleClearLocalFile}
+                        className="marble-button marble-button--outline whitespace-nowrap px-2 py-1 text-xs font-semibold"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-[var(--muted)]">
+                      We&apos;ll process your local video directly. Add a fallback link from the Link tab if needed.
+                    </p>
+                  )}
+                  {fileSelectionError ? (
+                    <p className="mt-2 text-xs font-medium text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
+                      {fileSelectionError}
+                    </p>
+                  ) : null}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={isStartDisabled}
+                  className="marble-button marble-button--primary whitespace-nowrap px-5 py-2.5 text-sm font-semibold sm:px-6 sm:py-2.5 sm:text-base"
+                >
+                  {isProcessing ? 'Processing…' : 'Start processing'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  disabled={!hasProgress && clips.length === 0 && !pipelineError}
+                  className="marble-button marble-button--outline whitespace-nowrap px-4 py-2.5 text-sm font-semibold sm:px-5"
+                >
+                  Reset
+                </button>
+              </div>
             </div>
-            <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
-              <input
-                type="checkbox"
-                checked={reviewMode}
-                onChange={handleReviewModeChange}
-                className="h-4 w-4 rounded border border-white/20 bg-[var(--card)] text-[var(--ring)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              />
-              <span>Pause after producing clips to review boundaries manually.</span>
-            </label>
-            {reviewMode ? (
-              <p className="text-xs text-[var(--muted)]">
-                The pipeline will wait after step 7 so you can fine-tune each clip before resuming.
-              </p>
-            ) : null}
             <div className="text-xs text-[var(--muted)]">
               Supports YouTube and Twitch URLs. The pipeline runs{' '}
               {isMockBackend
@@ -725,11 +978,6 @@ const Home: FC<HomeProps> = ({
                 className="text-xs font-medium text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]"
               >
                 {accountError}
-              </p>
-            ) : null}
-            {urlError ? (
-              <p className="text-xs font-medium text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
-                {urlError}
               </p>
             ) : null}
           </form>
@@ -754,6 +1002,54 @@ const Home: FC<HomeProps> = ({
                     Resume pipeline
                   </button>
                 </div>
+              </div>
+            ) : null}
+            {hasDownloadLinks ? (
+              <div className="mt-4 rounded-lg border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] p-4 text-sm text-[var(--fg)]">
+                <h4 className="font-semibold">Download pipeline outputs</h4>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  {downloads.sourceKind === 'local'
+                    ? 'We used your local video directly. Save the generated audio and captions below.'
+                    : 'Download the audio and caption files generated for this video.'}
+                </p>
+                <ul className="mt-3 flex flex-col gap-2 text-sm">
+                  {audioDownloadUrl ? (
+                    <li>
+                      <a
+                        href={audioDownloadUrl}
+                        className="text-[var(--ring)] hover:underline"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Download audio track
+                      </a>
+                    </li>
+                  ) : null}
+                  {transcriptDownloadUrl ? (
+                    <li>
+                      <a
+                        href={transcriptDownloadUrl}
+                        className="text-[var(--ring)] hover:underline"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Download Whisper transcript
+                      </a>
+                    </li>
+                  ) : null}
+                  {subtitlesDownloadUrl ? (
+                    <li>
+                      <a
+                        href={subtitlesDownloadUrl}
+                        className="text-[var(--ring)] hover:underline"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Download caption bundle
+                      </a>
+                    </li>
+                  ) : null}
+                </ul>
               </div>
             ) : null}
           </div>

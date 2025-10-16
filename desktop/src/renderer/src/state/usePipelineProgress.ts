@@ -18,7 +18,8 @@ import type {
   HomePipelineState,
   PipelineStep,
   PipelineStepStatus,
-  PipelineSubstep
+  PipelineSubstep,
+  PipelineDownloads
 } from '../types'
 
 type UsePipelineProgressOptions = {
@@ -35,12 +36,23 @@ type UsePipelineProgressOptions = {
 }
 
 type UsePipelineProgressResult = {
-  startPipeline: (url: string, accountId: string, reviewMode: boolean) => Promise<void>
+  startPipeline: (
+    source: { url?: string | null; filePath?: string | null },
+    accountId: string,
+    reviewMode: boolean
+  ) => Promise<void>
   resumePipeline: () => Promise<void>
   cleanup: () => void
 }
 
 const clamp01 = (value: number): number => Math.min(1, Math.max(0, value))
+
+const EMPTY_DOWNLOADS: PipelineDownloads = {
+  audioUrl: null,
+  transcriptUrl: null,
+  subtitlesUrl: null,
+  sourceKind: null
+}
 
 const parseNonNegativeInt = (value: unknown): number | null => {
   if (typeof value !== 'number' || Number.isNaN(value) || !Number.isFinite(value)) {
@@ -125,7 +137,8 @@ export const usePipelineProgress = ({
           isProcessing: true,
           lastRunProducedNoClips: false,
           lastRunClipSummary: null,
-          lastRunClipStatus: null
+          lastRunClipStatus: null,
+          downloads: { ...EMPTY_DOWNLOADS }
         }))
         return
       }
@@ -534,6 +547,32 @@ export const usePipelineProgress = ({
             : null
 
         let producedClipCount = 0
+        const downloads: PipelineDownloads = {
+          audioUrl: null,
+          transcriptUrl: null,
+          subtitlesUrl: null,
+          sourceKind: null
+        }
+
+        if (rawData) {
+          const rawDownloads = rawData['downloads']
+          if (rawDownloads && typeof rawDownloads === 'object') {
+            const audioCandidate = rawDownloads['audio']
+            const transcriptCandidate = rawDownloads['transcript']
+            const subtitlesCandidate = rawDownloads['subtitles']
+            downloads.audioUrl = typeof audioCandidate === 'string' ? audioCandidate : null
+            downloads.transcriptUrl =
+              typeof transcriptCandidate === 'string' ? transcriptCandidate : null
+            downloads.subtitlesUrl =
+              typeof subtitlesCandidate === 'string' ? subtitlesCandidate : null
+          }
+
+          const sourceKindCandidate = rawData['source_kind']
+          downloads.sourceKind =
+            sourceKindCandidate === 'local' || sourceKindCandidate === 'remote'
+              ? sourceKindCandidate
+              : null
+        }
 
         updateState((prev) => {
           const stateClipCount = prev.clips.length
@@ -580,7 +619,8 @@ export const usePipelineProgress = ({
             }),
             lastRunProducedNoClips: success && resolvedRenderedCount === 0,
             lastRunClipSummary: clipSummary,
-            lastRunClipStatus: clipStatus
+            lastRunClipStatus: clipStatus,
+            downloads: success ? downloads : prev.downloads
           }
         })
         cleanupConnection()
@@ -657,7 +697,11 @@ export const usePipelineProgress = ({
   }, [cleanupConnection, isMockBackend, state.activeJobId, subscribeToJob])
 
   const startPipeline = useCallback(
-    async (url: string, accountId: string, reviewMode: boolean) => {
+    async (
+      source: { url?: string | null; filePath?: string | null },
+      accountId: string,
+      reviewMode: boolean
+    ) => {
       if (isMockBackend) {
         return
       }
@@ -678,7 +722,8 @@ export const usePipelineProgress = ({
         awaitingReview: false,
         lastRunProducedNoClips: false,
         lastRunClipSummary: null,
-        lastRunClipStatus: null
+        lastRunClipStatus: null,
+        downloads: { ...EMPTY_DOWNLOADS }
       }))
 
       cleanupConnection()
@@ -688,7 +733,8 @@ export const usePipelineProgress = ({
       try {
         const toneOverride = availableAccounts.find((account) => account.id === accountId)?.tone ?? null
         const { jobId } = await startPipelineJob({
-          url,
+          url: source.url ?? null,
+          filePath: source.filePath ?? null,
           account: accountId,
           tone: toneOverride,
           reviewMode

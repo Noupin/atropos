@@ -3,7 +3,10 @@ load_dotenv(dotenv_path="../.env")
 
 import json
 import math
-from typing import Any, Callable, TypeVar
+import os
+import shutil
+import zipfile
+from typing import Any, Callable, Literal, TypeVar
 
 import config
 
@@ -90,24 +93,59 @@ from helpers.hashtags import generate_hashtag_strings
 GENERIC_HASHTAGS = ["foryou", "fyp", "viral", "trending"]
 
 
+def _build_local_video_info(path: Path) -> dict[str, Any]:
+    info: dict[str, Any] = {}
+    info["title"] = path.stem or "Local video"
+    parent_name = path.parent.name.strip() if path.parent else ""
+    info["uploader"] = parent_name or "Local file"
+    try:
+        stats = path.stat()
+    except OSError:
+        stats = None
+    if stats is not None:
+        modified = datetime.fromtimestamp(stats.st_mtime, tz=timezone.utc)
+        info["upload_date"] = modified.strftime("%Y%m%d")
+    else:
+        info["upload_date"] = datetime.utcnow().strftime("%Y%m%d")
+    try:
+        duration = probe_media_duration(path)
+    except Exception:
+        duration = None
+    info["duration"] = duration
+    return info
+
+
+def _build_subtitle_archive(subtitles_dir: Path, project_dir: Path, base_name: str) -> Path | None:
+    subtitle_files = sorted(subtitles_dir.glob("*.srt"))
+    if not subtitle_files:
+        return None
+    archive_path = project_dir / f"{base_name}_subtitles.zip"
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for subtitle_file in subtitle_files:
+            archive.write(subtitle_file, arcname=subtitle_file.name)
+    return archive_path
+
+
 TStepResult = TypeVar("TStepResult")
 
 
 def process_video(
-    yt_url: str,
+    source: str,
     account: str | None = None,
     tone: Tone | None = None,
     observer: PipelineObserver | None = None,
     *,
     pause_for_review: bool = False,
     review_gate: Callable[[], None] | None = None,
+    source_kind: Literal["remote", "local"] = "remote",
+    local_video_path: Path | None = None,
 ) -> None:
     """Run the clipping pipeline for ``yt_url``.
 
     Parameters
     ----------
-    yt_url:
-        YouTube or Twitch URL to process.
+    source:
+        YouTube/Twitch URL or a local file path to process.
     account:
         Optional account name to namespace outputs under ``out/<account>``.
     tone:
@@ -117,6 +155,15 @@ def process_video(
     overall_start = time.perf_counter()
     ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
     step_timers: dict[str, float] = {}
+    is_local_source = source_kind == "local"
+    yt_url = source
+    if is_local_source:
+        if local_video_path is None:
+            local_video_path = Path(source)
+        try:
+            local_video_path = local_video_path.expanduser().resolve()
+        except OSError as exc:
+            raise RuntimeError("Unable to resolve local video path") from exc
 
     def emit_log(message: str, level: str = "info") -> None:
         print(message)
@@ -194,33 +241,39 @@ def process_video(
                     "url": yt_url,
                     "account": account,
                     "tone": tone.value if tone else None,
+                    "source_kind": "local" if is_local_source else "remote",
                 },
             )
         )
 
-    twitch = is_twitch_url(yt_url)
-    transcript_source = "whisper" if twitch else TRANSCRIPT_SOURCE
+    twitch = False
+    if not is_local_source:
+        twitch = is_twitch_url(yt_url)
+    transcript_source = "whisper"
 
     def should_run(step: int) -> bool:
         return START_AT_STEP <= step
 
-    video_info = get_video_info(yt_url)
+    if is_local_source:
+        video_info = _build_local_video_info(local_video_path)
+    else:
+        video_info = get_video_info(yt_url)
 
-    if not video_info:
-        message = f"{Fore.RED}Failed to retrieve video information.{Style.RESET_ALL}"
-        emit_log(message, level="error")
-        if observer:
-            observer.handle_event(
-                PipelineEvent(
-                    type=PipelineEventType.PIPELINE_COMPLETED,
-                    message="Pipeline failed",
-                    data={
-                        "success": False,
-                        "error": "Failed to retrieve video information",
-                    },
+        if not video_info:
+            message = f"{Fore.RED}Failed to retrieve video information.{Style.RESET_ALL}"
+            emit_log(message, level="error")
+            if observer:
+                observer.handle_event(
+                    PipelineEvent(
+                        type=PipelineEventType.PIPELINE_COMPLETED,
+                        message="Pipeline failed",
+                        data={
+                            "success": False,
+                            "error": "Failed to retrieve video information",
+                        },
+                    )
                 )
-            )
-        return
+            return
 
     source_duration_seconds: float | None = None
     info_duration = video_info.get("duration")
@@ -267,8 +320,39 @@ def process_video(
         if probed is not None and math.isfinite(probed) and probed > 0:
             source_duration_seconds = float(probed)
 
-    def step_download() -> None:
+    def stage_local_video() -> None:
+        if local_video_path is None:
+            raise RuntimeError("Local video path missing")
+        video_output_path.parent.mkdir(parents=True, exist_ok=True)
         if video_output_path.exists() and video_output_path.stat().st_size > 0:
+            return
+        try:
+            try:
+                os.link(local_video_path, video_output_path)
+            except OSError:
+                shutil.copy2(local_video_path, video_output_path)
+        except Exception as exc:
+            raise RuntimeError(f"Failed to stage local video at {local_video_path}") from exc
+
+    def step_download() -> None:
+        if is_local_source:
+            try:
+                stage_local_video()
+            except Exception as exc:  # pragma: no cover - defensive guard
+                emit_log(
+                    f"{Fore.RED}STEP 1: Failed to stage local video: {exc}{Style.RESET_ALL}",
+                    level="error",
+                )
+                raise
+            emit_log(
+                f"{Fore.GREEN}STEP 1: Using local video -> {video_output_path}{Style.RESET_ALL}"
+            )
+            notify_progress(
+                "step_1_download",
+                1.0,
+                message="Local video ready for processing",
+            )
+        elif video_output_path.exists() and video_output_path.stat().st_size > 0:
             emit_log(
                 f"{Fore.GREEN}STEP 1: Video already present -> {video_output_path}{Style.RESET_ALL}"
             )
@@ -324,6 +408,7 @@ def process_video(
                 ),
                 extra=build_eta_extra(status),
             ),
+            allow_remote_download=not is_local_source,
         )
 
     if should_run(2):
@@ -391,6 +476,8 @@ def process_video(
         write_transcript_txt(result, str(transcript_output_path))
         return True
 
+    allow_transcript_download = not is_local_source
+
     if should_run(3):
         if transcript_source == "whisper":
             yt_ok = False
@@ -405,7 +492,7 @@ def process_video(
                     emit_log(
                         f"{Fore.GREEN}STEP 3: Transcription saved -> {transcript_output_path}{Style.RESET_ALL}"
                     )
-            if not transcribed:
+            if not transcribed and allow_transcript_download:
                 yt_ok = run_pipeline_step(
                     f"STEP 3: Attempting YouTube transcript -> {transcript_output_path}",
                     step_download_transcript,
@@ -899,6 +986,7 @@ def process_video(
     produce_step_id = "step_7_produce"
     produce_step_label = "STEP 7: Producing final clips"
     produce_started: float | None = None
+    subtitle_archive_path: Path | None = None
 
     if total_candidates:
         produce_started = time.perf_counter()
@@ -1214,6 +1302,18 @@ def process_video(
                 )
             )
 
+    if subtitles_dir.exists():
+        try:
+            subtitle_archive_path = _build_subtitle_archive(
+                subtitles_dir, project_dir, non_suffix_filename
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            subtitle_archive_path = None
+            emit_log(
+                f"{Fore.YELLOW}STEP 7: Failed to bundle subtitles: {exc}{Style.RESET_ALL}",
+                level="warning",
+            )
+
     total_elapsed = time.perf_counter() - overall_start
     emit_log(
         f"{Fore.MAGENTA}Full pipeline completed in {total_elapsed:.2f}s{Style.RESET_ALL}"
@@ -1233,6 +1333,16 @@ def process_video(
                     "clips_processed": len(refined_candidates),
                     "clips_expected": total_candidates,
                     "clips_rendered": produced_count,
+                    "audio_path": str(audio_output_path) if audio_output_path.exists() else None,
+                    "transcript_path": (
+                        str(transcript_output_path) if transcript_output_path.exists() else None
+                    ),
+                    "subtitles_path": (
+                        str(subtitle_archive_path)
+                        if subtitle_archive_path and subtitle_archive_path.exists()
+                        else None
+                    ),
+                    "source_kind": "local" if is_local_source else "remote",
                 },
             )
         )

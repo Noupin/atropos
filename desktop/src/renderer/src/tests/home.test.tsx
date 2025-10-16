@@ -133,6 +133,7 @@ const SECONDARY_AVAILABLE_ACCOUNT: AccountSummary = {
 
 const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePipelineState => ({
   videoUrl: '',
+  localFilePath: null,
   urlError: null,
   pipelineError: null,
   steps: createInitialPipelineSteps(),
@@ -147,6 +148,12 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
   lastRunProducedNoClips: false,
   lastRunClipSummary: null,
   lastRunClipStatus: null,
+  downloads: {
+    audioUrl: null,
+    transcriptUrl: null,
+    subtitlesUrl: null,
+    sourceKind: null
+  },
   ...overrides
 })
 
@@ -191,7 +198,12 @@ describe('Home account selection', () => {
     fireEvent.submit(form as HTMLFormElement)
 
     expect(
-      screen.getByText(/select an account from the top navigation to start processing/i)
+      screen.getByText((content, element) => {
+        return (
+          element?.id === 'account-error' &&
+          /select an account from the top navigation to start processing/i.test(content)
+        )
+      })
     ).toBeInTheDocument()
     expect(startPipelineSpy).not.toHaveBeenCalled()
   })
@@ -233,13 +245,54 @@ describe('Home account selection', () => {
       const statusRegion = within(form as HTMLFormElement).getByText((_content, element) => {
         return element?.getAttribute('aria-live') === 'polite'
       })
-      expect(statusRegion).toHaveTextContent(/Processing as Creator Hub\./i)
+      expect(statusRegion).toHaveTextContent(/Account · Creator Hub/i)
+      expect(statusRegion).toHaveTextContent(/Tone · Funny/i)
     })
     fireEvent.change(videoUrlInput, { target: { value: videoUrl } })
     fireEvent.submit(form as HTMLFormElement)
 
     await waitFor(() => expect(startPipelineSpy).toHaveBeenCalledTimes(1))
-    expect(startPipelineSpy).toHaveBeenCalledWith(videoUrl, accountId, false)
+    expect(startPipelineSpy).toHaveBeenCalledWith({ url: videoUrl }, accountId, false)
+  })
+
+  it('prefers a selected local file over the pasted URL', async () => {
+    const startPipelineSpy = vi.fn()
+    const openVideoFile = vi.fn().mockResolvedValue('/Users/operator/video.mp4')
+    const originalApi = window.api
+    // @ts-expect-error test override for API shim
+    window.api = { ...(originalApi ?? {}), openVideoFile }
+
+    try {
+      renderHome({
+        initialState: createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id }),
+        accounts: [AVAILABLE_ACCOUNT],
+        onStartPipeline: startPipelineSpy
+      })
+
+      const localFileTab = screen.getByRole('tab', { name: /local file/i })
+      fireEvent.click(localFileTab)
+
+      const chooseButton = screen.getByRole('button', { name: /choose local video/i })
+      fireEvent.click(chooseButton)
+      await waitFor(() => expect(openVideoFile).toHaveBeenCalledTimes(1))
+
+      const startButton = screen.getByRole('button', { name: /start processing/i })
+      await waitFor(() => expect(startButton).not.toBeDisabled())
+
+      const form = chooseButton.closest('form')
+      expect(form).not.toBeNull()
+      fireEvent.submit(form as HTMLFormElement)
+
+      await waitFor(() => expect(startPipelineSpy).toHaveBeenCalledTimes(1))
+      expect(startPipelineSpy).toHaveBeenCalledWith(
+        { filePath: '/Users/operator/video.mp4' },
+        AVAILABLE_ACCOUNT.id,
+        false
+      )
+    } finally {
+      // @ts-expect-error restore testing shim
+      window.api = originalApi
+    }
   })
 
   it('surfaces guidance when no active accounts are available', () => {

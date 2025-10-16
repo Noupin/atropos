@@ -38,6 +38,8 @@ def test_job_lifecycle(monkeypatch) -> None:
         *,
         pause_for_review: bool = False,
         review_gate=None,
+        source_kind: str = "remote",
+        local_video_path=None,
     ) -> None:
         assert observer is not None
         for event in events:
@@ -70,6 +72,16 @@ def test_job_lifecycle(monkeypatch) -> None:
         server.app._jobs.clear()
 
 
+def test_start_job_rejects_missing_local_file(tmp_path) -> None:
+    client = TestClient(server.app.app)
+    missing_path = tmp_path / "missing.mp4"
+
+    response = client.post("/api/jobs", json={"file_path": str(missing_path)})
+
+    assert response.status_code == 400
+    assert "could not be found" in response.json()["detail"].lower()
+
+
 def test_job_resume_unblocks_review_mode(monkeypatch) -> None:
     def _fake_process(
         url: str,
@@ -79,6 +91,8 @@ def test_job_resume_unblocks_review_mode(monkeypatch) -> None:
         *,
         pause_for_review: bool = False,
         review_gate=None,
+        source_kind: str = "remote",
+        local_video_path=None,
     ) -> None:
         assert observer is not None
         observer.handle_event(
@@ -156,6 +170,8 @@ def test_clip_endpoints_expose_rendered_clips(
         *,
         pause_for_review: bool = False,
         review_gate=None,
+        source_kind: str = "remote",
+        local_video_path=None,
     ) -> None:
         assert observer is not None
         observer.handle_event(

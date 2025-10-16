@@ -32,6 +32,7 @@ const AVAILABLE_ACCOUNT: AccountSummary = {
 
 const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePipelineState => ({
   videoUrl: '',
+  localFilePath: null,
   urlError: null,
   pipelineError: null,
   steps: createInitialPipelineSteps(),
@@ -46,6 +47,12 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
   lastRunProducedNoClips: false,
   lastRunClipSummary: null,
   lastRunClipStatus: null,
+  downloads: {
+    audioUrl: null,
+    transcriptUrl: null,
+    subtitlesUrl: null,
+    sourceKind: null
+  },
   ...overrides
 })
 

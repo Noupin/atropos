@@ -5,7 +5,8 @@ import type { Clip, PipelineEventType } from '../types'
 type UnknownRecord = Record<string, unknown>
 
 export type PipelineJobRequest = {
-  url: string
+  url?: string | null
+  filePath?: string | null
   account?: string | null
   tone?: string | null
   reviewMode?: boolean
@@ -45,7 +46,8 @@ export const startPipelineJob = async (request: PipelineJobRequest): Promise<Pip
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          url: request.url,
+          url: request.url ?? null,
+          file_path: request.filePath ?? null,
           account: request.account ?? null,
           tone: request.tone ?? null,
           review_mode: request.reviewMode ?? false

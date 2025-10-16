@@ -226,6 +226,7 @@ type AppProps = {
 const App: FC<AppProps> = ({ searchInputRef }) => {
   const [homeState, setHomeState] = useState<HomePipelineState>(() => ({
     videoUrl: '',
+    localFilePath: null,
     urlError: null,
     pipelineError: null,
     steps: createInitialPipelineSteps(),
@@ -239,7 +240,13 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     awaitingReview: false,
     lastRunProducedNoClips: false,
     lastRunClipSummary: null,
-    lastRunClipStatus: null
+    lastRunClipStatus: null,
+    downloads: {
+      audioUrl: null,
+      transcriptUrl: null,
+      subtitlesUrl: null,
+      sourceKind: null
+    }
   }))
   const [accounts, setAccounts] = useState<AccountSummary[]>([])
   const [accountsError, setAccountsError] = useState<string | null>(null)

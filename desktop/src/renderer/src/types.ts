@@ -123,8 +123,16 @@ export type PipelineClipOutcome = {
 
 export type PipelineClipStatus = 'none_to_render' | 'rendered_none' | null
 
+export type PipelineDownloads = {
+  audioUrl: string | null
+  transcriptUrl: string | null
+  subtitlesUrl: string | null
+  sourceKind: 'local' | 'remote' | null
+}
+
 export interface HomePipelineState {
   videoUrl: string
+  localFilePath: string | null
   urlError: string | null
   pipelineError: string | null
   steps: PipelineStep[]
@@ -139,6 +147,7 @@ export interface HomePipelineState {
   lastRunProducedNoClips: boolean
   lastRunClipSummary: PipelineClipOutcome | null
   lastRunClipStatus: PipelineClipStatus
+  downloads: PipelineDownloads
 }
 
 export type PipelineEventType =
