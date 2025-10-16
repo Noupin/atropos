@@ -371,6 +371,22 @@ app.whenReady().then(() => {
       return false
     }
   })
+  ipcMain.handle('files:pick-video', async () => {
+    const window = BrowserWindow.getFocusedWindow() ?? mainWindow
+    const result = await dialog.showOpenDialog(window ?? undefined, {
+      properties: ['openFile'],
+      filters: [
+        { name: 'Video files', extensions: ['mp4', 'mov', 'mkv', 'webm', 'avi'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null
+    }
+
+    return result.filePaths[0]
+  })
 
   if (!mainWindow) {
     const resolution = getRendererResolution()

@@ -10,7 +10,7 @@ import {
 import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PipelineProgress from '../components/PipelineProgress'
-import { BACKEND_MODE } from '../config/backend'
+import { BACKEND_MODE, getApiBaseUrl } from '../config/backend'
 import { createInitialPipelineSteps, PIPELINE_STEP_DEFINITIONS } from '../data/pipeline'
 import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
@@ -36,7 +36,11 @@ type HomeProps = {
   initialState: HomePipelineState
   onStateChange: (state: HomePipelineState) => void
   accounts: AccountSummary[]
-  onStartPipeline: (url: string, accountId: string, reviewMode: boolean) => Promise<void> | void
+  onStartPipeline: (
+    source: { url?: string | null; filePath?: string | null },
+    accountId: string,
+    reviewMode: boolean
+  ) => Promise<void> | void
   onResumePipeline: () => Promise<void> | void
 }
 
@@ -52,11 +56,13 @@ const Home: FC<HomeProps> = ({
   const [folderMessage, setFolderMessage] = useState<string | null>(null)
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
   const [isOpeningFolder, setIsOpeningFolder] = useState(false)
+  const [fileSelectionError, setFileSelectionError] = useState<string | null>(null)
   const canAttemptToOpenFolder = useMemo(() => canOpenAccountClipsFolder(), [])
   const { state: accessState, markTrialRunPending, finalizeTrialRun } = useAccess()
 
   useEffect(() => {
     setState(initialState)
+    setFileSelectionError(null)
   }, [initialState])
 
   const updateState = useCallback(
@@ -79,6 +85,7 @@ const Home: FC<HomeProps> = ({
 
   const {
     videoUrl,
+    localFilePath,
     urlError,
     pipelineError,
     steps,
@@ -91,7 +98,8 @@ const Home: FC<HomeProps> = ({
     reviewMode,
     awaitingReview,
     lastRunClipSummary,
-    lastRunClipStatus
+    lastRunClipStatus,
+    downloads
   } = state
 
   useEffect(() => {
@@ -110,6 +118,34 @@ const Home: FC<HomeProps> = ({
   const selectedAccount = useMemo(
     () => availableAccounts.find((account) => account.id === selectedAccountId) ?? null,
     [availableAccounts, selectedAccountId]
+  )
+
+  const resolveDownloadUrl = useCallback((path: string | null) => {
+    if (!path) {
+      return null
+    }
+    try {
+      return new URL(path, getApiBaseUrl()).toString()
+    } catch (error) {
+      console.error('Failed to resolve download URL', error)
+      return null
+    }
+  }, [])
+
+  const audioDownloadUrl = useMemo(
+    () => resolveDownloadUrl(downloads.audioUrl),
+    [downloads.audioUrl, resolveDownloadUrl]
+  )
+  const transcriptDownloadUrl = useMemo(
+    () => resolveDownloadUrl(downloads.transcriptUrl),
+    [downloads.transcriptUrl, resolveDownloadUrl]
+  )
+  const subtitlesDownloadUrl = useMemo(
+    () => resolveDownloadUrl(downloads.subtitlesUrl),
+    [downloads.subtitlesUrl, resolveDownloadUrl]
+  )
+  const hasDownloadLinks = Boolean(
+    audioDownloadUrl || transcriptDownloadUrl || subtitlesDownloadUrl
   )
 
   useEffect(() => {
@@ -252,6 +288,36 @@ const Home: FC<HomeProps> = ({
     [updateState]
   )
 
+  const handleSelectLocalFile = useCallback(() => {
+    const picker = window?.api?.pickVideoFile
+    if (!picker) {
+      setFileSelectionError('Selecting a local file is only available in the desktop app. Paste a link instead.')
+      return
+    }
+
+    setFileSelectionError(null)
+    picker()
+      .then((selectedPath) => {
+        if (!selectedPath) {
+          return
+        }
+        updateState((prev) => ({
+          ...prev,
+          localFilePath: selectedPath,
+          urlError: null
+        }))
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to select local video', error)
+        setFileSelectionError('We could not open the file picker. Try again or paste a video link instead.')
+      })
+  }, [updateState])
+
+  const handleClearLocalFile = useCallback(() => {
+    setFileSelectionError(null)
+    updateState((prev) => ({ ...prev, localFilePath: null }))
+  }, [updateState])
+
   const offlineRestrictionMessage = useMemo(() => {
     if (!accessState.isOffline) {
       return null
@@ -310,7 +376,9 @@ const Home: FC<HomeProps> = ({
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
       const trimmed = videoUrl.trim()
+      const selectedFile = (localFilePath ?? '').trim()
       const accountId = selectedAccountId
+      const hasLocalSource = selectedFile.length > 0
       const isUrlPresent = trimmed.length > 0
       const isUrlValid = isUrlPresent && isValidVideoUrl(trimmed)
       let hasError = false
@@ -326,21 +394,25 @@ const Home: FC<HomeProps> = ({
         }))
       }
 
-      if (!isUrlPresent) {
-        hasError = true
-        updateState((prev) => ({
-          ...prev,
-          urlError: 'Enter a video URL to start processing.'
-        }))
-      } else if (!isUrlValid) {
-        hasError = true
-        updateState((prev) => ({
-          ...prev,
-          urlError: 'Enter a valid YouTube or Twitch URL.'
-        }))
+      if (!hasLocalSource) {
+        if (!isUrlPresent) {
+          hasError = true
+          updateState((prev) => ({
+            ...prev,
+            urlError: 'Select a local video or enter a video URL to start processing.'
+          }))
+        } else if (!isUrlValid) {
+          hasError = true
+          updateState((prev) => ({
+            ...prev,
+            urlError: 'Enter a valid YouTube or Twitch URL.'
+          }))
+        }
+      } else {
+        updateState((prev) => ({ ...prev, urlError: null }))
       }
 
-      if (hasError || !accountId || !isUrlValid) {
+      if (hasError || !accountId || (!hasLocalSource && !isUrlValid)) {
         return
       }
 
@@ -369,7 +441,10 @@ const Home: FC<HomeProps> = ({
         return
       }
 
+      const sourcePayload = hasLocalSource ? { filePath: selectedFile } : { url: trimmed }
+
       clearTimers()
+      setFileSelectionError(null)
       updateState((prev) => ({
         ...prev,
         urlError: null,
@@ -383,7 +458,13 @@ const Home: FC<HomeProps> = ({
         awaitingReview: false,
         lastRunProducedNoClips: false,
         lastRunClipSummary: null,
-        lastRunClipStatus: null
+        lastRunClipStatus: null,
+        downloads: {
+          audioUrl: null,
+          transcriptUrl: null,
+          subtitlesUrl: null,
+          sourceKind: null
+        }
       }))
 
       if (isMockBackend) {
@@ -395,7 +476,7 @@ const Home: FC<HomeProps> = ({
         return
       }
 
-      void onStartPipeline(trimmed, accountId, reviewMode)
+      void onStartPipeline(sourcePayload, accountId, reviewMode)
     },
     [
       availableAccounts.length,
@@ -411,12 +492,14 @@ const Home: FC<HomeProps> = ({
       accessState.pendingConsumption,
       accessState.pendingConsumptionStage,
       updateState,
-      videoUrl
+      videoUrl,
+      localFilePath
     ]
   )
 
   const handleReset = useCallback(() => {
     clearTimers()
+    setFileSelectionError(null)
     updateState((prev) => ({
       ...prev,
       steps: createInitialPipelineSteps(),
@@ -424,13 +507,20 @@ const Home: FC<HomeProps> = ({
       clips: [],
       pipelineError: null,
       urlError: null,
+      localFilePath: null,
       selectedClipId: null,
       accountError: null,
       activeJobId: null,
       awaitingReview: false,
       lastRunProducedNoClips: false,
       lastRunClipSummary: null,
-      lastRunClipStatus: null
+      lastRunClipStatus: null,
+      downloads: {
+        audioUrl: null,
+        transcriptUrl: null,
+        subtitlesUrl: null,
+        sourceKind: null
+      }
     }))
   }, [clearTimers, updateState])
 
@@ -639,7 +729,7 @@ const Home: FC<HomeProps> = ({
             <div className="flex flex-col gap-1">
               <h2 className="text-lg font-semibold text-[var(--fg)]">Process a new video</h2>
               <p className="text-sm text-[var(--muted)]">
-                Select an account from the top navigation, paste a link, and start the pipeline when you are ready.
+                Select an account, paste a link, or choose a local file. Local videos are processed directly without an extra download.
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -665,22 +755,58 @@ const Home: FC<HomeProps> = ({
                   </p>
                 ) : null}
               </div>
-              <label className="sr-only" htmlFor="video-url">
-                Video URL
-              </label>
-              <input
-                id="video-url"
-                type="url"
-                value={videoUrl}
-                onChange={handleUrlChange}
-                placeholder="https://www.youtube.com/watch?v=..."
-                className="flex-1 rounded-lg border border-white/10 bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm placeholder:text-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              />
+              <div className="flex flex-1 flex-col gap-3">
+                <label className="sr-only" htmlFor="video-url">
+                  Video URL
+                </label>
+                <input
+                  id="video-url"
+                  type="url"
+                  value={videoUrl}
+                  onChange={handleUrlChange}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  className="rounded-lg border border-white/10 bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm placeholder:text-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                />
+                <div className="rounded-lg border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] px-3 py-3 text-sm text-[var(--fg)] shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-semibold">Local file (optional)</span>
+                    <button
+                      type="button"
+                      onClick={handleSelectLocalFile}
+                      className="marble-button marble-button--outline whitespace-nowrap px-3 py-1.5 text-xs font-semibold"
+                    >
+                      Choose local video…
+                    </button>
+                  </div>
+                  {localFilePath ? (
+                    <div className="mt-2 flex items-start justify-between gap-2 text-xs text-[var(--muted)] sm:text-sm">
+                      <span className="truncate" title={localFilePath}>
+                        Using local file: {localFilePath}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleClearLocalFile}
+                        className="marble-button marble-button--outline whitespace-nowrap px-2 py-1 text-xs font-semibold"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-[var(--muted)]">
+                      We use the selected file directly and fall back to the URL if no file is chosen.
+                    </p>
+                  )}
+                </div>
+                {fileSelectionError ? (
+                  <p className="text-xs font-medium text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
+                    {fileSelectionError}
+                  </p>
+                ) : null}
                 <div className="flex items-center gap-2">
                   <button
                     type="submit"
                     disabled={
-                      !videoUrl.trim() ||
+                      (!videoUrl.trim() && !localFilePath) ||
                       isProcessing ||
                       accessState.pendingConsumption ||
                       Boolean(offlineRestrictionMessage)
@@ -698,6 +824,7 @@ const Home: FC<HomeProps> = ({
                     Reset
                   </button>
                 </div>
+              </div>
             </div>
             <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
               <input
@@ -754,6 +881,54 @@ const Home: FC<HomeProps> = ({
                     Resume pipeline
                   </button>
                 </div>
+              </div>
+            ) : null}
+            {hasDownloadLinks ? (
+              <div className="mt-4 rounded-lg border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] p-4 text-sm text-[var(--fg)]">
+                <h4 className="font-semibold">Download pipeline outputs</h4>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  {downloads.sourceKind === 'local'
+                    ? 'We used your local video directly. Save the generated audio and captions below.'
+                    : 'Download the audio and caption files generated for this video.'}
+                </p>
+                <ul className="mt-3 flex flex-col gap-2 text-sm">
+                  {audioDownloadUrl ? (
+                    <li>
+                      <a
+                        href={audioDownloadUrl}
+                        className="text-[var(--ring)] hover:underline"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Download audio track
+                      </a>
+                    </li>
+                  ) : null}
+                  {transcriptDownloadUrl ? (
+                    <li>
+                      <a
+                        href={transcriptDownloadUrl}
+                        className="text-[var(--ring)] hover:underline"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Download Whisper transcript
+                      </a>
+                    </li>
+                  ) : null}
+                  {subtitlesDownloadUrl ? (
+                    <li>
+                      <a
+                        href={subtitlesDownloadUrl}
+                        className="text-[var(--ring)] hover:underline"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Download caption bundle
+                      </a>
+                    </li>
+                  ) : null}
+                </ul>
               </div>
             ) : null}
           </div>

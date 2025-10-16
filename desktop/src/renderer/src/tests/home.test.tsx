@@ -133,6 +133,7 @@ const SECONDARY_AVAILABLE_ACCOUNT: AccountSummary = {
 
 const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePipelineState => ({
   videoUrl: '',
+  localFilePath: null,
   urlError: null,
   pipelineError: null,
   steps: createInitialPipelineSteps(),
@@ -147,6 +148,12 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
   lastRunProducedNoClips: false,
   lastRunClipSummary: null,
   lastRunClipStatus: null,
+  downloads: {
+    audioUrl: null,
+    transcriptUrl: null,
+    subtitlesUrl: null,
+    sourceKind: null
+  },
   ...overrides
 })
 
@@ -239,7 +246,41 @@ describe('Home account selection', () => {
     fireEvent.submit(form as HTMLFormElement)
 
     await waitFor(() => expect(startPipelineSpy).toHaveBeenCalledTimes(1))
-    expect(startPipelineSpy).toHaveBeenCalledWith(videoUrl, accountId, false)
+    expect(startPipelineSpy).toHaveBeenCalledWith({ url: videoUrl }, accountId, false)
+  })
+
+  it('prefers a selected local file over the pasted URL', async () => {
+    const startPipelineSpy = vi.fn()
+    const pickVideoFile = vi.fn().mockResolvedValue('/Users/operator/video.mp4')
+    const originalApi = window.api
+    // @ts-expect-error test override for API shim
+    window.api = { ...(originalApi ?? {}), pickVideoFile }
+
+    try {
+      renderHome({
+        initialState: createInitialState({ selectedAccountId: AVAILABLE_ACCOUNT.id }),
+        accounts: [AVAILABLE_ACCOUNT],
+        onStartPipeline: startPipelineSpy
+      })
+
+      const chooseButton = screen.getByRole('button', { name: /choose local video/i })
+      fireEvent.click(chooseButton)
+      await waitFor(() => expect(pickVideoFile).toHaveBeenCalledTimes(1))
+
+      const form = chooseButton.closest('form')
+      expect(form).not.toBeNull()
+      fireEvent.submit(form as HTMLFormElement)
+
+      await waitFor(() => expect(startPipelineSpy).toHaveBeenCalledTimes(1))
+      expect(startPipelineSpy).toHaveBeenCalledWith(
+        { filePath: '/Users/operator/video.mp4' },
+        AVAILABLE_ACCOUNT.id,
+        false
+      )
+    } finally {
+      // @ts-expect-error restore testing shim
+      window.api = originalApi
+    }
   })
 
   it('surfaces guidance when no active accounts are available', () => {

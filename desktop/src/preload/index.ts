@@ -11,6 +11,7 @@ const api = {
     ipcRenderer.invoke('clips:list', accountId),
   openAccountClipsFolder: (accountId: string): Promise<boolean> =>
     ipcRenderer.invoke('clips:open-folder', accountId),
+  pickVideoFile: (): Promise<string | null> => ipcRenderer.invoke('files:pick-video'),
   onNavigationCommand: (callback: (direction: 'back' | 'forward') => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, direction: 'back' | 'forward') => {
       callback(direction)

@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import logging
 import math
+import os
 import re
 import subprocess
 import threading
@@ -123,7 +124,8 @@ def _parse_clip_bounds_from_id(clip_id: str) -> tuple[float, float] | None:
 class RunRequest(BaseModel):
     """Payload for starting a new pipeline job."""
 
-    url: str = Field(..., min_length=1)
+    url: str | None = Field(default=None)
+    file_path: str | None = Field(default=None, alias="file_path")
     account: str | None = Field(default=None, max_length=128)
     tone: Tone | None = Field(default=None)
     review_mode: bool = Field(default=False)
@@ -137,6 +139,24 @@ class RunRequest(BaseModel):
             return Tone(value)
         except ValueError as exc:  # pragma: no cover - validation branch
             raise ValueError(f"Unknown tone '{value}'") from exc
+
+    @model_validator(mode="after")
+    def _ensure_source(self) -> "RunRequest":
+        provided = [
+            value for value in [self.url, self.file_path] if isinstance(value, str) and value.strip()
+        ]
+        if len(provided) == 0:
+            raise ValueError("Provide a video URL or a local file path to start processing.")
+        if len(provided) > 1:
+            raise ValueError("Provide either a video URL or a local file path, not both.")
+        if self.url is not None:
+            trimmed = self.url.strip()
+            if not trimmed:
+                raise ValueError("Video URL cannot be empty.")
+            self.url = trimmed
+        if self.file_path is not None:
+            self.file_path = self.file_path.strip()
+        return self
 
 
 class RunResponse(BaseModel):
@@ -380,6 +400,16 @@ def _ensure_str(value: Any) -> str | None:
     return str(value)
 
 
+def _resolve_optional_path(value: str | None) -> Path | None:
+    if not value:
+        return None
+    try:
+        path = Path(value).expanduser().resolve()
+    except (OSError, RuntimeError):
+        return None
+    return path
+
+
 @dataclass
 class ClipArtifact:
     """Metadata describing a rendered clip for playback and export."""
@@ -483,6 +513,7 @@ def _clip_to_payload(clip: ClipArtifact, request: Request, job_id: str) -> Dict[
 class JobState:
     """Holds state shared between the worker thread and websocket clients."""
 
+    job_id: str
     loop: asyncio.AbstractEventLoop
     history: List[Dict[str, Any]] = field(default_factory=list)
     listeners: List[asyncio.Queue[Dict[str, Any]]] = field(default_factory=list)
@@ -494,16 +525,41 @@ class JobState:
     clips: Dict[str, ClipArtifact] = field(default_factory=dict)
     review_mode: bool = False
     resume_event: threading.Event | None = None
+    audio_path: Path | None = None
+    transcript_path: Path | None = None
+    subtitles_path: Path | None = None
+    source_kind: str | None = None
 
     def publish(self, event: PipelineEvent) -> None:
         """Broadcast ``event`` to all listeners and append it to history."""
 
         with self.lock:
             data = dict(event.data or {})
+            if event.type == PipelineEventType.PIPELINE_STARTED:
+                kind_value = _ensure_str(data.get("source_kind"))
+                if kind_value in {"local", "remote"}:
+                    self.source_kind = kind_value
             if event.type == PipelineEventType.PIPELINE_COMPLETED:
                 clip_count = len(self.clips)
                 data.setdefault("clips_rendered", clip_count)
                 data.setdefault("clips_available", clip_count)
+                if self.source_kind:
+                    data.setdefault("source_kind", self.source_kind)
+                audio_path_value = _ensure_str(data.get("audio_path"))
+                transcript_path_value = _ensure_str(data.get("transcript_path"))
+                subtitles_path_value = _ensure_str(data.get("subtitles_path"))
+                self.audio_path = _resolve_optional_path(audio_path_value)
+                self.transcript_path = _resolve_optional_path(transcript_path_value)
+                self.subtitles_path = _resolve_optional_path(subtitles_path_value)
+                downloads: Dict[str, str] = {}
+                if self.audio_path and self.audio_path.exists():
+                    downloads["audio"] = f"/api/jobs/{self.job_id}/audio"
+                if self.transcript_path and self.transcript_path.exists():
+                    downloads["transcript"] = f"/api/jobs/{self.job_id}/transcript"
+                if self.subtitles_path and self.subtitles_path.exists():
+                    downloads["subtitles"] = f"/api/jobs/{self.job_id}/subtitles"
+                if downloads:
+                    data["downloads"] = downloads
                 event.data = data
             payload = event.to_payload()
             self.history.append(payload)
@@ -986,7 +1042,7 @@ async def start_job(payload: RunRequest) -> RunResponse:
 
     job_id = uuid.uuid4().hex
     loop = asyncio.get_running_loop()
-    state = JobState(loop=loop, review_mode=payload.review_mode)
+    state = JobState(job_id=job_id, loop=loop, review_mode=payload.review_mode)
     if payload.review_mode:
         state.resume_event = threading.Event()
     observer = BroadcastObserver(state)
@@ -994,6 +1050,51 @@ async def start_job(payload: RunRequest) -> RunResponse:
     account_details: AccountResponse | None = None
     if payload.account:
         account_details = ensure_account_available(payload.account)
+
+    source_kind = "remote"
+    local_video_path: Path | None = None
+    source_identifier = payload.url
+    if payload.file_path:
+        try:
+            candidate = Path(payload.file_path).expanduser()
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The selected video file path is invalid. Choose another file and try again.",
+            )
+        try:
+            resolved = candidate.resolve(strict=True)
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The selected video file could not be found. Check the path and try again.",
+            )
+        except OSError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unable to access the selected video file. Confirm it is readable and try again.",
+            ) from exc
+        if not resolved.is_file():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Select a valid video file before starting the pipeline.",
+            )
+        if not os.access(resolved, os.R_OK):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Atropos does not have permission to read that video file. Adjust the file permissions and retry.",
+            )
+        source_kind = "local"
+        local_video_path = resolved
+        source_identifier = str(resolved)
+        state.source_kind = "local"
+    else:
+        state.source_kind = "remote"
+        if not source_identifier:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Provide a video URL or choose a local file to begin processing.",
+            )
 
     def runner() -> None:
         try:
@@ -1005,12 +1106,14 @@ async def start_job(payload: RunRequest) -> RunResponse:
             ):
                 selected_tone = account_details.tone
             process_video(
-                payload.url,
+                source_identifier,
                 account=payload.account,
                 tone=selected_tone,
                 observer=observer,
                 pause_for_review=payload.review_mode,
                 review_gate=state.wait_for_resume if payload.review_mode else None,
+                source_kind=source_kind,
+                local_video_path=local_video_path,
             )
         except Exception as exc:  # pragma: no cover - exercised in integration
             logger.exception("Pipeline job %s failed", job_id)
@@ -1186,6 +1289,55 @@ async def get_job_clip_preview(
         media_type="video/mp4",
         filename=preview_path.name,
         headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/api/jobs/{job_id}/audio")
+async def get_job_audio(job_id: str) -> FileResponse:
+    """Return the audio file generated for ``job_id`` if available."""
+
+    state = _get_job(job_id)
+    if state is None or state.audio_path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")
+
+    audio_path = state.audio_path
+    if not audio_path.exists() or not audio_path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio file not found")
+
+    return FileResponse(path=audio_path, media_type="audio/mpeg", filename=audio_path.name)
+
+
+@app.get("/api/jobs/{job_id}/transcript")
+async def get_job_transcript(job_id: str) -> FileResponse:
+    """Return the Whisper transcript for ``job_id``."""
+
+    state = _get_job(job_id)
+    if state is None or state.transcript_path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transcript not found")
+
+    transcript_path = state.transcript_path
+    if not transcript_path.exists() or not transcript_path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transcript not found")
+
+    return FileResponse(path=transcript_path, media_type="text/plain", filename=transcript_path.name)
+
+
+@app.get("/api/jobs/{job_id}/subtitles")
+async def get_job_subtitles(job_id: str) -> FileResponse:
+    """Return a ZIP archive of caption files for ``job_id``."""
+
+    state = _get_job(job_id)
+    if state is None or state.subtitles_path is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subtitles not available")
+
+    archive_path = state.subtitles_path
+    if not archive_path.exists() or not archive_path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subtitles not available")
+
+    return FileResponse(
+        path=archive_path,
+        media_type="application/zip",
+        filename=archive_path.name,
     )
 
 
