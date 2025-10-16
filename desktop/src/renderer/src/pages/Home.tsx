@@ -305,14 +305,6 @@ const Home: FC<HomeProps> = ({
     [updateState]
   )
 
-  const handleReviewModeChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const { checked } = event.target
-      updateState((prev) => ({ ...prev, reviewMode: checked }))
-    },
-    [updateState]
-  )
-
   const handleSourceModeChange = useCallback(
     (mode: SourceMode) => {
       setSourceMode(mode)
@@ -803,28 +795,23 @@ const Home: FC<HomeProps> = ({
           ) : null}
           <form
             onSubmit={handleSubmit}
-            className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]"
+            className="flex flex-col gap-5 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]"
           >
-            <div className="flex flex-col gap-1">
-              <h2 className="text-lg font-semibold text-[var(--fg)]">Process a new video</h2>
-              <p className="text-sm text-[var(--muted)]">
-                Select an account, paste a link, or choose a local file. Local videos are processed directly without an extra download.
-              </p>
-            </div>
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-              <div className="flex w-full flex-col gap-2 sm:max-w-xs">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
-                  Account
-                </span>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-lg font-semibold text-[var(--fg)]">Process a new video</h2>
+                  <p className="text-sm text-[var(--muted)]">
+                    Select an account, paste a link, or choose a local file. Local videos are processed directly without an extra download.
+                  </p>
+                </div>
                 <div
-                  className={`rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] px-4 py-3 text-sm text-[var(--fg)] shadow-[0_12px_22px_rgba(43,42,40,0.12)] ${
-                    accountError ? 'ring-2 ring-[var(--ring-strong)] ring-offset-2 ring-offset-[color:var(--panel)]' : ''
-                  }`}
                   aria-live="polite"
+                  className="flex flex-col items-start gap-2 text-left sm:items-end sm:text-right"
                 >
                   {selectedAccount ? (
-                    <div className="flex flex-col gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-col items-start gap-1 sm:items-end">
+                      <div className="flex flex-wrap justify-end gap-2">
                         <span
                           className={getBadgeClassName(
                             'accent',
@@ -853,144 +840,132 @@ const Home: FC<HomeProps> = ({
                       </p>
                     </div>
                   ) : availableAccounts.length === 0 ? (
-                    'No active accounts available.'
+                    <p className="text-xs text-[var(--muted)]">No active accounts available.</p>
                   ) : (
-                    'Select an account from the top navigation before starting.'
+                    <p className="text-xs text-[var(--muted)]">
+                      Select an account from the top navigation to start processing.
+                    </p>
                   )}
                 </div>
-                {availableAccounts.length === 0 ? (
-                  <p className="text-xs text-[color:color-mix(in_srgb,var(--warning-strong)_72%,var(--accent-contrast))]">
-                    Enable an account with an active platform from your profile before starting the pipeline.
-                  </p>
-                ) : null}
               </div>
-              <div className="flex flex-1 flex-col gap-3">
-                <div className="flex flex-col gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
-                    Video source
-                  </span>
-                  <div
-                    role="tablist"
-                    aria-label="Video source"
-                    className="inline-flex w-full max-w-full items-center rounded-full border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-1 text-xs"
-                  >
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={!isFileMode}
-                      onClick={() => handleSourceModeChange('url')}
-                      className={`flex-1 rounded-full px-3 py-1.5 font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
-                        !isFileMode
-                          ? 'bg-[color:var(--ring)] text-[color:var(--accent-contrast)] shadow-sm'
-                          : 'text-[var(--muted)]'
-                      }`}
-                    >
-                      Link
-                    </button>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={isFileMode}
-                      onClick={() => handleSourceModeChange('file')}
-                      className={`flex-1 rounded-full px-3 py-1.5 font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
-                        isFileMode
-                          ? 'bg-[color:var(--ring)] text-[color:var(--accent-contrast)] shadow-sm'
-                          : 'text-[var(--muted)]'
-                      }`}
-                    >
-                      Local file
-                    </button>
-                  </div>
-                </div>
-                {sourceMode === 'url' ? (
-                  <div className="flex flex-col gap-2">
-                    <label className="sr-only" htmlFor="video-url">
-                      Video URL
-                    </label>
-                    <input
-                      id="video-url"
-                      type="url"
-                      value={videoUrl}
-                      onChange={handleUrlChange}
-                      placeholder="https://www.youtube.com/watch?v=..."
-                      className="w-full rounded-lg border border-white/10 bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm placeholder:text-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    />
-                    {urlError ? (
-                      <p className="text-xs font-medium text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
-                        {urlError}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] px-3 py-3 text-sm text-[var(--fg)] shadow-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-semibold">Local video</span>
-                      <button
-                        type="button"
-                        onClick={handleSelectLocalFile}
-                        className="marble-button marble-button--outline whitespace-nowrap px-3 py-1.5 text-xs font-semibold"
-                      >
-                        Choose local video…
-                      </button>
-                    </div>
-                    {localFilePath ? (
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)] sm:text-sm">
-                        <span className="min-w-0 flex-1 truncate" title={localFilePath}>
-                          {localFilePath}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleClearLocalFile}
-                          className="marble-button marble-button--outline whitespace-nowrap px-2 py-1 text-xs font-semibold"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-xs text-[var(--muted)]">
-                        We&apos;ll process your local video directly. Add a fallback link from the Link tab if needed.
-                      </p>
-                    )}
-                    {fileSelectionError ? (
-                      <p className="mt-2 text-xs font-medium text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
-                        {fileSelectionError}
-                      </p>
-                    ) : null}
-                  </div>
-                )}
-                <div className="flex flex-wrap items-center gap-2">
+              {availableAccounts.length === 0 ? (
+                <p className="text-xs text-[color:color-mix(in_srgb,var(--warning-strong)_72%,var(--accent-contrast))]">
+                  Enable an account with an active platform from your profile before starting the pipeline.
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
+                  Video source
+                </span>
+                <div
+                  role="tablist"
+                  aria-label="Video source"
+                  className="inline-flex w-full max-w-full items-center rounded-full border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-1 text-xs"
+                >
                   <button
-                    type="submit"
-                    disabled={isStartDisabled}
-                    className="marble-button marble-button--primary whitespace-nowrap px-5 py-2.5 text-sm font-semibold sm:px-6 sm:py-2.5 sm:text-base"
+                    type="button"
+                    role="tab"
+                    aria-selected={!isFileMode}
+                    onClick={() => handleSourceModeChange('url')}
+                    className={`flex-1 rounded-full px-3 py-1.5 font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                      !isFileMode
+                        ? 'bg-[color:var(--ring)] text-[color:var(--accent-contrast)] shadow-sm'
+                        : 'text-[var(--muted)]'
+                    }`}
                   >
-                    {isProcessing ? 'Processing…' : 'Start processing'}
+                    Link
                   </button>
                   <button
                     type="button"
-                    onClick={handleReset}
-                    disabled={!hasProgress && clips.length === 0 && !pipelineError}
-                    className="marble-button marble-button--outline whitespace-nowrap px-4 py-2.5 text-sm font-semibold sm:px-5"
+                    role="tab"
+                    aria-selected={isFileMode}
+                    onClick={() => handleSourceModeChange('file')}
+                    className={`flex-1 rounded-full px-3 py-1.5 font-semibold uppercase tracking-wide transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                      isFileMode
+                        ? 'bg-[color:var(--ring)] text-[color:var(--accent-contrast)] shadow-sm'
+                        : 'text-[var(--muted)]'
+                    }`}
                   >
-                    Reset
+                    Local file
                   </button>
                 </div>
               </div>
+              {sourceMode === 'url' ? (
+                <div className="flex flex-col gap-2">
+                  <label className="sr-only" htmlFor="video-url">
+                    Video URL
+                  </label>
+                  <input
+                    id="video-url"
+                    type="url"
+                    value={videoUrl}
+                    onChange={handleUrlChange}
+                    placeholder="https://www.youtube.com/watch?v=..."
+                    className="w-full max-w-full rounded-lg border border-white/10 bg-[var(--card)] px-4 py-2 text-sm text-[var(--fg)] shadow-sm placeholder:text-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  />
+                  {urlError ? (
+                    <p className="text-xs font-medium text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
+                      {urlError}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_78%,transparent)] px-3 py-3 text-sm text-[var(--fg)] shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-semibold">Local video</span>
+                    <button
+                      type="button"
+                      onClick={handleSelectLocalFile}
+                      className="marble-button marble-button--outline whitespace-nowrap px-3 py-1.5 text-xs font-semibold"
+                    >
+                      Choose local video…
+                    </button>
+                  </div>
+                  {localFilePath ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)] sm:text-sm">
+                      <span className="min-w-0 flex-1 truncate" title={localFilePath}>
+                        {localFilePath}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleClearLocalFile}
+                        className="marble-button marble-button--outline whitespace-nowrap px-2 py-1 text-xs font-semibold"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-[var(--muted)]">
+                      We&apos;ll process your local video directly. Add a fallback link from the Link tab if needed.
+                    </p>
+                  )}
+                  {fileSelectionError ? (
+                    <p className="mt-2 text-xs font-medium text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
+                      {fileSelectionError}
+                    </p>
+                  ) : null}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={isStartDisabled}
+                  className="marble-button marble-button--primary whitespace-nowrap px-5 py-2.5 text-sm font-semibold sm:px-6 sm:py-2.5 sm:text-base"
+                >
+                  {isProcessing ? 'Processing…' : 'Start processing'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  disabled={!hasProgress && clips.length === 0 && !pipelineError}
+                  className="marble-button marble-button--outline whitespace-nowrap px-4 py-2.5 text-sm font-semibold sm:px-5"
+                >
+                  Reset
+                </button>
+              </div>
             </div>
-            <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
-              <input
-                type="checkbox"
-                checked={reviewMode}
-                onChange={handleReviewModeChange}
-                className="h-4 w-4 rounded border border-white/20 bg-[var(--card)] text-[var(--ring)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              />
-              <span>Pause after producing clips to review boundaries manually.</span>
-            </label>
-            {reviewMode ? (
-              <p className="text-xs text-[var(--muted)]">
-                The pipeline will wait after step 7 so you can fine-tune each clip before resuming.
-              </p>
-            ) : null}
             <div className="text-xs text-[var(--muted)]">
               Supports YouTube and Twitch URLs. The pipeline runs{' '}
               {isMockBackend
@@ -1005,7 +980,7 @@ const Home: FC<HomeProps> = ({
                 {accountError}
               </p>
             ) : null}
-            </form>
+          </form>
 
           <div className="rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-6 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.6)]">
             <div className="flex flex-col gap-1">

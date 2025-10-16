@@ -198,7 +198,12 @@ describe('Home account selection', () => {
     fireEvent.submit(form as HTMLFormElement)
 
     expect(
-      screen.getByText(/select an account from the top navigation to start processing/i)
+      screen.getByText((content, element) => {
+        return (
+          element?.id === 'account-error' &&
+          /select an account from the top navigation to start processing/i.test(content)
+        )
+      })
     ).toBeInTheDocument()
     expect(startPipelineSpy).not.toHaveBeenCalled()
   })
