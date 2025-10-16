@@ -1044,8 +1044,7 @@ const VideoPage: FC = () => {
         in: 0,
         out: minGap,
         duration: minGap,
-        tClip: 0,
-        isOutOfRange: false
+        tClip: 0
       }
     }
     return getClipPreviewState(
@@ -1064,7 +1063,6 @@ const VideoPage: FC = () => {
   const mediaStart = previewMode === 'adjusted' ? clipIn : 0
   const mediaEnd = previewMode === 'adjusted' ? clipOut : clipDuration
   const targetMediaTime = previewMode === 'adjusted' ? clipIn + previewState.tClip : previewState.tClip
-  const isPreviewOutOfRange = previewState.isOutOfRange
 
   const activeVideoSrc =
     previewMode === 'final' || !supportsAdjustedPreview ? renderedSrc : adjustedSrc
@@ -1453,13 +1451,6 @@ const VideoPage: FC = () => {
                     className="h-10 w-10 animate-spin rounded-full border-2 border-white/30 border-t-transparent"
                     aria-hidden
                   />
-                </div>
-              ) : null}
-              {isPreviewOutOfRange ? (
-                <div className="pointer-events-none absolute inset-0 flex items-end justify-end p-3">
-                  <span className="rounded bg-black/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white/90">
-                    Out of clip range
-                  </span>
                 </div>
               ) : null}
             </VideoPreviewStage>

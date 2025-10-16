@@ -5,7 +5,6 @@ export type ClipPreviewState = {
   out: number
   duration: number
   tClip: number
-  isOutOfRange: boolean
 }
 
 const sanitizeTime = (value: number | null | undefined, fallback: number): number => {
@@ -43,14 +42,11 @@ export const getClipPreviewState = (
     typeof globalPlayhead === 'number' && Number.isFinite(globalPlayhead) ? globalPlayhead : start
   const clampedPlayhead = clamp(safePlayhead, start, end)
   const localTime = duration > 0 ? clampedPlayhead - start : 0
-  const isOutOfRange = safePlayhead < start || safePlayhead > end
-
   return {
     in: start,
     out: end,
     duration,
-    tClip: duration > 0 ? localTime : 0,
-    isOutOfRange
+    tClip: duration > 0 ? localTime : 0
   }
 }
 

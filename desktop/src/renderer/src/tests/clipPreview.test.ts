@@ -16,7 +16,6 @@ describe('getClipPreviewState', () => {
     expect(state.out).toBe(20)
     expect(state.duration).toBe(10)
     expect(state.tClip).toBeCloseTo(3.5)
-    expect(state.isOutOfRange).toBe(false)
   })
 
   it('clamps playhead before the start of the clip', () => {
@@ -30,7 +29,6 @@ describe('getClipPreviewState', () => {
     )
 
     expect(state.tClip).toBe(0)
-    expect(state.isOutOfRange).toBe(true)
   })
 
   it('clamps playhead beyond the end of the clip and respects source bounds', () => {
@@ -46,6 +44,5 @@ describe('getClipPreviewState', () => {
     expect(state.out).toBe(10)
     expect(state.duration).toBe(8)
     expect(state.tClip).toBe(8)
-    expect(state.isOutOfRange).toBe(true)
   })
 })
