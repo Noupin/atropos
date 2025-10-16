@@ -39,8 +39,8 @@ const ClipPage: FC = () => {
     if (!clip) {
       return
     }
-    navigate(`/video/${encodeURIComponent(clip.id)}`, {
-      state: { clip, clipTitle: clip.title }
+    navigate(`/video/${encodeURIComponent(clip.id)}/edit`, {
+      state: { clip, clipTitle: clip.title, accountId: clip.accountId ?? null }
     })
   }, [clip, navigate])
 

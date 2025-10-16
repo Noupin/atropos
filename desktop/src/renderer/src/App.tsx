@@ -5,7 +5,7 @@ import MarbleSelect from './components/MarbleSelect'
 import TrialBadge from './components/TrialBadge'
 import ClipPage from './pages/Clip'
 import ClipEdit from './pages/ClipEdit'
-import VideoWorkspace from './pages/VideoWorkspace'
+import VideoPage from './pages/VideoPage'
 import Home from './pages/Home'
 import Library from './pages/Library'
 import Profile from './pages/Profile'
@@ -85,12 +85,15 @@ type NavItemLabelProps = {
 }
 
 type LibraryAttachment = {
-  key: 'edit' | 'video'
+  key: 'edit' | 'video' | 'video-edit' | 'video-select' | 'video-layout'
   label: string
   ariaLabel: string
   srText: string | null
   variant: 'edit' | 'video'
   indicator?: ReactNode
+  to?: string
+  end?: boolean
+  state?: unknown
 }
 
 type LibraryAttachmentLabelProps = {
@@ -778,7 +781,9 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const isLibraryFamilyRoute = isLibraryRoute || isVideoRoute || isClipEditRoute
 
   const videoLocationState =
-    (isVideoRoute ? (location.state as { clip?: Clip; clipTitle?: string } | null) : null) ?? null
+    (isVideoRoute
+      ? (location.state as { clip?: Clip; clipTitle?: string; accountId?: string | null } | null)
+      : null) ?? null
   const clipEditLocationState =
     (isClipEditRoute ? ((location.state as ClipEditLocationState | null) ?? null) : null)
 
@@ -823,27 +828,57 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     }
 
     if (isVideoRoute) {
-      return [
-        {
-          key: 'video',
-          label: 'Video',
-          ariaLabel: videoClipTitle ? `Video workspace for ${videoClipTitle}` : 'Video workspace',
-          srText: videoClipTitle ? `Current clip: ${videoClipTitle}` : null,
+      const match = location.pathname.match(/^\/video\/([^/]+)(?:\/([^/]+))?/)
+      const clipSegment = match?.[1] ?? null
+      const rawTab = match?.[2] ?? 'edit'
+      const tab: 'edit' | 'select' | 'layout' =
+        rawTab === 'select' ? 'select' : rawTab === 'layout' ? 'layout' : 'edit'
+
+      if (!clipSegment) {
+        return [] as LibraryAttachment[]
+      }
+
+      const basePath = `/video/${clipSegment}`
+      const navState = videoLocationState ? { ...videoLocationState } : undefined
+      const tabDefinitions: Array<{ id: 'edit' | 'select' | 'layout'; label: string; ariaFallback: string }> = [
+        { id: 'edit', label: 'Edit', ariaFallback: 'Edit video' },
+        { id: 'select', label: 'Video Select', ariaFallback: 'Choose a video' },
+        { id: 'layout', label: 'Layout Editor', ariaFallback: 'Adjust layout' }
+      ]
+
+      return tabDefinitions.map(({ id, label, ariaFallback }) => {
+        const isCurrent = tab === id
+        const toPath = id === 'edit' ? `${basePath}/edit` : `${basePath}/${id}`
+        return {
+          key: `video-${id}`,
+          label,
+          ariaLabel: videoClipTitle ? `${label} for ${videoClipTitle}` : ariaFallback,
+          srText: videoClipTitle ? `Current video: ${videoClipTitle}` : null,
           variant: 'video',
-          indicator: (
+          indicator: isCurrent ? (
             <span
               aria-hidden
               className="pointer-events-none inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--accent)_70%,var(--accent-contrast))] px-1 text-[10px] font-semibold text-[color:var(--accent-contrast)] shadow-[0_8px_16px_rgba(43,42,40,0.18)]"
             >
               ▶
             </span>
-          )
+          ) : undefined,
+          to: toPath,
+          end: id === 'edit',
+          state: navState
         } satisfies LibraryAttachment
-      ]
+      })
     }
 
     return [] as LibraryAttachment[]
-  }, [clipEditClipTitle, isClipEditRoute, isVideoRoute, videoClipTitle])
+  }, [
+    clipEditClipTitle,
+    isClipEditRoute,
+    isVideoRoute,
+    location.pathname,
+    videoClipTitle,
+    videoLocationState
+  ])
 
   const libraryNavLinkClassName = useCallback(
     ({ isActive }: { isActive: boolean }) => {
@@ -948,7 +983,9 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
                 {libraryAttachments.map((attachment, index) => (
                   <NavLink
                     key={attachment.key}
-                    to={currentLocationTarget}
+                    to={attachment.to ?? currentLocationTarget}
+                    end={attachment.end}
+                    state={attachment.state}
                     className={libraryAttachmentNavLinkClassName}
                     aria-label={attachment.ariaLabel}
                   >
@@ -1032,7 +1069,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
               />
             }
           />
-          <Route path="/video/:id" element={<VideoWorkspace />} />
+          <Route path="/video/:id/*" element={<VideoPage />} />
           <Route path="/clip/:id" element={<ClipPage />} />
           <Route path="/clip/:id/edit" element={<ClipEdit />} />
           <Route
