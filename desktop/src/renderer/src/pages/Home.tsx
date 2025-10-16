@@ -291,7 +291,7 @@ const Home: FC<HomeProps> = ({
   const handleSelectLocalFile = useCallback(() => {
     const picker = window?.api?.pickVideoFile
     if (!picker) {
-      setFileSelectionError('Selecting a local file is only available in the desktop app. Paste a link instead.')
+      setFileSelectionError('We could not access the file picker. Restart the app and try again.')
       return
     }
 
@@ -309,7 +309,7 @@ const Home: FC<HomeProps> = ({
       })
       .catch((error: unknown) => {
         console.error('Failed to select local video', error)
-        setFileSelectionError('We could not open the file picker. Try again or paste a video link instead.')
+        setFileSelectionError('We could not access the file picker. Restart the app and try again.')
       })
   }, [updateState])
 
