@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import VideoPage from '../pages/VideoPage'
 import type { Clip } from '../types'
+import { buildCacheBustedPlaybackUrl } from '../lib/video'
 
 vi.mock('../services/configApi', () => ({
   fetchConfigEntries: vi.fn(async () => [])
@@ -19,9 +20,9 @@ const testClip: Clip = {
   sourceDurationSeconds: 60,
   thumbnail: null,
   playbackUrl: 'https://cdn.example.com/final.mp4',
-  previewUrl: 'https://cdn.example.com/source.mp4',
+  previewUrl: 'https://cdn.example.com/source-preview.mp4',
   description: 'Clip description',
-  sourceUrl: 'https://cdn.example.com/source',
+  sourceUrl: 'https://cdn.example.com/original-source.mp4',
   sourceTitle: 'Original Source',
   sourcePublishedAt: new Date('2023-12-01T10:00:00Z').toISOString(),
   videoId: 'video-123',
@@ -241,5 +242,142 @@ describe('VideoPage preview modes', () => {
     await waitFor(() => {
       expect(currentTime).toBeCloseTo(testClip.startSeconds)
     })
+  })
+
+  it('uses the original source media for the adjusted preview', async () => {
+    mockFetchLibraryClip.mockResolvedValueOnce(testClip)
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: `/video/${testClip.id}`,
+            search: '?mode=trim',
+            state: { clip: testClip, context: 'library', accountId: 'acct-1' }
+          }
+        ]}
+      >
+        <Routes>
+          <Route path="/video/:id" element={<VideoPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    await screen.findAllByRole('button', { name: 'Adjusted' })
+
+    const element = document.querySelector('video') as HTMLVideoElement | null
+
+    expect(element).toBeInstanceOf(HTMLVideoElement)
+    expect(element?.getAttribute('src')).toBe(testClip.sourceUrl)
+  })
+
+  it('clamps playback at the trimmed end without looping when playback overruns', async () => {
+    mockFetchLibraryClip.mockResolvedValueOnce(testClip)
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: `/video/${testClip.id}`,
+            search: '?mode=trim',
+            state: { clip: testClip, context: 'library', accountId: 'acct-1' }
+          }
+        ]}
+      >
+        <Routes>
+          <Route path="/video/:id" element={<VideoPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    await screen.findAllByRole('button', { name: 'Adjusted' })
+
+    const element = document.querySelector('video') as HTMLVideoElement | null
+
+    expect(element).toBeInstanceOf(HTMLVideoElement)
+
+    if (!element) {
+      throw new Error('Video element not found')
+    }
+
+    let currentTime = testClip.endSeconds + 0.25
+    let paused = false
+    Object.defineProperty(element, 'readyState', {
+      configurable: true,
+      get: () => 4
+    })
+    Object.defineProperty(element, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+      set: (value: number) => {
+        currentTime = value
+      }
+    })
+    Object.defineProperty(element, 'paused', {
+      configurable: true,
+      get: () => paused
+    })
+
+    mockPause.mockImplementation(() => {
+      paused = true
+    })
+
+    await act(async () => {
+      fireEvent.timeUpdate(element)
+    })
+
+    expect(mockPause).toHaveBeenCalled()
+    expect(currentTime).toBeCloseTo(testClip.endSeconds)
+
+    mockPause.mockImplementation(() => undefined)
+  })
+
+  it('falls back to the rendered clip when the source video cannot load', async () => {
+    mockFetchLibraryClip.mockResolvedValueOnce(testClip)
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: `/video/${testClip.id}`,
+            search: '?mode=trim',
+            state: { clip: testClip, context: 'library', accountId: 'acct-1' }
+          }
+        ]}
+      >
+        <Routes>
+          <Route path="/video/:id" element={<VideoPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    await screen.findAllByRole('button', { name: 'Adjusted' })
+
+    let element = document.querySelector('video') as HTMLVideoElement | null
+    expect(element).toBeInstanceOf(HTMLVideoElement)
+
+    if (!element) {
+      throw new Error('Video element not found')
+    }
+
+    Object.defineProperty(element, 'readyState', {
+      configurable: true,
+      get: () => 4
+    })
+
+    await act(async () => {
+      fireEvent.error(element)
+    })
+
+    await waitFor(() => {
+      element = document.querySelector('video') as HTMLVideoElement | null
+      expect(element).toBeInstanceOf(HTMLVideoElement)
+      const expectedRenderedSrc = buildCacheBustedPlaybackUrl(testClip) || testClip.playbackUrl
+      expect(element?.getAttribute('src')).toBe(expectedRenderedSrc)
+    })
+
+    expect(
+      screen.getByText('We could not load the original file, so this preview is using the exported clip.')
+    ).toBeInTheDocument()
   })
 })

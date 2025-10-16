@@ -93,7 +93,7 @@ const resolveGuardrailKey = (name: string): keyof DurationGuardrails | null => {
 }
 
 const getDefaultPreviewMode = (clip: Clip | null): 'adjusted' | 'final' =>
-  clip && clip.previewUrl === clip.playbackUrl ? 'final' : 'adjusted'
+  clip && clip.sourceUrl ? 'adjusted' : 'final'
 
 const formatRelativeSeconds = (value: number): string => {
   if (!Number.isFinite(value) || value === 0) {
@@ -315,7 +315,7 @@ const VideoPage: FC = () => {
   const originalStart = clipState?.originalStartSeconds ?? 0
   const originalEnd =
     clipState?.originalEndSeconds ?? originalStart + (clipState?.durationSec ?? 10)
-  const supportsAdjustedPreview = clipState ? clipState.previewUrl !== clipState.playbackUrl : false
+  const supportsAdjustedPreview = Boolean(clipState?.sourceUrl)
 
   const sourceStartBound = 0
   const sourceEndBound = useMemo(() => {
@@ -1031,12 +1031,25 @@ const VideoPage: FC = () => {
     return cacheBusted.length > 0 ? cacheBusted : clipState.playbackUrl
   }, [clipState])
 
+  const [adjustedPreviewSource, setAdjustedPreviewSource] = useState<'source' | 'fallback'>(() =>
+    clipState?.sourceUrl ? 'source' : 'fallback'
+  )
+  const [adjustedPreviewWarning, setAdjustedPreviewWarning] = useState<string | null>(null)
+
+  useEffect(() => {
+    setAdjustedPreviewSource(clipState?.sourceUrl ? 'source' : 'fallback')
+    setAdjustedPreviewWarning(null)
+  }, [clipState])
+
   const adjustedSrc = useMemo(() => {
     if (!clipState) {
       return ''
     }
-    return clipState.previewUrl
-  }, [clipState])
+    if (adjustedPreviewSource === 'source' && clipState.sourceUrl) {
+      return clipState.sourceUrl
+    }
+    return renderedSrc
+  }, [adjustedPreviewSource, clipState, renderedSrc])
 
   const playbackWindow = useMemo(() => {
     if (!clipState) {
@@ -1080,7 +1093,9 @@ const VideoPage: FC = () => {
     : mediaStart
 
   const activeVideoSrc =
-    previewMode === 'final' || !supportsAdjustedPreview ? renderedSrc : adjustedSrc
+    previewMode === 'final' || (!supportsAdjustedPreview && adjustedPreviewSource !== 'fallback')
+      ? renderedSrc
+      : adjustedSrc
 
   const activePoster = previewMode === 'final' ? (clipState?.thumbnail ?? undefined) : undefined
   const videoKey = clipState
@@ -1146,7 +1161,23 @@ const VideoPage: FC = () => {
       return
     }
     setIsVideoBuffering(false)
-  }, [isStalePreviewElement])
+    if (
+      previewMode === 'adjusted' &&
+      adjustedPreviewSource === 'source' &&
+      clipState?.sourceUrl
+    ) {
+      console.warn('Falling back to rendered preview because the raw source could not be loaded.')
+      setAdjustedPreviewSource('fallback')
+      setAdjustedPreviewWarning(
+        'We could not load the original file, so this preview is using the exported clip.'
+      )
+    }
+  }, [
+    adjustedPreviewSource,
+    clipState,
+    isStalePreviewElement,
+    previewMode
+  ])
 
   const handleVideoVolumeChange = useCallback(() => {
     const element = previewVideoRef.current
@@ -1237,8 +1268,10 @@ const VideoPage: FC = () => {
       if (element.currentTime < mediaStart - tolerance) {
         element.currentTime = mediaStart
       } else if (element.currentTime > mediaEnd - tolerance) {
-        element.pause()
-        element.currentTime = mediaStart
+        if (!element.paused) {
+          element.pause()
+        }
+        element.currentTime = mediaEnd
       }
     }
     const absolutePlayhead =
@@ -1250,6 +1283,28 @@ const VideoPage: FC = () => {
       return absolutePlayhead
     })
   }, [clipIn, hasPlayableWindow, isStalePreviewElement, mediaEnd, mediaStart, previewMode])
+
+  const handleVideoEnded = useCallback(() => {
+    const element = previewVideoRef.current
+    if (isStalePreviewElement(element) || !element) {
+      return
+    }
+    if (!element.paused) {
+      element.pause()
+    }
+    const endTime = hasPlayableWindow ? mediaEnd : mediaStart
+    if (Math.abs(element.currentTime - endTime) > 0.01) {
+      element.currentTime = endTime
+    }
+    setPreviewPlayhead(() => clipOut)
+  }, [
+    clipOut,
+    hasPlayableWindow,
+    isStalePreviewElement,
+    mediaEnd,
+    mediaStart,
+    setPreviewPlayhead
+  ])
 
   useEffect(() => {
     syncVideoToTarget()
@@ -1269,18 +1324,16 @@ const VideoPage: FC = () => {
       return
     }
     const wasPlaying = hasPlayableWindow && !element.paused && !element.ended
-    const shouldLoopToStart = !hasPlayableWindow || beforeStart || afterWindow
-    const nextTime = shouldLoopToStart ? mediaStart : mediaEnd
+    const nextTime = beforeStart ? mediaStart : mediaEnd
     element.currentTime = nextTime
-    if (shouldLoopToStart) {
-      setPreviewPlayhead((previous) => {
-        if (Math.abs(previous - clipIn) < 0.01) {
-          return previous
-        }
-        return clipIn
-      })
-    }
-    if (wasPlaying) {
+    setPreviewPlayhead((previous) => {
+      const target = beforeStart ? clipIn : clipOut
+      if (Math.abs(previous - target) < 0.01) {
+        return previous
+      }
+      return target
+    })
+    if (wasPlaying && beforeStart) {
       const playback = element.play()
       if (playback && typeof playback.catch === 'function') {
         playback.catch(() => undefined)
@@ -1288,6 +1341,7 @@ const VideoPage: FC = () => {
     }
   }, [
     clipIn,
+    clipOut,
     hasPlayableWindow,
     isStalePreviewElement,
     mediaEnd,
@@ -1524,6 +1578,7 @@ const VideoPage: FC = () => {
                 onPlaying={handleVideoPlaying}
                 onWaiting={handleVideoWaiting}
                 onError={handleVideoError}
+                onEnded={handleVideoEnded}
                 onTimeUpdate={handleVideoTimeUpdate}
                 onPlay={handleVideoPlay}
                 onVolumeChange={handleVideoVolumeChange}
@@ -1583,8 +1638,15 @@ const VideoPage: FC = () => {
                     ? renderedOutOfSync
                       ? 'Viewing the last saved render. The exported clip will update after you save these adjustments.'
                       : 'Review the exported vertical clip with captions and layout applied.'
-                    : 'Previewing the trimmed source video without captions, crops, or layout.'}
+                    : adjustedPreviewSource === 'source'
+                      ? 'Previewing the trimmed source video without captions, crops, or layout.'
+                      : 'Previewing the trimmed export because the original file is unavailable.'}
               </p>
+              {previewMode === 'adjusted' && adjustedPreviewWarning ? (
+                <p className="text-xs font-medium text-[color:color-mix(in_srgb,var(--warning-strong)_80%,var(--accent-contrast))]">
+                  {adjustedPreviewWarning}
+                </p>
+              ) : null}
               {renderedOutOfSync ? (
                 <p className="text-xs font-medium text-[color:color-mix(in_srgb,var(--warning-strong)_80%,var(--accent-contrast))]">
                   The final output does not yet reflect these boundaries. Save the clip to rerun
