@@ -85,7 +85,7 @@ type NavItemLabelProps = {
 }
 
 type LibraryAttachment = {
-  key: 'edit' | 'video' | 'video-edit' | 'video-select' | 'video-layout'
+  key: 'edit' | 'video' | 'video-trim' | 'video-metadata' | 'video-upload'
   label: string
   ariaLabel: string
   srText: string | null
@@ -830,9 +830,9 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     if (isVideoRoute) {
       const match = location.pathname.match(/^\/video\/([^/]+)(?:\/([^/]+))?/)
       const clipSegment = match?.[1] ?? null
-      const rawTab = match?.[2] ?? 'edit'
-      const tab: 'edit' | 'select' | 'layout' =
-        rawTab === 'select' ? 'select' : rawTab === 'layout' ? 'layout' : 'edit'
+      const rawTab = match?.[2] ?? 'trim'
+      const tab: 'trim' | 'metadata' | 'upload' =
+        rawTab === 'metadata' ? 'metadata' : rawTab === 'upload' ? 'upload' : 'trim'
 
       if (!clipSegment) {
         return [] as LibraryAttachment[]
@@ -840,15 +840,15 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
       const basePath = `/video/${clipSegment}`
       const navState = videoLocationState ? { ...videoLocationState } : undefined
-      const tabDefinitions: Array<{ id: 'edit' | 'select' | 'layout'; label: string; ariaFallback: string }> = [
-        { id: 'edit', label: 'Edit', ariaFallback: 'Edit video' },
-        { id: 'select', label: 'Video Select', ariaFallback: 'Choose a video' },
-        { id: 'layout', label: 'Layout Editor', ariaFallback: 'Adjust layout' }
+      const tabDefinitions: Array<{ id: 'trim' | 'metadata' | 'upload'; label: string; ariaFallback: string }> = [
+        { id: 'trim', label: 'Trim', ariaFallback: 'Trim video' },
+        { id: 'metadata', label: 'Metadata', ariaFallback: 'Edit video metadata' },
+        { id: 'upload', label: 'Upload', ariaFallback: 'Manage upload settings' }
       ]
 
       return tabDefinitions.map(({ id, label, ariaFallback }) => {
         const isCurrent = tab === id
-        const toPath = id === 'edit' ? `${basePath}/edit` : `${basePath}/${id}`
+        const toPath = id === 'trim' ? `${basePath}/trim` : `${basePath}/${id}`
         return {
           key: `video-${id}`,
           label,
@@ -864,7 +864,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
             </span>
           ) : undefined,
           to: toPath,
-          end: id === 'edit',
+          end: id === 'trim',
           state: navState
         } satisfies LibraryAttachment
       })

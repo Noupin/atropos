@@ -204,7 +204,7 @@ const ClipEdit: FC = () => {
     if (!clipState) {
       return
     }
-    navigate(`/video/${encodeURIComponent(clipState.id)}/edit`, {
+    navigate(`/video/${encodeURIComponent(clipState.id)}/trim`, {
       state: {
         clip: clipState,
         accountId: state?.accountId ?? clipState.accountId ?? null,

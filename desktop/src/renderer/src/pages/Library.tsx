@@ -655,7 +655,7 @@ const Library: FC<LibraryProps> = ({
 
   const handleOpenWorkspace = useCallback(
     (clip: Clip, accountId: string | null) => {
-      navigate(`/video/${encodeURIComponent(clip.id)}/edit`, {
+      navigate(`/video/${encodeURIComponent(clip.id)}/trim`, {
         state: {
           clip,
           accountId,

@@ -21,7 +21,7 @@ type VideoPageLocationState = {
   clipTitle?: string
 }
 
-type VideoPageTab = 'edit' | 'select' | 'layout'
+type VideoPageTab = 'trim' | 'metadata' | 'upload'
 
 type UploadStatus = 'idle' | 'ready' | 'scheduled'
 
@@ -32,8 +32,6 @@ type CaptionStrategyOption = {
 
 type CaptionStrategy = 'auto' | 'upload'
 
-type LayoutPreset = 'split' | 'side-by-side' | 'picture-in-picture'
-
 type SubtitleStyle = 'modern' | 'bold' | 'minimal'
 
 const CAPTION_STRATEGIES: CaptionStrategyOption[] = [
@@ -41,17 +39,23 @@ const CAPTION_STRATEGIES: CaptionStrategyOption[] = [
   { value: 'upload', label: 'Use my uploaded caption file' }
 ]
 
+const VIDEO_PAGE_TABS: Array<{ id: VideoPageTab; label: string }> = [
+  { id: 'trim', label: 'Trim' },
+  { id: 'metadata', label: 'Metadata' },
+  { id: 'upload', label: 'Upload' }
+]
+
 const MIN_CLIP_GAP = 0.25
 const DEFAULT_TRIM_DURATION = 30
 
 const normaliseTab = (value: string | undefined): VideoPageTab => {
-  if (value === 'select') {
-    return 'select'
+  if (value === 'metadata') {
+    return 'metadata'
   }
-  if (value === 'layout') {
-    return 'layout'
+  if (value === 'upload') {
+    return 'upload'
   }
-  return 'edit'
+  return 'trim'
 }
 
 const DEFAULT_CALL_TO_ACTION = 'Invite viewers to subscribe for more highlights.'
@@ -120,11 +124,6 @@ const VideoPage: FC = () => {
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>('modern')
   const [subtitleSize, setSubtitleSize] = useState<number>(42)
 
-  const [layoutPreset, setLayoutPreset] = useState<LayoutPreset>('split')
-  const [showWatermark, setShowWatermark] = useState<boolean>(true)
-  const [highlightFocus, setHighlightFocus] = useState<'auto' | 'speaker' | 'gameplay'>('auto')
-  const [backgroundAccent, setBackgroundAccent] = useState<string>('electric')
-
   const previousClipIdRef = useRef<string | null>(initialClip?.id ?? null)
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
   const [sharedVolume, setSharedVolume] = useSharedVolume()
@@ -137,7 +136,7 @@ const VideoPage: FC = () => {
       return
     }
     const encodedId = encodeURIComponent(clipIdParam)
-    navigate(`/video/${encodedId}/edit`, { replace: true, state: locationState ?? undefined })
+    navigate(`/video/${encodedId}/trim`, { replace: true, state: locationState ?? undefined })
   }, [clipIdParam, navigate, rawTab, locationState])
 
   useEffect(() => {
@@ -306,38 +305,20 @@ const VideoPage: FC = () => {
   const activeDuration = selectedClip?.sourceDurationSeconds ?? selectedClip?.durationSec ?? 120
   const trimDuration = Math.max(0, trimEnd - trimStart)
 
-  const handleBack = useCallback(() => {
-    navigate(-1)
-  }, [navigate])
-
-  const handleOpenFullEditor = useCallback(() => {
-    if (!selectedClip) {
-      return
-    }
-    navigate(`/clip/${encodeURIComponent(selectedClip.id)}/edit`, {
-      state: {
-        clip: selectedClip,
-        jobId: null,
-        accountId: activeAccountId,
-        context: 'library'
-      }
-    })
-  }, [activeAccountId, navigate, selectedClip])
-
   const handleTabChange = useCallback(
     (tab: VideoPageTab) => {
-      if (!clipIdParam) {
+      if (!clipIdParam || tab === activeTab) {
         return
       }
       const encodedId = encodeURIComponent(clipIdParam)
-      const targetPath = tab === 'edit' ? `/video/${encodedId}/edit` : `/video/${encodedId}/${tab}`
+      const targetPath = tab === 'trim' ? `/video/${encodedId}/trim` : `/video/${encodedId}/${tab}`
       navigate(targetPath, {
         state: selectedClip
           ? { clip: selectedClip, accountId: activeAccountId, clipTitle: selectedClip.title }
           : { accountId: activeAccountId, clipTitle: title }
       })
     },
-    [activeAccountId, clipIdParam, navigate, selectedClip, title]
+    [activeAccountId, activeTab, clipIdParam, navigate, selectedClip, title]
   )
 
   const handleFileChange = useCallback(
@@ -433,7 +414,7 @@ const VideoPage: FC = () => {
       setIsLoadingClip(false)
       setActiveAccountId((previous) => clip.accountId ?? previous ?? activeAccountId ?? null)
       const encodedId = encodeURIComponent(clip.id)
-      navigate(`/video/${encodedId}/edit`, {
+      navigate(`/video/${encodedId}/trim`, {
         state: { clip, accountId: clip.accountId ?? activeAccountId ?? null, clipTitle: clip.title }
       })
     },
@@ -450,36 +431,32 @@ const VideoPage: FC = () => {
     return 'No upload planned yet.'
   }, [uploadStatus])
 
-  const layoutSummary = useMemo(() => {
-    const focusLabel =
-      highlightFocus === 'auto'
-        ? 'auto framing'
-        : highlightFocus === 'speaker'
-          ? 'speaker spotlight'
-          : 'gameplay focus'
-    const watermarkLabel = showWatermark ? 'watermark on' : 'no watermark'
-    return `${layoutPreset.replace(/-/g, ' ')} layout, ${focusLabel}, ${watermarkLabel}, ${backgroundAccent} accent`
-  }, [backgroundAccent, highlightFocus, layoutPreset, showWatermark])
-
   return (
     <section className="flex w-full flex-1 flex-col gap-6 px-6 py-8 lg:px-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={handleBack}
-          className="rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+      <div className="flex flex-wrap justify-start gap-3">
+        <nav
+          aria-label="Video modes"
+          className="inline-flex rounded-[16px] border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-1 text-sm font-semibold text-[var(--fg)] shadow-[0_14px_28px_rgba(43,42,40,0.16)]"
         >
-          Back
-        </button>
-        {selectedClip ? (
-          <button
-            type="button"
-            onClick={handleOpenFullEditor}
-            className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
-          >
-            Open full editor
-          </button>
-        ) : null}
+          {VIDEO_PAGE_TABS.map((tab) => {
+            const isActive = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => handleTabChange(tab.id)}
+                aria-pressed={isActive}
+                className={`flex-1 whitespace-nowrap rounded-[12px] px-4 py-2 transition ${
+                  isActive
+                    ? 'bg-[color:color-mix(in_srgb,var(--accent)_24%,transparent)] text-[var(--fg)] shadow-[0_10px_18px_rgba(43,42,40,0.18)]'
+                    : 'text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_60%,transparent)] hover:text-[var(--fg)]'
+                }`}
+              >
+                {tab.label}
+              </button>
+            )
+          })}
+        </nav>
       </div>
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="flex-1 space-y-4">
@@ -542,29 +519,6 @@ const VideoPage: FC = () => {
           ) : null}
         </div>
         <aside className="flex w-full max-w-xl flex-col gap-4">
-          <div className="inline-flex w-full items-center justify-between rounded-[16px] border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-1 text-sm font-medium text-[var(--fg)] shadow-[0_14px_28px_rgba(43,42,40,0.16)]">
-            {([
-              { id: 'edit', label: 'Edit' },
-              { id: 'select', label: 'Video Select' },
-              { id: 'layout', label: 'Layout Editor' }
-            ] as const).map((tab) => {
-              const isActive = activeTab === tab.id
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => handleTabChange(tab.id)}
-                  className={`flex-1 rounded-[12px] px-3 py-2 transition ${
-                    isActive
-                      ? 'bg-[color:color-mix(in_srgb,var(--accent)_24%,transparent)] text-[var(--fg)] shadow-[0_10px_18px_rgba(43,42,40,0.18)]'
-                      : 'text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_60%,transparent)] hover:text-[var(--fg)]'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              )
-            })}
-          </div>
           {statusMessage ? (
             <div
               role="status"
@@ -573,7 +527,7 @@ const VideoPage: FC = () => {
               {statusMessage}
             </div>
           ) : null}
-          {activeTab === 'edit' ? (
+          {activeTab === 'trim' ? (
             <div className="space-y-5 rounded-xl border border-white/10 bg-[color:var(--card-strong)] p-4 text-sm">
               <form onSubmit={handleApplyEdits} className="space-y-3">
                 <h3 className="text-base font-semibold text-[var(--fg)]">Editing controls</h3>
@@ -707,119 +661,181 @@ const VideoPage: FC = () => {
                   />
                   Smooth shaky footage
                 </label>
-              </div>
-              <div className="space-y-3">
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                    Subtitle strategy
-                  </span>
-                  <select
-                    value={captionStrategy}
-                    onChange={(event) => setCaptionStrategy(event.target.value as CaptionStrategy)}
-                    className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  >
-                    {CAPTION_STRATEGIES.map((entry) => (
-                      <option key={entry.value} value={entry.value}>
-                        {entry.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                    Subtitle style
-                  </span>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['modern', 'bold', 'minimal'] as SubtitleStyle[]).map((style) => (
-                      <button
-                        key={style}
-                        type="button"
-                        onClick={() => setSubtitleStyle(style)}
-                        className={`rounded-lg border px-2 py-1 text-xs font-semibold capitalize transition ${
-                          subtitleStyle === style
-                            ? 'border-[var(--accent)] bg-[color:color-mix(in_srgb,var(--accent)_24%,transparent)] text-[var(--fg)]'
-                            : 'border-white/10 text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--fg)]'
-                        }`}
-                      >
-                        {style}
-                      </button>
-                    ))}
-                  </div>
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                    Subtitle size
-                  </span>
-                  <input
-                    type="range"
-                    min={28}
-                    max={56}
-                    step={1}
-                    value={subtitleSize}
-                    onChange={(event) => setSubtitleSize(Number.parseFloat(event.target.value))}
-                  />
-                  <span className="text-xs text-[var(--muted)]">{subtitleSize}px</span>
-                </label>
+                <div className="space-y-3">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                      Subtitle strategy
+                    </span>
+                    <select
+                      value={captionStrategy}
+                      onChange={(event) => setCaptionStrategy(event.target.value as CaptionStrategy)}
+                      className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    >
+                      {CAPTION_STRATEGIES.map((entry) => (
+                        <option key={entry.value} value={entry.value}>
+                          {entry.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                      Subtitle style
+                    </span>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['modern', 'bold', 'minimal'] as SubtitleStyle[]).map((style) => (
+                        <button
+                          key={style}
+                          type="button"
+                          onClick={() => setSubtitleStyle(style)}
+                          className={`rounded-lg border px-2 py-1 text-xs font-semibold capitalize transition ${
+                            subtitleStyle === style
+                              ? 'border-[var(--accent)] bg-[color:color-mix(in_srgb,var(--accent)_24%,transparent)] text-[var(--fg)]'
+                              : 'border-white/10 text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--fg)]'
+                          }`}
+                        >
+                          {style}
+                        </button>
+                      ))}
+                    </div>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                      Subtitle size
+                    </span>
+                    <input
+                      type="range"
+                      min={28}
+                      max={56}
+                      step={1}
+                      value={subtitleSize}
+                      onChange={(event) => setSubtitleSize(Number.parseFloat(event.target.value))}
+                    />
+                    <span className="text-xs text-[var(--muted)]">{subtitleSize}px</span>
+                  </label>
+                </div>
                 <button
                   type="submit"
                   className="marble-button marble-button--secondary w-full justify-center px-4 py-2 text-sm font-semibold"
                 >
-                  Save edit settings
+                  Save trim & effects
                 </button>
               </form>
-              <div className="h-px w-full bg-white/10" />
-              <form className="space-y-3" onSubmit={handleSaveDetails}>
-                <h4 className="text-sm font-semibold text-[var(--fg)]">Metadata</h4>
-                <label className="flex flex-col gap-1">
+            </div>
+          ) : null}
+          {activeTab === 'metadata' ? (
+            <form className="space-y-3 rounded-xl border border-white/10 bg-[color:var(--card-strong)] p-4 text-sm" onSubmit={handleSaveDetails}>
+              <h3 className="text-base font-semibold text-[var(--fg)]">Metadata</h3>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                  Title
+                </span>
+                <input
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  placeholder="Give this clip a headline"
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                  Description
+                </span>
+                <textarea
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  className="min-h-[96px] w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  placeholder="Set the stage for viewers"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                  Call to action
+                </span>
+                <input
+                  value={callToAction}
+                  onChange={(event) => setCallToAction(event.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  placeholder="Invite viewers to keep watching"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                  Tags
+                </span>
+                <input
+                  value={tags}
+                  onChange={(event) => setTags(event.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  placeholder="Add comma-separated keywords"
+                />
+              </label>
+              <button
+                type="submit"
+                className="marble-button marble-button--primary w-full justify-center px-4 py-2 text-sm font-semibold"
+              >
+                Save details
+              </button>
+            </form>
+          ) : null}
+          {activeTab === 'upload' ? (
+            <div className="space-y-5 rounded-xl border border-white/10 bg-[color:var(--card-strong)] p-4 text-sm">
+              <div className="space-y-4">
+                <h3 className="text-base font-semibold text-[var(--fg)]">Upload & library</h3>
+                <label className="flex flex-col gap-2">
                   <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                    Title
+                    Upload a new video
                   </span>
                   <input
-                    value={title}
-                    onChange={(event) => setTitle(event.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    placeholder="Give this clip a headline"
-                    required
+                    type="file"
+                    accept="video/*"
+                    onChange={handleFileChange}
+                    className="w-full rounded-lg border border-dashed border-white/20 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)]"
                   />
+                  {selectedFile ? (
+                    <div className="flex items-center justify-between rounded-lg bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-3 py-2 text-xs text-[var(--fg)]">
+                      <span className="truncate">{selectedFile.name}</span>
+                      <button
+                        type="button"
+                        onClick={handleClearFile}
+                        className="text-[color:var(--accent)] underline-offset-4 hover:underline"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  ) : null}
                 </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                    Description
-                  </span>
-                  <textarea
-                    value={description}
-                    onChange={(event) => setDescription(event.target.value)}
-                    className="min-h-[96px] w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    placeholder="Set the stage for viewers"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                    Call to action
-                  </span>
-                  <input
-                    value={callToAction}
-                    onChange={(event) => setCallToAction(event.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                    Tags
-                  </span>
-                  <input
-                    value={tags}
-                    onChange={(event) => setTags(event.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="marble-button marble-button--primary w-full justify-center px-4 py-2 text-sm font-semibold"
-                >
-                  Save details
-                </button>
-              </form>
+                <div className="h-px w-full bg-white/10" />
+                <div className="flex items-center justify-between text-xs text-[var(--muted)]">
+                  <span>Library clips</span>
+                  {isLoadingClipList ? (
+                    <span className="inline-flex items-center gap-2">
+                      <MarbleSpinner size={18} /> Loading…
+                    </span>
+                  ) : null}
+                </div>
+                {clipListError ? (
+                  <div className="rounded-lg border border-[color:var(--error-soft)] bg-[color:color-mix(in_srgb,var(--error-soft)_35%,transparent)] px-3 py-2 text-xs text-[color:var(--error-strong)]">
+                    {clipListError}
+                  </div>
+                ) : null}
+                {resolvedClipList.length === 0 && !isLoadingClipList ? (
+                  <p className="text-xs text-[var(--muted)]">
+                    We could not find any clips for this account yet. Upload a file to get started.
+                  </p>
+                ) : null}
+                <div className="grid grid-cols-1 gap-3">
+                  {resolvedClipList.map((clip) => (
+                    <ClipCard
+                      key={clip.id}
+                      clip={clip}
+                      onClick={() => handleSelectClip(clip)}
+                      isActive={selectedClip ? clip.id === selectedClip.id : false}
+                    />
+                  ))}
+                </div>
+              </div>
               <div className="h-px w-full bg-white/10" />
               <form className="space-y-3" onSubmit={handleSaveDistribution}>
                 <h4 className="text-sm font-semibold text-[var(--fg)]">Distribution plan</h4>
@@ -873,140 +889,8 @@ const VideoPage: FC = () => {
               </form>
             </div>
           ) : null}
-          {activeTab === 'select' ? (
-            <div className="space-y-4 rounded-xl border border-white/10 bg-[color:var(--card-strong)] p-4 text-sm">
-              <h3 className="text-base font-semibold text-[var(--fg)]">Video selection</h3>
-              <label className="flex flex-col gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                  Upload a new video
-                </span>
-                <input
-                  type="file"
-                  accept="video/*"
-                  onChange={handleFileChange}
-                  className="w-full rounded-lg border border-dashed border-white/20 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)]"
-                />
-                {selectedFile ? (
-                  <div className="flex items-center justify-between rounded-lg bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-3 py-2 text-xs text-[var(--fg)]">
-                    <span className="truncate">{selectedFile.name}</span>
-                    <button
-                      type="button"
-                      onClick={handleClearFile}
-                      className="text-[color:var(--accent)] underline-offset-4 hover:underline"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                ) : null}
-              </label>
-              <div className="h-px w-full bg-white/10" />
-              <div className="flex items-center justify-between text-xs text-[var(--muted)]">
-                <span>Library clips</span>
-                {isLoadingClipList ? (
-                  <span className="inline-flex items-center gap-2">
-                    <MarbleSpinner size={18} /> Loading…
-                  </span>
-                ) : null}
-              </div>
-              {clipListError ? (
-                <div className="rounded-lg border border-[color:var(--error-soft)] bg-[color:color-mix(in_srgb,var(--error-soft)_35%,transparent)] px-3 py-2 text-xs text-[color:var(--error-strong)]">
-                  {clipListError}
-                </div>
-              ) : null}
-              {resolvedClipList.length === 0 && !isLoadingClipList ? (
-                <p className="text-xs text-[var(--muted)]">
-                  We could not find any clips for this account yet. Upload a file to get started.
-                </p>
-              ) : null}
-              <div className="grid grid-cols-1 gap-3">
-                {resolvedClipList.map((clip) => (
-                  <ClipCard
-                    key={clip.id}
-                    clip={clip}
-                    onClick={() => handleSelectClip(clip)}
-                    isActive={selectedClip ? clip.id === selectedClip.id : false}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : null}
-          {activeTab === 'layout' ? (
-            <form className="space-y-4 rounded-xl border border-white/10 bg-[color:var(--card-strong)] p-4 text-sm" onSubmit={(event) => {
-              event.preventDefault()
-              setStatusMessage('Layout preferences saved. We will apply them to the next render.')
-            }}>
-              <h3 className="text-base font-semibold text-[var(--fg)]">Layout configuration</h3>
-              <label className="flex flex-col gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                  Layout preset
-                </span>
-                <select
-                  value={layoutPreset}
-                  onChange={(event) => setLayoutPreset(event.target.value as LayoutPreset)}
-                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                >
-                  <option value="split">Split with captions</option>
-                  <option value="side-by-side">Side-by-side</option>
-                  <option value="picture-in-picture">Picture-in-picture</option>
-                </select>
-              </label>
-              <fieldset className="space-y-2">
-                <legend className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                  Emphasis
-                </legend>
-                {[
-                  { value: 'auto', label: 'Let Atropos decide' },
-                  { value: 'speaker', label: 'Keep the speaker in frame' },
-                  { value: 'gameplay', label: 'Highlight gameplay moments' }
-                ].map((option) => (
-                  <label key={option.value} className="flex items-center gap-2 text-sm text-[var(--fg)]">
-                    <input
-                      type="radio"
-                      name="highlight-focus"
-                      value={option.value}
-                      checked={highlightFocus === option.value}
-                      onChange={(event) => setHighlightFocus(event.target.value as typeof highlightFocus)}
-                    />
-                    {option.label}
-                  </label>
-                ))}
-              </fieldset>
-              <label className="flex items-center justify-between gap-3 text-sm text-[var(--fg)]">
-                <span>Show watermark</span>
-                <input
-                  type="checkbox"
-                  checked={showWatermark}
-                  onChange={(event) => setShowWatermark(event.target.checked)}
-                  className="h-4 w-8 rounded-full border-white/30 bg-transparent"
-                />
-              </label>
-              <label className="flex flex-col gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                  Accent style
-                </span>
-                <select
-                  value={backgroundAccent}
-                  onChange={(event) => setBackgroundAccent(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                >
-                  <option value="electric">Electric neon</option>
-                  <option value="sunset">Sunset glow</option>
-                  <option value="midnight">Midnight gradient</option>
-                  <option value="minimal">Minimal neutral</option>
-                </select>
-              </label>
-              <div className="rounded-lg border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-3 py-2 text-xs text-[var(--muted)]">
-                {layoutSummary}
-              </div>
-              <button
-                type="submit"
-                className="marble-button marble-button--primary w-full justify-center px-4 py-2 text-sm font-semibold"
-              >
-                Save layout
-              </button>
-            </form>
-          ) : null}
         </aside>
+
       </div>
     </section>
   )
