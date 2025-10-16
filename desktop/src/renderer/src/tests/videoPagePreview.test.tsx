@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import VideoPage from '../pages/VideoPage'
 import type { Clip } from '../types'
 
@@ -55,6 +55,39 @@ vi.mock('../services/pipelineApi', () => ({
 }))
 
 describe('VideoPage preview modes', () => {
+  const originalPlay = HTMLMediaElement.prototype.play
+  const originalPause = HTMLMediaElement.prototype.pause
+
+  const mockPlay = vi.fn(async () => undefined)
+  const mockPause = vi.fn()
+
+  beforeAll(() => {
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: mockPlay
+    })
+    Object.defineProperty(HTMLMediaElement.prototype, 'pause', {
+      configurable: true,
+      value: mockPause
+    })
+  })
+
+  afterEach(() => {
+    mockPlay.mockClear()
+    mockPause.mockClear()
+  })
+
+  afterAll(() => {
+    Object.defineProperty(HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: originalPlay
+    })
+    Object.defineProperty(HTMLMediaElement.prototype, 'pause', {
+      configurable: true,
+      value: originalPause
+    })
+  })
+
   it('defaults to adjusted preview and toggles to final mode', async () => {
     mockFetchLibraryClip.mockResolvedValueOnce(testClip)
 
@@ -84,5 +117,129 @@ describe('VideoPage preview modes', () => {
 
     expect(adjustedButton).toHaveAttribute('aria-pressed', 'false')
     expect(finalButton).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('seeks the adjusted preview to the trimmed start on metadata load', async () => {
+    mockFetchLibraryClip.mockResolvedValueOnce(testClip)
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: `/video/${testClip.id}`,
+            search: '?mode=trim',
+            state: { clip: testClip, context: 'library', accountId: 'acct-1' }
+          }
+        ]}
+      >
+        <Routes>
+          <Route path="/video/:id" element={<VideoPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    const adjustedButtons = await screen.findAllByRole('button', { name: 'Adjusted' })
+    expect(adjustedButtons.length).toBeGreaterThan(0)
+    const adjustedToggle =
+      adjustedButtons.find((button) => button.hasAttribute('aria-disabled')) ?? adjustedButtons[0]
+
+    fireEvent.click(adjustedToggle)
+
+    await waitFor(() => {
+      expect(adjustedToggle).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    const element = document.querySelector('video') as HTMLVideoElement | null
+
+    expect(element).toBeInstanceOf(HTMLVideoElement)
+
+    if (!element) {
+      throw new Error('Video element not found')
+    }
+
+    let currentTime = 0
+    Object.defineProperty(element, 'readyState', {
+      configurable: true,
+      get: () => 4
+    })
+    Object.defineProperty(element, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+      set: (value: number) => {
+        currentTime = value
+      }
+    })
+
+    await act(async () => {
+      fireEvent.loadedMetadata(element)
+    })
+
+    await waitFor(() => {
+      expect(currentTime).toBeCloseTo(testClip.startSeconds)
+    })
+  })
+
+  it('resets adjusted playback to the clip start when play is requested at the trimmed end', async () => {
+    mockFetchLibraryClip.mockResolvedValueOnce(testClip)
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: `/video/${testClip.id}`,
+            search: '?mode=trim',
+            state: { clip: testClip, context: 'library', accountId: 'acct-1' }
+          }
+        ]}
+      >
+        <Routes>
+          <Route path="/video/:id" element={<VideoPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    const adjustedButtons = await screen.findAllByRole('button', { name: 'Adjusted' })
+    expect(adjustedButtons.length).toBeGreaterThan(0)
+    const adjustedToggle =
+      adjustedButtons.find((button) => button.hasAttribute('aria-disabled')) ?? adjustedButtons[0]
+
+    fireEvent.click(adjustedToggle)
+
+    await waitFor(() => {
+      expect(adjustedToggle).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    const element = document.querySelector('video') as HTMLVideoElement | null
+
+    expect(element).toBeInstanceOf(HTMLVideoElement)
+
+    if (!element) {
+      throw new Error('Video element not found')
+    }
+
+    let currentTime = testClip.endSeconds
+    Object.defineProperty(element, 'readyState', {
+      configurable: true,
+      get: () => 4
+    })
+    Object.defineProperty(element, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+      set: (value: number) => {
+        currentTime = value
+      }
+    })
+    Object.defineProperty(element, 'paused', {
+      configurable: true,
+      get: () => true
+    })
+
+    await act(async () => {
+      fireEvent.play(element)
+    })
+
+    await waitFor(() => {
+      expect(currentTime).toBeCloseTo(testClip.startSeconds)
+    })
   })
 })

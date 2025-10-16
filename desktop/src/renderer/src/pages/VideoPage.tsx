@@ -8,7 +8,7 @@ import type {
 } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { formatDuration } from '../lib/format'
-import { getClipPreviewState } from '../lib/clipPreview'
+import { getClipPlaybackWindow, getClipPreviewState } from '../lib/clipPreview'
 import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import useSharedVolume from '../hooks/useSharedVolume'
 import VideoPreviewStage from '../components/VideoPreviewStage'
@@ -1038,13 +1038,23 @@ const VideoPage: FC = () => {
     return clipState.previewUrl
   }, [clipState])
 
+  const playbackWindow = useMemo(() => {
+    if (!clipState) {
+      return { playbackStart: 0, playbackEnd: minGap, playbackDuration: minGap }
+    }
+    return getClipPlaybackWindow({
+      startSeconds: rangeStart,
+      endSeconds: rangeEnd,
+      sourceDurationSeconds: clipState.sourceDurationSeconds
+    })
+  }, [clipState, minGap, rangeEnd, rangeStart])
+
   const previewState = useMemo(() => {
     if (!clipState) {
       return {
-        in: 0,
-        out: minGap,
-        duration: minGap,
-        tClip: 0
+        ...playbackWindow,
+        localTime: 0,
+        absoluteTime: playbackWindow.playbackStart
       }
     }
     return getClipPreviewState(
@@ -1055,14 +1065,19 @@ const VideoPage: FC = () => {
       },
       previewPlayhead
     )
-  }, [clipState, minGap, previewPlayhead, rangeEnd, rangeStart])
+  }, [clipState, playbackWindow, previewPlayhead, rangeEnd, rangeStart])
 
-  const clipIn = previewState.in
-  const clipOut = previewState.out
-  const clipDuration = previewState.duration
+  const clipIn = playbackWindow.playbackStart
+  const clipOut = playbackWindow.playbackEnd
+  const clipDuration = playbackWindow.playbackDuration
   const mediaStart = previewMode === 'adjusted' ? clipIn : 0
   const mediaEnd = previewMode === 'adjusted' ? clipOut : clipDuration
-  const targetMediaTime = previewMode === 'adjusted' ? clipIn + previewState.tClip : previewState.tClip
+  const targetMediaTime =
+    previewMode === 'adjusted' ? previewState.absoluteTime : previewState.localTime
+  const hasPlayableWindow = mediaEnd > mediaStart
+  const boundedTargetMediaTime = hasPlayableWindow
+    ? Math.min(Math.max(targetMediaTime, mediaStart), mediaEnd)
+    : mediaStart
 
   const activeVideoSrc =
     previewMode === 'final' || !supportsAdjustedPreview ? renderedSrc : adjustedSrc
@@ -1143,26 +1158,28 @@ const VideoPage: FC = () => {
 
   const syncVideoToTarget = useCallback(() => {
     const element = previewVideoRef.current
-    if (isStalePreviewElement(element) || !Number.isFinite(targetMediaTime)) {
+    if (isStalePreviewElement(element)) {
       return
     }
     if (!element || element.readyState < 1) {
       return
     }
-    if (Math.abs(element.currentTime - targetMediaTime) > 0.015) {
-      element.currentTime = targetMediaTime
+    if (!Number.isFinite(boundedTargetMediaTime)) {
+      return
     }
-  }, [isStalePreviewElement, targetMediaTime])
+    if (Math.abs(element.currentTime - boundedTargetMediaTime) > 0.015) {
+      element.currentTime = boundedTargetMediaTime
+    }
+    if (!hasPlayableWindow && !element.paused) {
+      element.pause()
+    }
+  }, [boundedTargetMediaTime, hasPlayableWindow, isStalePreviewElement])
 
   const handleVideoLoadedMetadata = useCallback(() => {
     syncVideoToTarget()
   }, [syncVideoToTarget])
 
   const handleVideoPlay = useCallback(() => {
-    syncVideoToTarget()
-  }, [syncVideoToTarget])
-
-  const handleVideoTimeUpdate = useCallback(() => {
     const element = previewVideoRef.current
     if (isStalePreviewElement(element)) {
       return
@@ -1170,10 +1187,59 @@ const VideoPage: FC = () => {
     if (!element) {
       return
     }
-    const tolerance = 0.05
-    if (mediaEnd > mediaStart && element.currentTime > mediaEnd - tolerance) {
-      element.pause()
+    if (!hasPlayableWindow) {
+      if (!element.paused) {
+        element.pause()
+      }
+      if (Math.abs(element.currentTime - mediaStart) > 0.015) {
+        element.currentTime = mediaStart
+      }
+      return
+    }
+    const tolerance = 0.015
+    const beforeWindow = element.currentTime < mediaStart - tolerance
+    const atOrAfterEnd = element.currentTime >= mediaEnd - tolerance
+    if (beforeWindow || atOrAfterEnd) {
       element.currentTime = mediaStart
+      setPreviewPlayhead((previous) => {
+        if (Math.abs(previous - clipIn) < 0.01) {
+          return previous
+        }
+        return clipIn
+      })
+      return
+    }
+    syncVideoToTarget()
+  }, [
+    clipIn,
+    hasPlayableWindow,
+    isStalePreviewElement,
+    mediaEnd,
+    mediaStart,
+    setPreviewPlayhead,
+    syncVideoToTarget
+  ])
+
+  const handleVideoTimeUpdate = useCallback(() => {
+    const element = previewVideoRef.current
+    if (isStalePreviewElement(element) || !element) {
+      return
+    }
+    const tolerance = 0.05
+    if (!hasPlayableWindow) {
+      if (!element.paused) {
+        element.pause()
+      }
+      if (Math.abs(element.currentTime - mediaStart) > tolerance) {
+        element.currentTime = mediaStart
+      }
+    } else {
+      if (element.currentTime < mediaStart - tolerance) {
+        element.currentTime = mediaStart
+      } else if (element.currentTime > mediaEnd - tolerance) {
+        element.pause()
+        element.currentTime = mediaStart
+      }
     }
     const absolutePlayhead =
       previewMode === 'adjusted' ? element.currentTime : clipIn + element.currentTime
@@ -1183,7 +1249,7 @@ const VideoPage: FC = () => {
       }
       return absolutePlayhead
     })
-  }, [clipIn, isStalePreviewElement, mediaEnd, mediaStart, previewMode])
+  }, [clipIn, hasPlayableWindow, isStalePreviewElement, mediaEnd, mediaStart, previewMode])
 
   useEffect(() => {
     syncVideoToTarget()
@@ -1196,19 +1262,39 @@ const VideoPage: FC = () => {
     }
     const tolerance = 0.05
     const beforeStart = element.currentTime < mediaStart - tolerance
-    const afterWindow = element.currentTime > mediaEnd + tolerance
+    const afterWindow = hasPlayableWindow
+      ? element.currentTime > mediaEnd + tolerance
+      : element.currentTime > mediaStart + tolerance
     if (!beforeStart && !afterWindow) {
       return
     }
-    const wasPlaying = !element.paused && !element.ended
-    element.currentTime = beforeStart ? mediaStart : mediaEnd
+    const wasPlaying = hasPlayableWindow && !element.paused && !element.ended
+    const shouldLoopToStart = !hasPlayableWindow || beforeStart || afterWindow
+    const nextTime = shouldLoopToStart ? mediaStart : mediaEnd
+    element.currentTime = nextTime
+    if (shouldLoopToStart) {
+      setPreviewPlayhead((previous) => {
+        if (Math.abs(previous - clipIn) < 0.01) {
+          return previous
+        }
+        return clipIn
+      })
+    }
     if (wasPlaying) {
       const playback = element.play()
       if (playback && typeof playback.catch === 'function') {
         playback.catch(() => undefined)
       }
     }
-  }, [isStalePreviewElement, mediaEnd, mediaStart, videoKey])
+  }, [
+    clipIn,
+    hasPlayableWindow,
+    isStalePreviewElement,
+    mediaEnd,
+    mediaStart,
+    setPreviewPlayhead,
+    videoKey
+  ])
 
   const runSaveStepAnimation = useCallback(async () => {
     for (let index = 1; index < SAVE_STEP_DEFINITIONS.length; index += 1) {

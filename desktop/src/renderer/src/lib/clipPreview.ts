@@ -1,10 +1,14 @@
 import type { Clip } from '../types'
 
-export type ClipPreviewState = {
-  in: number
-  out: number
-  duration: number
-  tClip: number
+export type ClipPlaybackWindow = {
+  playbackStart: number
+  playbackEnd: number
+  playbackDuration: number
+}
+
+export type ClipPreviewState = ClipPlaybackWindow & {
+  localTime: number
+  absoluteTime: number
 }
 
 const sanitizeTime = (value: number | null | undefined, fallback: number): number => {
@@ -24,29 +28,46 @@ const clamp = (value: number, min: number, max: number): number => {
   return value
 }
 
-export const getClipPreviewState = (
-  clip: Pick<Clip, 'startSeconds' | 'endSeconds' | 'sourceDurationSeconds'>,
-  globalPlayhead: number | null | undefined
-): ClipPreviewState => {
-  const start = sanitizeTime(clip.startSeconds, 0)
-  const rawEnd = sanitizeTime(clip.endSeconds, start)
+export const getClipPlaybackWindow = (
+  clip: Pick<Clip, 'startSeconds' | 'endSeconds' | 'sourceDurationSeconds'>
+): ClipPlaybackWindow => {
+  const playbackStart = sanitizeTime(clip.startSeconds, 0)
+  const rawEnd = sanitizeTime(clip.endSeconds, playbackStart)
   const sourceDuration =
     typeof clip.sourceDurationSeconds === 'number' && Number.isFinite(clip.sourceDurationSeconds)
       ? Math.max(0, clip.sourceDurationSeconds)
       : null
-  const sourceBound = sourceDuration !== null ? start + sourceDuration : null
-  const end = sourceBound !== null ? Math.min(rawEnd, sourceBound) : rawEnd
-  const duration = Math.max(0, end - start)
+  const sourceBound = sourceDuration !== null ? playbackStart + sourceDuration : null
+  const playbackEnd = sourceBound !== null ? Math.min(rawEnd, sourceBound) : rawEnd
+  const playbackDuration = Math.max(0, playbackEnd - playbackStart)
+
+  return { playbackStart, playbackEnd, playbackDuration }
+}
+
+export const getClipPreviewState = (
+  clip: Pick<Clip, 'startSeconds' | 'endSeconds' | 'sourceDurationSeconds'>,
+  globalPlayhead: number | null | undefined
+): ClipPreviewState => {
+  const playbackWindow = getClipPlaybackWindow(clip)
 
   const safePlayhead =
-    typeof globalPlayhead === 'number' && Number.isFinite(globalPlayhead) ? globalPlayhead : start
-  const clampedPlayhead = clamp(safePlayhead, start, end)
-  const localTime = duration > 0 ? clampedPlayhead - start : 0
+    typeof globalPlayhead === 'number' && Number.isFinite(globalPlayhead)
+      ? globalPlayhead
+      : playbackWindow.playbackStart
+  const clampedPlayhead = clamp(
+    safePlayhead,
+    playbackWindow.playbackStart,
+    playbackWindow.playbackEnd
+  )
+  const localTime =
+    playbackWindow.playbackDuration > 0 ? clampedPlayhead - playbackWindow.playbackStart : 0
+  const absoluteTime = playbackWindow.playbackStart + (playbackWindow.playbackDuration > 0 ? localTime : 0)
   return {
-    in: start,
-    out: end,
-    duration,
-    tClip: duration > 0 ? localTime : 0
+    playbackStart: playbackWindow.playbackStart,
+    playbackEnd: playbackWindow.playbackEnd,
+    playbackDuration: playbackWindow.playbackDuration,
+    localTime: playbackWindow.playbackDuration > 0 ? localTime : 0,
+    absoluteTime
   }
 }
 
