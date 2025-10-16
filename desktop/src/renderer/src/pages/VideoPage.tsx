@@ -160,9 +160,36 @@ const VideoPage: FC = () => {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const state = (location.state as VideoPageLocationState | null) ?? null
+  const [persistedState, setPersistedState] = useState<VideoPageLocationState | null>(() =>
+    state ? { ...state } : null
+  )
 
-  const sourceClip = state?.clip && (!id || state.clip.id === id) ? state.clip : null
-  const context = state?.context ?? 'job'
+  useEffect(() => {
+    if (!state) {
+      return
+    }
+    setPersistedState((previous) => {
+      if (!previous) {
+        return { ...state }
+      }
+      return {
+        ...previous,
+        ...state,
+        clip: state.clip ?? previous.clip,
+        jobId: state.jobId ?? previous.jobId ?? null,
+        accountId: state.accountId ?? previous.accountId ?? null,
+        context: state.context ?? previous.context
+      }
+    })
+  }, [state])
+
+  const effectiveState = persistedState ?? state ?? null
+
+  const sourceClip =
+    effectiveState?.clip && (!id || effectiveState.clip.id === id) ? effectiveState.clip : null
+  const context = effectiveState?.context ?? 'job'
+  const jobId = effectiveState?.jobId ?? null
+  const accountId = effectiveState?.accountId ?? null
 
   const activeMode = normaliseMode(searchParams.get('mode'))
 
@@ -451,13 +478,11 @@ const VideoPage: FC = () => {
       try {
         let clip: Clip
         if (context === 'library') {
-          const accountId = state?.accountId
           if (!accountId) {
             throw new Error('This clip is no longer associated with a library account.')
           }
           clip = await fetchLibraryClip(accountId, id)
         } else {
-          const jobId = state?.jobId
           if (!jobId) {
             throw new Error('The pipeline job for this clip is no longer active.')
           }
@@ -466,6 +491,13 @@ const VideoPage: FC = () => {
         if (!cancelled) {
           setClipState(clip)
           setLoadError(null)
+          setPersistedState((previous) => ({
+            ...(previous ?? {}),
+            clip,
+            context,
+            jobId,
+            accountId
+          }))
         }
       } catch (error) {
         if (!cancelled) {
@@ -487,7 +519,7 @@ const VideoPage: FC = () => {
     return () => {
       cancelled = true
     }
-  }, [context, id, sourceClip, state?.accountId, state?.jobId])
+  }, [accountId, context, id, jobId, sourceClip])
 
   useEffect(() => {
     if (!clipState) {
@@ -1256,17 +1288,16 @@ const VideoPage: FC = () => {
     setSaveSuccess(null)
     try {
       if (context === 'library') {
-        const accountId = state?.accountId ?? clipState.accountId
-        if (!accountId) {
+        const accountForUpdate = accountId ?? clipState.accountId
+        if (!accountForUpdate) {
           throw new Error('Missing account information for this clip.')
         }
-        const updated = await adjustLibraryClip(accountId, clipState.id, {
+        const updated = await adjustLibraryClip(accountForUpdate, clipState.id, {
           startSeconds: adjustedStart,
           endSeconds: adjustedEnd
         })
         applyUpdatedClip(updated)
       } else {
-        const jobId = state?.jobId
         if (!jobId) {
           throw new Error('Missing job information for this clip.')
         }
@@ -1297,8 +1328,8 @@ const VideoPage: FC = () => {
     rangeEnd,
     rangeStart,
     runSaveStepAnimation,
-    state?.accountId,
-    state?.jobId
+    accountId,
+    jobId
   ])
 
   if (!clipState) {
