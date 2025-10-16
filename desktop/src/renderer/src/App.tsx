@@ -846,28 +846,29 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
         { id: 'upload', label: 'Upload', ariaFallback: 'Manage upload settings' }
       ]
 
-      return tabDefinitions.map(({ id, label, ariaFallback }) => {
-        const isCurrent = tab === id
-        const toPath = id === 'trim' ? `${basePath}/trim` : `${basePath}/${id}`
-        return {
-          key: `video-${id}`,
-          label,
-          ariaLabel: videoClipTitle ? `${label} for ${videoClipTitle}` : ariaFallback,
+      const activeDefinition = tabDefinitions.find((definition) => definition.id === tab)
+
+      if (!activeDefinition) {
+        return [] as LibraryAttachment[]
+      }
+
+      const toPath =
+        activeDefinition.id === 'trim' ? `${basePath}/trim` : `${basePath}/${activeDefinition.id}`
+
+      return [
+        {
+          key: `video-${activeDefinition.id}`,
+          label: activeDefinition.label,
+          ariaLabel: videoClipTitle
+            ? `${activeDefinition.label} for ${videoClipTitle}`
+            : activeDefinition.ariaFallback,
           srText: videoClipTitle ? `Current video: ${videoClipTitle}` : null,
           variant: 'video',
-          indicator: isCurrent ? (
-            <span
-              aria-hidden
-              className="pointer-events-none inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[color:color-mix(in_srgb,var(--accent)_70%,var(--accent-contrast))] px-1 text-[10px] font-semibold text-[color:var(--accent-contrast)] shadow-[0_8px_16px_rgba(43,42,40,0.18)]"
-            >
-              ▶
-            </span>
-          ) : undefined,
           to: toPath,
-          end: id === 'trim',
+          end: activeDefinition.id === 'trim',
           state: navState
         } satisfies LibraryAttachment
-      })
+      ]
     }
 
     return [] as LibraryAttachment[]
