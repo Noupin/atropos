@@ -632,7 +632,8 @@ const Home: FC<HomeProps> = ({
       if (!clip) {
         return
       }
-      navigate(`/clip/${encodeURIComponent(clip.id)}/edit`, {
+      const encodedId = encodeURIComponent(clip.id)
+      navigate(`/video/${encodedId}?mode=trim`, {
         state: {
           clip,
           jobId: activeJobId,

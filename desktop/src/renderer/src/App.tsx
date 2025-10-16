@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FC, MouseEvent, ReactNode, RefObject } from 'react'
-import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import MarbleSelect from './components/MarbleSelect'
 import TrialBadge from './components/TrialBadge'
 import ClipPage from './pages/Clip'
-import ClipEdit from './pages/ClipEdit'
 import VideoPage from './pages/VideoPage'
 import Home from './pages/Home'
 import Library from './pages/Library'
@@ -63,10 +62,6 @@ type NavItemProgress = {
   srLabel?: string
 }
 
-type ClipEditLocationState = {
-  clip?: Clip | null
-}
-
 type PendingLibraryProject = {
   jobId: string
   accountId: string | null
@@ -85,7 +80,7 @@ type NavItemLabelProps = {
 }
 
 type LibraryAttachment = {
-  key: 'edit' | 'video' | 'video-trim' | 'video-metadata' | 'video-upload'
+  key: 'video-trim' | 'video-metadata' | 'video-upload'
   label: string
   ariaLabel: string
   srText: string | null
@@ -103,6 +98,34 @@ type LibraryAttachmentLabelProps = {
   isActive: boolean
   isLastAttachment: boolean
   indicator?: ReactNode
+}
+
+const LegacyClipEditRedirect: FC = () => {
+  const { id } = useParams<{ id: string }>()
+  if (!id) {
+    return <Navigate to="/library" replace />
+  }
+  const encodedId = encodeURIComponent(id)
+  return <Navigate to={`/video/${encodedId}?mode=trim`} replace />
+}
+
+const LegacyWorkspaceRedirect: FC = () => {
+  const { id } = useParams<{ id: string }>()
+  if (!id) {
+    return <Navigate to="/library" replace />
+  }
+  const encodedId = encodeURIComponent(id)
+  return <Navigate to={`/video/${encodedId}?mode=trim`} replace />
+}
+
+const LegacyVideoPathRedirect: FC = () => {
+  const { id, legacyMode } = useParams<{ id: string; legacyMode?: string }>()
+  if (!id) {
+    return <Navigate to="/library" replace />
+  }
+  const mode = legacyMode === 'metadata' || legacyMode === 'upload' ? legacyMode : 'trim'
+  const encodedId = encodeURIComponent(id)
+  return <Navigate to={`/video/${encodedId}?mode=${mode}`} replace />
 }
 
 const badgeVariantClasses: Record<NavItemBadgeVariant, string> = {
@@ -776,17 +799,13 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   const isLibraryRoute = location.pathname.startsWith('/library')
   const isVideoRoute = /^\/video\//.test(location.pathname)
-  const isClipEditRoute = /^\/clip\/[^/]+\/edit$/.test(location.pathname)
   const isSettingsRoute = location.pathname.startsWith('/settings')
-  const isLibraryFamilyRoute = isLibraryRoute || isVideoRoute || isClipEditRoute
+  const isLibraryFamilyRoute = isLibraryRoute || isVideoRoute
 
   const videoLocationState =
     (isVideoRoute
       ? (location.state as { clip?: Clip; clipTitle?: string; accountId?: string | null } | null)
       : null) ?? null
-  const clipEditLocationState =
-    (isClipEditRoute ? ((location.state as ClipEditLocationState | null) ?? null) : null)
-
   const videoClipTitle = useMemo(() => {
     if (!isVideoRoute) {
       return null
@@ -798,16 +817,17 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     return title.length <= 80 ? title : `${title.slice(0, 77).trimEnd()}…`
   }, [isVideoRoute, videoLocationState?.clip?.title, videoLocationState?.clipTitle])
 
-  const clipEditClipTitle = useMemo(() => {
-    if (!isClipEditRoute) {
+  const videoMode = useMemo(() => {
+    if (!isVideoRoute) {
       return null
     }
-    const title = clipEditLocationState?.clip?.title ?? null
-    if (!title) {
-      return null
+    const params = new URLSearchParams(location.search)
+    const rawMode = params.get('mode')
+    if (rawMode === 'metadata' || rawMode === 'upload') {
+      return rawMode
     }
-    return title.length <= 80 ? title : `${title.slice(0, 77).trimEnd()}…`
-  }, [isClipEditRoute, clipEditLocationState?.clip?.title])
+    return 'trim'
+  }, [isVideoRoute, location.search])
 
   const currentLocationTarget = useMemo(
     () => ({ pathname: location.pathname, search: location.search, hash: location.hash }),
@@ -815,70 +835,52 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   )
 
   const libraryAttachments = useMemo(() => {
-    if (isClipEditRoute) {
-      return [
-        {
-          key: 'edit',
-          label: 'Edit',
-          ariaLabel: clipEditClipTitle ? `Edit clip ${clipEditClipTitle}` : 'Edit clip',
-          srText: clipEditClipTitle ? `Current clip: ${clipEditClipTitle}` : null,
-          variant: 'edit'
-        } satisfies LibraryAttachment
-      ]
+    if (!isVideoRoute) {
+      return [] as LibraryAttachment[]
     }
 
-    if (isVideoRoute) {
-      const match = location.pathname.match(/^\/video\/([^/]+)(?:\/([^/]+))?/)
-      const clipSegment = match?.[1] ?? null
-      const rawTab = match?.[2] ?? 'trim'
-      const tab: 'trim' | 'metadata' | 'upload' =
-        rawTab === 'metadata' ? 'metadata' : rawTab === 'upload' ? 'upload' : 'trim'
+    const match = location.pathname.match(/^\/video\/([^/]+)/)
+    const clipSegment = match?.[1] ?? null
 
-      if (!clipSegment) {
-        return [] as LibraryAttachment[]
-      }
-
-      const basePath = `/video/${clipSegment}`
-      const navState = videoLocationState ? { ...videoLocationState } : undefined
-      const tabDefinitions: Array<{ id: 'trim' | 'metadata' | 'upload'; label: string; ariaFallback: string }> = [
-        { id: 'trim', label: 'Trim', ariaFallback: 'Trim video' },
-        { id: 'metadata', label: 'Metadata', ariaFallback: 'Edit video metadata' },
-        { id: 'upload', label: 'Upload', ariaFallback: 'Manage upload settings' }
-      ]
-
-      const activeDefinition = tabDefinitions.find((definition) => definition.id === tab)
-
-      if (!activeDefinition) {
-        return [] as LibraryAttachment[]
-      }
-
-      const toPath =
-        activeDefinition.id === 'trim' ? `${basePath}/trim` : `${basePath}/${activeDefinition.id}`
-
-      return [
-        {
-          key: `video-${activeDefinition.id}`,
-          label: activeDefinition.label,
-          ariaLabel: videoClipTitle
-            ? `${activeDefinition.label} for ${videoClipTitle}`
-            : activeDefinition.ariaFallback,
-          srText: videoClipTitle ? `Current video: ${videoClipTitle}` : null,
-          variant: 'video',
-          to: toPath,
-          end: activeDefinition.id === 'trim',
-          state: navState
-        } satisfies LibraryAttachment
-      ]
+    if (!clipSegment || !videoMode) {
+      return [] as LibraryAttachment[]
     }
 
-    return [] as LibraryAttachment[]
+    const navState = videoLocationState ? { ...videoLocationState } : undefined
+    const tabDefinitions: Array<{ id: 'trim' | 'metadata' | 'upload'; label: string; ariaFallback: string }> = [
+      { id: 'trim', label: 'Trim', ariaFallback: 'Trim video' },
+      { id: 'metadata', label: 'Metadata', ariaFallback: 'Edit video metadata' },
+      { id: 'upload', label: 'Upload', ariaFallback: 'Manage upload settings' }
+    ]
+
+    const activeDefinition = tabDefinitions.find((definition) => definition.id === videoMode)
+
+    if (!activeDefinition) {
+      return [] as LibraryAttachment[]
+    }
+
+    const to = `/video/${clipSegment}?mode=${activeDefinition.id}`
+
+    return [
+      {
+        key: `video-${activeDefinition.id}`,
+        label: activeDefinition.label,
+        ariaLabel: videoClipTitle
+          ? `${activeDefinition.label} for ${videoClipTitle}`
+          : activeDefinition.ariaFallback,
+        srText: videoClipTitle ? `Current video: ${videoClipTitle}` : null,
+        variant: 'video',
+        to,
+        end: activeDefinition.id === 'trim',
+        state: navState
+      } satisfies LibraryAttachment
+    ]
   }, [
-    clipEditClipTitle,
-    isClipEditRoute,
     isVideoRoute,
     location.pathname,
     videoClipTitle,
-    videoLocationState
+    videoLocationState,
+    videoMode
   ])
 
   const libraryNavLinkClassName = useCallback(
@@ -1070,9 +1072,11 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
               />
             }
           />
-          <Route path="/video/:id/*" element={<VideoPage />} />
+          <Route path="/video/:id/:legacyMode" element={<LegacyVideoPathRedirect />} />
+          <Route path="/video/:id" element={<VideoPage />} />
           <Route path="/clip/:id" element={<ClipPage />} />
-          <Route path="/clip/:id/edit" element={<ClipEdit />} />
+          <Route path="/clip/:id/edit" element={<LegacyClipEditRedirect />} />
+          <Route path="/workspace/:id" element={<LegacyWorkspaceRedirect />} />
           <Route
             path="/settings"
             element={
