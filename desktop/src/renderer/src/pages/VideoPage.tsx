@@ -11,6 +11,12 @@ import { formatDuration } from '../lib/format'
 import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import useSharedVolume from '../hooks/useSharedVolume'
 import VideoPreviewStage from '../components/VideoPreviewStage'
+import AdjustedPreviewPlayer from '../components/AdjustedPreviewPlayer'
+import {
+  clampToWindow,
+  computeAdjustedPreviewTiming,
+  nearlyEqual
+} from '../lib/adjustedPreviewTiming'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
 import { fetchConfigEntries } from '../services/configApi'
@@ -255,9 +261,11 @@ const VideoPage: FC = () => {
     start: sourceClip ? sourceClip.startSeconds : 0,
     end: sourceClip ? Math.max(sourceClip.startSeconds + minGap, sourceClip.endSeconds) : minGap
   }))
-  const previewVideoRef = useRef<HTMLVideoElement | null>(null)
+  const adjustedVideoRef = useRef<HTMLVideoElement | null>(null)
+  const standardVideoRef = useRef<HTMLVideoElement | null>(null)
   const [sharedVolume, setSharedVolume] = useSharedVolume()
-  const [isVideoBuffering, setIsVideoBuffering] = useState(false)
+  const [standardBuffering, setStandardBuffering] = useState(false)
+  const [adjustedBuffering, setAdjustedBuffering] = useState(false)
   const [saveSteps, setSaveSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
   const [title, setTitle] = useState<string>(sourceClip?.title ?? '')
   const [description, setDescription] = useState<string>(sourceClip?.description ?? '')
@@ -271,6 +279,9 @@ const VideoPage: FC = () => {
     sourceClip ? 'ready' : 'idle'
   )
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [globalPlayhead, setGlobalPlayhead] = useState(() =>
+    sourceClip ? sourceClip.startSeconds : 0
+  )
 
   useEffect(() => {
     let isActive = true
@@ -315,7 +326,22 @@ const VideoPage: FC = () => {
   const originalStart = clipState?.originalStartSeconds ?? 0
   const originalEnd =
     clipState?.originalEndSeconds ?? originalStart + (clipState?.durationSec ?? 10)
-  const supportsSourcePreview = clipState ? clipState.previewUrl !== clipState.playbackUrl : false
+  const supportsSourcePreview = clipState ? Boolean(clipState.sourceUrl) : false
+
+  useEffect(() => {
+    if (!clipState) {
+      return
+    }
+    setGlobalPlayhead((prev) => {
+      const reference = Number.isFinite(prev) ? prev : clipState.startSeconds
+      const timing = computeAdjustedPreviewTiming(
+        clipState.startSeconds,
+        clipState.endSeconds,
+        reference
+      )
+      return nearlyEqual(reference, timing.currentTime) ? reference : timing.currentTime
+    })
+  }, [clipState])
 
   const sourceStartBound = 0
   const sourceEndBound = useMemo(() => {
@@ -372,6 +398,7 @@ const VideoPage: FC = () => {
       )
       setWindowEnd(Math.min(updatedSourceEnd, desiredWindowEnd))
       setPreviewTarget({ start: updated.startSeconds, end: updated.endSeconds })
+      setGlobalPlayhead(updated.startSeconds)
       setPreviewMode(getDefaultPreviewMode(updated))
     },
     [minGap]
@@ -587,18 +614,20 @@ const VideoPage: FC = () => {
 
   const handleStartChange = useCallback(
     (value: number) => {
-      const next = clampWithinWindow(value, 'start')
-      setRangeStart(Math.min(next, rangeEnd - minGap))
+      const next = Math.min(clampWithinWindow(value, 'start'), rangeEnd - minGap)
+      setRangeStart(next)
+      syncPreviewToRange(next, rangeEnd)
     },
-    [clampWithinWindow, rangeEnd]
+    [clampWithinWindow, rangeEnd, syncPreviewToRange]
   )
 
   const handleEndChange = useCallback(
     (value: number) => {
-      const next = clampWithinWindow(value, 'end')
-      setRangeEnd(Math.max(next, rangeStart + minGap))
+      const next = Math.max(clampWithinWindow(value, 'end'), rangeStart + minGap)
+      setRangeEnd(next)
+      syncPreviewToRange(rangeStart, next)
     },
-    [clampWithinWindow, rangeStart]
+    [clampWithinWindow, rangeStart, syncPreviewToRange]
   )
 
   const syncPreviewToRange = useCallback(
@@ -624,6 +653,18 @@ const VideoPage: FC = () => {
   const commitPreviewTarget = useCallback(() => {
     syncPreviewToRange(rangeStart, rangeEnd)
   }, [rangeEnd, rangeStart, syncPreviewToRange])
+
+  useEffect(() => {
+    setGlobalPlayhead((prev) => {
+      const reference = Number.isFinite(prev) ? prev : previewTarget.start
+      const timing = computeAdjustedPreviewTiming(
+        previewTarget.start,
+        previewTarget.end,
+        reference
+      )
+      return nearlyEqual(reference, timing.currentTime) ? reference : timing.currentTime
+    })
+  }, [previewTarget.end, previewTarget.start])
 
   const snapRangeToValues = useCallback(
     (startValue: number, endValue: number) => {
@@ -1101,8 +1142,6 @@ const VideoPage: FC = () => {
     return buildPreviewSrc(originalPreviewRange, 'original')
   }, [buildPreviewSrc, clipState, originalPreviewRange])
 
-  const previewSourceIsFile = clipState ? clipState.previewUrl.startsWith('file://') : false
-
   const currentPreviewRange = useMemo(() => {
     if (!clipState) {
       return { start: 0, end: 0 }
@@ -1126,9 +1165,6 @@ const VideoPage: FC = () => {
     return { start, end }
   }, [currentPreviewRange])
 
-  const previewStart = sanitisedPreviewRange.start
-  const previewEnd = sanitisedPreviewRange.end
-
   const activeVideoSrc =
     previewMode === 'rendered'
       ? renderedSrc
@@ -1141,41 +1177,100 @@ const VideoPage: FC = () => {
     ? `${clipState.id}-${previewMode}-${activeVideoSrc}`
     : `${previewMode}-${activeVideoSrc}`
 
-  useEffect(() => {
-    setIsVideoBuffering(false)
-  }, [activeVideoSrc, previewMode])
+  const isVideoBuffering = previewMode === 'adjusted' ? adjustedBuffering : standardBuffering
 
   useEffect(() => {
-    const element = previewVideoRef.current
-    if (!element) {
-      return
-    }
-    element.volume = sharedVolume.volume
-    element.muted = sharedVolume.muted
-  }, [sharedVolume, videoKey])
+    setStandardBuffering(false)
+  }, [activeVideoSrc])
+
+  const applySharedVolume = useCallback(
+    (element: HTMLVideoElement | null) => {
+      if (!element) {
+        return
+      }
+      element.volume = sharedVolume.volume
+      element.muted = sharedVolume.muted
+    },
+    [sharedVolume.muted, sharedVolume.volume]
+  )
+
+  const handleStandardVideoRef = useCallback(
+    (element: HTMLVideoElement | null) => {
+      standardVideoRef.current = element
+      applySharedVolume(element)
+    },
+    [applySharedVolume]
+  )
+
+  const handleAdjustedVideoRef = useCallback(
+    (element: HTMLVideoElement | null) => {
+      adjustedVideoRef.current = element
+    },
+    []
+  )
+
+  const syncStandardVideoToPlayhead = useCallback(
+    (reason: string) => {
+      if (!clipState || previewMode === 'adjusted') {
+        return
+      }
+      const element = standardVideoRef.current
+      if (!element) {
+        return
+      }
+      const baseStart =
+        previewMode === 'rendered' ? clipState.startSeconds : originalPreviewRange.start
+      const baseEnd =
+        previewMode === 'rendered' ? clipState.endSeconds : originalPreviewRange.end
+      const timing = computeAdjustedPreviewTiming(baseStart, baseEnd, globalPlayhead)
+      const desired = timing.playheadOffset
+      if (!Number.isFinite(desired)) {
+        return
+      }
+      if (!nearlyEqual(element.currentTime, desired, 0.04)) {
+        try {
+          element.currentTime = desired
+        } catch (error) {
+          console.warn('Preview sync failed', reason, error)
+        }
+      }
+    },
+    [
+      clipState,
+      globalPlayhead,
+      originalPreviewRange.end,
+      originalPreviewRange.start,
+      previewMode
+    ]
+  )
+
+  useEffect(() => {
+    syncStandardVideoToPlayhead('effect-sync')
+  }, [syncStandardVideoToPlayhead])
 
   const handleVideoLoadStart = useCallback(() => {
-    setIsVideoBuffering(true)
+    setStandardBuffering(true)
   }, [])
 
   const handleVideoCanPlay = useCallback(() => {
-    setIsVideoBuffering(false)
-  }, [])
+    setStandardBuffering(false)
+    syncStandardVideoToPlayhead('canplay')
+  }, [syncStandardVideoToPlayhead])
 
   const handleVideoPlaying = useCallback(() => {
-    setIsVideoBuffering(false)
+    setStandardBuffering(false)
   }, [])
 
   const handleVideoWaiting = useCallback(() => {
-    setIsVideoBuffering(true)
+    setStandardBuffering(true)
   }, [])
 
   const handleVideoError = useCallback(() => {
-    setIsVideoBuffering(false)
+    setStandardBuffering(false)
   }, [])
 
   const handleVideoVolumeChange = useCallback(() => {
-    const element = previewVideoRef.current
+    const element = standardVideoRef.current
     if (!element) {
       return
     }
@@ -1183,68 +1278,49 @@ const VideoPage: FC = () => {
   }, [setSharedVolume])
 
   const handleVideoLoadedMetadata = useCallback(() => {
-    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
-      return
-    }
-    const element = previewVideoRef.current
-    if (!element) {
-      return
-    }
-    if (Math.abs(element.currentTime - previewStart) > 0.05) {
-      element.currentTime = previewStart
-    }
-  }, [clipState, previewMode, previewSourceIsFile, previewStart])
+    syncStandardVideoToPlayhead('loadedmetadata')
+  }, [syncStandardVideoToPlayhead])
 
   const handleVideoPlay = useCallback(() => {
-    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
-      return
-    }
-    const element = previewVideoRef.current
-    if (!element) {
-      return
-    }
-    if (Math.abs(element.currentTime - previewStart) > 0.05) {
-      element.currentTime = previewStart
-    }
-  }, [clipState, previewMode, previewSourceIsFile, previewStart])
+    syncStandardVideoToPlayhead('play')
+  }, [syncStandardVideoToPlayhead])
 
   const handleVideoTimeUpdate = useCallback(() => {
-    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
+    if (!clipState || previewMode === 'adjusted') {
       return
     }
-    const element = previewVideoRef.current
+    const element = standardVideoRef.current
     if (!element) {
       return
     }
-    if (previewEnd > previewStart && element.currentTime > previewEnd - 0.05) {
+    const baseStart =
+      previewMode === 'rendered' ? clipState.startSeconds : originalPreviewRange.start
+    const baseEnd =
+      previewMode === 'rendered' ? clipState.endSeconds : originalPreviewRange.end
+    const absoluteTime = baseStart + element.currentTime
+    const clamped = clampToWindow(absoluteTime, baseStart, baseEnd)
+    if (!nearlyEqual(clamped, globalPlayhead)) {
+      setGlobalPlayhead(clamped)
+    }
+    if (clamped >= baseEnd - 0.04 && !element.paused && !element.ended) {
       element.pause()
-      element.currentTime = previewStart
-    }
-  }, [clipState, previewEnd, previewMode, previewSourceIsFile, previewStart])
-
-  useEffect(() => {
-    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
-      return
-    }
-    const element = previewVideoRef.current
-    if (!element || element.readyState < 1) {
-      return
-    }
-    const tolerance = 0.05
-    const beforeStart = element.currentTime < previewStart - tolerance
-    const afterWindow = element.currentTime > previewEnd + tolerance
-    if (!beforeStart && !afterWindow) {
-      return
-    }
-    const wasPlaying = !element.paused && !element.ended
-    element.currentTime = previewStart
-    if (wasPlaying) {
-      const playback = element.play()
-      if (playback && typeof playback.catch === 'function') {
-        playback.catch(() => undefined)
+      const endOffset = Math.max(0, baseEnd - baseStart)
+      if (!nearlyEqual(element.currentTime, endOffset, 0.04)) {
+        try {
+          element.currentTime = endOffset
+        } catch (error) {
+          console.warn('Preview end clamp failed', error)
+        }
       }
     }
-  }, [clipState, previewEnd, previewMode, previewSourceIsFile, previewStart])
+  }, [
+    clipState,
+    globalPlayhead,
+    originalPreviewRange.end,
+    originalPreviewRange.start,
+    previewMode,
+    setGlobalPlayhead
+  ])
 
   const runSaveStepAnimation = useCallback(async () => {
     for (let index = 1; index < SAVE_STEP_DEFINITIONS.length; index += 1) {
@@ -1459,27 +1535,46 @@ const VideoPage: FC = () => {
         <div className="flex-1 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
           <div className="flex h-full flex-col gap-4">
             <VideoPreviewStage>
-              <video
-                ref={previewVideoRef}
-                key={videoKey}
-                src={activeVideoSrc}
-                poster={activePoster}
-                controls
-                playsInline
-                preload="metadata"
-                onLoadStart={handleVideoLoadStart}
-                onLoadedMetadata={handleVideoLoadedMetadata}
-                onCanPlay={handleVideoCanPlay}
-                onPlaying={handleVideoPlaying}
-                onWaiting={handleVideoWaiting}
-                onError={handleVideoError}
-                onTimeUpdate={handleVideoTimeUpdate}
-                onPlay={handleVideoPlay}
-                onVolumeChange={handleVideoVolumeChange}
-                className="h-full w-auto max-h-full max-w-full bg-black object-contain"
-              >
-                Your browser does not support the video tag.
-              </video>
+              {clipState ? (
+                <AdjustedPreviewPlayer
+                  ref={handleAdjustedVideoRef}
+                  className="h-full w-auto max-h-full max-w-full bg-black object-contain transition-opacity duration-150"
+                  clipStartTime={previewTarget.start}
+                  clipEndTime={previewTarget.end}
+                  sourceUrl={clipState.sourceUrl}
+                  fallbackPreviewUrl={adjustedPreviewSrc}
+                  fallbackPoster={clipState.thumbnail ?? undefined}
+                  globalPlayhead={globalPlayhead}
+                  onGlobalPlayheadChange={setGlobalPlayhead}
+                  sharedVolume={sharedVolume}
+                  onSharedVolumeChange={setSharedVolume}
+                  onBufferingChange={setAdjustedBuffering}
+                  isActive={previewMode === 'adjusted'}
+                />
+              ) : null}
+              {previewMode !== 'adjusted' ? (
+                <video
+                  ref={handleStandardVideoRef}
+                  key={videoKey}
+                  src={activeVideoSrc}
+                  poster={activePoster}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  onLoadStart={handleVideoLoadStart}
+                  onLoadedMetadata={handleVideoLoadedMetadata}
+                  onCanPlay={handleVideoCanPlay}
+                  onPlaying={handleVideoPlaying}
+                  onWaiting={handleVideoWaiting}
+                  onError={handleVideoError}
+                  onTimeUpdate={handleVideoTimeUpdate}
+                  onPlay={handleVideoPlay}
+                  onVolumeChange={handleVideoVolumeChange}
+                  className="h-full w-auto max-h-full max-w-full bg-black object-contain"
+                >
+                  Your browser does not support the video tag.
+                </video>
+              ) : null}
               {isVideoBuffering ? (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/40">
                   <div
