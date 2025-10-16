@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   FC,
   ChangeEvent,
+  FormEvent,
   PointerEvent as ReactPointerEvent,
   KeyboardEvent as ReactKeyboardEvent
 } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { formatDuration } from '../lib/format'
 import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import useSharedVolume from '../hooks/useSharedVolume'
@@ -13,9 +14,14 @@ import VideoPreviewStage from '../components/VideoPreviewStage'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
 import { fetchConfigEntries } from '../services/configApi'
-import type { Clip } from '../types'
+import {
+  PLATFORM_LABELS,
+  SUPPORTED_PLATFORMS,
+  type Clip,
+  type SupportedPlatform
+} from '../types'
 
-type ClipEditLocationState = {
+type VideoPageLocationState = {
   clip?: Clip
   jobId?: string | null
   accountId?: string | null
@@ -40,6 +46,21 @@ const DEFAULT_DURATION_GUARDRAILS: DurationGuardrails = {
   maxDuration: 85,
   sweetSpotMin: 25,
   sweetSpotMax: 60
+}
+
+type VideoPageMode = 'trim' | 'metadata' | 'upload'
+
+const VIDEO_PAGE_MODES: Array<{ id: VideoPageMode; label: string }> = [
+  { id: 'trim', label: 'Trim' },
+  { id: 'metadata', label: 'Metadata' },
+  { id: 'upload', label: 'Upload' }
+]
+
+const normaliseMode = (value: string | null | undefined): VideoPageMode => {
+  if (value === 'metadata' || value === 'upload') {
+    return value
+  }
+  return 'trim'
 }
 
 const parseGuardrailValue = (value: unknown): number | null => {
@@ -129,14 +150,57 @@ const delay = (ms: number): Promise<void> =>
     setTimeout(resolve, ms)
   })
 
-const ClipEdit: FC = () => {
+const DEFAULT_CALL_TO_ACTION = 'Invite viewers to subscribe for more highlights.'
+const DEFAULT_TAGS = 'clips, highlights, community'
+const DEFAULT_PLATFORM_NOTES = 'Share with the community playlist and pin on the channel page.'
+
+const VideoPage: FC = () => {
   const { id } = useParams<{ id: string }>()
   const location = useLocation()
   const navigate = useNavigate()
-  const state = (location.state as ClipEditLocationState | null) ?? null
+  const [searchParams, setSearchParams] = useSearchParams()
+  const state = (location.state as VideoPageLocationState | null) ?? null
+  const [persistedState, setPersistedState] = useState<VideoPageLocationState | null>(() =>
+    state ? { ...state } : null
+  )
 
-  const sourceClip = state?.clip && (!id || state.clip.id === id) ? state.clip : null
-  const context = state?.context ?? 'job'
+  useEffect(() => {
+    if (!state) {
+      return
+    }
+    setPersistedState((previous) => {
+      if (!previous) {
+        return { ...state }
+      }
+      return {
+        ...previous,
+        ...state,
+        clip: state.clip ?? previous.clip,
+        jobId: state.jobId ?? previous.jobId ?? null,
+        accountId: state.accountId ?? previous.accountId ?? null,
+        context: state.context ?? previous.context
+      }
+    })
+  }, [state])
+
+  const effectiveState = persistedState ?? state ?? null
+
+  const sourceClip =
+    effectiveState?.clip && (!id || effectiveState.clip.id === id) ? effectiveState.clip : null
+  const context = effectiveState?.context ?? 'job'
+  const jobId = effectiveState?.jobId ?? null
+  const accountId = effectiveState?.accountId ?? null
+
+  const activeMode = normaliseMode(searchParams.get('mode'))
+
+  useEffect(() => {
+    if (searchParams.get('mode')) {
+      return
+    }
+    const next = new URLSearchParams(searchParams)
+    next.set('mode', 'trim')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
 
   const minGap = MIN_CLIP_GAP
 
@@ -195,23 +259,18 @@ const ClipEdit: FC = () => {
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const [isVideoBuffering, setIsVideoBuffering] = useState(false)
   const [saveSteps, setSaveSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
-
-  const handleBack = useCallback(() => {
-    navigate(-1)
-  }, [navigate])
-
-  const handleGoToVideoView = useCallback(() => {
-    if (!clipState) {
-      return
-    }
-    navigate(`/video/${encodeURIComponent(clipState.id)}`, {
-      state: {
-        clip: clipState,
-        accountId: state?.accountId ?? clipState.accountId ?? null,
-        clipTitle: clipState.title
-      }
-    })
-  }, [clipState, navigate, state?.accountId])
+  const [title, setTitle] = useState<string>(sourceClip?.title ?? '')
+  const [description, setDescription] = useState<string>(sourceClip?.description ?? '')
+  const [callToAction, setCallToAction] = useState<string>(DEFAULT_CALL_TO_ACTION)
+  const [tags, setTags] = useState<string>(DEFAULT_TAGS)
+  const [platformNotes, setPlatformNotes] = useState<string>(DEFAULT_PLATFORM_NOTES)
+  const [selectedPlatforms, setSelectedPlatforms] = useState<SupportedPlatform[]>([
+    ...SUPPORTED_PLATFORMS
+  ])
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'ready' | 'scheduled'>(() =>
+    sourceClip ? 'ready' : 'idle'
+  )
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
 
   useEffect(() => {
     let isActive = true
@@ -290,6 +349,10 @@ const ClipEdit: FC = () => {
       setClipState(updated)
       setRangeStart(updated.startSeconds)
       setRangeEnd(updated.endSeconds)
+      setTitle(updated.title)
+      setDescription(updated.description ?? '')
+      setStatusMessage(null)
+      setUploadStatus((previous) => (previous === 'scheduled' ? previous : 'ready'))
       setWindowStart(Math.max(0, Math.min(updated.startSeconds, updated.originalStartSeconds)))
       const fallbackSourceEnd = Math.max(
         minGap,
@@ -314,6 +377,82 @@ const ClipEdit: FC = () => {
     [minGap]
   )
 
+  const handleModeChange = useCallback(
+    (mode: VideoPageMode) => {
+      if (mode === activeMode) {
+        return
+      }
+      const next = new URLSearchParams(searchParams)
+      next.set('mode', mode)
+      setSearchParams(next, { replace: true })
+    },
+    [activeMode, searchParams, setSearchParams]
+  )
+
+  const handleTogglePlatform = useCallback((platform: SupportedPlatform) => {
+    setSelectedPlatforms((previous) => {
+      if (previous.includes(platform)) {
+        return previous.filter((item) => item !== platform)
+      }
+      return [...previous, platform]
+    })
+  }, [])
+
+  const handleSaveDetails = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (!title.trim()) {
+        setStatusMessage('Add a clear title so viewers instantly know why the video matters.')
+        return
+      }
+      setStatusMessage('Your video details are saved. You can keep tweaking without losing changes.')
+    },
+    [title]
+  )
+
+  const handleSaveDistribution = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (selectedPlatforms.length === 0) {
+        setStatusMessage('Pick at least one platform so we know where to share your story.')
+        return
+      }
+      setUploadStatus((previous) => (previous === 'idle' ? 'ready' : previous))
+      const friendlyList = selectedPlatforms
+        .map((platform) => PLATFORM_LABELS[platform])
+        .join(', ')
+      setStatusMessage(`We will prepare ${friendlyList} with your latest updates.`)
+    },
+    [selectedPlatforms]
+  )
+
+  const handleScheduleUpload = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (!clipState) {
+        setStatusMessage('Upload a video file or select an existing clip to continue.')
+        return
+      }
+      if (selectedPlatforms.length === 0) {
+        setStatusMessage('Select at least one platform before scheduling the upload.')
+        return
+      }
+      setUploadStatus('scheduled')
+      setStatusMessage('Great! Your video is queued. We will notify you when the upload is complete.')
+    },
+    [clipState, selectedPlatforms]
+  )
+
+  const uploadStatusLabel = useMemo(() => {
+    if (uploadStatus === 'scheduled') {
+      return 'Upload scheduled — we will take it from here.'
+    }
+    if (uploadStatus === 'ready') {
+      return 'Ready to upload once you give the green light.'
+    }
+    return 'No upload planned yet.'
+  }, [uploadStatus])
+
   useEffect(() => {
     if (!id) {
       setClipState(null)
@@ -326,6 +465,9 @@ const ClipEdit: FC = () => {
       setClipState(sourceClip)
       setIsLoadingClip(false)
       setLoadError(null)
+      setTitle(sourceClip.title)
+      setDescription(sourceClip.description ?? '')
+      setUploadStatus('ready')
       return
     }
 
@@ -336,13 +478,11 @@ const ClipEdit: FC = () => {
       try {
         let clip: Clip
         if (context === 'library') {
-          const accountId = state?.accountId
           if (!accountId) {
             throw new Error('This clip is no longer associated with a library account.')
           }
           clip = await fetchLibraryClip(accountId, id)
         } else {
-          const jobId = state?.jobId
           if (!jobId) {
             throw new Error('The pipeline job for this clip is no longer active.')
           }
@@ -351,6 +491,13 @@ const ClipEdit: FC = () => {
         if (!cancelled) {
           setClipState(clip)
           setLoadError(null)
+          setPersistedState((previous) => ({
+            ...(previous ?? {}),
+            clip,
+            context,
+            jobId,
+            accountId
+          }))
         }
       } catch (error) {
         if (!cancelled) {
@@ -372,7 +519,7 @@ const ClipEdit: FC = () => {
     return () => {
       cancelled = true
     }
-  }, [context, id, sourceClip, state?.accountId, state?.jobId])
+  }, [accountId, context, id, jobId, sourceClip])
 
   useEffect(() => {
     if (!clipState) {
@@ -1141,17 +1288,16 @@ const ClipEdit: FC = () => {
     setSaveSuccess(null)
     try {
       if (context === 'library') {
-        const accountId = state?.accountId ?? clipState.accountId
-        if (!accountId) {
+        const accountForUpdate = accountId ?? clipState.accountId
+        if (!accountForUpdate) {
           throw new Error('Missing account information for this clip.')
         }
-        const updated = await adjustLibraryClip(accountId, clipState.id, {
+        const updated = await adjustLibraryClip(accountForUpdate, clipState.id, {
           startSeconds: adjustedStart,
           endSeconds: adjustedEnd
         })
         applyUpdatedClip(updated)
       } else {
-        const jobId = state?.jobId
         if (!jobId) {
           throw new Error('Missing job information for this clip.')
         }
@@ -1182,8 +1328,8 @@ const ClipEdit: FC = () => {
     rangeEnd,
     rangeStart,
     runSaveStepAnimation,
-    state?.accountId,
-    state?.jobId
+    accountId,
+    jobId
   ])
 
   if (!clipState) {
@@ -1284,21 +1430,30 @@ const ClipEdit: FC = () => {
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={handleBack}
-          className="rounded-lg border border-white/10 px-3 py-1.5 text-sm font-medium text-[var(--fg)] transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+      <div className="flex flex-wrap justify-start gap-3">
+        <nav
+          aria-label="Video modes"
+          className="inline-flex rounded-[16px] border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-1 text-sm font-semibold text-[var(--fg)] shadow-[0_14px_28px_rgba(43,42,40,0.16)]"
         >
-          Back
-        </button>
-        <button
-          type="button"
-          onClick={handleGoToVideoView}
-          className="marble-button marble-button--primary px-4 py-2 text-sm font-semibold"
-        >
-          Go to video view
-        </button>
+          {VIDEO_PAGE_MODES.map((tab) => {
+            const isActive = activeMode === tab.id
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => handleModeChange(tab.id)}
+                aria-pressed={isActive}
+                className={`flex-1 whitespace-nowrap rounded-[12px] px-4 py-2 transition ${
+                  isActive
+                    ? 'bg-[color:color-mix(in_srgb,var(--accent)_24%,transparent)] text-[var(--fg)] shadow-[0_10px_18px_rgba(43,42,40,0.18)]'
+                    : 'text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_60%,transparent)] hover:text-[var(--fg)]'
+                }`}
+              >
+                {tab.label}
+              </button>
+            )
+          })}
+        </nav>
       </div>
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="flex-1 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
@@ -1407,7 +1562,134 @@ const ClipEdit: FC = () => {
           </div>
         </div>
         <div className="flex w-full max-w-xl flex-col gap-6">
-          <div className="space-y-2">
+          {statusMessage ? (
+            <div
+              role="status"
+              className="rounded-lg border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_68%,transparent)] px-4 py-3 text-sm text-[var(--fg)] shadow-[0_10px_20px_rgba(43,42,40,0.14)]"
+            >
+              {statusMessage}
+            </div>
+          ) : null}
+          {activeMode === 'metadata' ? (
+            <form
+              className="space-y-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm"
+              onSubmit={handleSaveDetails}
+            >
+              <h3 className="text-base font-semibold text-[var(--fg)]">Metadata</h3>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                  Title
+                </span>
+                <input
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  placeholder="Give this clip a headline"
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                  Description
+                </span>
+                <textarea
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  className="min-h-[96px] w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  placeholder="Set the stage for viewers"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                  Call to action
+                </span>
+                <input
+                  value={callToAction}
+                  onChange={(event) => setCallToAction(event.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  placeholder="Invite viewers to keep watching"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                  Tags
+                </span>
+                <input
+                  value={tags}
+                  onChange={(event) => setTags(event.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  placeholder="Add comma-separated keywords"
+                />
+              </label>
+              <button
+                type="submit"
+                className="marble-button marble-button--primary w-full justify-center px-4 py-2 text-sm font-semibold"
+              >
+                Save details
+              </button>
+            </form>
+          ) : null}
+          {activeMode === 'upload' ? (
+            <div className="space-y-5 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm">
+              <div className="space-y-2">
+                <h3 className="text-base font-semibold text-[var(--fg)]">Upload plan</h3>
+                <p className="text-xs text-[var(--muted)]">Choose destinations and let us handle the scheduling.</p>
+              </div>
+              <form className="space-y-3" onSubmit={handleSaveDistribution}>
+                <h4 className="text-sm font-semibold text-[var(--fg)]">Distribution</h4>
+                <div className="flex flex-wrap gap-2">
+                  {SUPPORTED_PLATFORMS.map((platform) => {
+                    const isActive = selectedPlatforms.includes(platform)
+                    return (
+                      <button
+                        key={platform}
+                        type="button"
+                        onClick={() => handleTogglePlatform(platform)}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                          isActive
+                            ? 'border-[var(--accent)] bg-[color:color-mix(in_srgb,var(--accent)_24%,transparent)] text-[var(--fg)]'
+                            : 'border-white/10 text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--fg)]'
+                        }`}
+                      >
+                        {PLATFORM_LABELS[platform]}
+                      </button>
+                    )
+                  })}
+                </div>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                    Platform notes
+                  </span>
+                  <textarea
+                    value={platformNotes}
+                    onChange={(event) => setPlatformNotes(event.target.value)}
+                    className="min-h-[72px] w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="marble-button marble-button--secondary w-full justify-center px-4 py-2 text-sm font-semibold"
+                >
+                  Save distribution
+                </button>
+              </form>
+              <div className="h-px w-full bg-white/10" />
+              <form className="space-y-3" onSubmit={handleScheduleUpload}>
+                <h4 className="text-sm font-semibold text-[var(--fg)]">Upload schedule</h4>
+                <p className="text-xs text-[var(--muted)]">{uploadStatusLabel}</p>
+                <button
+                  type="submit"
+                  className="marble-button marble-button--primary w-full justify-center px-4 py-2 text-sm font-semibold"
+                  disabled={uploadStatus === 'scheduled'}
+                >
+                  {uploadStatus === 'scheduled' ? 'Upload scheduled' : 'Schedule upload'}
+                </button>
+              </form>
+            </div>
+          ) : null}
+          {activeMode === 'trim' ? (
+            <>
+              <div className="space-y-2">
             <h1 className="text-2xl font-semibold text-[var(--fg)]">Refine clip boundaries</h1>
             <p className="text-sm text-[var(--muted)]">
               Drag the handles or enter precise timestamps to trim the clip before regenerating
@@ -1751,6 +2033,8 @@ const ClipEdit: FC = () => {
               {saveSuccess}
             </p>
           ) : null}
+            </>
+          ) : null}
         </div>
       </div>
       <div className="grid gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm text-[var(--muted)] sm:grid-cols-[auto_1fr]">
@@ -1781,4 +2065,4 @@ const ClipEdit: FC = () => {
   )
 }
 
-export default ClipEdit
+export default VideoPage

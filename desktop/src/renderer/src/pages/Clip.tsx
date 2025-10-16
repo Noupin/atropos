@@ -35,12 +35,13 @@ const ClipPage: FC = () => {
     setSharedVolume({ volume: element.volume, muted: element.muted })
   }, [setSharedVolume])
 
-  const handleOpenWorkspace = useCallback(() => {
+  const handleOpenVideo = useCallback(() => {
     if (!clip) {
       return
     }
-    navigate(`/video/${encodeURIComponent(clip.id)}`, {
-      state: { clip, clipTitle: clip.title }
+    const encodedId = encodeURIComponent(clip.id)
+    navigate(`/video/${encodedId}?mode=trim`, {
+      state: { clip, clipTitle: clip.title, accountId: clip.accountId ?? null }
     })
   }, [clip, navigate])
 
@@ -157,10 +158,10 @@ const ClipPage: FC = () => {
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={handleOpenWorkspace}
+              onClick={handleOpenVideo}
               className="marble-button marble-button--primary inline-flex w-fit items-center gap-2 px-3 py-1.5 text-sm font-medium"
             >
-              Video workspace
+              Open video
             </button>
             <a
               href={clip.sourceUrl}

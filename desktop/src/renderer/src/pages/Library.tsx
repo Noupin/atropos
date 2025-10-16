@@ -639,23 +639,10 @@ const Library: FC<LibraryProps> = ({
     [loadAccountPage]
   )
 
-  const handleEditClip = useCallback(
+  const handleOpenVideo = useCallback(
     (clip: Clip, accountId: string | null) => {
-      navigate(`/clip/${encodeURIComponent(clip.id)}/edit`, {
-        state: {
-          clip,
-          jobId: null,
-          accountId,
-          context: 'library'
-        }
-      })
-    },
-    [navigate]
-  )
-
-  const handleOpenWorkspace = useCallback(
-    (clip: Clip, accountId: string | null) => {
-      navigate(`/video/${encodeURIComponent(clip.id)}`, {
+      const encodedId = encodeURIComponent(clip.id)
+      navigate(`/video/${encodedId}?mode=trim`, {
         state: {
           clip,
           accountId,
@@ -987,17 +974,10 @@ const Library: FC<LibraryProps> = ({
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => handleOpenWorkspace(selectedClip, selectedAccountId)}
-                      className="marble-button marble-button--outline px-3 py-1.5 text-xs font-semibold"
-                    >
-                      Video workspace
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleEditClip(selectedClip, selectedAccountId)}
+                      onClick={() => handleOpenVideo(selectedClip, selectedAccountId)}
                       className="marble-button marble-button--primary px-3 py-1.5 text-xs font-semibold"
                     >
-                      Edit clip
+                      Open
                     </button>
                   </div>
                 </div>
