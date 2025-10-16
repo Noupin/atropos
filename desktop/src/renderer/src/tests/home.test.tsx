@@ -251,10 +251,10 @@ describe('Home account selection', () => {
 
   it('prefers a selected local file over the pasted URL', async () => {
     const startPipelineSpy = vi.fn()
-    const pickVideoFile = vi.fn().mockResolvedValue('/Users/operator/video.mp4')
+    const openVideoFile = vi.fn().mockResolvedValue('/Users/operator/video.mp4')
     const originalApi = window.api
     // @ts-expect-error test override for API shim
-    window.api = { ...(originalApi ?? {}), pickVideoFile }
+    window.api = { ...(originalApi ?? {}), openVideoFile }
 
     try {
       renderHome({
@@ -265,7 +265,7 @@ describe('Home account selection', () => {
 
       const chooseButton = screen.getByRole('button', { name: /choose local video/i })
       fireEvent.click(chooseButton)
-      await waitFor(() => expect(pickVideoFile).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(openVideoFile).toHaveBeenCalledTimes(1))
 
       const form = chooseButton.closest('form')
       expect(form).not.toBeNull()

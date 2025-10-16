@@ -289,7 +289,7 @@ const Home: FC<HomeProps> = ({
   )
 
   const handleSelectLocalFile = useCallback(() => {
-    const picker = window?.api?.pickVideoFile
+    const picker = window?.api?.openVideoFile
     if (!picker) {
       setFileSelectionError('We could not access the file picker. Restart the app and try again.')
       return

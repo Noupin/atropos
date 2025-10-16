@@ -1,4 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, protocol } from 'electron'
+import type { FileFilter } from 'electron'
 import { existsSync } from 'fs'
 import { join, resolve, dirname } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -28,6 +29,15 @@ type RendererResolution = {
 
 let rendererResolution: RendererResolution | null = null
 let rendererMissingAlerted = false
+
+const VIDEO_FILE_FILTERS: FileFilter[] = [
+  {
+    name: 'Video',
+    extensions: ['mp4', 'mov', 'mkv']
+  }
+]
+
+let ipcHandlersRegistered = false
 
 const buildRendererCandidates = (): string[] => {
   const candidateBases = [
@@ -216,6 +226,78 @@ const flushPendingDeepLinks = (): void => {
   pendingDeepLinks = []
 }
 
+const registerIpcHandlers = (): void => {
+  if (ipcHandlersRegistered) {
+    return
+  }
+
+  ipcHandlersRegistered = true
+
+  ipcMain.removeAllListeners('ping')
+  ipcMain.removeAllListeners('navigation:state')
+  ipcMain.removeHandler('clips:list')
+  ipcMain.removeHandler('clips:open-folder')
+  ipcMain.removeHandler('open-video-file')
+
+  ipcMain.on('ping', () => console.log('pong'))
+  ipcMain.on('navigation:state', (_event, state: NavigationState) => {
+    navigationState = state
+  })
+
+  ipcMain.handle('clips:list', async (_event, accountId: string | null) => {
+    try {
+      return await listAccountClips(accountId)
+    } catch (error) {
+      console.error('Failed to list clips', error)
+      return []
+    }
+  })
+
+  ipcMain.handle('clips:open-folder', async (_event, accountId: string) => {
+    try {
+      const paths = await resolveAccountClipsDirectory(accountId)
+      if (!paths) {
+        return false
+      }
+      const result = await shell.openPath(paths.accountDir)
+      if (typeof result === 'string' && result.length > 0) {
+        console.error('Unable to open clips folder', result)
+        return false
+      }
+      return true
+    } catch (error) {
+      console.error('Failed to open clips folder', error)
+      return false
+    }
+  })
+
+  ipcMain.handle('open-video-file', async () => {
+    try {
+      if (!dialog || typeof dialog.showOpenDialog !== 'function') {
+        console.error('[file-picker] dialog module unavailable')
+        return null
+      }
+
+      const window = BrowserWindow.getFocusedWindow() ?? mainWindow ?? undefined
+      const result = await dialog.showOpenDialog(window, {
+        properties: ['openFile'],
+        filters: VIDEO_FILE_FILTERS
+      })
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return null
+      }
+
+      return result.filePaths[0] ?? null
+    } catch (error) {
+      console.error('[file-picker] failed to open video picker dialog', error)
+      return null
+    }
+  })
+}
+
+registerIpcHandlers()
+
 app.on('second-instance', (_event, argv) => {
   console.info('[deep-link] second-instance event', {
     isReady: app.isReady(),
@@ -251,7 +333,10 @@ function createWindow(): void {
     icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      contextIsolation: true,
+      enableRemoteModule: false,
+      nodeIntegration: false
     }
   })
 
@@ -339,53 +424,6 @@ app.whenReady().then(() => {
   // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
-  })
-
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
-  ipcMain.on('navigation:state', (_event, state: NavigationState) => {
-    navigationState = state
-  })
-  ipcMain.handle('clips:list', async (_event, accountId: string | null) => {
-    try {
-      return await listAccountClips(accountId)
-    } catch (error) {
-      console.error('Failed to list clips', error)
-      return []
-    }
-  })
-  ipcMain.handle('clips:open-folder', async (_event, accountId: string) => {
-    try {
-      const paths = await resolveAccountClipsDirectory(accountId)
-      if (!paths) {
-        return false
-      }
-      const result = await shell.openPath(paths.accountDir)
-      if (typeof result === 'string' && result.length > 0) {
-        console.error('Unable to open clips folder', result)
-        return false
-      }
-      return true
-    } catch (error) {
-      console.error('Failed to open clips folder', error)
-      return false
-    }
-  })
-  ipcMain.handle('files:pick-video', async () => {
-    const window = BrowserWindow.getFocusedWindow() ?? mainWindow
-    const result = await dialog.showOpenDialog(window ?? undefined, {
-      properties: ['openFile'],
-      filters: [
-        { name: 'Video files', extensions: ['mp4', 'mov', 'mkv', 'webm', 'avi'] },
-        { name: 'All files', extensions: ['*'] }
-      ]
-    })
-
-    if (result.canceled || result.filePaths.length === 0) {
-      return null
-    }
-
-    return result.filePaths[0]
   })
 
   if (!mainWindow) {
