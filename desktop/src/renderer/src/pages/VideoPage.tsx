@@ -612,24 +612,6 @@ const VideoPage: FC = () => {
     [rangeEnd, rangeStart, windowEnd, windowStart]
   )
 
-  const handleStartChange = useCallback(
-    (value: number) => {
-      const next = Math.min(clampWithinWindow(value, 'start'), rangeEnd - minGap)
-      setRangeStart(next)
-      syncPreviewToRange(next, rangeEnd)
-    },
-    [clampWithinWindow, rangeEnd, syncPreviewToRange]
-  )
-
-  const handleEndChange = useCallback(
-    (value: number) => {
-      const next = Math.max(clampWithinWindow(value, 'end'), rangeStart + minGap)
-      setRangeEnd(next)
-      syncPreviewToRange(rangeStart, next)
-    },
-    [clampWithinWindow, rangeStart, syncPreviewToRange]
-  )
-
   const syncPreviewToRange = useCallback(
     (startValue: number, endValue: number) => {
       const nextStart = Math.max(0, Number.isFinite(startValue) ? startValue : 0)
@@ -648,6 +630,24 @@ const VideoPage: FC = () => {
       })
     },
     []
+  )
+
+  const handleStartChange = useCallback(
+    (value: number) => {
+      const next = Math.min(clampWithinWindow(value, 'start'), rangeEnd - minGap)
+      setRangeStart(next)
+      syncPreviewToRange(next, rangeEnd)
+    },
+    [clampWithinWindow, rangeEnd, syncPreviewToRange]
+  )
+
+  const handleEndChange = useCallback(
+    (value: number) => {
+      const next = Math.max(clampWithinWindow(value, 'end'), rangeStart + minGap)
+      setRangeEnd(next)
+      syncPreviewToRange(rangeStart, next)
+    },
+    [clampWithinWindow, rangeStart, syncPreviewToRange]
   )
 
   const commitPreviewTarget = useCallback(() => {
