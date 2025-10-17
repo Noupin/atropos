@@ -10,6 +10,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from 'react-rout
 import { formatDuration } from '../lib/format'
 import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import { clampToRange, resolvePlaybackTarget, isBeyondPlaybackWindow } from '../lib/previewWindow'
+import { resolvePlayableSourceUrl } from '../lib/media'
 import useSharedVolume from '../hooks/useSharedVolume'
 import VideoPreviewStage from '../components/VideoPreviewStage'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
@@ -92,8 +93,13 @@ const resolveGuardrailKey = (name: string): keyof DurationGuardrails | null => {
   }
 }
 
-const getDefaultPreviewMode = (clip: Clip | null): 'adjusted' | 'rendered' =>
-  clip && !clip.sourceUrl ? 'rendered' : 'adjusted'
+const getDefaultPreviewMode = (clip: Clip | null): 'adjusted' | 'rendered' => {
+  if (!clip) {
+    return 'rendered'
+  }
+  const resolution = resolvePlayableSourceUrl(clip.sourceUrl)
+  return resolution.status === 'ok' ? 'adjusted' : 'rendered'
+}
 
 const formatRelativeSeconds = (value: number): string => {
   if (!Number.isFinite(value) || value === 0) {
@@ -321,7 +327,11 @@ const VideoPage: FC = () => {
   const originalStart = clipState?.originalStartSeconds ?? 0
   const originalEnd =
     clipState?.originalEndSeconds ?? originalStart + (clipState?.durationSec ?? 10)
-  const supportsSourcePreview = Boolean(clipState?.sourceUrl)
+  const sourcePreviewResolution = useMemo(
+    () => resolvePlayableSourceUrl(clipState?.sourceUrl),
+    [clipState?.sourceUrl]
+  )
+  const supportsSourcePreview = sourcePreviewResolution.status === 'ok'
 
   const sourceStartBound = 0
   const sourceEndBound = useMemo(() => {
@@ -349,6 +359,24 @@ const VideoPage: FC = () => {
       setPreviewMode('rendered')
     }
   }, [previewMode, supportsSourcePreview])
+
+  useEffect(() => {
+    if (!clipState) {
+      return
+    }
+    if (sourcePreviewResolution.status === 'remote-blocked') {
+      console.warn('Raw source preview blocked for remote origin', {
+        clipId: clipState.id,
+        sourceUrl: clipState.sourceUrl,
+        hostname: sourcePreviewResolution.hostname ?? null
+      })
+    } else if (sourcePreviewResolution.status === 'invalid' && clipState.sourceUrl) {
+      console.warn('Raw source preview unavailable due to unsupported source URL', {
+        clipId: clipState.id,
+        sourceUrl: clipState.sourceUrl
+      })
+    }
+  }, [clipState, sourcePreviewResolution])
 
   const applyUpdatedClip = useCallback(
     (updated: Clip) => {
@@ -1117,7 +1145,8 @@ const VideoPage: FC = () => {
     [clipState]
   )
 
-  const rawSourcePreviewSrc = clipState?.sourceUrl ?? ''
+  const rawSourcePreviewSrc =
+    sourcePreviewResolution.status === 'ok' ? sourcePreviewResolution.src : ''
 
   const originalPreviewRange = useMemo(() => {
     if (!clipState) {
