@@ -7,6 +7,11 @@ import { pathToFileURL } from 'url'
 // Use Node.js path join to reference the icon file, as TypeScript does not support importing non-code assets.
 const icon = join(__dirname, '../../favicon.png')
 import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
+import type {
+  ResolveAdjustedSourceRequest,
+  ResolveAdjustedSourceResponse
+} from '../types/adjusted-source'
+import { ensureLegacySourcesBackfilled, resolveAdjustedSourceUrl } from './sourceResolver'
 
 type NavigationCommand = 'back' | 'forward'
 
@@ -238,6 +243,7 @@ const registerIpcHandlers = (): void => {
   ipcMain.removeHandler('clips:list')
   ipcMain.removeHandler('clips:open-folder')
   ipcMain.removeHandler('open-video-file')
+  ipcMain.removeHandler('clips:resolve-adjusted-source')
 
   ipcMain.on('ping', () => console.log('pong'))
   ipcMain.on('navigation:state', (_event, state: NavigationState) => {
@@ -294,9 +300,34 @@ const registerIpcHandlers = (): void => {
       return null
     }
   })
+
+  ipcMain.handle(
+    'clips:resolve-adjusted-source',
+    async (_event, payload: ResolveAdjustedSourceRequest): Promise<ResolveAdjustedSourceResponse> => {
+      try {
+        const projectId = typeof payload?.projectId === 'string' ? payload.projectId : ''
+        const accountId =
+          typeof payload?.accountId === 'string' || payload?.accountId === null
+            ? payload.accountId
+            : null
+        return await resolveAdjustedSourceUrl({ projectId, accountId })
+      } catch (error) {
+        console.error('[adjusted-source] failed to resolve', error)
+        return {
+          status: 'error',
+          code: 'unknown',
+          message: 'We could not load the original video file for this project.'
+        }
+      }
+    }
+  )
 }
 
 registerIpcHandlers()
+
+void ensureLegacySourcesBackfilled().catch((error) => {
+  console.warn('[adjusted-source] legacy source backfill failed', error)
+})
 
 app.on('second-instance', (_event, argv) => {
   console.info('[deep-link] second-instance event', {

@@ -101,7 +101,7 @@ const parseTimestampFromUrl = (rawUrl: string): number | null => {
   }
 }
 
-const parseDescriptionMetadata = (description: string): DescriptionMetadata => {
+export const parseDescriptionMetadata = (description: string): DescriptionMetadata => {
   const lines = description.split(/\r?\n/)
   let timestampUrl: string | null = null
   let channel: string | null = null
@@ -310,7 +310,7 @@ const loadAdjustmentMetadata = async (filePath: string): Promise<AdjustmentMetad
   }
 }
 
-const tryReadDescription = async (candidates: string[]): Promise<string> => {
+export const tryReadDescription = async (candidates: string[]): Promise<string> => {
   for (const candidate of candidates) {
     try {
       const content = await fs.readFile(candidate, 'utf-8')
@@ -461,7 +461,7 @@ const buildClip = async (
   return clip
 }
 
-const findProjectDirectories = async (rootDir: string): Promise<string[]> => {
+export const findProjectDirectories = async (rootDir: string): Promise<string[]> => {
   const queue: string[] = [rootDir]
   const projects: string[] = []
   const visited = new Set<string>(queue)

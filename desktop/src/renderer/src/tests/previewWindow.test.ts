@@ -63,4 +63,28 @@ describe('previewWindow helpers', () => {
       expect(isBeyondPlaybackWindow(5, 0)).toBe(false)
     })
   })
+
+  describe('integration scenarios', () => {
+    it('keeps playback within the trimmed window when scrubbing', () => {
+      let clipStart = 60
+      let clipEnd = 90
+      let playhead = 72
+
+      expect(resolvePlaybackTarget(clipStart, clipEnd, playhead)).toBe(72)
+
+      // Drag the start handle forward; playback should jump to the new start boundary.
+      clipStart = 70
+      expect(resolvePlaybackTarget(clipStart, clipEnd, playhead)).toBe(70)
+
+      // Extend the end of the window and ensure playback can continue within the new range.
+      clipEnd = 95
+      playhead = 92
+      expect(resolvePlaybackTarget(clipStart, clipEnd, playhead)).toBe(92)
+
+      // Narrow the window so the existing playhead is outside; it should clamp to the new end.
+      clipEnd = 75
+      expect(resolvePlaybackTarget(clipStart, clipEnd, playhead)).toBe(75)
+      expect(isBeyondPlaybackWindow(75.02, clipEnd)).toBe(true)
+    })
+  })
 })

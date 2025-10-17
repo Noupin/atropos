@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer, shell } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { ElectronAPIWithShell } from '../types/electron'
+import type {
+  ResolveAdjustedSourceRequest,
+  ResolveAdjustedSourceResponse
+} from '../types/adjusted-source'
 
 // Custom APIs for renderer
 type Clip = import('../renderer/src/types').Clip
@@ -12,6 +16,9 @@ const api = {
   openAccountClipsFolder: (accountId: string): Promise<boolean> =>
     ipcRenderer.invoke('clips:open-folder', accountId),
   openVideoFile: (): Promise<string | null> => ipcRenderer.invoke('open-video-file'),
+  resolveAdjustedSource: (
+    request: ResolveAdjustedSourceRequest
+  ): Promise<ResolveAdjustedSourceResponse> => ipcRenderer.invoke('clips:resolve-adjusted-source', request),
   onNavigationCommand: (callback: (direction: 'back' | 'forward') => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, direction: 'back' | 'forward') => {
       callback(direction)
