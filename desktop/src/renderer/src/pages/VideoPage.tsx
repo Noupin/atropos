@@ -256,6 +256,8 @@ const VideoPage: FC = () => {
     start: sourceClip ? sourceClip.startSeconds : 0,
     end: sourceClip ? Math.max(sourceClip.startSeconds + minGap, sourceClip.endSeconds) : minGap
   }))
+  const adjustedStart = Math.max(0, previewTarget.start)
+  const adjustedEnd = Math.max(adjustedStart, previewTarget.end)
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
   const [globalPlayhead, setGlobalPlayhead] = useState(() =>
     sourceClip ? sourceClip.startSeconds : 0
@@ -1148,8 +1150,6 @@ const VideoPage: FC = () => {
     return { start: clipState.startSeconds, end: clipState.endSeconds }
   }, [clipState, originalPreviewRange, previewMode, previewTarget])
 
-  const adjustedStart = Math.max(0, previewTarget.start)
-  const adjustedEnd = Math.max(adjustedStart, previewTarget.end)
   const isAdjustedPreviewActive =
     previewMode === 'adjusted' && supportsSourcePreview && rawSourcePreviewSrc.length > 0
 
