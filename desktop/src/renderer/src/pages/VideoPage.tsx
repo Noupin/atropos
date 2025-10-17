@@ -9,6 +9,7 @@ import type {
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { formatDuration } from '../lib/format'
 import { buildCacheBustedPlaybackUrl } from '../lib/video'
+import { clampToRange, resolvePlaybackTarget, isBeyondPlaybackWindow } from '../lib/previewWindow'
 import useSharedVolume from '../hooks/useSharedVolume'
 import VideoPreviewStage from '../components/VideoPreviewStage'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
@@ -92,7 +93,7 @@ const resolveGuardrailKey = (name: string): keyof DurationGuardrails | null => {
 }
 
 const getDefaultPreviewMode = (clip: Clip | null): 'adjusted' | 'rendered' =>
-  clip && clip.previewUrl === clip.playbackUrl ? 'rendered' : 'adjusted'
+  clip && !clip.sourceUrl ? 'rendered' : 'adjusted'
 
 const formatRelativeSeconds = (value: number): string => {
   if (!Number.isFinite(value) || value === 0) {
@@ -256,6 +257,9 @@ const VideoPage: FC = () => {
     end: sourceClip ? Math.max(sourceClip.startSeconds + minGap, sourceClip.endSeconds) : minGap
   }))
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
+  const [globalPlayhead, setGlobalPlayhead] = useState(() =>
+    sourceClip ? sourceClip.startSeconds : 0
+  )
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const [isVideoBuffering, setIsVideoBuffering] = useState(false)
   const [saveSteps, setSaveSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
@@ -315,7 +319,7 @@ const VideoPage: FC = () => {
   const originalStart = clipState?.originalStartSeconds ?? 0
   const originalEnd =
     clipState?.originalEndSeconds ?? originalStart + (clipState?.durationSec ?? 10)
-  const supportsSourcePreview = clipState ? clipState.previewUrl !== clipState.playbackUrl : false
+  const supportsSourcePreview = Boolean(clipState?.sourceUrl)
 
   const sourceStartBound = 0
   const sourceEndBound = useMemo(() => {
@@ -624,6 +628,41 @@ const VideoPage: FC = () => {
   const commitPreviewTarget = useCallback(() => {
     syncPreviewToRange(rangeStart, rangeEnd)
   }, [rangeEnd, rangeStart, syncPreviewToRange])
+
+  useEffect(() => {
+    if (previewMode !== 'adjusted') {
+      return
+    }
+    syncPreviewToRange(rangeStart, rangeEnd)
+  }, [previewMode, rangeEnd, rangeStart, syncPreviewToRange])
+
+  const updateGlobalPlayhead = useCallback((value: number) => {
+    setGlobalPlayhead((previous) => {
+      if (!Number.isFinite(value)) {
+        return previous
+      }
+      if (!Number.isFinite(previous)) {
+        return value
+      }
+      return Math.abs(previous - value) < 0.0005 ? previous : value
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!clipState) {
+      setGlobalPlayhead(0)
+      return
+    }
+    setGlobalPlayhead((previous) => {
+      const start = adjustedStart
+      const end = Math.max(start, adjustedEnd)
+      if (!Number.isFinite(previous)) {
+        return start
+      }
+      const clamped = clampToRange(previous, start, end)
+      return Math.abs(previous - clamped) < 0.0005 ? previous : clamped
+    })
+  }, [adjustedEnd, adjustedStart, clipState])
 
   const snapRangeToValues = useCallback(
     (startValue: number, endValue: number) => {
@@ -1076,12 +1115,7 @@ const VideoPage: FC = () => {
     [clipState]
   )
 
-  const adjustedPreviewSrc = useMemo(() => {
-    if (!clipState) {
-      return ''
-    }
-    return buildPreviewSrc(previewTarget, 'adjusted')
-  }, [buildPreviewSrc, clipState, previewTarget])
+  const rawSourcePreviewSrc = clipState?.sourceUrl ?? ''
 
   const originalPreviewRange = useMemo(() => {
     if (!clipState) {
@@ -1101,8 +1135,6 @@ const VideoPage: FC = () => {
     return buildPreviewSrc(originalPreviewRange, 'original')
   }, [buildPreviewSrc, clipState, originalPreviewRange])
 
-  const previewSourceIsFile = clipState ? clipState.previewUrl.startsWith('file://') : false
-
   const currentPreviewRange = useMemo(() => {
     if (!clipState) {
       return { start: 0, end: 0 }
@@ -1116,25 +1148,17 @@ const VideoPage: FC = () => {
     return { start: clipState.startSeconds, end: clipState.endSeconds }
   }, [clipState, originalPreviewRange, previewMode, previewTarget])
 
-  const sanitisedPreviewRange = useMemo(() => {
-    const start = Math.max(
-      0,
-      Number.isFinite(currentPreviewRange.start) ? currentPreviewRange.start : 0
-    )
-    const rawEnd = Number.isFinite(currentPreviewRange.end) ? currentPreviewRange.end : start
-    const end = rawEnd > start + MIN_PREVIEW_DURATION ? rawEnd : start + MIN_PREVIEW_DURATION
-    return { start, end }
-  }, [currentPreviewRange])
-
-  const previewStart = sanitisedPreviewRange.start
-  const previewEnd = sanitisedPreviewRange.end
+  const adjustedStart = Math.max(0, previewTarget.start)
+  const adjustedEnd = Math.max(adjustedStart, previewTarget.end)
+  const isAdjustedPreviewActive =
+    previewMode === 'adjusted' && supportsSourcePreview && rawSourcePreviewSrc.length > 0
 
   const activeVideoSrc =
     previewMode === 'rendered'
       ? renderedSrc
       : previewMode === 'original'
         ? originalPreviewSrc
-        : adjustedPreviewSrc
+        : rawSourcePreviewSrc
 
   const activePoster = previewMode === 'rendered' ? (clipState?.thumbnail ?? undefined) : undefined
   const videoKey = clipState
@@ -1146,6 +1170,12 @@ const VideoPage: FC = () => {
   }, [activeVideoSrc, previewMode])
 
   useEffect(() => {
+    if (previewMode === 'adjusted' && activeVideoSrc === renderedSrc && renderedSrc.length > 0) {
+      console.error('Adjusted preview attempted to use rendered output URL.', renderedSrc)
+    }
+  }, [activeVideoSrc, previewMode, renderedSrc])
+
+  useEffect(() => {
     const element = previewVideoRef.current
     if (!element) {
       return
@@ -1153,6 +1183,26 @@ const VideoPage: FC = () => {
     element.volume = sharedVolume.volume
     element.muted = sharedVolume.muted
   }, [sharedVolume, videoKey])
+
+  const syncAdjustedPlaybackPosition = useCallback(
+    (element: HTMLVideoElement) => {
+      if (!isAdjustedPreviewActive) {
+        return false
+      }
+      const target = resolvePlaybackTarget(adjustedStart, adjustedEnd, globalPlayhead)
+      const lowerTolerance = adjustedStart - 0.02
+      const upperTolerance = adjustedEnd + 0.02
+      const outsideBounds = element.currentTime < lowerTolerance || element.currentTime > upperTolerance
+      const delta = Math.abs(element.currentTime - target)
+      if (outsideBounds || delta > 0.02) {
+        element.currentTime = target
+        updateGlobalPlayhead(target)
+        return true
+      }
+      return false
+    },
+    [adjustedEnd, adjustedStart, globalPlayhead, isAdjustedPreviewActive, updateGlobalPlayhead]
+  )
 
   const handleVideoLoadStart = useCallback(() => {
     setIsVideoBuffering(true)
@@ -1183,68 +1233,66 @@ const VideoPage: FC = () => {
   }, [setSharedVolume])
 
   const handleVideoLoadedMetadata = useCallback(() => {
-    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
-      return
-    }
     const element = previewVideoRef.current
     if (!element) {
       return
     }
-    if (Math.abs(element.currentTime - previewStart) > 0.05) {
-      element.currentTime = previewStart
+    if (isAdjustedPreviewActive) {
+      void syncAdjustedPlaybackPosition(element)
     }
-  }, [clipState, previewMode, previewSourceIsFile, previewStart])
+  }, [isAdjustedPreviewActive, syncAdjustedPlaybackPosition])
 
   const handleVideoPlay = useCallback(() => {
-    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
-      return
-    }
     const element = previewVideoRef.current
     if (!element) {
       return
     }
-    if (Math.abs(element.currentTime - previewStart) > 0.05) {
-      element.currentTime = previewStart
+    if (isAdjustedPreviewActive) {
+      void syncAdjustedPlaybackPosition(element)
     }
-  }, [clipState, previewMode, previewSourceIsFile, previewStart])
+  }, [isAdjustedPreviewActive, syncAdjustedPlaybackPosition])
 
   const handleVideoTimeUpdate = useCallback(() => {
-    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
+    if (!isAdjustedPreviewActive) {
       return
     }
     const element = previewVideoRef.current
     if (!element) {
       return
     }
-    if (previewEnd > previewStart && element.currentTime > previewEnd - 0.05) {
+    const now = element.currentTime
+    if (isBeyondPlaybackWindow(now, adjustedEnd)) {
       element.pause()
-      element.currentTime = previewStart
+      element.currentTime = adjustedEnd
+      updateGlobalPlayhead(adjustedEnd)
+      return
     }
-  }, [clipState, previewEnd, previewMode, previewSourceIsFile, previewStart])
+    updateGlobalPlayhead(now)
+  }, [adjustedEnd, isAdjustedPreviewActive, updateGlobalPlayhead])
 
   useEffect(() => {
-    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
+    if (!isAdjustedPreviewActive) {
       return
     }
     const element = previewVideoRef.current
     if (!element || element.readyState < 1) {
       return
     }
-    const tolerance = 0.05
-    const beforeStart = element.currentTime < previewStart - tolerance
-    const afterWindow = element.currentTime > previewEnd + tolerance
-    if (!beforeStart && !afterWindow) {
-      return
-    }
     const wasPlaying = !element.paused && !element.ended
-    element.currentTime = previewStart
-    if (wasPlaying) {
+    const adjusted = syncAdjustedPlaybackPosition(element)
+    if (adjusted && wasPlaying) {
       const playback = element.play()
       if (playback && typeof playback.catch === 'function') {
         playback.catch(() => undefined)
       }
     }
-  }, [clipState, previewEnd, previewMode, previewSourceIsFile, previewStart])
+  }, [
+    adjustedEnd,
+    adjustedStart,
+    globalPlayhead,
+    isAdjustedPreviewActive,
+    syncAdjustedPlaybackPosition
+  ])
 
   const runSaveStepAnimation = useCallback(async () => {
     for (let index = 1; index < SAVE_STEP_DEFINITIONS.length; index += 1) {
@@ -1543,7 +1591,7 @@ const VideoPage: FC = () => {
               </div>
               <p className="text-xs text-[var(--muted)]">
                 {!supportsSourcePreview
-                  ? 'Showing the exported clip because a direct source preview is unavailable on this device.'
+                  ? 'Showing the exported clip because the raw source video is unavailable on this device.'
                   : previewMode === 'rendered'
                     ? renderedOutOfSync
                       ? 'Viewing the last saved render. The exported clip will update after you save these adjustments.'
