@@ -308,6 +308,7 @@ const VideoPage: FC = () => {
   const [trimmedPreviewState, setTrimmedPreviewState] = useState<AdjustedTrimmedState>({ status: 'idle' })
   const trimmedPlaybackGuardsRef = useRef<TrimmedPlaybackGuards | null>(null)
   const trimmedTokenRef = useRef<string | null>(null)
+  const playbackResumeIntentRef = useRef(false)
   const [adjustedWarning, setAdjustedWarning] = useState<string | null>(null)
   const [adjustedPlaybackError, setAdjustedPlaybackError] = useState<string | null>(null)
   const [adjustedBuffering, setAdjustedBuffering] = useState(false)
@@ -1282,6 +1283,7 @@ const VideoPage: FC = () => {
       setAdjustedWarning(null)
       setAdjustedPlaybackError(null)
       releaseCurrentTrimmedToken()
+      playbackResumeIntentRef.current = false
       return
     }
 
@@ -1291,6 +1293,7 @@ const VideoPage: FC = () => {
       setTrimmedPreviewState({ status: 'idle' })
       setAdjustedBuffering(false)
       releaseCurrentTrimmedToken()
+      playbackResumeIntentRef.current = false
       return
     }
 
@@ -1298,12 +1301,16 @@ const VideoPage: FC = () => {
     if (!element) {
       setTrimmedPreviewState({ status: 'idle' })
       setAdjustedBuffering(false)
+      playbackResumeIntentRef.current = false
       return
     }
 
     const { filePath } = adjustedSourceState
     const previousToken = trimmedTokenRef.current
     let cancelled = false
+
+    const shouldResumePlayback = !element.paused && !element.ended
+    playbackResumeIntentRef.current = shouldResumePlayback
 
     setAdjustedBuffering(true)
     setAdjustedPlaybackError(null)
@@ -1381,6 +1388,7 @@ const VideoPage: FC = () => {
         if (previousToken) {
           void releaseTrimmedPreviewToken(previousToken)
         }
+        playbackResumeIntentRef.current = false
       }
     })()
 
@@ -1401,6 +1409,7 @@ const VideoPage: FC = () => {
     if (previewMode !== 'adjusted') {
       setAdjustedWarning(null)
       setAdjustedPlaybackError(null)
+      playbackResumeIntentRef.current = false
     }
   }, [previewMode])
 
@@ -1460,7 +1469,18 @@ const VideoPage: FC = () => {
 
   const handleVideoCanPlay = useCallback(() => {
     setIsVideoBuffering(false)
-  }, [])
+    if (previewMode === 'adjusted' && playbackResumeIntentRef.current) {
+      playbackResumeIntentRef.current = false
+      const element = previewVideoRef.current
+      if (!element) {
+        return
+      }
+      const playback = element.play()
+      if (playback && typeof playback.catch === 'function') {
+        playback.catch(() => undefined)
+      }
+    }
+  }, [previewMode])
 
   const handleVideoPlaying = useCallback(() => {
     setIsVideoBuffering(false)
