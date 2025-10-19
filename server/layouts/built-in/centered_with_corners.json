@@ -1,0 +1,72 @@
+{
+  "metadata": {
+    "id": "centered_with_corners",
+    "name": "Center with detail corners",
+    "description": "Centered focus with additional magnified corner previews.",
+    "version": 1,
+    "author": "Atropos",
+    "tags": ["multi-cut", "corners"]
+  },
+  "canvas": {
+    "aspect_ratio": { "width": 9, "height": 16 },
+    "resolutions": [
+      { "id": "1080x1920", "width": 1080, "height": 1920 },
+      { "id": "720x1280", "width": 720, "height": 1280 }
+    ],
+    "default_resolution_id": "1080x1920",
+    "margins": { "top": 40, "right": 40, "bottom": 64, "left": 40 },
+    "padding": { "top": 36, "right": 36, "bottom": 36, "left": 36 },
+    "background": {
+      "mode": "video_blur",
+      "blur_radius": 45,
+      "opacity": 0.88
+    }
+  },
+  "video_cuts": [
+    {
+      "id": "main",
+      "label": "Main focus",
+      "source_rect": { "x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0 },
+      "target_rect": { "x": 0.1, "y": 0.2, "width": 0.8, "height": 0.6 },
+      "border_radius": 32,
+      "scale_mode": "cover",
+      "z_index": 10
+    },
+    {
+      "id": "bottom_left",
+      "label": "Bottom left detail",
+      "source_rect": { "x": 0.0, "y": 0.5, "width": 0.5, "height": 0.5 },
+      "target_rect": { "x": 0.12, "y": 0.82, "width": 0.28, "height": 0.16 },
+      "border_radius": 18,
+      "scale_mode": "cover",
+      "z_index": 20
+    },
+    {
+      "id": "bottom_right",
+      "label": "Bottom right detail",
+      "source_rect": { "x": 0.5, "y": 0.5, "width": 0.5, "height": 0.5 },
+      "target_rect": { "x": 0.6, "y": 0.82, "width": 0.28, "height": 0.16 },
+      "border_radius": 18,
+      "scale_mode": "cover",
+      "z_index": 20
+    }
+  ],
+  "overlays": [
+    {
+      "type": "text",
+      "text": {
+        "id": "title",
+        "text": "{{clip.title}}",
+        "target_rect": { "x": 0.1, "y": 0.05, "width": 0.8, "height": 0.12 },
+        "font_family": "Inter",
+        "font_size": 40,
+        "font_weight": "bold",
+        "line_height": 1.1,
+        "color": [255, 255, 255],
+        "alignment": "center",
+        "z_index": 50,
+        "shadow": true
+      }
+    }
+  ]
+}

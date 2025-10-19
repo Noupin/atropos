@@ -76,6 +76,10 @@ class AccountMetadata(BaseModel):
     platforms: List[PlatformRecord] = Field(default_factory=list)
     active: bool = True
     tone: Tone | None = None
+    default_layout_id: str = Field(default_factory=lambda: pipeline_config.DEFAULT_LAYOUT_ID)
+    default_layout_resolution: str = Field(
+        default_factory=lambda: pipeline_config.DEFAULT_LAYOUT_RESOLUTION
+    )
 
 
 class AccountPlatformStatus(BaseModel):
@@ -106,6 +110,8 @@ class AccountResponse(BaseModel):
     active: bool
     tone: Tone | None = None
     effective_tone: Tone | None = None
+    default_layout_id: str
+    default_layout_resolution: str
 
 
 class AccountCreateRequest(BaseModel):
@@ -134,6 +140,8 @@ class AccountUpdateRequest(BaseModel):
 
     active: bool | None = None
     tone: Tone | None = None
+    default_layout_id: str | None = None
+    default_layout_resolution: str | None = None
 
     @field_validator("tone", mode="before")
     @classmethod
@@ -485,6 +493,8 @@ class AccountStore:
             active=metadata.active,
             tone=metadata.tone,
             effective_tone=effective_tone,
+            default_layout_id=metadata.default_layout_id,
+            default_layout_resolution=metadata.default_layout_resolution,
         )
 
     def _get_auth_handler(self, platform: SupportedPlatform) -> AuthHandler:
@@ -583,6 +593,10 @@ class AccountStore:
                 metadata.active = payload.active
             if "tone" in payload.model_fields_set:
                 metadata.tone = payload.tone
+            if payload.default_layout_id is not None:
+                metadata.default_layout_id = payload.default_layout_id
+            if payload.default_layout_resolution is not None:
+                metadata.default_layout_resolution = payload.default_layout_resolution
             self._write_metadata(metadata)
         return self._render_account(metadata)
 

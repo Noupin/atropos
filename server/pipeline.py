@@ -9,6 +9,7 @@ import zipfile
 from typing import Any, Callable, Literal, TypeVar
 
 import config
+from layouts import get_default_registry, LayoutIdentifier
 
 from interfaces.progress import PipelineEvent, PipelineEventType, PipelineObserver
 from steps.transcribe import transcribe_audio
@@ -36,7 +37,7 @@ from steps.segment import (
 from steps.cut import save_clip_from_candidate
 from steps.subtitle import build_srt_for_range
 from steps.render import render_vertical_with_captions
-from steps.render_layouts import get_layout
+from auth.accounts import get_account
 from steps.silence import (
     detect_silences,
     write_silences_json,
@@ -62,7 +63,6 @@ from config import (
     USE_LLM_FOR_SEGMENTS,
     CLEANUP_NON_SHORTS,
     START_AT_STEP,
-    RENDER_LAYOUT,
 )
 
 import sys
@@ -299,12 +299,51 @@ def process_video(
     non_suffix_filename = f"{sanitized_title}_{safe_upload}"
     emit_log(f"File Name: {non_suffix_filename}")
 
-    # Create a dedicated output directory for this run
-    base_output_dir = Path(__file__).resolve().parent.parent / "out"
+    registry = get_default_registry()
+    layout_id_value = config.DEFAULT_LAYOUT_ID
+    resolution_id_value = config.DEFAULT_LAYOUT_RESOLUTION
+    account_details = None
     if account:
-        base_output_dir /= account
-    project_dir = base_output_dir / non_suffix_filename
+        try:
+            account_details = get_account(account)
+            if account_details.default_layout_id:
+                layout_id_value = account_details.default_layout_id
+            if account_details.default_layout_resolution:
+                resolution_id_value = account_details.default_layout_resolution
+        except Exception as exc:
+            emit_log(
+                f"{Fore.YELLOW}Account layout lookup failed ({exc}); using defaults.{Style.RESET_ALL}",
+                level="warning",
+            )
+
+    try:
+        layout_identifier = LayoutIdentifier.parse(layout_id_value)
+    except ValueError:
+        emit_log(
+            f"{Fore.YELLOW}Unknown layout '{layout_id_value}', falling back to built_in:centered.{Style.RESET_ALL}",
+            level="warning",
+        )
+        layout_identifier = LayoutIdentifier.parse("built_in:centered")
+
+    try:
+        layout_spec = registry.load(layout_identifier)
+    except Exception as exc:
+        emit_log(
+            f"{Fore.YELLOW}Failed to load layout '{layout_identifier.as_key()}': {exc}. Using built_in:centered.{Style.RESET_ALL}",
+            level="warning",
+        )
+        layout_identifier = LayoutIdentifier.parse("built_in:centered")
+        layout_spec = registry.load(layout_identifier)
+
+    layout_resolution = layout_spec.resolution_for(resolution_id_value)
+
+    base_output_dir = Path(__file__).resolve().parent.parent / "out"
+    account_key = account or "default"
+    account_dir = base_output_dir / account_key
+    project_dir = account_dir / "projects" / non_suffix_filename
+    layout_output_dir = account_dir / layout_identifier.name / non_suffix_filename
     project_dir.mkdir(parents=True, exist_ok=True)
+    layout_output_dir.mkdir(parents=True, exist_ok=True)
 
     # ----------------------
     # STEP 1: Download Video
@@ -802,7 +841,7 @@ def process_video(
     clips_dir = project_dir / "clips"
     raw_clips_dir = project_dir / "clips_raw"
     subtitles_dir = project_dir / "subtitles"
-    shorts_dir = project_dir / "shorts"
+    shorts_dir = layout_output_dir
 
     clips_dir.mkdir(parents=True, exist_ok=True)
     if EXPORT_RAW_CLIPS:
@@ -1126,12 +1165,44 @@ def process_video(
 
         vertical_output = shorts_dir / f"{clip_path.stem}.mp4"
 
+        overlay_context = {
+            "clip": {
+                "id": clip_path.stem,
+                "start": candidate.start,
+                "end": candidate.end,
+                "duration": candidate.duration(),
+                "quote": candidate.quote,
+                "rating": candidate.rating,
+                "reason": candidate.reason,
+            },
+            "video": {
+                "title": source_title,
+                "uploader": uploader,
+                "published_at": published_iso,
+                "duration_seconds": source_duration_seconds,
+            },
+            "account": {
+                "id": account_details.id if account_details else account_key,
+                "display_name": account_details.display_name if account_details else account_key,
+            },
+            "layout": {
+                "id": layout_identifier.as_key(),
+                "name": layout_spec.metadata.name,
+                "resolution": layout_resolution.id,
+            },
+            "project": {
+                "slug": non_suffix_filename,
+            },
+        }
+
         def step_render() -> Path:
             return render_vertical_with_captions(
                 clip_path,
                 srt_path,
                 vertical_output,
-                layout=get_layout(RENDER_LAYOUT),
+                layout_spec=layout_spec,
+                resolution=layout_resolution,
+                overlay_context=overlay_context,
             )
 
         if should_run(8):
@@ -1211,6 +1282,13 @@ def process_video(
                 extra={"completed": idx, "total": total_candidates},
             )
 
+        layout_info_path = shorts_dir / f"{clip_path.stem}.layout.json"
+        layout_payload = {
+            "layout_id": layout_identifier.as_key(),
+            "layout_resolution": layout_resolution.id,
+        }
+        layout_info_path.write_text(json.dumps(layout_payload, indent=2), encoding="utf-8")
+
         if total_candidates:
             produced_count += 1
             notify_progress(
@@ -1248,6 +1326,7 @@ def process_video(
                         "source_title": source_title,
                         "source_published_at": published_iso,
                         "short_path": short_path_str,
+                        "render_root": str(layout_output_dir),
                         "project_dir": str(project_dir),
                         "account": account,
                         "quote": candidate.quote,
@@ -1257,6 +1336,8 @@ def process_video(
                         "end_seconds": float(candidate.end),
                         "original_start_seconds": float(candidate.start),
                         "original_end_seconds": float(candidate.end),
+                        "layout_id": layout_identifier.as_key(),
+                        "layout_resolution": layout_resolution.id,
                         "source_duration_seconds": (
                             float(source_duration_seconds)
                             if source_duration_seconds is not None

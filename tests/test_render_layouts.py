@@ -1,55 +1,81 @@
+from __future__ import annotations
+
 from pathlib import Path
-import sys
-import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "server"))
+import pytest
 
-from server.steps.render_layouts import (
-    CenteredZoomLayout,
-    CenteredWithCornersLayout,
-    NoZoomLayout,
-    LeftAlignedZoomLayout,
-)
+from server.layouts import LayoutIdentifier
+from server.layouts.registry import LayoutRegistry
 
 
-def test_no_zoom_scales_down() -> None:
-    layout = NoZoomLayout()
-    scale = layout.scale_factor(200, 100, 100, 200, 0.5)
-    assert abs(scale - 0.5) < 1e-6
+@pytest.fixture()
+def registry(tmp_path: Path) -> LayoutRegistry:
+    built_in = Path("server/layouts/built-in").resolve()
+    custom = tmp_path / "custom"
+    return LayoutRegistry(built_in, custom)
 
 
-def test_left_aligned_position() -> None:
-    layout = LeftAlignedZoomLayout()
-    scale = layout.scale_factor(100, 100, 200, 400, 0.5)
-    fg_width = int(100 * scale)
-    assert layout.x_position(fg_width, 200) == 0
+def test_registry_lists_builtin_layouts(registry: LayoutRegistry) -> None:
+    summaries = registry.list_layouts()
+    keys = {summary.identifier.as_key() for summary in summaries}
+    assert "built_in:centered" in keys
+    assert "built_in:no_zoom" in keys
 
 
-def test_centered_position() -> None:
-    layout = CenteredZoomLayout()
-    scale = layout.scale_factor(100, 100, 300, 400, 0.5)
-    fg_width = int(100 * scale)
-    assert layout.x_position(fg_width, 300) == 50
+def test_sorted_video_cuts_respect_z_index(registry: LayoutRegistry) -> None:
+    spec = registry.load(LayoutIdentifier(kind="built_in", name="centered_with_corners"))
+    ordered = [cut.id for cut in spec.sorted_video_cuts()]
+    assert ordered == ["main", "bottom_left", "bottom_right"]
 
 
-def test_corners_overlay() -> None:
-    layout = CenteredWithCornersLayout()
-    frame = np.zeros((100, 200, 3), dtype=np.uint8)
-    bl_color = (255, 0, 0)
-    br_color = (0, 255, 0)
-    crop_w = int(200 * layout.crop_ratio)
-    crop_h = int(100 * layout.crop_ratio)
-    frame[-crop_h:, :crop_w] = bl_color
-    frame[-crop_h:, -crop_w:] = br_color
-    canvas = np.zeros((200, 100, 3), dtype=np.uint8)
-    out = layout.augment_canvas(canvas, frame)
-    margin = int(100 * layout.margin_ratio)
-    target_w = int(100 * layout.target_width_ratio)
-    scale = target_w / crop_w
-    target_h = int(crop_h * scale)
-    left_px = out[margin + target_h // 2, margin + target_w // 2]
-    right_px = out[margin + target_h // 2, 100 - target_w - margin + target_w // 2]
-    assert np.array_equal(left_px, bl_color)
-    assert np.array_equal(right_px, br_color)
+def test_resolution_lookup_defaults_to_canvas_default(registry: LayoutRegistry) -> None:
+    spec = registry.load(LayoutIdentifier(kind="built_in", name="centered"))
+    preferred = spec.resolution_for("720x1280")
+    assert preferred.width == 720
+    assert preferred.height == 1280
+    fallback = spec.resolution_for("unknown")
+    assert fallback.id == spec.canvas.default_resolution_id
+
+
+def test_import_export_roundtrip(registry: LayoutRegistry, tmp_path: Path) -> None:
+    payload = {
+        "metadata": {
+            "id": "custom_layout",
+            "name": "Custom Layout",
+            "description": "Example custom layout for testing",
+            "version": 1,
+            "author": "pytest",
+            "tags": ["test"],
+        },
+        "canvas": {
+            "aspect_ratio": {"width": 9, "height": 16},
+            "resolutions": [
+                {"id": "1080p", "width": 1080, "height": 1920},
+            ],
+            "default_resolution_id": "1080p",
+            "margins": {"top": 16, "right": 16, "bottom": 16, "left": 16},
+            "padding": {"top": 8, "right": 8, "bottom": 8, "left": 8},
+            "background": {"mode": "transparent", "opacity": 1.0},
+        },
+        "video_cuts": [
+            {
+                "id": "primary",
+                "label": "Primary view",
+                "source_rect": {"x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0},
+                "target_rect": {"x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8},
+                "border_radius": 12,
+                "scale_mode": "cover",
+                "z_index": 0,
+            }
+        ],
+        "overlays": [],
+    }
+
+    identifier = registry.import_layout("custom_test", payload)
+    stored_path = tmp_path / "custom" / "custom_test.json"
+    assert stored_path.exists()
+
+    exported = registry.export_layout(identifier)
+    assert exported["metadata"]["id"] == "custom_layout"
+    assert exported["canvas"]["default_resolution_id"] == "1080p"
+    assert exported["video_cuts"][0]["target_rect"]["width"] == pytest.approx(0.8)

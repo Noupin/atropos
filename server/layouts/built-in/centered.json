@@ -1,0 +1,54 @@
+{
+  "metadata": {
+    "id": "centered",
+    "name": "Centered focus",
+    "description": "Foreground video centered with blurred backdrop and title overlay.",
+    "version": 1,
+    "author": "Atropos",
+    "tags": ["default", "single-cut"]
+  },
+  "canvas": {
+    "aspect_ratio": { "width": 9, "height": 16 },
+    "resolutions": [
+      { "id": "1080x1920", "width": 1080, "height": 1920, "label": "1080 × 1920" },
+      { "id": "720x1280", "width": 720, "height": 1280, "label": "720 × 1280" }
+    ],
+    "default_resolution_id": "1080x1920",
+    "margins": { "top": 32, "right": 32, "bottom": 48, "left": 32 },
+    "padding": { "top": 24, "right": 24, "bottom": 24, "left": 24 },
+    "background": {
+      "mode": "video_blur",
+      "blur_radius": 41,
+      "opacity": 0.92
+    }
+  },
+  "video_cuts": [
+    {
+      "id": "primary",
+      "label": "Primary frame",
+      "source_rect": { "x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0 },
+      "target_rect": { "x": 0.12, "y": 0.18, "width": 0.76, "height": 0.64 },
+      "border_radius": 28,
+      "scale_mode": "cover",
+      "z_index": 10
+    }
+  ],
+  "overlays": [
+    {
+      "type": "text",
+      "text": {
+        "id": "title",
+        "text": "{{clip.title}}",
+        "target_rect": { "x": 0.08, "y": 0.04, "width": 0.84, "height": 0.12 },
+        "font_family": "Inter",
+        "font_size": 42,
+        "font_weight": "bold",
+        "line_height": 1.1,
+        "color": [255, 255, 255],
+        "alignment": "center",
+        "z_index": 40,
+        "shadow": true
+      }
+    }
+  ]
+}

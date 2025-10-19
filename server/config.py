@@ -29,9 +29,10 @@ CAPTION_OUTLINE_BGR = (236, 236, 236)  # hex ececec
 # Constant frame-rate to avoid VFR issues on platforms like TikTok/Reels
 OUTPUT_FPS: float = 30.0
 
-# Name of the render layout to use. Options: "centered", "centered_with_corners", "no_zoom", "left_aligned"
-RENDER_LAYOUT = os.environ.get("RENDER_LAYOUT", "centered")
-VIDEO_ZOOM_RATIO = 0.4  # fraction of vertical space used by foreground video in centered layout
+# Layout configuration defaults
+DEFAULT_LAYOUT_ID = os.environ.get("DEFAULT_LAYOUT_ID", "built_in:centered")
+DEFAULT_LAYOUT_RESOLUTION = os.environ.get("DEFAULT_LAYOUT_RESOLUTION", "1080x1920")
+VIDEO_ZOOM_RATIO = 0.4  # legacy fallback for older layouts; retained for compatibility
 
 # Clip boundary snapping options
 SNAP_TO_SILENCE = False
@@ -174,6 +175,8 @@ __all__ = [
     "CAPTION_USE_COLORS",
     "CAPTION_FILL_BGR",
     "CAPTION_OUTLINE_BGR",
+    "DEFAULT_LAYOUT_ID",
+    "DEFAULT_LAYOUT_RESOLUTION",
     "SNAP_TO_SILENCE",
     "SNAP_TO_DIALOG",
     "SNAP_TO_SENTENCE",

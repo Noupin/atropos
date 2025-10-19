@@ -17,6 +17,7 @@ from fastapi import HTTPException, status
 
 from schedule_upload import get_out_root
 from helpers.media import probe_media_duration
+from layouts import get_default_registry
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_ACCOUNT_PLACEHOLDER = "__default__"
@@ -95,6 +96,8 @@ class LibraryClip:
     original_start_seconds: float
     original_end_seconds: float
     has_adjustments: bool
+    layout_id: Optional[str] = None
+    layout_resolution: Optional[str] = None
 
     def to_payload(self, request) -> Dict[str, object]:  # type: ignore[override]
         from fastapi import Request  # local import to avoid circular for typing
@@ -146,6 +149,8 @@ class LibraryClip:
             "original_start_seconds": self.original_start_seconds,
             "original_end_seconds": self.original_end_seconds,
             "has_adjustments": self.has_adjustments,
+            "layout_id": self.layout_id,
+            "layout_resolution": self.layout_resolution,
         }
 
 
@@ -411,30 +416,12 @@ def _load_candidate_metadata(project_dir: Path) -> Dict[str, CandidateMetadata]:
 
 
 def _find_project_directories(root_dir: Path) -> List[Path]:
-    queue: List[Path] = [root_dir]
-    visited = {root_dir}
-    projects: List[Path] = []
-    while queue:
-        current = queue.pop()
-        try:
-            entries = list(current.iterdir())
-        except OSError:
-            continue
-        has_shorts = False
-        for entry in entries:
-            if entry.name == "shorts" and entry.is_dir():
-                has_shorts = True
-                break
-        if has_shorts:
-            projects.append(current)
-            continue
-        for entry in entries:
-            if entry in visited:
-                continue
-            visited.add(entry)
-            if entry.is_dir():
-                queue.append(entry)
-    return projects
+    projects_dir = root_dir / "projects"
+    try:
+        entries = list(projects_dir.iterdir())
+    except OSError:
+        return []
+    return [entry for entry in entries if entry.is_dir()]
 
 
 def _encode_clip_id(relative_path: Path) -> str:
@@ -467,6 +454,7 @@ def _build_clip(
     candidate_map: Dict[str, CandidateMetadata],
     account_id: Optional[str],
     base: Path,
+    layout_key: Optional[str] = None,
 ) -> Optional[LibraryClip]:
     stem = clip_path.stem
     parsed = _parse_clip_filename(stem)
@@ -505,6 +493,21 @@ def _build_clip(
         ]
     )
     description_metadata = _parse_description_metadata(description_text)
+    layout_id_value = layout_key
+    layout_resolution_value: Optional[str] = None
+    layout_meta_path = clip_path.with_suffix(".layout.json")
+    if layout_meta_path.exists():
+        try:
+            layout_meta = json.loads(layout_meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            layout_meta = {}
+        else:
+            meta_layout_id = layout_meta.get("layout_id")
+            meta_layout_res = layout_meta.get("layout_resolution")
+            if isinstance(meta_layout_id, str) and not layout_id_value:
+                layout_id_value = meta_layout_id
+            if isinstance(meta_layout_res, str):
+                layout_resolution_value = meta_layout_res
     try:
         stats = clip_path.stat()
     except OSError:
@@ -594,6 +597,8 @@ def _build_clip(
         original_start_seconds=original_start_value,
         original_end_seconds=original_end_value,
         has_adjustments=has_adjustments,
+        layout_id=layout_id_value,
+        layout_resolution=layout_resolution_value,
     )
 
 
@@ -603,21 +608,49 @@ def list_account_clips_sync(account_id: Optional[str]) -> List[LibraryClip]:
     if not account_dir.exists() or not account_dir.is_dir():
         return []
     projects = _find_project_directories(account_dir)
+    registry = get_default_registry()
+    layout_lookup = {
+        summary.identifier.name: summary.identifier.as_key()
+        for summary in registry.list_layouts()
+    }
     clips: List[LibraryClip] = []
     for project_dir in projects:
         project_info = _load_project_metadata(project_dir)
         candidate_map = _load_candidate_metadata(project_dir)
-        shorts_dir = project_dir / "shorts"
+        render_sources: List[tuple[Optional[str], Path]] = []
+        legacy_dir = project_dir / "shorts"
+        if legacy_dir.exists():
+            render_sources.append((None, legacy_dir))
         try:
-            short_files = list(shorts_dir.iterdir())
+            account_entries = list(account_dir.iterdir())
         except OSError:
-            continue
-        for file_path in short_files:
-            if file_path.suffix.lower() != ".mp4":
+            account_entries = []
+        for entry in account_entries:
+            if entry.name == "projects" or not entry.is_dir():
                 continue
-            clip = _build_clip(file_path, project_dir, project_info, candidate_map, account_id, base)
-            if clip is not None:
-                clips.append(clip)
+            candidate_dir = entry / project_dir.name
+            if candidate_dir.is_dir():
+                layout_key = layout_lookup.get(entry.name, f"custom:{entry.name}")
+                render_sources.append((layout_key, candidate_dir))
+        for layout_key, render_dir in render_sources:
+            try:
+                short_files = list(render_dir.iterdir())
+            except OSError:
+                continue
+            for file_path in short_files:
+                if file_path.suffix.lower() != ".mp4":
+                    continue
+                clip = _build_clip(
+                    file_path,
+                    project_dir,
+                    project_info,
+                    candidate_map,
+                    account_id,
+                    base,
+                    layout_key,
+                )
+                if clip is not None:
+                    clips.append(clip)
     clips.sort(key=lambda clip: clip.created_at, reverse=True)
     return clips
 

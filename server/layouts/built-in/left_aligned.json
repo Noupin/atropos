@@ -1,0 +1,54 @@
+{
+  "metadata": {
+    "id": "left_aligned",
+    "name": "Left anchored",
+    "description": "Foreground video anchored to the left with caption space on the right.",
+    "version": 1,
+    "author": "Atropos",
+    "tags": ["single-cut", "left"]
+  },
+  "canvas": {
+    "aspect_ratio": { "width": 9, "height": 16 },
+    "resolutions": [
+      { "id": "1080x1920", "width": 1080, "height": 1920 },
+      { "id": "720x1280", "width": 720, "height": 1280 }
+    ],
+    "default_resolution_id": "1080x1920",
+    "margins": { "top": 36, "right": 48, "bottom": 48, "left": 32 },
+    "padding": { "top": 32, "right": 40, "bottom": 32, "left": 24 },
+    "background": {
+      "mode": "video_blur",
+      "blur_radius": 35,
+      "opacity": 0.9
+    }
+  },
+  "video_cuts": [
+    {
+      "id": "primary",
+      "label": "Primary frame",
+      "source_rect": { "x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0 },
+      "target_rect": { "x": 0.05, "y": 0.16, "width": 0.62, "height": 0.68 },
+      "border_radius": 24,
+      "scale_mode": "cover",
+      "z_index": 10
+    }
+  ],
+  "overlays": [
+    {
+      "type": "text",
+      "text": {
+        "id": "title",
+        "text": "{{clip.title}}",
+        "target_rect": { "x": 0.7, "y": 0.18, "width": 0.25, "height": 0.6 },
+        "font_family": "Inter",
+        "font_size": 36,
+        "font_weight": "semibold",
+        "line_height": 1.2,
+        "color": [245, 245, 245],
+        "alignment": "left",
+        "z_index": 30,
+        "shadow": true
+      }
+    }
+  ]
+}

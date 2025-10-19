@@ -1,13 +1,27 @@
-import cv2
-import numpy as np
 from pathlib import Path
 import sys
+
+import pytest
+import numpy as np
+
+try:  # pragma: no cover - dependency guard
+    import cv2
+except ImportError:  # pragma: no cover - dependency guard
+    cv2 = None
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "server"))
 
+from server.layouts import LayoutIdentifier, get_default_registry
 from server.steps.render import render_vertical_with_captions
+
+
+pytestmark = pytest.mark.skipif(cv2 is None, reason="OpenCV is not available in the test environment")
+
+REGISTRY = get_default_registry()
+DEFAULT_LAYOUT = REGISTRY.load(LayoutIdentifier.parse("built_in:centered"))
+DEFAULT_RESOLUTION = DEFAULT_LAYOUT.resolution_for("1080x1920")
 
 
 def test_render_preserves_fps(tmp_path: Path) -> None:
@@ -25,8 +39,8 @@ def test_render_preserves_fps(tmp_path: Path) -> None:
     render_vertical_with_captions(
         src_path,
         output_path=out_path,
-        frame_width=160,
-        frame_height=280,
+        layout_spec=DEFAULT_LAYOUT,
+        resolution=DEFAULT_RESOLUTION,
         mux_audio=False,
         use_cuda=False,
         use_opencl=False,
@@ -55,8 +69,8 @@ def test_render_without_caption_colors(tmp_path: Path) -> None:
         src_path,
         captions=[(0.0, 1.0, "test")],
         output_path=out_path,
-        frame_width=160,
-        frame_height=280,
+        layout_spec=DEFAULT_LAYOUT,
+        resolution=DEFAULT_RESOLUTION,
         mux_audio=False,
         use_cuda=False,
         use_opencl=False,

@@ -1,0 +1,4 @@
+# Custom layout files are stored here at runtime.
+# The directory remains empty in version control.
+*
+!.gitignore

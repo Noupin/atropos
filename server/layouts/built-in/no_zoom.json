@@ -1,0 +1,37 @@
+{
+  "metadata": {
+    "id": "no_zoom",
+    "name": "Full frame",
+    "description": "Displays the entire video without zoom against a neutral background.",
+    "version": 1,
+    "author": "Atropos",
+    "tags": ["full-frame"]
+  },
+  "canvas": {
+    "aspect_ratio": { "width": 9, "height": 16 },
+    "resolutions": [
+      { "id": "1080x1920", "width": 1080, "height": 1920 },
+      { "id": "1440x2560", "width": 1440, "height": 2560 }
+    ],
+    "default_resolution_id": "1080x1920",
+    "margins": { "top": 24, "right": 24, "bottom": 24, "left": 24 },
+    "padding": { "top": 16, "right": 16, "bottom": 16, "left": 16 },
+    "background": {
+      "mode": "solid_color",
+      "color": [24, 24, 24],
+      "opacity": 1.0
+    }
+  },
+  "video_cuts": [
+    {
+      "id": "full",
+      "label": "Full frame",
+      "source_rect": { "x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0 },
+      "target_rect": { "x": 0.05, "y": 0.05, "width": 0.9, "height": 0.9 },
+      "border_radius": 20,
+      "scale_mode": "contain",
+      "z_index": 10
+    }
+  ],
+  "overlays": []
+}

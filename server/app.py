@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import math
 import os
@@ -28,7 +29,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from custom_types.ETone import Tone
 from interfaces.clips import router as clips_router, register_legacy_routes as register_clip_legacy_routes
@@ -44,7 +45,7 @@ from library import (
 from steps.cut import save_clip
 from steps.subtitle import build_srt_for_range
 from steps.render import render_vertical_with_captions
-from steps.render_layouts import get_layout
+from layouts import get_default_registry, LayoutIdentifier
 from helpers.description import maybe_append_website_link
 from common.caption_utils import prepare_hashtags
 from helpers.hashtags import generate_hashtag_strings
@@ -121,6 +122,53 @@ def _parse_clip_bounds_from_id(clip_id: str) -> tuple[float, float] | None:
     return start_value, end_value
 
 
+def _parse_layout_identifier(layout_id: str) -> LayoutIdentifier:
+    try:
+        return LayoutIdentifier.parse(layout_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+def _serialize_layout_summary(summary) -> LayoutSummaryModel:
+    return LayoutSummaryModel(
+        id=summary.identifier.as_key(),
+        name=summary.title,
+        kind=summary.identifier.kind,
+        description=summary.description,
+        tags=list(summary.tags),
+        resolutions=[
+            LayoutResolutionModel(
+                id=item.id,
+                width=item.width,
+                height=item.height,
+                label=item.label,
+            )
+            for item in summary.resolutions
+        ],
+        default_resolution=summary.default_resolution.id,
+    )
+
+
+def _serialize_layout_spec(identifier: LayoutIdentifier, spec) -> LayoutSummaryModel:
+    return LayoutSummaryModel(
+        id=identifier.as_key(),
+        name=spec.metadata.name,
+        kind=identifier.kind,
+        description=spec.metadata.description,
+        tags=list(spec.metadata.tags),
+        resolutions=[
+            LayoutResolutionModel(
+                id=item.id,
+                width=item.width,
+                height=item.height,
+                label=item.label,
+            )
+            for item in spec.canvas.resolutions
+        ],
+        default_resolution=spec.canvas.default_resolution_id,
+    )
+
+
 class RunRequest(BaseModel):
     """Payload for starting a new pipeline job."""
 
@@ -185,6 +233,28 @@ class ConfigUpdateRequest(BaseModel):
     """Payload describing configuration updates to apply."""
 
     values: Dict[str, Any] = Field(default_factory=dict)
+
+
+class LayoutResolutionModel(BaseModel):
+    id: str
+    width: int
+    height: int
+    label: str | None = None
+
+
+class LayoutSummaryModel(BaseModel):
+    id: str
+    name: str
+    kind: str
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    resolutions: list[LayoutResolutionModel]
+    default_resolution: str
+
+
+class LayoutImportRequest(BaseModel):
+    name: str
+    spec: Dict[str, Any]
 
 
 class UploadClipRequest(BaseModel):
@@ -434,6 +504,8 @@ class ClipArtifact:
     original_start_seconds: float = 0.0
     original_end_seconds: float = 0.0
     source_duration_seconds: float | None = None
+    layout_id: str | None = None
+    layout_resolution: str | None = None
 
 
 class ClipManifest(BaseModel):
@@ -585,8 +657,14 @@ class JobState:
         source_url = _ensure_str(data.get("source_url"))
 
         project_dir_str = _ensure_str(data.get("project_dir"))
+        render_root_str = _ensure_str(data.get("render_root"))
         base = None
-        if project_dir_str:
+        if render_root_str:
+            try:
+                base = Path(render_root_str).resolve()
+            except OSError:
+                base = None
+        if base is None and project_dir_str:
             try:
                 base = Path(project_dir_str).resolve()
             except OSError:
@@ -665,6 +743,8 @@ class JobState:
             original_start_seconds=max(0.0, original_start_value),
             original_end_seconds=max(0.0, original_end_value),
             source_duration_seconds=source_duration,
+            layout_id=_ensure_str(data.get("layout_id")),
+            layout_resolution=_ensure_str(data.get("layout_resolution")),
         )
 
         self.project_dir = base
@@ -821,6 +901,9 @@ def _apply_clip_adjustment(
     quote: str | None,
     original_start_seconds: float,
     original_end_seconds: float,
+    render_root: Path | None = None,
+    layout_id: str | None = None,
+    layout_resolution: str | None = None,
 ) -> tuple[float, str]:
     """Rebuild clip assets for the provided ``stem`` using the new range."""
 
@@ -844,7 +927,51 @@ def _apply_clip_adjustment(
 
     clips_dir = project_dir / "clips"
     subtitles_dir = project_dir / "subtitles"
-    shorts_dir = project_dir / "shorts"
+    registry = get_default_registry()
+    known_layouts = {summary.identifier.name: summary.identifier for summary in registry.list_layouts()}
+
+    def _resolve_layout_identifier() -> LayoutIdentifier:
+        layout_key = layout_id or ""
+        if layout_key:
+            try:
+                return LayoutIdentifier.parse(layout_key)
+            except ValueError:
+                pass
+        if render_root is not None:
+            guess = render_root.parent.name
+            identifier = known_layouts.get(guess)
+            if identifier:
+                return identifier
+            return LayoutIdentifier(kind="custom", name=guess)
+        return LayoutIdentifier.parse(config.DEFAULT_LAYOUT_ID)
+
+    layout_identifier = _resolve_layout_identifier()
+
+    try:
+        layout_spec = registry.load(layout_identifier)
+    except Exception:
+        layout_identifier = LayoutIdentifier.parse("built_in:centered")
+        layout_spec = registry.load(layout_identifier)
+
+    if render_root is not None:
+        shorts_dir = render_root
+    elif project_dir.parent.name == "projects":
+        account_dir = project_dir.parent.parent
+        shorts_dir = account_dir / layout_identifier.name / project_dir.name
+    else:
+        shorts_dir = project_dir / "shorts"
+    layout_meta_path = shorts_dir / f"{stem}.layout.json"
+    if layout_meta_path.exists():
+        try:
+            metadata = json.loads(layout_meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            metadata = {}
+        else:
+            if layout_id is None:
+                layout_id = _ensure_str(metadata.get("layout_id"))
+            if layout_resolution is None:
+                layout_resolution = _ensure_str(metadata.get("layout_resolution"))
+
     clips_dir.mkdir(parents=True, exist_ok=True)
     subtitles_dir.mkdir(parents=True, exist_ok=True)
     shorts_dir.mkdir(parents=True, exist_ok=True)
@@ -853,6 +980,8 @@ def _apply_clip_adjustment(
     subtitle_path = subtitles_dir / f"{stem}.srt"
     vertical_path = shorts_dir / f"{stem}.mp4"
     description_path = shorts_dir / f"{stem}.txt"
+
+    resolution_spec = layout_spec.resolution_for(layout_resolution)
 
     ok = save_clip(
         source_video,
@@ -881,12 +1010,36 @@ def _apply_clip_adjustment(
             detail="Failed to regenerate subtitles for the clip.",
         ) from exc
 
+    overlay_context = {
+        "clip": {
+            "id": stem,
+            "start": start_seconds,
+            "end": end_seconds,
+            "duration": max(0.0, end_seconds - start_seconds),
+            "quote": quote,
+        },
+        "video": {
+            "title": source_title or title,
+            "uploader": channel,
+        },
+        "layout": {
+            "id": layout_identifier.as_key(),
+            "name": layout_spec.metadata.name,
+            "resolution": resolution_spec.id,
+        },
+        "project": {
+            "slug": project_dir.name,
+        },
+    }
+
     try:
         render_vertical_with_captions(
             raw_clip_path,
             subtitle_path,
             vertical_path,
-            layout=get_layout(pipeline_config.RENDER_LAYOUT),
+            layout_spec=layout_spec,
+            resolution=resolution_spec,
+            overlay_context=overlay_context,
         )
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Failed to render adjusted clip %s", stem, exc_info=exc)
@@ -912,6 +1065,18 @@ def _apply_clip_adjustment(
         original_start_seconds=original_start_seconds,
         original_end_seconds=original_end_seconds,
     )
+
+    layout_meta_path.write_text(
+        json.dumps(
+            {
+                "layout_id": layout_identifier.as_key(),
+                "layout_resolution": resolution_spec.id,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
     return duration, description_text
 
 
@@ -1447,6 +1612,9 @@ async def adjust_job_clip(
         quote=clip.quote,
         original_start_seconds=clip.original_start_seconds,
         original_end_seconds=clip.original_end_seconds,
+        render_root=clip.video_path.parent,
+        layout_id=clip.layout_id,
+        layout_resolution=clip.layout_resolution,
     )
 
     updated = ClipArtifact(
@@ -1683,7 +1851,10 @@ async def adjust_library_clip(
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
 
-    project_dir = target.playback_path.parent.parent
+    render_root = target.playback_path.parent
+    layout_root = render_root.parent
+    account_dir = layout_root.parent if layout_root is not None else render_root.parent
+    project_dir = account_dir / "projects" / render_root.name if account_dir else render_root
     _apply_clip_adjustment(
         project_dir=project_dir,
         stem=target.playback_path.stem,
@@ -1696,6 +1867,9 @@ async def adjust_library_clip(
         quote=target.quote,
         original_start_seconds=target.original_start_seconds,
         original_end_seconds=target.original_end_seconds,
+        render_root=render_root,
+        layout_id=target.layout_id,
+        layout_resolution=target.layout_resolution,
     )
 
     refreshed = list_account_clips_sync(account_value)
