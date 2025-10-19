@@ -324,6 +324,25 @@ const secureJoin = (baseDir: string, relativePath: string | null): string | null
   return candidate
 }
 
+const ALLOWED_SOURCE_EXTENSIONS = new Set(['.mp4', '.mov', '.mkv'])
+
+const getFileStem = (fileName: string): string => {
+  const extension = path.extname(fileName)
+  return extension.length > 0 ? fileName.slice(0, -extension.length) : fileName
+}
+
+const findCanonicalProjectSource = async (projectDir: string): Promise<string | null> => {
+  for (const extension of ALLOWED_SOURCE_EXTENSIONS) {
+    const candidate = await ensureVideoFile(
+      path.join(projectDir, `${path.basename(projectDir)}${extension}`)
+    )
+    if (candidate) {
+      return candidate
+    }
+  }
+  return null
+}
+
 const ensureVideoFile = async (filePath: string | null): Promise<string | null> => {
   if (!filePath) {
     return null
@@ -332,7 +351,8 @@ const ensureVideoFile = async (filePath: string | null): Promise<string | null> 
     return null
   }
   const resolved = path.resolve(filePath)
-  if (!resolved.toLowerCase().endsWith('.mp4')) {
+  const extension = path.extname(resolved).toLowerCase()
+  if (!ALLOWED_SOURCE_EXTENSIONS.has(extension)) {
     return null
   }
   if (containsShortsSegment(resolved)) {
@@ -392,28 +412,40 @@ const listProjectSourceCandidates = async (projectDir: string): Promise<string[]
     return []
   }
 
-  const mp4Files: string[] = []
+  const baseName = path.basename(projectDir).toLowerCase()
+  const candidates: Array<{ path: string; size: number; priority: number }> = []
+
   for (const entry of entries) {
     const candidate = path.join(projectDir, entry)
-    if (containsShortsSegment(candidate)) {
+    const verified = await ensureVideoFile(candidate)
+    if (!verified) {
       continue
     }
+    let stats: Stats
     try {
-      const stats = await fs.stat(candidate)
-      if (!stats.isFile()) {
-        continue
-      }
+      stats = await fs.stat(verified)
     } catch (error) {
       continue
     }
-    if (!candidate.toLowerCase().endsWith('.mp4')) {
+    if (!stats.isFile() || stats.size <= 0) {
       continue
     }
-    mp4Files.push(candidate)
+    const stem = path.basename(verified, path.extname(verified)).toLowerCase()
+    const priority = stem === baseName ? 0 : 1
+    candidates.push({ path: verified, size: stats.size, priority })
   }
 
-  mp4Files.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
-  return mp4Files
+  candidates.sort((a, b) => {
+    if (a.priority !== b.priority) {
+      return a.priority - b.priority
+    }
+    if (b.size !== a.size) {
+      return b.size - a.size
+    }
+    return a.path.localeCompare(b.path, undefined, { sensitivity: 'base' })
+  })
+
+  return candidates.map((entry) => entry.path)
 }
 
 const ADJUSTMENT_METADATA_SUFFIX = '.adjust.json'
@@ -475,7 +507,7 @@ const buildClip = async (
   accountId: string | null
 ): Promise<Clip | null> => {
   const fileName = path.basename(filePath)
-  const stem = fileName.replace(/\.mp4$/i, '')
+  const stem = getFileStem(fileName)
   const parsed = parseClipFilename(stem)
   const start = parsed?.start ?? null
   const end = parsed?.end ?? null
@@ -498,16 +530,8 @@ const buildClip = async (
   }
 
   const playbackUrl = pathToFileURL(filePath).toString()
-  const projectSourcePath = path.join(projectDir, `${path.basename(projectDir)}.mp4`)
-  let previewUrl = playbackUrl
-  try {
-    const previewStats = await fs.stat(projectSourcePath)
-    if (previewStats.isFile()) {
-      previewUrl = pathToFileURL(projectSourcePath).toString()
-    }
-  } catch (error) {
-    // ignore missing source video; fall back to playbackUrl for preview
-  }
+  const canonicalSource = await findCanonicalProjectSource(projectDir)
+  const previewUrl = canonicalSource ? pathToFileURL(canonicalSource).toString() : playbackUrl
 
   let timestampUrl = descriptionMetadata.timestampUrl
   const adjustments = await loadAdjustmentMetadata(filePath)
@@ -713,7 +737,8 @@ export const listAccountClips = async (accountId: string | null): Promise<Clip[]
     }
 
     for (const fileName of shortFiles) {
-      if (!fileName.toLowerCase().endsWith('.mp4')) {
+      const extension = path.extname(fileName).toLowerCase()
+      if (!ALLOWED_SOURCE_EXTENSIONS.has(extension)) {
         continue
       }
       const filePath = path.join(shortsDir, fileName)
@@ -756,14 +781,12 @@ export const resolveProjectSourceVideo = async (
     return { status: 'error', message: 'Unable to locate the project folder for this clip.' }
   }
 
-  const canonicalPath = await ensureVideoFile(
-    path.join(projectDir, `${path.basename(projectDir)}.mp4`)
-  )
-  if (canonicalPath) {
+  const canonicalCandidate = await findCanonicalProjectSource(projectDir)
+  if (canonicalCandidate) {
     return {
       status: 'ok',
-      filePath: canonicalPath,
-      fileUrl: pathToFileURL(canonicalPath).toString(),
+      filePath: canonicalCandidate,
+      fileUrl: pathToFileURL(canonicalCandidate).toString(),
       origin: 'canonical',
       projectDir
     }
@@ -781,7 +804,8 @@ export const resolveProjectSourceVideo = async (
     }
   }
 
-  const expected = path.join(projectDir, `${path.basename(projectDir)}.mp4`)
+  const defaultExtension = Array.from(ALLOWED_SOURCE_EXTENSIONS)[0] ?? '.mp4'
+  const expected = path.join(projectDir, `${path.basename(projectDir)}${defaultExtension}`)
   return {
     status: 'missing',
     expectedPath: expected,

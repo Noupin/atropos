@@ -269,11 +269,124 @@ export const prepareWindowedPlayback = (
   let appliedStart = requestedStart
   let appliedEnd = Math.max(requestedStart + MIN_WINDOW_DURATION, requestedEnd)
   let seekTimer: ReturnType<typeof setTimeout> | null = null
-  let metadataLoaded = video.readyState >= 1 && Number.isFinite(video.duration)
-  let knownDuration = metadataLoaded ? Math.max(0, video.duration) : Number.NaN
-  let playbackStatus: WindowedPlaybackStatus = metadataLoaded ? 'idle' : 'loading'
   let resumeAfterSeek = false
   let disposed = false
+
+  const mediaPrototype = Object.getPrototypeOf(video) as HTMLMediaElement
+  const currentTimeDescriptor = Object.getOwnPropertyDescriptor(mediaPrototype, 'currentTime')
+  const durationDescriptor = Object.getOwnPropertyDescriptor(mediaPrototype, 'duration')
+
+  const readAbsoluteCurrentTime = (): number => {
+    if (currentTimeDescriptor?.get) {
+      try {
+        const value = currentTimeDescriptor.get.call(video)
+        return typeof value === 'number' ? value : Number(value)
+      } catch (error) {
+        // Fall through to native property access
+      }
+    }
+    return video.currentTime
+  }
+
+  const writeAbsoluteCurrentTime = (value: number): void => {
+    if (currentTimeDescriptor?.set) {
+      try {
+        currentTimeDescriptor.set.call(video, value)
+        return
+      } catch (error) {
+        // Fall through to native property access
+      }
+    }
+    try {
+      video.currentTime = value
+    } catch (error) {
+      // Ignore write failures when the media element rejects the update.
+    }
+  }
+
+  const readAbsoluteDuration = (): number => {
+    if (durationDescriptor?.get) {
+      try {
+        const value = durationDescriptor.get.call(video)
+        return typeof value === 'number' ? value : Number(value)
+      } catch (error) {
+        // Fall through to native property access
+      }
+    }
+    return video.duration
+  }
+
+  let metadataLoaded = video.readyState >= 1 && Number.isFinite(readAbsoluteDuration())
+  let knownDuration = metadataLoaded ? Math.max(0, readAbsoluteDuration()) : Number.NaN
+  let playbackStatus: WindowedPlaybackStatus = metadataLoaded ? 'idle' : 'loading'
+
+  let overridesApplied = false
+
+  const applyMediaOverrides = (): void => {
+    if (overridesApplied) {
+      return
+    }
+    if (!currentTimeDescriptor?.get || !currentTimeDescriptor?.set) {
+      return
+    }
+    try {
+      Object.defineProperty(video, 'currentTime', {
+        configurable: true,
+        enumerable: currentTimeDescriptor.enumerable ?? false,
+        get() {
+          const raw = currentTimeDescriptor.get!.call(video)
+          if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+            return raw
+          }
+          const relative = raw - appliedStart
+          return relative >= 0 ? relative : 0
+        },
+        set(value: number) {
+          if (typeof value !== 'number' || !Number.isFinite(value)) {
+            currentTimeDescriptor.set!.call(video, value)
+            return
+          }
+          const absolute = value + appliedStart
+          const limited = Math.min(appliedEnd, Math.max(appliedStart, absolute))
+          currentTimeDescriptor.set!.call(video, limited)
+        }
+      })
+      if (durationDescriptor?.get) {
+        Object.defineProperty(video, 'duration', {
+          configurable: true,
+          enumerable: durationDescriptor.enumerable ?? false,
+          get() {
+            if (!Number.isFinite(knownDuration)) {
+              return durationDescriptor.get!.call(video)
+            }
+            const relative = appliedEnd - appliedStart
+            return relative > MIN_WINDOW_DURATION ? relative : MIN_WINDOW_DURATION
+          }
+        })
+      }
+      overridesApplied = true
+    } catch (error) {
+      // If we fail to override media properties, continue without altering the prototype chain.
+      overridesApplied = false
+    }
+  }
+
+  const restoreMediaOverrides = (): void => {
+    if (!overridesApplied) {
+      return
+    }
+    try {
+      if (currentTimeDescriptor) {
+        Object.defineProperty(video, 'currentTime', currentTimeDescriptor)
+      }
+      if (durationDescriptor) {
+        Object.defineProperty(video, 'duration', durationDescriptor)
+      }
+    } catch (error) {
+      // Ignore restoration failures.
+    }
+    overridesApplied = false
+  }
 
   const clampWithinWindow = (time: number): number => {
     if (!metadataLoaded) {
@@ -345,6 +458,7 @@ export const prepareWindowedPlayback = (
     appliedStart = clampedStart
     appliedEnd = clampedEnd
     emitRange(warning)
+    applyMediaOverrides()
 
     if (metadataLoaded) {
       scheduleSeek()
@@ -373,7 +487,7 @@ export const prepareWindowedPlayback = (
           resumeAfterSeek = true
           video.pause()
         }
-        video.currentTime = appliedStart
+        writeAbsoluteCurrentTime(appliedStart)
       } catch (error) {
         options.onError?.(
           error instanceof Error
@@ -387,11 +501,12 @@ export const prepareWindowedPlayback = (
 
   const handleLoadedMetadata = (): void => {
     metadataLoaded = true
-    knownDuration = Number.isFinite(video.duration) ? Math.max(0, video.duration) : Number.NaN
+    const absoluteDuration = readAbsoluteDuration()
+    knownDuration = Number.isFinite(absoluteDuration) ? Math.max(0, absoluteDuration) : Number.NaN
     applyWindow(requestedStart, requestedEnd)
     updateStatus('seeking')
     try {
-      video.currentTime = appliedStart
+      writeAbsoluteCurrentTime(appliedStart)
     } catch (error) {
       options.onError?.(
         error instanceof Error
@@ -420,13 +535,13 @@ export const prepareWindowedPlayback = (
       video.pause()
       return
     }
-    const distance = Math.abs(video.currentTime - appliedStart)
+    const distance = Math.abs(readAbsoluteCurrentTime() - appliedStart)
     if (distance > 0.025) {
       resumeAfterSeek = true
       updateStatus('seeking')
       video.pause()
       try {
-        video.currentTime = appliedStart
+        writeAbsoluteCurrentTime(appliedStart)
       } catch (error) {
         options.onError?.(
           error instanceof Error
@@ -442,21 +557,22 @@ export const prepareWindowedPlayback = (
     if (!metadataLoaded) {
       return
     }
-    const clamped = clampWithinWindow(video.currentTime)
-    if (Math.abs(clamped - video.currentTime) > 0.002) {
+    const absoluteTime = readAbsoluteCurrentTime()
+    const clamped = clampWithinWindow(absoluteTime)
+    if (Math.abs(clamped - absoluteTime) > 0.002) {
       try {
-        video.currentTime = clamped
+        writeAbsoluteCurrentTime(clamped)
       } catch (error) {
         // Ignore seek failures when constraining playback time.
       }
       return
     }
-    if (video.currentTime >= appliedEnd - 0.01) {
+    if (absoluteTime >= appliedEnd - 0.01) {
       if (!video.paused) {
         video.pause()
       }
       try {
-        video.currentTime = appliedStart
+        writeAbsoluteCurrentTime(appliedStart)
       } catch (error) {
         // Ignore seek failures when finishing playback.
       }
@@ -469,12 +585,13 @@ export const prepareWindowedPlayback = (
     if (!metadataLoaded) {
       return
     }
-    const clamped = clampWithinWindow(video.currentTime)
-    if (Math.abs(clamped - video.currentTime) <= 0.002) {
+    const absoluteTime = readAbsoluteCurrentTime()
+    const clamped = clampWithinWindow(absoluteTime)
+    if (Math.abs(clamped - absoluteTime) <= 0.002) {
       return
     }
     try {
-      video.currentTime = clamped
+      writeAbsoluteCurrentTime(clamped)
     } catch (error) {
       options.onError?.(
         error instanceof Error
@@ -497,6 +614,8 @@ export const prepareWindowedPlayback = (
   video.addEventListener('timeupdate', handleTimeUpdate)
   video.addEventListener('error', handleError)
 
+  applyMediaOverrides()
+
   if (metadataLoaded) {
     applyWindow(requestedStart, requestedEnd)
   }
@@ -511,6 +630,7 @@ export const prepareWindowedPlayback = (
       }
       disposed = true
       clearSeekTimer()
+      restoreMediaOverrides()
       video.removeEventListener('loadedmetadata', handleLoadedMetadata)
       video.removeEventListener('seeked', handleSeeked)
       video.removeEventListener('seeking', handleSeeking)

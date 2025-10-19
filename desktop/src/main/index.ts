@@ -382,7 +382,9 @@ function createWindow(): void {
       sandbox: false,
       contextIsolation: true,
       enableRemoteModule: false,
-      nodeIntegration: false
+      nodeIntegration: false,
+      allowRunningInsecureContent: false,
+      allowFileAccessFromFileUrls: true
     }
   })
 
