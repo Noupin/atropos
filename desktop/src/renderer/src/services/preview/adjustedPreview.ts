@@ -85,6 +85,8 @@ const readPreferredPath = (key: string): string | null => {
   return store[key] ?? null
 }
 
+const REQUIRED_MEDIA_SOURCES = ['file:', 'app:']
+
 export const ensureCspAndElectronAllowLocalMedia = (): void => {
   if (!isBrowserEnvironment()) {
     return
@@ -99,18 +101,25 @@ export const ensureCspAndElectronAllowLocalMedia = (): void => {
   let updatedAny = false
   for (const meta of metas) {
     const content = meta.getAttribute('content') ?? ''
-    if (/media-src[^;]*file:/i.test(content)) {
+    const mediaMatch = content.match(/media-src([^;]*)/i)
+    if (!mediaMatch) {
       continue
     }
-    const updated = content.replace(/media-src([^;]*)/i, (match, group) => {
-      if (!group) {
-        return `${match} file:`
+    const [, directiveTail] = mediaMatch
+    const existingTokens = directiveTail ? directiveTail.trim().split(/\s+/).filter(Boolean) : []
+    const lowerTokens = existingTokens.map((token) => token.toLowerCase())
+    const additions: string[] = []
+    for (const source of REQUIRED_MEDIA_SOURCES) {
+      if (!lowerTokens.includes(source)) {
+        additions.push(source)
       }
-      if (group.includes('file:')) {
-        return match
-      }
-      return `media-src${group} file:`
-    })
+    }
+    if (additions.length === 0) {
+      continue
+    }
+    const combinedTokens = existingTokens.concat(additions)
+    const replacement = `media-src${combinedTokens.length > 0 ? ` ${combinedTokens.join(' ')}` : ''}`
+    const updated = content.replace(mediaMatch[0], replacement)
     meta.setAttribute('content', updated)
     updatedAny = true
   }

@@ -1115,7 +1115,7 @@ const VideoPage: FC = () => {
     if (adjustedSourceState.status === 'ready') {
       return adjustedSourceState.mediaUrl
     }
-    return ''
+    return null
   }, [adjustedSourceState])
 
   const originalPreviewRange = useMemo(() => {
@@ -1180,12 +1180,17 @@ const VideoPage: FC = () => {
     }
   }, [clipState])
 
-  const activeVideoSrc =
+  const activeVideoSrcCandidate =
     previewMode === 'rendered'
       ? renderedSrc
       : previewMode === 'original'
         ? originalPreviewSrc
         : adjustedPreviewSrc
+
+  const activeVideoSrc =
+    activeVideoSrcCandidate && activeVideoSrcCandidate.length > 0
+      ? activeVideoSrcCandidate
+      : null
 
   const activePoster = previewMode === 'rendered' ? (clipState?.thumbnail ?? undefined) : undefined
   const videoKey = clipState
@@ -1692,7 +1697,7 @@ const VideoPage: FC = () => {
               <video
                 ref={previewVideoRef}
                 key={videoKey}
-                src={activeVideoSrc}
+                src={activeVideoSrc ?? undefined}
                 poster={activePoster}
                 controls
                 playsInline

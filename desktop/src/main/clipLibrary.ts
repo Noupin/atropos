@@ -194,16 +194,20 @@ const resolveOutRoot = async (): Promise<string | null> => {
     return cachedOutRoot
   }
 
+  const resolvedCandidates = new Set<string>()
+
   const configured = process.env.OUT_ROOT
-  if (configured && configured.length > 0) {
-    cachedOutRoot = configured
-    return cachedOutRoot
+  if (configured && configured.trim().length > 0) {
+    resolvedCandidates.add(path.resolve(configured))
   }
 
-  const candidates = [
-    path.resolve(process.cwd(), 'server', 'out'),
-    path.resolve(process.cwd(), '..', 'server', 'out')
-  ]
+  resolvedCandidates.add(path.resolve(process.cwd(), 'out'))
+  resolvedCandidates.add(path.resolve(process.cwd(), '..', 'out'))
+  resolvedCandidates.add(path.resolve(process.cwd(), 'server', 'out'))
+  resolvedCandidates.add(path.resolve(process.cwd(), '..', 'server', 'out'))
+  resolvedCandidates.add('/app/out')
+
+  const candidates = Array.from(resolvedCandidates)
 
   for (const candidate of candidates) {
     try {

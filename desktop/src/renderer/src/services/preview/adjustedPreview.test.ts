@@ -195,7 +195,7 @@ describe('adjustedPreview helpers', () => {
     controller.dispose()
   })
 
-  it('adds file:// to the CSP media-src directive when missing', () => {
+  it('adds file:// and app:// to the CSP media-src directive when missing', () => {
     const meta = document.createElement('meta')
     meta.setAttribute('http-equiv', 'Content-Security-Policy')
     meta.setAttribute('content', "default-src 'self'; media-src 'self' data: blob:")
@@ -205,6 +205,7 @@ describe('adjustedPreview helpers', () => {
 
     const updated = meta.getAttribute('content')
     expect(updated).toContain('file:')
+    expect(updated).toContain('app:')
   })
 })
 
