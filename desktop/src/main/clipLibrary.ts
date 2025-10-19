@@ -3,6 +3,10 @@ import type { Stats } from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import type { Clip } from '../renderer/src/types'
+import type {
+  ResolveProjectSourceRequest,
+  ResolveProjectSourceResponse
+} from '../types/preview'
 
 interface CandidateEntry {
   start: number
@@ -45,6 +49,9 @@ const CANDIDATE_MANIFEST_FILES = [
 ]
 
 let cachedOutRoot: string | null | undefined
+
+const containsShortsSegment = (filePath: string): boolean =>
+  filePath.split(path.sep).some((segment) => segment.toLowerCase() === 'shorts')
 
 const roundTwo = (value: number): number => Math.round(value * 100) / 100
 
@@ -273,6 +280,136 @@ const encodeClipId = (baseDir: string, filePath: string): string | null => {
   }
   const normalised = relative.split(path.sep).join('/')
   return toBase64Url(normalised)
+}
+
+const fromBase64Url = (value: string): string | null => {
+  try {
+    const padded = value.replace(/-/g, '+').replace(/_/g, '/')
+    const padLength = (4 - (padded.length % 4)) % 4
+    const input = padded.padEnd(padded.length + padLength, '=')
+    return Buffer.from(input, 'base64').toString('utf-8')
+  } catch (error) {
+    return null
+  }
+}
+
+const decodeRelativePath = (value: string | null | undefined): string | null => {
+  if (!value) {
+    return null
+  }
+  const decoded = fromBase64Url(value)
+  if (!decoded) {
+    return null
+  }
+  if (decoded.includes('\0')) {
+    return null
+  }
+  return decoded
+}
+
+const secureJoin = (baseDir: string, relativePath: string | null): string | null => {
+  if (!relativePath) {
+    return null
+  }
+  const transformed = relativePath.split('/').join(path.sep)
+  const candidate = path.resolve(baseDir, transformed)
+  const safeRelative = path.relative(baseDir, candidate)
+  if (!safeRelative || safeRelative.startsWith('..') || path.isAbsolute(safeRelative)) {
+    return null
+  }
+  return candidate
+}
+
+const ensureVideoFile = async (filePath: string | null): Promise<string | null> => {
+  if (!filePath) {
+    return null
+  }
+  if (filePath.includes('://')) {
+    return null
+  }
+  const resolved = path.resolve(filePath)
+  if (!resolved.toLowerCase().endsWith('.mp4')) {
+    return null
+  }
+  if (containsShortsSegment(resolved)) {
+    return null
+  }
+  try {
+    const stats = await fs.stat(resolved)
+    if (!stats.isFile()) {
+      return null
+    }
+  } catch (error) {
+    return null
+  }
+  return resolved
+}
+
+const findProjectDirectory = async (
+  baseDir: string,
+  projectId: string | null,
+  clipId: string | null
+): Promise<string | null> => {
+  const projectRelative = decodeRelativePath(projectId)
+  const projectCandidate = secureJoin(baseDir, projectRelative)
+  if (projectCandidate) {
+    try {
+      const stats = await fs.stat(projectCandidate)
+      if (stats.isDirectory()) {
+        return projectCandidate
+      }
+    } catch (error) {
+      // ignore
+    }
+  }
+
+  const clipRelative = decodeRelativePath(clipId)
+  const clipCandidate = secureJoin(baseDir, clipRelative)
+  if (clipCandidate) {
+    const projectDir = path.dirname(path.dirname(clipCandidate))
+    try {
+      const stats = await fs.stat(projectDir)
+      if (stats.isDirectory()) {
+        return projectDir
+      }
+    } catch (error) {
+      // ignore
+    }
+  }
+
+  return null
+}
+
+const listProjectSourceCandidates = async (projectDir: string): Promise<string[]> => {
+  let entries: string[]
+  try {
+    entries = await fs.readdir(projectDir)
+  } catch (error) {
+    return []
+  }
+
+  const mp4Files: string[] = []
+  for (const entry of entries) {
+    const candidate = path.join(projectDir, entry)
+    if (containsShortsSegment(candidate)) {
+      continue
+    }
+    try {
+      const stats = await fs.stat(candidate)
+      if (!stats.isFile()) {
+        continue
+      }
+    } catch (error) {
+      continue
+    }
+    if (!candidate.toLowerCase().endsWith('.mp4')) {
+      continue
+    }
+    mp4Files.push(candidate)
+  }
+
+  mp4Files.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+  return mp4Files
 }
 
 const ADJUSTMENT_METADATA_SUFFIX = '.adjust.json'
@@ -589,6 +726,64 @@ export const listAccountClips = async (accountId: string | null): Promise<Clip[]
 
   clips.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
   return clips
+}
+
+export const resolveProjectSourceVideo = async (
+  request: ResolveProjectSourceRequest
+): Promise<ResolveProjectSourceResponse> => {
+  const baseDir = await resolveOutRoot()
+  if (!baseDir) {
+    return { status: 'error', message: 'Project library path is not configured.' }
+  }
+
+  const preferred = await ensureVideoFile(request.preferredPath ?? null)
+  if (preferred) {
+    return {
+      status: 'ok',
+      filePath: preferred,
+      fileUrl: pathToFileURL(preferred).toString(),
+      origin: 'preferred',
+      projectDir: path.dirname(preferred)
+    }
+  }
+
+  const projectDir = await findProjectDirectory(baseDir, request.projectId ?? null, request.clipId ?? null)
+  if (!projectDir) {
+    return { status: 'error', message: 'Unable to locate the project folder for this clip.' }
+  }
+
+  const canonicalPath = await ensureVideoFile(
+    path.join(projectDir, `${path.basename(projectDir)}.mp4`)
+  )
+  if (canonicalPath) {
+    return {
+      status: 'ok',
+      filePath: canonicalPath,
+      fileUrl: pathToFileURL(canonicalPath).toString(),
+      origin: 'canonical',
+      projectDir
+    }
+  }
+
+  const alternatives = await listProjectSourceCandidates(projectDir)
+  if (alternatives.length > 0) {
+    const chosen = alternatives[0]
+    return {
+      status: 'ok',
+      filePath: chosen,
+      fileUrl: pathToFileURL(chosen).toString(),
+      origin: 'discovered',
+      projectDir
+    }
+  }
+
+  const expected = path.join(projectDir, `${path.basename(projectDir)}.mp4`)
+  return {
+    status: 'missing',
+    expectedPath: expected,
+    projectDir,
+    triedPreferred: Boolean(request.preferredPath)
+  }
 }
 
 export default listAccountClips

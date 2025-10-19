@@ -20,6 +20,13 @@ import {
   type Clip,
   type SupportedPlatform
 } from '../types'
+import {
+  ensureCspAndElectronAllowLocalMedia,
+  prepareWindowedPlayback,
+  resolveOriginalSource,
+  type WindowedPlaybackController,
+  type WindowRangeWarning
+} from '../services/preview/adjustedPreview'
 
 type VideoPageLocationState = {
   clip?: Clip
@@ -154,6 +161,26 @@ const DEFAULT_CALL_TO_ACTION = 'Invite viewers to subscribe for more highlights.
 const DEFAULT_TAGS = 'clips, highlights, community'
 const DEFAULT_PLATFORM_NOTES = 'Share with the community playlist and pin on the channel page.'
 
+type AdjustedSourceState =
+  | { status: 'idle' }
+  | { status: 'loading'; key: string }
+  | {
+      status: 'ready'
+      key: string
+      fileUrl: string
+      filePath: string
+      origin: 'canonical' | 'preferred' | 'discovered'
+      projectDir: string | null
+    }
+  | {
+      status: 'missing'
+      key: string
+      expectedPath: string | null
+      projectDir: string | null
+      triedPreferred: boolean
+    }
+  | { status: 'error'; key: string; message: string }
+
 const VideoPage: FC = () => {
   const { id } = useParams<{ id: string }>()
   const location = useLocation()
@@ -258,6 +285,13 @@ const VideoPage: FC = () => {
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const [isVideoBuffering, setIsVideoBuffering] = useState(false)
+  const [adjustedSourceState, setAdjustedSourceState] = useState<AdjustedSourceState>({ status: 'idle' })
+  const adjustedPlaybackRef = useRef<WindowedPlaybackController | null>(null)
+  const [adjustedWarning, setAdjustedWarning] = useState<string | null>(null)
+  const [adjustedPlaybackError, setAdjustedPlaybackError] = useState<string | null>(null)
+  const [adjustedBuffering, setAdjustedBuffering] = useState(false)
+  const [pendingSourceOverride, setPendingSourceOverride] = useState<string | null>(null)
+  const playbackWindowRef = useRef({ start: previewTarget.start, end: previewTarget.end })
   const [saveSteps, setSaveSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
   const [title, setTitle] = useState<string>(sourceClip?.title ?? '')
   const [description, setDescription] = useState<string>(sourceClip?.description ?? '')
@@ -315,7 +349,7 @@ const VideoPage: FC = () => {
   const originalStart = clipState?.originalStartSeconds ?? 0
   const originalEnd =
     clipState?.originalEndSeconds ?? originalStart + (clipState?.durationSec ?? 10)
-  const supportsSourcePreview = clipState ? clipState.previewUrl !== clipState.playbackUrl : false
+  const supportsSourcePreview = Boolean(clipState)
 
   const sourceStartBound = 0
   const sourceEndBound = useMemo(() => {
@@ -339,10 +373,10 @@ const VideoPage: FC = () => {
   }, [clipState, minGap])
 
   useEffect(() => {
-    if (!supportsSourcePreview && previewMode !== 'rendered') {
+    if (!clipState && previewMode !== 'rendered') {
       setPreviewMode('rendered')
     }
-  }, [previewMode, supportsSourcePreview])
+  }, [clipState, previewMode])
 
   const applyUpdatedClip = useCallback(
     (updated: Clip) => {
@@ -1077,11 +1111,11 @@ const VideoPage: FC = () => {
   )
 
   const adjustedPreviewSrc = useMemo(() => {
-    if (!clipState) {
-      return ''
+    if (adjustedSourceState.status === 'ready') {
+      return adjustedSourceState.fileUrl
     }
-    return buildPreviewSrc(previewTarget, 'adjusted')
-  }, [buildPreviewSrc, clipState, previewTarget])
+    return ''
+  }, [adjustedSourceState])
 
   const originalPreviewRange = useMemo(() => {
     if (!clipState) {
@@ -1101,7 +1135,12 @@ const VideoPage: FC = () => {
     return buildPreviewSrc(originalPreviewRange, 'original')
   }, [buildPreviewSrc, clipState, originalPreviewRange])
 
-  const previewSourceIsFile = clipState ? clipState.previewUrl.startsWith('file://') : false
+  const previewSourceIsFile =
+    previewMode === 'adjusted'
+      ? adjustedSourceState.status === 'ready'
+      : clipState
+        ? clipState.previewUrl.startsWith('file://')
+        : false
 
   const currentPreviewRange = useMemo(() => {
     if (!clipState) {
@@ -1129,6 +1168,17 @@ const VideoPage: FC = () => {
   const previewStart = sanitisedPreviewRange.start
   const previewEnd = sanitisedPreviewRange.end
 
+  useEffect(() => {
+    playbackWindowRef.current = { start: previewStart, end: previewEnd }
+  }, [previewStart, previewEnd])
+
+  useEffect(() => {
+    if (!clipState) {
+      setAdjustedSourceState({ status: 'idle' })
+      setPendingSourceOverride(null)
+    }
+  }, [clipState])
+
   const activeVideoSrc =
     previewMode === 'rendered'
       ? renderedSrc
@@ -1141,9 +1191,86 @@ const VideoPage: FC = () => {
     ? `${clipState.id}-${previewMode}-${activeVideoSrc}`
     : `${previewMode}-${activeVideoSrc}`
 
+  const showVideoLoadingOverlay =
+    isVideoBuffering ||
+    (previewMode === 'adjusted' && (adjustedBuffering || adjustedSourceState.status === 'loading'))
+
+  const adjustedReadyPath =
+    adjustedSourceState.status === 'ready' ? adjustedSourceState.filePath : null
+  const adjustedMissingPath =
+    adjustedSourceState.status === 'missing'
+      ? adjustedSourceState.expectedPath ?? adjustedSourceState.projectDir
+      : null
+
   useEffect(() => {
     setIsVideoBuffering(false)
   }, [activeVideoSrc, previewMode])
+
+  useEffect(() => {
+    if (!clipState || previewMode !== 'adjusted') {
+      if (previewMode !== 'adjusted') {
+        setAdjustedBuffering(false)
+      }
+      return
+    }
+
+    ensureCspAndElectronAllowLocalMedia()
+    const key = clipState.videoId ?? clipState.id
+    setAdjustedSourceState((previous) => {
+      if (previous.status === 'ready' && previous.key === key && !pendingSourceOverride) {
+        return previous
+      }
+      return { status: 'loading', key }
+    })
+    setAdjustedPlaybackError(null)
+    setAdjustedWarning(null)
+
+    let cancelled = false
+    ;(async () => {
+      const result = await resolveOriginalSource({
+        clipId: clipState.id,
+        projectId: clipState.videoId ?? null,
+        accountId: clipState.accountId ?? null,
+        playbackUrl: clipState.playbackUrl,
+        previewUrl: clipState.previewUrl,
+        overridePath: pendingSourceOverride
+      })
+      if (cancelled) {
+        return
+      }
+      if (result.kind === 'ready') {
+        console.info('[adjusted-preview] source ready', {
+          clipId: clipState.id,
+          filePath: result.filePath,
+          start: playbackWindowRef.current.start,
+          end: playbackWindowRef.current.end
+        })
+        setAdjustedSourceState({
+          status: 'ready',
+          key,
+          fileUrl: result.fileUrl,
+          filePath: result.filePath,
+          origin: result.origin,
+          projectDir: result.projectDir ?? null
+        })
+      } else if (result.kind === 'missing') {
+        setAdjustedSourceState({
+          status: 'missing',
+          key,
+          expectedPath: result.expectedPath ?? null,
+          projectDir: result.projectDir ?? null,
+          triedPreferred: result.triedPreferred
+        })
+      } else {
+        setAdjustedSourceState({ status: 'error', key, message: result.message })
+      }
+      setPendingSourceOverride(null)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [clipState, pendingSourceOverride, playbackWindowRef, previewMode])
 
   useEffect(() => {
     const element = previewVideoRef.current
@@ -1153,6 +1280,86 @@ const VideoPage: FC = () => {
     element.volume = sharedVolume.volume
     element.muted = sharedVolume.muted
   }, [sharedVolume, videoKey])
+
+  useEffect(() => {
+    if (previewMode !== 'adjusted') {
+      adjustedPlaybackRef.current?.dispose()
+      adjustedPlaybackRef.current = null
+      setAdjustedBuffering(false)
+      return
+    }
+
+    const element = previewVideoRef.current
+    if (!element || adjustedSourceState.status !== 'ready') {
+      adjustedPlaybackRef.current?.dispose()
+      adjustedPlaybackRef.current = null
+      setAdjustedBuffering(false)
+      return
+    }
+
+    setAdjustedPlaybackError(null)
+
+    const controller = prepareWindowedPlayback(element, {
+      start: playbackWindowRef.current.start,
+      end: playbackWindowRef.current.end,
+      onRangeApplied: () => {
+        setAdjustedWarning(null)
+      },
+      onInvalidRange: (warning: WindowRangeWarning) => {
+        if (warning.reason === 'reversed') {
+          setAdjustedWarning('End time must come after the start. We reset playback to the clip start.')
+        } else {
+          setAdjustedWarning('Playback window adjusted to stay within the video length.')
+        }
+      },
+      onStatusChange: (status) => {
+        setAdjustedBuffering(status !== 'idle')
+      },
+      onEnded: () => {
+        if (clipState) {
+          console.info('[adjusted-preview] playback reached end', {
+            clipId: clipState.id,
+            start: playbackWindowRef.current.start,
+            end: playbackWindowRef.current.end
+          })
+        }
+      },
+      onError: (error) => {
+        console.error('[adjusted-preview] playback error', error)
+        setAdjustedPlaybackError(
+          `We couldn't play the original video (${error.message}). Try installing the necessary codecs or locating the file again.`
+        )
+      }
+    })
+
+    adjustedPlaybackRef.current = controller
+    controller.updateWindow(playbackWindowRef.current.start, playbackWindowRef.current.end)
+
+    return () => {
+      controller.dispose()
+      if (adjustedPlaybackRef.current === controller) {
+        adjustedPlaybackRef.current = null
+      }
+    }
+  }, [adjustedSourceState, clipState, playbackWindowRef, previewMode])
+
+  useEffect(() => {
+    if (previewMode !== 'adjusted') {
+      return
+    }
+    const controller = adjustedPlaybackRef.current
+    if (!controller) {
+      return
+    }
+    controller.updateWindow(previewStart, previewEnd)
+  }, [previewEnd, previewMode, previewStart])
+
+  useEffect(() => {
+    if (previewMode !== 'adjusted') {
+      setAdjustedWarning(null)
+      setAdjustedPlaybackError(null)
+    }
+  }, [previewMode])
 
   const handleVideoLoadStart = useCallback(() => {
     setIsVideoBuffering(true)
@@ -1182,8 +1389,29 @@ const VideoPage: FC = () => {
     setSharedVolume({ volume: element.volume, muted: element.muted })
   }, [setSharedVolume])
 
+  const handleLocateOriginalSource = useCallback(async () => {
+    if (!clipState) {
+      return
+    }
+    if (typeof window.api?.openVideoFile !== 'function') {
+      setAdjustedPlaybackError('File chooser is not available. Please locate the file manually in your project folder.')
+      return
+    }
+    try {
+      const selectedPath = await window.api.openVideoFile()
+      if (!selectedPath) {
+        return
+      }
+      setPendingSourceOverride(selectedPath)
+      setAdjustedSourceState({ status: 'loading', key: clipState.videoId ?? clipState.id })
+    } catch (error) {
+      console.error('[adjusted-preview] locate original source failed', error)
+      setAdjustedPlaybackError('We could not open the file picker. Please try again or select the file from your project folder.')
+    }
+  }, [clipState])
+
   const handleVideoLoadedMetadata = useCallback(() => {
-    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
+    if (!clipState || previewMode === 'rendered' || previewMode === 'adjusted' || !previewSourceIsFile) {
       return
     }
     const element = previewVideoRef.current
@@ -1196,7 +1424,7 @@ const VideoPage: FC = () => {
   }, [clipState, previewMode, previewSourceIsFile, previewStart])
 
   const handleVideoPlay = useCallback(() => {
-    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
+    if (!clipState || previewMode === 'rendered' || previewMode === 'adjusted' || !previewSourceIsFile) {
       return
     }
     const element = previewVideoRef.current
@@ -1209,7 +1437,7 @@ const VideoPage: FC = () => {
   }, [clipState, previewMode, previewSourceIsFile, previewStart])
 
   const handleVideoTimeUpdate = useCallback(() => {
-    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
+    if (!clipState || previewMode === 'rendered' || previewMode === 'adjusted' || !previewSourceIsFile) {
       return
     }
     const element = previewVideoRef.current
@@ -1223,7 +1451,7 @@ const VideoPage: FC = () => {
   }, [clipState, previewEnd, previewMode, previewSourceIsFile, previewStart])
 
   useEffect(() => {
-    if (!clipState || previewMode === 'rendered' || !previewSourceIsFile) {
+    if (!clipState || previewMode === 'rendered' || previewMode === 'adjusted' || !previewSourceIsFile) {
       return
     }
     const element = previewVideoRef.current
@@ -1480,7 +1708,7 @@ const VideoPage: FC = () => {
               >
                 Your browser does not support the video tag.
               </video>
-              {isVideoBuffering ? (
+              {showVideoLoadingOverlay ? (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/40">
                   <div
                     className="h-10 w-10 animate-spin rounded-full border-2 border-white/30 border-t-transparent"
@@ -1489,6 +1717,66 @@ const VideoPage: FC = () => {
                 </div>
               ) : null}
             </VideoPreviewStage>
+            {previewMode === 'adjusted' ? (
+              <div className="space-y-2">
+                {adjustedSourceState.status === 'missing' ? (
+                  <div className="flex flex-col gap-2 rounded-xl border border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] px-3 py-2 text-sm text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]">
+                    <p className="font-semibold">Original video not found</p>
+                    <p>
+                      We looked for the full-length download
+                      {adjustedMissingPath ? (
+                        <>
+                          {' '}
+                          at <code className="break-all text-xs">{adjustedMissingPath}</code>
+                        </>
+                      ) : null}
+                      , but it’s missing. Choose <strong>Locate file</strong> to point us to the correct video.
+                    </p>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={handleLocateOriginalSource}
+                        className="inline-flex items-center gap-2 rounded-lg border border-transparent bg-[color:var(--ring)] px-3 py-1.5 text-xs font-semibold text-[color:var(--accent-contrast)] shadow-[0_10px_18px_rgba(15,23,42,0.28)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--ring-strong)_75%,var(--ring))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)]"
+                      >
+                        Locate file
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                {adjustedSourceState.status === 'error' ? (
+                  <div className="rounded-xl border border-[color:color-mix(in_srgb,var(--warning-strong)_45%,var(--edge))] bg-[color:var(--warning-soft)] px-3 py-2 text-sm text-[color:var(--warning-contrast)]">
+                    <p className="font-semibold">Adjusted preview unavailable</p>
+                    <p className="mt-1">
+                      {adjustedSourceState.message}{' '}
+                      <button
+                        type="button"
+                        onClick={handleLocateOriginalSource}
+                        className="font-semibold text-[color:var(--ring)] underline-offset-2 hover:underline"
+                      >
+                        Locate file
+                      </button>{' '}
+                      to pick the correct source video.
+                    </p>
+                  </div>
+                ) : null}
+                {adjustedPlaybackError ? (
+                  <div className="rounded-xl border border-[color:color-mix(in_srgb,var(--warning-strong)_45%,var(--edge))] bg-[color:var(--warning-soft)] px-3 py-2 text-sm text-[color:var(--warning-contrast)]">
+                    <p className="font-semibold">Playback issue</p>
+                    <p className="mt-1">{adjustedPlaybackError}</p>
+                    {adjustedReadyPath ? (
+                      <p className="mt-1 text-xs opacity-80">
+                        File: <code className="break-all">{adjustedReadyPath}</code>
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+                {adjustedWarning ? (
+                  <div className="rounded-xl border border-[color:color-mix(in_srgb,var(--warning-strong)_45%,var(--edge))] bg-[color:var(--warning-soft)] px-3 py-2 text-xs text-[color:var(--warning-contrast)]">
+                    {adjustedWarning}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">

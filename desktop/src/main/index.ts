@@ -6,7 +6,8 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { pathToFileURL } from 'url'
 // Use Node.js path join to reference the icon file, as TypeScript does not support importing non-code assets.
 const icon = join(__dirname, '../../favicon.png')
-import { listAccountClips, resolveAccountClipsDirectory } from './clipLibrary'
+import { listAccountClips, resolveAccountClipsDirectory, resolveProjectSourceVideo } from './clipLibrary'
+import type { ResolveProjectSourceRequest } from '../types/preview'
 
 type NavigationCommand = 'back' | 'forward'
 
@@ -237,6 +238,7 @@ const registerIpcHandlers = (): void => {
   ipcMain.removeAllListeners('navigation:state')
   ipcMain.removeHandler('clips:list')
   ipcMain.removeHandler('clips:open-folder')
+  ipcMain.removeHandler('clips:resolve-source')
   ipcMain.removeHandler('open-video-file')
 
   ipcMain.on('ping', () => console.log('pong'))
@@ -268,6 +270,15 @@ const registerIpcHandlers = (): void => {
     } catch (error) {
       console.error('Failed to open clips folder', error)
       return false
+    }
+  })
+
+  ipcMain.handle('clips:resolve-source', async (_event, request: ResolveProjectSourceRequest) => {
+    try {
+      return await resolveProjectSourceVideo(request)
+    } catch (error) {
+      console.error('[clips:resolve-source] failed', error)
+      return { status: 'error', message: 'Unable to resolve the source video.' }
     }
   })
 
