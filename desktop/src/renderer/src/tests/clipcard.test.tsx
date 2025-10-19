@@ -49,9 +49,7 @@ describe('ClipCard', () => {
     const { container } = render(<ClipCard clip={clipWithoutThumbnail} onClick={() => {}} />)
 
     expect(container.querySelector('img')).toBeNull()
-    const video = container.querySelector('video')
-    expect(video).not.toBeNull()
-    expect(video?.getAttribute('src')).toBe(clipWithoutThumbnail.playbackUrl)
+    expect(screen.getByText('No thumbnail')).toBeInTheDocument()
   })
 
   it('shows an adjusted badge when the clip has been modified', () => {

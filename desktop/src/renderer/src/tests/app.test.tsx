@@ -26,6 +26,34 @@ vi.mock('react-router-dom', async () => {
   }
 })
 
+const uiStateContainer = {
+  value: {
+    activeTab: '/',
+    activeAccountId: null as string | null,
+    library: {
+      expandedAccountIds: [] as string[],
+      expandedProjectIds: [] as string[],
+      selectedClipId: null as string | null,
+      pageCounts: {} as Record<string, number>,
+      scrollTop: 0,
+      activeAccountId: null as string | null,
+      pageSize: 20,
+      accountScrollPositions: {} as Record<string, number>
+    }
+  }
+}
+
+const updateUiStateMock = vi.fn((updater: (prev: typeof uiStateContainer.value) => typeof uiStateContainer.value) => {
+  uiStateContainer.value = updater(uiStateContainer.value)
+})
+
+vi.mock('../state/uiState', () => ({
+  useUiState: () => ({
+    state: uiStateContainer.value,
+    updateState: updateUiStateMock
+  })
+}))
+
 vi.mock('../state/usePipelineProgress', () => ({
   __esModule: true,
   default: (options: any) => {
