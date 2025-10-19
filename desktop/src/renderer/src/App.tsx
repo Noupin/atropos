@@ -695,7 +695,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const handleUpdateAccount = useCallback(
     async (
       accountId: string,
-      payload: { active?: boolean; tone?: string | null }
+      payload: { active?: boolean; tone?: string | null; defaultLayoutId?: string | null }
     ) => {
       try {
         const account = await updateAccountApi(accountId, payload)
