@@ -1122,9 +1122,16 @@ const VideoPage: FC = () => {
       return { start: 0, end: 0 }
     }
     if (previewMode === 'adjusted') {
-      return trimmedPreviewState.status === 'ready'
-        ? trimmedPreviewState.applied
-        : previewTarget
+      if (trimmedPreviewState.status === 'ready') {
+        const { applied } = trimmedPreviewState
+        const target = previewTarget
+        const startAligned = Math.abs(applied.start - target.start) < 0.001
+        const endAligned = Math.abs(applied.end - target.end) < 0.001
+        if (startAligned && endAligned) {
+          return applied
+        }
+      }
+      return previewTarget
     }
     return { start: clipState.startSeconds, end: clipState.endSeconds }
   }, [clipState, previewMode, previewTarget, trimmedPreviewState])
@@ -1145,6 +1152,15 @@ const VideoPage: FC = () => {
   useEffect(() => {
     playbackWindowRef.current = { start: previewStart, end: previewEnd }
   }, [previewStart, previewEnd])
+
+  const releaseCurrentTrimmedToken = useCallback(() => {
+    const token = trimmedTokenRef.current
+    if (!token) {
+      return
+    }
+    trimmedTokenRef.current = null
+    void releaseTrimmedPreviewToken(token)
+  }, [])
 
   useEffect(() => {
     if (!clipState) {
@@ -1256,15 +1272,6 @@ const VideoPage: FC = () => {
     element.volume = sharedVolume.volume
     element.muted = sharedVolume.muted
   }, [sharedVolume, videoKey])
-
-  const releaseCurrentTrimmedToken = useCallback(() => {
-    const token = trimmedTokenRef.current
-    if (!token) {
-      return
-    }
-    trimmedTokenRef.current = null
-    void releaseTrimmedPreviewToken(token)
-  }, [])
 
   useEffect(() => {
     if (previewMode !== 'adjusted') {
