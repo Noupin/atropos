@@ -168,6 +168,7 @@ type AdjustedSourceState =
       status: 'ready'
       key: string
       fileUrl: string
+      mediaUrl: string
       filePath: string
       origin: 'canonical' | 'preferred' | 'discovered'
       projectDir: string | null
@@ -1112,7 +1113,7 @@ const VideoPage: FC = () => {
 
   const adjustedPreviewSrc = useMemo(() => {
     if (adjustedSourceState.status === 'ready') {
-      return adjustedSourceState.fileUrl
+      return adjustedSourceState.mediaUrl
     }
     return ''
   }, [adjustedSourceState])
@@ -1249,6 +1250,7 @@ const VideoPage: FC = () => {
           status: 'ready',
           key,
           fileUrl: result.fileUrl,
+          mediaUrl: result.mediaUrl,
           filePath: result.filePath,
           origin: result.origin,
           projectDir: result.projectDir ?? null

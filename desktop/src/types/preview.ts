@@ -11,6 +11,7 @@ export type ResolveProjectSourceSuccess = {
   fileUrl: string
   origin: 'canonical' | 'preferred' | 'discovered'
   projectDir: string | null
+  mediaToken?: string | null
 }
 
 export type ResolveProjectSourceMissing = {

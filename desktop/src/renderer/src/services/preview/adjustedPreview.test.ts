@@ -58,14 +58,16 @@ describe('adjustedPreview helpers', () => {
         filePath: '/projects/test/video.mp4',
         fileUrl: 'file:///projects/test/video.mp4',
         origin: 'canonical',
-        projectDir: '/projects/test'
+        projectDir: '/projects/test',
+        mediaToken: 'token-1'
       })
       .mockResolvedValueOnce({
         status: 'ok',
         filePath: '/projects/test/video.mp4',
         fileUrl: 'file:///projects/test/video.mp4',
         origin: 'preferred',
-        projectDir: '/projects/test'
+        projectDir: '/projects/test',
+        mediaToken: 'token-2'
       })
 
     const first = await resolveOriginalSource({
@@ -75,6 +77,9 @@ describe('adjustedPreview helpers', () => {
       playbackUrl: 'file:///projects/test/shorts/clip.mp4'
     })
     expect(first.kind).toBe('ready')
+    if (first.kind === 'ready') {
+      expect(first.mediaUrl).toBe('app://local-media/token-1')
+    }
     expect(resolver).toHaveBeenCalledWith({
       clipId: 'clip-1',
       projectId: 'project-1',
@@ -92,6 +97,9 @@ describe('adjustedPreview helpers', () => {
       playbackUrl: 'file:///projects/test/shorts/clip.mp4'
     })
     expect(second.kind).toBe('ready')
+    if (second.kind === 'ready') {
+      expect(second.mediaUrl).toBe('app://local-media/token-2')
+    }
     expect(resolver).toHaveBeenLastCalledWith({
       clipId: 'clip-1',
       projectId: 'project-1',
@@ -106,7 +114,8 @@ describe('adjustedPreview helpers', () => {
       filePath: '/projects/test/shorts/clip.mp4',
       fileUrl: 'file:///projects/test/shorts/clip.mp4',
       origin: 'discovered',
-      projectDir: '/projects/test'
+      projectDir: '/projects/test',
+      mediaToken: 'token-3'
     })
 
     const result = await resolveOriginalSource({
@@ -117,6 +126,29 @@ describe('adjustedPreview helpers', () => {
     })
 
     expect(result.kind).toBe('error')
+  })
+
+  it('falls back to the file URL when no media token is provided', async () => {
+    vi.spyOn(window.api!, 'resolveProjectSource').mockResolvedValue({
+      status: 'ok',
+      filePath: '/projects/test/video.mp4',
+      fileUrl: 'file:///projects/test/video.mp4',
+      origin: 'canonical',
+      projectDir: '/projects/test',
+      mediaToken: null
+    })
+
+    const result = await resolveOriginalSource({
+      clipId: 'clip-3',
+      projectId: 'project-3',
+      accountId: null,
+      playbackUrl: 'file:///projects/test/shorts/clip.mp4'
+    })
+
+    expect(result.kind).toBe('ready')
+    if (result.kind === 'ready') {
+      expect(result.mediaUrl).toBe('file:///projects/test/video.mp4')
+    }
   })
 
   it('waits for metadata before seeking and resumes playback afterwards', async () => {

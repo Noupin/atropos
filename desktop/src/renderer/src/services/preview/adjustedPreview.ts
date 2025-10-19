@@ -6,6 +6,7 @@ import type {
 const STORAGE_KEY = 'atropos.adjustedPreview.originalSources'
 const MIN_WINDOW_DURATION = 0.05
 const SEEK_DEBOUNCE_MS = 150
+const APP_MEDIA_PREFIX = 'app://local-media/'
 
 type PersistedSources = Record<string, string>
 
@@ -122,6 +123,7 @@ export type ResolvedOriginalSource =
   | {
       kind: 'ready'
       fileUrl: string
+      mediaUrl: string
       filePath: string
       origin: 'canonical' | 'preferred' | 'discovered'
       projectDir: string | null
@@ -180,7 +182,7 @@ export const resolveOriginalSource = async (
   }
 
   if (response.status === 'ok') {
-    const { fileUrl, filePath, origin, projectDir } = response
+    const { fileUrl, filePath, origin, projectDir, mediaToken } = response
     if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
       console.warn('[adjusted-preview] rejected remote source URL for adjusted preview', {
         clipId: params.clipId,
@@ -203,8 +205,10 @@ export const resolveOriginalSource = async (
         message: 'Adjusted preview could not find the full-length source video.'
       }
     }
+    const token = typeof mediaToken === 'string' && mediaToken.length > 0 ? mediaToken : null
+    const mediaUrl = token ? `${APP_MEDIA_PREFIX}${encodeURIComponent(token)}` : fileUrl
     rememberSourcePath(key, filePath)
-    return { kind: 'ready', fileUrl, filePath, origin, projectDir: projectDir ?? null }
+    return { kind: 'ready', fileUrl, mediaUrl, filePath, origin, projectDir: projectDir ?? null }
   }
 
   if (response.status === 'missing') {

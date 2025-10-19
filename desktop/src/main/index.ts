@@ -4,6 +4,7 @@ import { existsSync } from 'fs'
 import { join, resolve, dirname } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { pathToFileURL } from 'url'
+import { randomUUID } from 'crypto'
 // Use Node.js path join to reference the icon file, as TypeScript does not support importing non-code assets.
 const icon = join(__dirname, '../../favicon.png')
 import { listAccountClips, resolveAccountClipsDirectory, resolveProjectSourceVideo } from './clipLibrary'
@@ -30,6 +31,35 @@ type RendererResolution = {
 
 let rendererResolution: RendererResolution | null = null
 let rendererMissingAlerted = false
+
+const LOCAL_MEDIA_PREFIX = 'local-media/'
+const MAX_LOCAL_MEDIA_TOKENS = 256
+const localMediaTokens = new Map<string, { filePath: string; createdAt: number }>()
+
+const registerLocalMediaToken = (filePath: string): string => {
+  const token = randomUUID()
+  localMediaTokens.set(token, { filePath, createdAt: Date.now() })
+  if (localMediaTokens.size > MAX_LOCAL_MEDIA_TOKENS) {
+    const excess = localMediaTokens.size - MAX_LOCAL_MEDIA_TOKENS
+    const keys = Array.from(localMediaTokens.keys())
+    for (let index = 0; index < excess; index += 1) {
+      const key = keys[index]
+      if (key) {
+        localMediaTokens.delete(key)
+      }
+    }
+  }
+  return token
+}
+
+const resolveLocalMediaPath = (token: string): string | null => {
+  const entry = localMediaTokens.get(token)
+  if (!entry) {
+    return null
+  }
+  entry.createdAt = Date.now()
+  return entry.filePath
+}
 
 const VIDEO_FILE_FILTERS: FileFilter[] = [
   {
@@ -275,7 +305,12 @@ const registerIpcHandlers = (): void => {
 
   ipcMain.handle('clips:resolve-source', async (_event, request: ResolveProjectSourceRequest) => {
     try {
-      return await resolveProjectSourceVideo(request)
+      const response = await resolveProjectSourceVideo(request)
+      if (response.status === 'ok') {
+        const mediaToken = registerLocalMediaToken(response.filePath)
+        return { ...response, mediaToken }
+      }
+      return response
     } catch (error) {
       console.error('[clips:resolve-source] failed', error)
       return { status: 'error', message: 'Unable to resolve the source video.' }
@@ -450,6 +485,19 @@ app.whenReady().then(() => {
         console.error('[renderer-load] failed to decode app:// path', pathPart, error)
       }
       const sanitized = decodedPath.replace(/^\/+/, '')
+
+      if (sanitized.startsWith(LOCAL_MEDIA_PREFIX)) {
+        const token = sanitized.slice(LOCAL_MEDIA_PREFIX.length)
+        const mediaPath = resolveLocalMediaPath(token)
+        if (!mediaPath) {
+          console.error('[renderer-load] invalid local media token', token)
+          callback({ error: -6 })
+          return
+        }
+        callback(mediaPath)
+        return
+      }
+
       const relativePath = sanitized.length === 0 ? 'index.html' : sanitized
 
       if (!resolvedRootPath) {
