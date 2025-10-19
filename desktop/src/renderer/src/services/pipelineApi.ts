@@ -154,6 +154,7 @@ export const normaliseJobClip = (payload: UnknownRecord): Clip | null => {
       ? Math.max(originalStartSeconds, payload.original_end_seconds)
       : endSeconds
   const hasAdjustments = payload.has_adjustments === true
+  const layoutId = typeof payload.layout_id === 'string' ? payload.layout_id : null
 
   const clip: Clip = {
     id,
@@ -182,7 +183,8 @@ export const normaliseJobClip = (payload: UnknownRecord): Clip | null => {
     endSeconds,
     originalStartSeconds,
     originalEndSeconds,
-    hasAdjustments
+    hasAdjustments,
+    layoutId
   }
 
   return clip
@@ -191,6 +193,7 @@ export const normaliseJobClip = (payload: UnknownRecord): Clip | null => {
 export type ClipAdjustmentPayload = {
   startSeconds: number
   endSeconds: number
+  layoutId: string | null
 }
 
 export const fetchJobClip = async (jobId: string, clipId: string): Promise<Clip> => {
@@ -224,7 +227,8 @@ export const adjustJobClip = async (
     },
     body: JSON.stringify({
       start_seconds: adjustment.startSeconds,
-      end_seconds: adjustment.endSeconds
+      end_seconds: adjustment.endSeconds,
+      layout_id: adjustment.layoutId
     })
   })
 
