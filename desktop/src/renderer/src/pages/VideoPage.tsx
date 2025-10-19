@@ -20,12 +20,7 @@ import {
   type Clip,
   type SupportedPlatform
 } from '../types'
-import {
-  ensureCspAndElectronAllowLocalMedia,
-  normaliseWindowRange,
-  buildWindowedMediaUrl,
-  resolveOriginalSource
-} from '../services/preview/adjustedPreview'
+import { ensureCspAndElectronAllowLocalMedia, normaliseWindowRange, resolveOriginalSource } from '../services/preview/adjustedPreview'
 
 type VideoPageLocationState = {
   clip?: Clip
@@ -283,11 +278,18 @@ const VideoPage: FC = () => {
     end: sourceClip ? Math.max(sourceClip.startSeconds + minGap, sourceClip.endSeconds) : minGap
   }))
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
+  const playbackWindowRef = useRef({ start: 0, end: MIN_PREVIEW_DURATION })
+  const pendingSeekToWindowRef = useRef(false)
+  const dispatchedEndForWindowRef = useRef(false)
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const [isVideoBuffering, setIsVideoBuffering] = useState(false)
   const [adjustedSourceState, setAdjustedSourceState] = useState<AdjustedSourceState>({ status: 'idle' })
   const [adjustedWarning, setAdjustedWarning] = useState<string | null>(null)
   const [adjustedPlaybackError, setAdjustedPlaybackError] = useState<string | null>(null)
+  const [adjustedVirtualTimeline, setAdjustedVirtualTimeline] = useState({
+    current: 0,
+    duration: MIN_PREVIEW_DURATION
+  })
   const [pendingSourceOverride, setPendingSourceOverride] = useState<string | null>(null)
   const [saveSteps, setSaveSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
   const [title, setTitle] = useState<string>(sourceClip?.title ?? '')
@@ -1107,11 +1109,51 @@ const VideoPage: FC = () => {
     if (previewMode !== 'adjusted' || adjustedSourceState.status !== 'ready') {
       return null
     }
-    return buildWindowedMediaUrl(adjustedSourceState.mediaUrl, sanitisedPreviewRange)
-  }, [adjustedSourceState, previewMode, sanitisedPreviewRange])
+    return adjustedSourceState.mediaUrl
+  }, [adjustedSourceState, previewMode])
 
   const previewStart = sanitisedPreviewRange.start
   const previewEnd = sanitisedPreviewRange.end
+
+  useEffect(() => {
+    if (previewMode !== 'adjusted') {
+      setAdjustedVirtualTimeline((previous) =>
+        previous.current === 0 && previous.duration === MIN_PREVIEW_DURATION
+          ? previous
+          : { current: 0, duration: MIN_PREVIEW_DURATION }
+      )
+      return
+    }
+    const start = previewStart
+    const end = Math.max(start + MIN_PREVIEW_DURATION, previewEnd)
+    playbackWindowRef.current = { start, end }
+    dispatchedEndForWindowRef.current = false
+    const duration = Math.max(MIN_PREVIEW_DURATION, end - start)
+    setAdjustedVirtualTimeline((previous) =>
+      Math.abs(previous.current) < 1e-2 && Math.abs(previous.duration - duration) < 1e-2
+        ? previous
+        : { current: 0, duration }
+    )
+
+    const element = previewVideoRef.current
+    if (!element) {
+      pendingSeekToWindowRef.current = true
+      return
+    }
+
+    pendingSeekToWindowRef.current = true
+    if (element.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      if (Math.abs(element.currentTime - start) > 0.02) {
+        try {
+          element.currentTime = start
+        } catch (error) {
+          console.warn('[adjusted-preview] failed to seek to window start', error)
+        }
+      } else {
+        pendingSeekToWindowRef.current = false
+      }
+    }
+  }, [previewEnd, previewMode, previewStart])
 
   useEffect(() => {
     if (previewMode !== 'adjusted') {
@@ -1132,6 +1174,9 @@ const VideoPage: FC = () => {
     if (!clipState) {
       setAdjustedSourceState({ status: 'idle' })
       setPendingSourceOverride(null)
+      pendingSeekToWindowRef.current = false
+      dispatchedEndForWindowRef.current = false
+      setAdjustedVirtualTimeline({ current: 0, duration: MIN_PREVIEW_DURATION })
     }
   }, [clipState])
 
@@ -1147,6 +1192,15 @@ const VideoPage: FC = () => {
   const videoKey = clipState
     ? `${clipState.id}-${previewMode}-${activeVideoSrc}`
     : `${previewMode}-${activeVideoSrc}`
+
+  useEffect(() => {
+    if (previewMode !== 'adjusted') {
+      return
+    }
+    pendingSeekToWindowRef.current = true
+    dispatchedEndForWindowRef.current = false
+    setAdjustedVirtualTimeline((previous) => ({ ...previous, current: 0 }))
+  }, [previewMode, videoKey])
 
   const showVideoLoadingOverlay =
     isVideoBuffering || (previewMode === 'adjusted' && adjustedSourceState.status === 'loading')
@@ -1165,7 +1219,7 @@ const VideoPage: FC = () => {
   useEffect(() => {
     if (!clipState || previewMode !== 'adjusted') {
       if (previewMode !== 'adjusted') {
-        setAdjustedBuffering(false)
+        setIsVideoBuffering(false)
       }
       return
     }
@@ -1259,6 +1313,25 @@ const VideoPage: FC = () => {
     setIsVideoBuffering(true)
   }, [])
 
+  const updateVirtualTimeline = useCallback(
+    (element: HTMLVideoElement) => {
+      const { start, end } = playbackWindowRef.current
+      const windowDuration = Math.max(MIN_PREVIEW_DURATION, end - start)
+      const clampedCurrent = Math.min(windowDuration, Math.max(0, element.currentTime - start))
+      setAdjustedVirtualTimeline((previous) => {
+        if (
+          Math.abs(previous.current - clampedCurrent) < 1e-2 &&
+          Math.abs(previous.duration - windowDuration) < 1e-2
+        ) {
+          return previous
+        }
+        return { current: clampedCurrent, duration: windowDuration }
+      })
+      return { start, end, windowDuration, clampedCurrent }
+    },
+    []
+  )
+
   const handleVideoError = useCallback(() => {
     setIsVideoBuffering(false)
     if (previewMode !== 'adjusted') {
@@ -1272,16 +1345,120 @@ const VideoPage: FC = () => {
     )
   }, [previewMode])
 
+  const handleVideoLoadedMetadata = useCallback(() => {
+    if (previewMode !== 'adjusted') {
+      return
+    }
+    const element = previewVideoRef.current
+    if (!element) {
+      return
+    }
+    dispatchedEndForWindowRef.current = false
+    const { start } = playbackWindowRef.current
+    if (Math.abs(element.currentTime - start) > 0.02) {
+      pendingSeekToWindowRef.current = true
+      try {
+        element.currentTime = start
+      } catch (error) {
+        console.warn('[adjusted-preview] failed to apply playback window on metadata', error)
+      }
+    } else {
+      pendingSeekToWindowRef.current = false
+    }
+    updateVirtualTimeline(element)
+  }, [previewMode, updateVirtualTimeline])
+
+  const handleVideoTimeUpdate = useCallback(() => {
+    if (previewMode !== 'adjusted') {
+      return
+    }
+    const element = previewVideoRef.current
+    if (!element) {
+      return
+    }
+    const { start, end, windowDuration, clampedCurrent } = updateVirtualTimeline(element)
+    if (pendingSeekToWindowRef.current && Math.abs(element.currentTime - start) <= 0.02) {
+      pendingSeekToWindowRef.current = false
+    }
+    if (element.currentTime < start - 0.05) {
+      element.currentTime = start
+      return
+    }
+    if (element.currentTime > end + 0.05) {
+      element.currentTime = end
+    }
+    if (element.currentTime >= end - 0.02 || clampedCurrent >= windowDuration - 0.02) {
+      if (!dispatchedEndForWindowRef.current) {
+        dispatchedEndForWindowRef.current = true
+        element.pause()
+        if (Math.abs(element.currentTime - end) > 0.02) {
+          element.currentTime = end
+        }
+        setAdjustedVirtualTimeline((previous) =>
+          Math.abs(previous.current - windowDuration) < 1e-2 &&
+          Math.abs(previous.duration - windowDuration) < 1e-2
+            ? previous
+            : { current: windowDuration, duration: windowDuration }
+        )
+        setTimeout(() => {
+          handleVideoEnded()
+        }, 0)
+      }
+      return
+    }
+    dispatchedEndForWindowRef.current = false
+  }, [handleVideoEnded, previewMode, updateVirtualTimeline])
+
+  const handleVideoSeeking = useCallback(() => {
+    if (previewMode !== 'adjusted') {
+      return
+    }
+    const element = previewVideoRef.current
+    if (!element) {
+      return
+    }
+    const { start, end } = playbackWindowRef.current
+    if (element.currentTime < start) {
+      element.currentTime = start
+      return
+    }
+    if (element.currentTime > end) {
+      element.currentTime = end
+    }
+  }, [previewMode])
+
+  const handleVideoPlay = useCallback(() => {
+    if (previewMode !== 'adjusted') {
+      return
+    }
+    dispatchedEndForWindowRef.current = false
+    const element = previewVideoRef.current
+    if (!element) {
+      return
+    }
+    const { start } = playbackWindowRef.current
+    if (element.currentTime < start - 0.05) {
+      element.currentTime = start
+    }
+  }, [previewMode])
+
   const handleVideoEnded = useCallback(() => {
     if (previewMode !== 'adjusted' || !clipState) {
       return
     }
+    const { start, end } = playbackWindowRef.current
+    const windowDuration = Math.max(MIN_PREVIEW_DURATION, end - start)
+    setAdjustedVirtualTimeline((previous) =>
+      Math.abs(previous.current - windowDuration) < 1e-2 && Math.abs(previous.duration - windowDuration) < 1e-2
+        ? previous
+        : { current: windowDuration, duration: windowDuration }
+    )
     console.info('[adjusted-preview] playback reached end', {
       clipId: clipState.id,
-      start: previewStart,
-      end: previewEnd
+      start,
+      end
     })
-  }, [clipState, previewEnd, previewMode, previewStart])
+  }, [clipState, previewMode])
 
   const handleVideoVolumeChange = useCallback(() => {
     const element = previewVideoRef.current
@@ -1534,11 +1711,15 @@ const VideoPage: FC = () => {
                 playsInline
                 preload="metadata"
                 onLoadStart={handleVideoLoadStart}
+                onLoadedMetadata={handleVideoLoadedMetadata}
                 onCanPlay={handleVideoCanPlay}
                 onPlaying={handleVideoPlaying}
                 onWaiting={handleVideoWaiting}
                 onError={handleVideoError}
                 onEnded={handleVideoEnded}
+                onTimeUpdate={handleVideoTimeUpdate}
+                onSeeking={handleVideoSeeking}
+                onPlay={handleVideoPlay}
                 onVolumeChange={handleVideoVolumeChange}
                 className="h-full w-auto max-h-full max-w-full bg-black object-contain"
               >
@@ -1550,6 +1731,12 @@ const VideoPage: FC = () => {
                     className="h-10 w-10 animate-spin rounded-full border-2 border-white/30 border-t-transparent"
                     aria-hidden
                   />
+                </div>
+              ) : null}
+              {previewMode === 'adjusted' ? (
+                <div className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-black/60 px-3 py-1 text-xs font-semibold text-white">
+                  {formatDuration(Math.max(0, adjustedVirtualTimeline.current))} /{' '}
+                  {formatDuration(Math.max(MIN_PREVIEW_DURATION, adjustedVirtualTimeline.duration))}
                 </div>
               ) : null}
             </VideoPreviewStage>

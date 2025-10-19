@@ -307,14 +307,3 @@ export const normaliseWindowRange = (
   }
 }
 
-const formatTime = (value: number): string => value.toFixed(3)
-
-export const buildWindowedMediaUrl = (
-  mediaUrl: string,
-  range: { start: number; end: number }
-): string => {
-  const hashIndex = mediaUrl.indexOf('#')
-  const base = hashIndex >= 0 ? mediaUrl.slice(0, hashIndex) : mediaUrl
-  return `${base}#t=${formatTime(range.start)},${formatTime(range.end)}`
-}
-

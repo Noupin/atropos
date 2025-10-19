@@ -1,10 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
-import {
-  ensureCspAndElectronAllowLocalMedia,
-  normaliseWindowRange,
-  buildWindowedMediaUrl,
-  resolveOriginalSource
-} from './adjustedPreview'
+import { ensureCspAndElectronAllowLocalMedia, normaliseWindowRange, resolveOriginalSource } from './adjustedPreview'
 
 const buildMockWindow = () => {
   const listeners = new Map<string, (event: Event) => void>()
@@ -154,14 +149,6 @@ describe('adjustedPreview helpers', () => {
     expect(outOfBounds.range.start).toBeLessThanOrEqual(30)
     expect(outOfBounds.range.end).toBeCloseTo(30)
     expect(outOfBounds.warning?.reason).toBe('out_of_bounds')
-  })
-
-  it('builds media fragment URLs for virtual sub-clips', () => {
-    const url = buildWindowedMediaUrl('app://local-media/token', { start: 3, end: 7.5 })
-    expect(url).toBe('app://local-media/token#t=3.000,7.500')
-
-    const withFragment = buildWindowedMediaUrl('file:///video.mp4#hash', { start: 0, end: 2.25 })
-    expect(withFragment).toBe('file:///video.mp4#t=0.000,2.250')
   })
 
   it('adds file:// and app:// to the CSP media-src directive when missing', () => {
