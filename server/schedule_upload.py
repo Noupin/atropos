@@ -16,6 +16,7 @@ import os
 import shutil
 
 from upload_all import run
+from common.output_dirs import GENERAL_ACCOUNT_DIRECTORY, resolve_account_output_dir
 
 
 def get_out_root() -> Path:
@@ -78,11 +79,12 @@ def list_accounts(base: Path | None = None) -> list[str | None]:
 
     accounts: list[str | None] = []
 
-    if any((p / "shorts").is_dir() for p in base.iterdir() if p.is_dir()):
+    general_dir = base / GENERAL_ACCOUNT_DIRECTORY
+    if general_dir.is_dir() and any((p / "shorts").is_dir() for p in general_dir.iterdir() if p.is_dir()):
         accounts.append(None)
 
     for d in base.iterdir():
-        if not d.is_dir():
+        if not d.is_dir() or d.name == GENERAL_ACCOUNT_DIRECTORY:
             continue
         if any((p / "shorts").is_dir() for p in d.iterdir() if p.is_dir()):
             accounts.append(d.name)
@@ -107,7 +109,7 @@ def main(account: str | None = None, platforms: Sequence[str] | None = None) -> 
     account = account or os.environ.get("ACCOUNT_NAME") or os.environ.get("ACCOUNT_KIND")
 
     out_root = get_out_root()
-    out_dir = out_root / account if account else out_root
+    out_dir = resolve_account_output_dir(out_root, account)
 
     clip = find_oldest_clip(out_dir)
     if not clip:

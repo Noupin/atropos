@@ -10,10 +10,11 @@ import {
 import type { FC } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PipelineProgress from '../components/PipelineProgress'
+import MarbleSelect from '../components/MarbleSelect'
 import { getBadgeClassName } from '../components/badgeStyles'
 import { BACKEND_MODE, getApiBaseUrl } from '../config/backend'
 import { createInitialPipelineSteps, PIPELINE_STEP_DEFINITIONS } from '../data/pipeline'
-import { TONE_LABELS } from '../constants/tone'
+import { TONE_LABELS, TONE_OPTIONS, type ToneValue } from '../constants/tone'
 import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
 import type { AccountSummary, HomePipelineState } from '../types'
@@ -42,7 +43,8 @@ type HomeProps = {
   accounts: AccountSummary[]
   onStartPipeline: (
     source: { url?: string | null; filePath?: string | null },
-    accountId: string,
+    accountId: string | null,
+    tone: ToneValue | null,
     reviewMode: boolean
   ) => Promise<void> | void
   onResumePipeline: () => Promise<void> | void
@@ -61,6 +63,7 @@ const Home: FC<HomeProps> = ({
   const [folderErrorMessage, setFolderErrorMessage] = useState<string | null>(null)
   const [isOpeningFolder, setIsOpeningFolder] = useState(false)
   const [fileSelectionError, setFileSelectionError] = useState<string | null>(null)
+  const [toneSelectionError, setToneSelectionError] = useState<string | null>(null)
   const [sourceMode, setSourceMode] = useState<SourceMode>(
     initialState.localFilePath ? 'file' : 'url'
   )
@@ -70,6 +73,7 @@ const Home: FC<HomeProps> = ({
   useEffect(() => {
     setState(initialState)
     setFileSelectionError(null)
+    setToneSelectionError(null)
   }, [initialState])
 
   useEffect(() => {
@@ -104,6 +108,7 @@ const Home: FC<HomeProps> = ({
     clips,
     selectedClipId,
     selectedAccountId,
+    selectedTone,
     accountError,
     activeJobId,
     reviewMode,
@@ -119,6 +124,12 @@ const Home: FC<HomeProps> = ({
   useEffect(() => {
     setFolderMessage(null)
     setFolderErrorMessage(null)
+  }, [selectedAccountId])
+
+  useEffect(() => {
+    if (selectedAccountId) {
+      setToneSelectionError(null)
+    }
   }, [selectedAccountId])
 
   const availableAccounts = useMemo(
@@ -144,6 +155,13 @@ const Home: FC<HomeProps> = ({
     }
     return TONE_LABELS[toneKey] ?? toneKey
   }, [selectedAccount])
+
+  const generalToneLabel = useMemo(() => {
+    if (!selectedTone) {
+      return null
+    }
+    return TONE_LABELS[selectedTone] ?? selectedTone
+  }, [selectedTone])
 
   const resolveDownloadUrl = useCallback((path: string | null) => {
     if (!path) {
@@ -318,6 +336,14 @@ const Home: FC<HomeProps> = ({
     [updateState]
   )
 
+  const handleToneChange = useCallback(
+    (value: ToneValue) => {
+      updateState((prev) => ({ ...prev, selectedTone: value }))
+      setToneSelectionError(null)
+    },
+    [updateState]
+  )
+
   const handleSelectLocalFile = useCallback(() => {
     const picker = window?.api?.openVideoFile
     if (!picker) {
@@ -385,11 +411,14 @@ const Home: FC<HomeProps> = ({
     accessState.offlineRemainingMs
   ])
 
+  const isGeneralMode = !selectedAccountId
+
   const isStartDisabled =
     (isFileMode ? !localFilePath : trimmedVideoUrl.length === 0) ||
     isProcessing ||
     accessState.pendingConsumption ||
-    Boolean(offlineRestrictionMessage)
+    Boolean(offlineRestrictionMessage) ||
+    (isGeneralMode && !selectedTone)
 
   useEffect(() => {
     if (!offlineRestrictionMessage) {
@@ -425,14 +454,15 @@ const Home: FC<HomeProps> = ({
       setFileSelectionError(null)
 
       if (!accountId) {
-        hasError = true
-        updateState((prev) => ({
-          ...prev,
-          accountError:
-            availableAccounts.length === 0
-              ? 'Enable an account with an active platform before starting the pipeline.'
-              : 'Select an account from the top navigation to start processing.'
-        }))
+        if (!selectedTone) {
+          hasError = true
+          setToneSelectionError('Select a tone before starting without an account.')
+        } else {
+          setToneSelectionError(null)
+        }
+        updateState((prev) => ({ ...prev, accountError: null }))
+      } else {
+        setToneSelectionError(null)
       }
 
       if (isFileMode) {
@@ -471,7 +501,6 @@ const Home: FC<HomeProps> = ({
 
       if (
         hasError ||
-        !accountId ||
         (!hasLocalSource && !isUrlValid) ||
         (isFileMode && !hasLocalSource)
       ) {
@@ -545,7 +574,8 @@ const Home: FC<HomeProps> = ({
         return
       }
 
-      void onStartPipeline(sourcePayload, accountId, reviewMode)
+      const toneOverride = accountId ? null : selectedTone
+      void onStartPipeline(sourcePayload, accountId, toneOverride ?? null, reviewMode)
     },
     [
       availableAccounts.length,
@@ -603,7 +633,7 @@ const Home: FC<HomeProps> = ({
     }
 
     if (!selectedAccountId) {
-      setFolderErrorMessage('Select an account from the top navigation to open its clips folder.')
+      setFolderErrorMessage('General runs use the shared clips folder. Select an account to open its dedicated workspace.')
       setFolderMessage(null)
       return
     }
@@ -840,21 +870,64 @@ const Home: FC<HomeProps> = ({
                         Clips will render with this account&apos;s settings.
                       </p>
                     </div>
-                  ) : availableAccounts.length === 0 ? (
-                    <p className="text-xs text-[var(--muted)]">No active accounts available.</p>
                   ) : (
-                    <p className="text-xs text-[var(--muted)]">
-                      Select an account from the top navigation to start processing.
-                    </p>
+                    <div className="flex flex-col items-start gap-1 sm:items-end">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <span
+                          className={getBadgeClassName(
+                            'neutral',
+                            'max-w-full truncate text-[0.7rem] sm:text-xs'
+                          )}
+                        >
+                          General workspace
+                        </span>
+                        {generalToneLabel ? (
+                          <span
+                            className={getBadgeClassName(
+                              'info',
+                              'text-[0.7rem] sm:text-xs'
+                            )}
+                          >
+                            Tone · {generalToneLabel}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-xs text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
+                        Runs without an account use the shared prompt. Pick a tone below to guide the clips.
+                      </p>
+                      {availableAccounts.length === 0 ? (
+                        <p className="text-xs text-[var(--muted)]">
+                          Connect an account later to unlock account-specific folders.
+                        </p>
+                      ) : null}
+                    </div>
                   )}
                 </div>
               </div>
-              {availableAccounts.length === 0 ? (
-                <p className="text-xs text-[color:color-mix(in_srgb,var(--warning-strong)_72%,var(--accent-contrast))]">
-                  Enable an account with an active platform from your profile before starting the pipeline.
-                </p>
-              ) : null}
             </div>
+            {!selectedAccount ? (
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">
+                  Tone
+                </span>
+                <MarbleSelect
+                  aria-label="General tone selection"
+                  value={selectedTone ?? null}
+                  options={TONE_OPTIONS.map((option) => ({
+                    value: option.value,
+                    label: option.label
+                  }))}
+                  placeholder="Select a tone"
+                  onChange={(value) => handleToneChange(value as ToneValue)}
+                  error={Boolean(toneSelectionError)}
+                />
+                {toneSelectionError ? (
+                  <p className="text-xs font-medium text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
+                    {toneSelectionError}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-2">
                 <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]">

@@ -6,6 +6,7 @@ from pathlib import Path
 import os
 
 from schedule_upload import get_out_root, list_accounts
+from common.output_dirs import resolve_account_output_dir
 
 CRON_FILE = Path(__file__).resolve().parent.parent / "docker" / "cron"
 
@@ -44,7 +45,7 @@ def count_videos(account: str | None = None, base: Path | None = None) -> int:
     """
 
     base = base or get_out_root()
-    out_dir = base / account if account else base
+    out_dir = resolve_account_output_dir(base, account)
     if not out_dir.exists():
         return 0
     count = 0

@@ -38,6 +38,7 @@ interface ProjectMetadata {
 const CLIP_FILENAME_PATTERN = /^clip_(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)(?:_r(\d+(?:\.\d+)?))?$/i
 const FULL_VIDEO_PATTERN = /^full video:\s*(https?:\/\/\S+)/i
 const CREDIT_PATTERN = /^credit:\s*(.+)$/i
+const GENERAL_ACCOUNT_DIRECTORY = 'general'
 const DATE_SUFFIX_PATTERN = /_(\d{8})$/
 const TIME_COMPONENT_PATTERN = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)(?:s)?)?$/
 
@@ -671,7 +672,9 @@ export const resolveAccountClipsDirectory = async (
     return null
   }
 
-  const accountDir = accountId ? path.join(base, accountId) : base
+  const accountDir = accountId
+    ? path.join(base, accountId)
+    : path.join(base, GENERAL_ACCOUNT_DIRECTORY)
   try {
     const stats = await fs.stat(accountDir)
     if (stats.isDirectory()) {

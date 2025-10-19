@@ -40,6 +40,7 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
   clips: [],
   selectedClipId: null,
   selectedAccountId: AVAILABLE_ACCOUNT.id,
+  selectedTone: null,
   accountError: null,
   activeJobId: null,
   reviewMode: false,

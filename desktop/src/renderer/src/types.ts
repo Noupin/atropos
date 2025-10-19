@@ -1,3 +1,5 @@
+import type { ToneValue } from './constants/tone'
+
 export interface Clip {
   id: string
   title: string
@@ -140,6 +142,7 @@ export interface HomePipelineState {
   clips: Clip[]
   selectedClipId: string | null
   selectedAccountId: string | null
+  selectedTone: ToneValue | null
   accountError: string | null
   activeJobId: string | null
   reviewMode: boolean

@@ -12,11 +12,12 @@ from fastapi.testclient import TestClient
 
 import server.app
 from server.app import app
+from server.library import DEFAULT_ACCOUNT_PLACEHOLDER
 
 
-def _create_clip_structure(base: Path) -> tuple[str, Path]:
-    account_id = "account-one"
-    project_dir = base / account_id / "Amazing_Project_20240101"
+def _create_clip_structure(base: Path, account_id: str | None = "account-one") -> tuple[str | None, Path]:
+    account_segment = account_id if account_id is not None else "general"
+    project_dir = base / account_segment / "Amazing_Project_20240101"
     shorts_dir = project_dir / "shorts"
     shorts_dir.mkdir(parents=True)
 
@@ -131,6 +132,29 @@ def test_list_account_clips(monkeypatch, tmp_path):
     assert clip["preview_url"].endswith(f"/api/accounts/{account_id}/clips/{clip['id']}/preview")
     assert clip["thumbnail_url"].endswith(f"/api/accounts/{account_id}/clips/{clip['id']}/thumbnail")
 
+
+def test_list_default_account_clips(monkeypatch, tmp_path):
+    out_root = tmp_path / "out"
+    monkeypatch.setenv("OUT_ROOT", str(out_root))
+    account_id, clip_path = _create_clip_structure(out_root, account_id=None)
+
+    assert account_id is None
+
+    client = TestClient(app)
+    response = client.get(f"/api/accounts/{DEFAULT_ACCOUNT_PLACEHOLDER}/clips")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload, list)
+    assert len(payload) == 1
+    clip = payload[0]
+    assert clip["account"] is None
+    project_relative = clip_path.parent.parent.relative_to(out_root)
+    expected_video_id = base64.urlsafe_b64encode(project_relative.as_posix().encode("utf-8")).decode("ascii").rstrip("=")
+    assert clip["video_id"] == expected_video_id
+    assert clip["playback_url"].endswith(
+        f"/api/accounts/{DEFAULT_ACCOUNT_PLACEHOLDER}/clips/{clip['id']}/video"
+    )
 
 def test_paginated_clips_endpoint(monkeypatch, tmp_path):
     out_root = tmp_path / "out"

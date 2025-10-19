@@ -141,6 +141,7 @@ const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePip
   clips: [],
   selectedClipId: null,
   selectedAccountId: null,
+  selectedTone: null,
   accountError: null,
   activeJobId: null,
   reviewMode: false,
@@ -181,7 +182,7 @@ afterEach(() => {
 })
 
 describe('Home account selection', () => {
-  it('requires an account selection before starting processing', () => {
+  it('requires a tone selection before starting without an account', () => {
     const startPipelineSpy = vi.fn()
     renderHome({
       initialState: createInitialState(),
@@ -197,14 +198,7 @@ describe('Home account selection', () => {
     expect(form).not.toBeNull()
     fireEvent.submit(form as HTMLFormElement)
 
-    expect(
-      screen.getByText((content, element) => {
-        return (
-          element?.id === 'account-error' &&
-          /select an account from the top navigation to start processing/i.test(content)
-        )
-      })
-    ).toBeInTheDocument()
+    expect(screen.getByText(/select a tone before starting without an account/i)).toBeInTheDocument()
     expect(startPipelineSpy).not.toHaveBeenCalled()
   })
 
@@ -252,7 +246,7 @@ describe('Home account selection', () => {
     fireEvent.submit(form as HTMLFormElement)
 
     await waitFor(() => expect(startPipelineSpy).toHaveBeenCalledTimes(1))
-    expect(startPipelineSpy).toHaveBeenCalledWith({ url: videoUrl }, accountId, false)
+    expect(startPipelineSpy).toHaveBeenCalledWith({ url: videoUrl }, accountId, null, false)
   })
 
   it('prefers a selected local file over the pasted URL', async () => {
@@ -287,6 +281,7 @@ describe('Home account selection', () => {
       expect(startPipelineSpy).toHaveBeenCalledWith(
         { filePath: '/Users/operator/video.mp4' },
         AVAILABLE_ACCOUNT.id,
+        null,
         false
       )
     } finally {
@@ -302,9 +297,9 @@ describe('Home account selection', () => {
       accounts: [INACTIVE_ACCOUNT, ACCOUNT_WITHOUT_PLATFORMS, ACCOUNT_WITH_DISABLED_PLATFORM]
     })
 
-    expect(screen.getByText(/no active accounts available/i)).toBeInTheDocument()
+    expect(screen.getByText(/general workspace/i)).toBeInTheDocument()
     expect(
-      screen.getByText(/enable an account with an active platform from your profile/i)
+      screen.getByText(/connect an account later to unlock account-specific folders/i)
     ).toBeInTheDocument()
   })
 

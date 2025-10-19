@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from fastapi import HTTPException, status
 
 from schedule_upload import get_out_root
+from common.output_dirs import resolve_account_output_dir
 from helpers.media import probe_media_duration
 
 LOGGER = logging.getLogger(__name__)
@@ -599,7 +600,7 @@ def _build_clip(
 
 def list_account_clips_sync(account_id: Optional[str]) -> List[LibraryClip]:
     base = get_out_root()
-    account_dir = base / account_id if account_id else base
+    account_dir = resolve_account_output_dir(base, account_id)
     if not account_dir.exists() or not account_dir.is_dir():
         return []
     projects = _find_project_directories(account_dir)
@@ -731,7 +732,7 @@ def list_account_clips(account_id: Optional[str]) -> asyncio.Future[List[Library
 
 def resolve_clip_video_path(account_id: Optional[str], clip_id: str) -> Path:
     base = get_out_root()
-    target_account = base / account_id if account_id else base
+    target_account = resolve_account_output_dir(base, account_id)
     relative = _decode_clip_id(clip_id)
     clip_path = base / relative
     try:

@@ -38,7 +38,8 @@ type UsePipelineProgressOptions = {
 type UsePipelineProgressResult = {
   startPipeline: (
     source: { url?: string | null; filePath?: string | null },
-    accountId: string,
+    accountId: string | null,
+    tone: string | null,
     reviewMode: boolean
   ) => Promise<void>
   resumePipeline: () => Promise<void>
@@ -699,7 +700,8 @@ export const usePipelineProgress = ({
   const startPipeline = useCallback(
     async (
       source: { url?: string | null; filePath?: string | null },
-      accountId: string,
+      accountId: string | null,
+      tone: string | null,
       reviewMode: boolean
     ) => {
       if (isMockBackend) {
@@ -731,11 +733,12 @@ export const usePipelineProgress = ({
       finalizeTriggeredRef.current = false
 
       try {
-        const toneOverride = availableAccounts.find((account) => account.id === accountId)?.tone ?? null
+        const toneOverride =
+          tone ?? availableAccounts.find((account) => account.id === accountId)?.tone ?? null
         const { jobId } = await startPipelineJob({
           url: source.url ?? null,
           filePath: source.filePath ?? null,
-          account: accountId,
+          account: accountId ?? null,
           tone: toneOverride,
           reviewMode
         })

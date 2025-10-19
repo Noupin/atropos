@@ -88,6 +88,7 @@ from steps.candidates import ClipCandidate
 from helpers.cleanup import cleanup_project_dir
 from common.caption_utils import prepare_hashtags
 from helpers.hashtags import generate_hashtag_strings
+from common.output_dirs import ensure_account_output_dir
 
 
 GENERIC_HASHTAGS = ["foryou", "fyp", "viral", "trending"]
@@ -300,9 +301,8 @@ def process_video(
     emit_log(f"File Name: {non_suffix_filename}")
 
     # Create a dedicated output directory for this run
-    base_output_dir = Path(__file__).resolve().parent.parent / "out"
-    if account:
-        base_output_dir /= account
+    base_root = Path(__file__).resolve().parent.parent / "out"
+    base_output_dir = ensure_account_output_dir(base_root, account)
     project_dir = base_output_dir / non_suffix_filename
     project_dir.mkdir(parents=True, exist_ok=True)
 

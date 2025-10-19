@@ -260,6 +260,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     clips: [],
     selectedClipId: null,
     selectedAccountId: null,
+    selectedTone: null,
     accountError: null,
     activeJobId: null,
     reviewMode: false,
