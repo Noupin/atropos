@@ -157,6 +157,23 @@ export type ResolveOriginalSourceParams = {
   overridePath?: string | null
 }
 
+const urlsReferToSameResource = (first: string, second: string): boolean => {
+  if (first === second) {
+    return true
+  }
+  try {
+    const parsedFirst = new URL(first)
+    const parsedSecond = new URL(second)
+    return (
+      parsedFirst.protocol === parsedSecond.protocol &&
+      parsedFirst.hostname === parsedSecond.hostname &&
+      parsedFirst.pathname === parsedSecond.pathname
+    )
+  } catch (error) {
+    return false
+  }
+}
+
 const invokeResolveProjectSource = async (
   request: ResolveProjectSourceRequest
 ): Promise<ResolveProjectSourceResponse> => {
@@ -203,6 +220,18 @@ export const resolveOriginalSource = async (
         message: 'Adjusted preview requires a local video file. Please locate the original download.'
       }
     }
+    if (params.previewUrl && urlsReferToSameResource(fileUrl, params.previewUrl)) {
+      console.warn('[adjusted-preview] refused preview clip as original source', {
+        clipId: params.clipId,
+        previewUrl: params.previewUrl,
+        fileUrl
+      })
+      forgetSourcePath(key)
+      return {
+        kind: 'error',
+        message: 'Adjusted preview needs the full-length original video, not the exported clip.'
+      }
+    }
     if (params.playbackUrl && fileUrl === params.playbackUrl) {
       console.warn('[adjusted-preview] refused rendered short as original source', {
         clipId: params.clipId,
@@ -246,6 +275,7 @@ export type WindowedPlaybackStatus = 'idle' | 'loading' | 'seeking'
 export type WindowedPlaybackOptions = {
   start: number
   end: number
+  sourceOffset?: number
   onRangeApplied?: (range: { start: number; end: number }) => void
   onInvalidRange?: (warning: WindowRangeWarning) => void
   onStatusChange?: (status: WindowedPlaybackStatus) => void
@@ -254,7 +284,7 @@ export type WindowedPlaybackOptions = {
 }
 
 export type WindowedPlaybackController = {
-  updateWindow: (start: number, end: number) => void
+  updateWindow: (start: number, end: number, offset?: number) => void
   dispose: () => void
 }
 
@@ -264,6 +294,10 @@ export const prepareWindowedPlayback = (
   video: HTMLVideoElement,
   options: WindowedPlaybackOptions
 ): WindowedPlaybackController => {
+  const toSafeOffset = (value: number | undefined): number =>
+    Number.isFinite(value) && value != null && value > 0 ? value : 0
+
+  let sourceOffset = toSafeOffset(options.sourceOffset)
   let requestedStart = toSafeTime(options.start)
   let requestedEnd = toSafeTime(options.end)
   let appliedStart = requestedStart
@@ -275,17 +309,21 @@ export const prepareWindowedPlayback = (
   let resumeAfterSeek = false
   let disposed = false
 
+  const toAbsoluteTime = (value: number): number => sourceOffset + value
+  const toRelativeTime = (value: number): number => value - sourceOffset
+
   const clampWithinWindow = (time: number): number => {
     if (!metadataLoaded) {
       return time
     }
     const epsilon = 0.002
     const safeEnd = appliedEnd - epsilon > appliedStart ? appliedEnd - epsilon : appliedStart
-    if (time < appliedStart) {
-      return appliedStart
+    const relativeTime = toRelativeTime(time)
+    if (relativeTime < appliedStart) {
+      return toAbsoluteTime(appliedStart)
     }
-    if (time > safeEnd) {
-      return safeEnd
+    if (relativeTime > safeEnd) {
+      return toAbsoluteTime(safeEnd)
     }
     return time
   }
@@ -317,7 +355,9 @@ export const prepareWindowedPlayback = (
     if (!Number.isFinite(knownDuration)) {
       return value
     }
-    return Math.min(Math.max(0, value), knownDuration)
+    const absolute = toAbsoluteTime(value)
+    const clampedAbsolute = Math.min(Math.max(0, absolute), knownDuration)
+    return Math.max(0, clampedAbsolute - sourceOffset)
   }
 
   const applyWindow = (start: number, end: number): void => {
@@ -373,7 +413,7 @@ export const prepareWindowedPlayback = (
           resumeAfterSeek = true
           video.pause()
         }
-        video.currentTime = appliedStart
+        video.currentTime = toAbsoluteTime(appliedStart)
       } catch (error) {
         options.onError?.(
           error instanceof Error
@@ -420,13 +460,13 @@ export const prepareWindowedPlayback = (
       video.pause()
       return
     }
-    const distance = Math.abs(video.currentTime - appliedStart)
+    const distance = Math.abs(video.currentTime - toAbsoluteTime(appliedStart))
     if (distance > 0.025) {
       resumeAfterSeek = true
       updateStatus('seeking')
       video.pause()
       try {
-        video.currentTime = appliedStart
+        video.currentTime = toAbsoluteTime(appliedStart)
       } catch (error) {
         options.onError?.(
           error instanceof Error
@@ -451,12 +491,13 @@ export const prepareWindowedPlayback = (
       }
       return
     }
-    if (video.currentTime >= appliedEnd - 0.01) {
+    const relativePosition = toRelativeTime(video.currentTime)
+    if (relativePosition >= appliedEnd - 0.01) {
       if (!video.paused) {
         video.pause()
       }
       try {
-        video.currentTime = appliedStart
+        video.currentTime = toAbsoluteTime(appliedStart)
       } catch (error) {
         // Ignore seek failures when finishing playback.
       }
@@ -502,7 +543,16 @@ export const prepareWindowedPlayback = (
   }
 
   return {
-    updateWindow: (start: number, end: number) => {
+    updateWindow: (start: number, end: number, offset?: number) => {
+      if (typeof offset === 'number' && Number.isFinite(offset)) {
+        const sanitizedOffset = toSafeOffset(offset)
+        if (sanitizedOffset !== sourceOffset) {
+          sourceOffset = sanitizedOffset
+          if (metadataLoaded) {
+            scheduleSeek()
+          }
+        }
+      }
       applyWindow(start, end)
     },
     dispose: () => {

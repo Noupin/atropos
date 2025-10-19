@@ -128,6 +128,27 @@ describe('adjustedPreview helpers', () => {
     expect(result.kind).toBe('error')
   })
 
+  it('rejects preview clip sources for adjusted preview', async () => {
+    vi.spyOn(window.api!, 'resolveProjectSource').mockResolvedValue({
+      status: 'ok',
+      filePath: '/projects/test/preview/clip.mp4',
+      fileUrl: 'file:///projects/test/preview/clip.mp4',
+      origin: 'discovered',
+      projectDir: '/projects/test',
+      mediaToken: 'token-4'
+    })
+
+    const result = await resolveOriginalSource({
+      clipId: 'clip-4',
+      projectId: 'project-4',
+      accountId: null,
+      playbackUrl: 'file:///projects/test/shorts/clip.mp4',
+      previewUrl: 'file:///projects/test/preview/clip.mp4'
+    })
+
+    expect(result.kind).toBe('error')
+  })
+
   it('falls back to the file URL when no media token is provided', async () => {
     vi.spyOn(window.api!, 'resolveProjectSource').mockResolvedValue({
       status: 'ok',
@@ -173,6 +194,27 @@ describe('adjustedPreview helpers', () => {
     video.dispatchEvent(new Event('seeked'))
     await Promise.resolve()
     expect(video.play).toHaveBeenCalled()
+
+    controller.dispose()
+  })
+
+  it('treats the source offset as the playback zero point', () => {
+    const video = new MockVideoElement()
+    video.readyState = 1
+    video.duration = 1_200
+    const controller = prepareWindowedPlayback(video as unknown as HTMLVideoElement, {
+      start: 0,
+      end: 30,
+      sourceOffset: 300
+    })
+
+    video.dispatchEvent(new Event('loadedmetadata'))
+    vi.advanceTimersByTime(200)
+    expect(video.currentTime).toBeCloseTo(300, 3)
+
+    controller.updateWindow(0, 45, 540)
+    vi.advanceTimersByTime(200)
+    expect(video.currentTime).toBeCloseTo(540, 3)
 
     controller.dispose()
   })

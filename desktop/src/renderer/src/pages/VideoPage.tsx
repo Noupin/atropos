@@ -276,7 +276,7 @@ const VideoPage: FC = () => {
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
-  const [previewMode, setPreviewMode] = useState<'adjusted' | 'original' | 'rendered'>(() =>
+  const [previewMode, setPreviewMode] = useState<'adjusted' | 'rendered'>(() =>
     getDefaultPreviewMode(sourceClip ?? null)
   )
   const [previewTarget, setPreviewTarget] = useState(() => ({
@@ -995,7 +995,7 @@ const VideoPage: FC = () => {
           clipState.originalEndSeconds
         )
       })
-      setPreviewMode(getDefaultPreviewMode(clipState) === 'adjusted' ? 'original' : 'rendered')
+      setPreviewMode(getDefaultPreviewMode(clipState) === 'adjusted' ? 'rendered' : 'adjusted')
     }
     setSaveError(null)
     setSaveSuccess(null)
@@ -1118,24 +1118,6 @@ const VideoPage: FC = () => {
     return null
   }, [adjustedSourceState])
 
-  const originalPreviewRange = useMemo(() => {
-    if (!clipState) {
-      return { start: 0, end: minGap }
-    }
-    const originalStart = Math.max(0, clipState.originalStartSeconds)
-    const rawEnd = clipState.originalEndSeconds
-    const safeEnd =
-      rawEnd > originalStart + MIN_PREVIEW_DURATION ? rawEnd : originalStart + MIN_PREVIEW_DURATION
-    return { start: originalStart, end: safeEnd }
-  }, [clipState, minGap])
-
-  const originalPreviewSrc = useMemo(() => {
-    if (!clipState) {
-      return ''
-    }
-    return buildPreviewSrc(originalPreviewRange, 'original')
-  }, [buildPreviewSrc, clipState, originalPreviewRange])
-
   const previewSourceIsFile =
     previewMode === 'adjusted'
       ? adjustedSourceState.status === 'ready'
@@ -1147,14 +1129,11 @@ const VideoPage: FC = () => {
     if (!clipState) {
       return { start: 0, end: 0 }
     }
-    if (previewMode === 'original') {
-      return originalPreviewRange
-    }
     if (previewMode === 'adjusted') {
       return previewTarget
     }
     return { start: clipState.startSeconds, end: clipState.endSeconds }
-  }, [clipState, originalPreviewRange, previewMode, previewTarget])
+  }, [clipState, previewMode, previewTarget])
 
   const sanitisedPreviewRange = useMemo(() => {
     const start = Math.max(
@@ -1180,12 +1159,7 @@ const VideoPage: FC = () => {
     }
   }, [clipState])
 
-  const activeVideoSrcCandidate =
-    previewMode === 'rendered'
-      ? renderedSrc
-      : previewMode === 'original'
-        ? originalPreviewSrc
-        : adjustedPreviewSrc
+  const activeVideoSrcCandidate = previewMode === 'rendered' ? renderedSrc : adjustedPreviewSrc
 
   const activeVideoSrc =
     activeVideoSrcCandidate && activeVideoSrcCandidate.length > 0
@@ -1306,9 +1280,15 @@ const VideoPage: FC = () => {
 
     setAdjustedPlaybackError(null)
 
+    const sourceOffset = playbackWindowRef.current.start
+    const initialDuration = Math.max(
+      MIN_PREVIEW_DURATION,
+      playbackWindowRef.current.end - sourceOffset
+    )
     const controller = prepareWindowedPlayback(element, {
-      start: playbackWindowRef.current.start,
-      end: playbackWindowRef.current.end,
+      start: 0,
+      end: initialDuration,
+      sourceOffset,
       onRangeApplied: () => {
         setAdjustedWarning(null)
       },
@@ -1340,7 +1320,11 @@ const VideoPage: FC = () => {
     })
 
     adjustedPlaybackRef.current = controller
-    controller.updateWindow(playbackWindowRef.current.start, playbackWindowRef.current.end)
+    controller.updateWindow(
+      0,
+      Math.max(MIN_PREVIEW_DURATION, playbackWindowRef.current.end - sourceOffset),
+      sourceOffset
+    )
 
     return () => {
       controller.dispose()
@@ -1358,7 +1342,11 @@ const VideoPage: FC = () => {
     if (!controller) {
       return
     }
-    controller.updateWindow(previewStart, previewEnd)
+    controller.updateWindow(
+      0,
+      Math.max(MIN_PREVIEW_DURATION, previewEnd - previewStart),
+      previewStart
+    )
   }, [previewEnd, previewMode, previewStart])
 
   useEffect(() => {
@@ -1808,22 +1796,6 @@ const VideoPage: FC = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => supportsSourcePreview && setPreviewMode('original')}
-                    className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
-                      previewMode === 'original'
-                        ? 'bg-[color:color-mix(in_srgb,var(--muted)_50%,transparent)] text-[var(--fg)]'
-                        : supportsSourcePreview
-                          ? 'text-[var(--fg)] hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)]'
-                          : 'cursor-not-allowed text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]'
-                    }`}
-                    aria-pressed={previewMode === 'original'}
-                    aria-disabled={!supportsSourcePreview}
-                    disabled={!supportsSourcePreview}
-                  >
-                    Original clip
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setPreviewMode('rendered')}
                     className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                       previewMode === 'rendered'
@@ -1843,9 +1815,7 @@ const VideoPage: FC = () => {
                     ? renderedOutOfSync
                       ? 'Viewing the last saved render. The exported clip will update after you save these adjustments.'
                       : 'Review the exported vertical clip with captions and layout applied.'
-                    : previewMode === 'original'
-                      ? 'Viewing the untouched source range from the original footage.'
-                      : 'Previewing the adjusted range directly from the source video without captions or layout.'}
+                    : 'Previewing the adjusted range directly from the original video without captions or layout.'}
               </p>
               {renderedOutOfSync ? (
                 <p className="text-xs font-medium text-[color:color-mix(in_srgb,var(--warning-strong)_80%,var(--accent-contrast))]">
