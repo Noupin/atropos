@@ -275,6 +275,21 @@ export const prepareWindowedPlayback = (
   let resumeAfterSeek = false
   let disposed = false
 
+  const clampWithinWindow = (time: number): number => {
+    if (!metadataLoaded) {
+      return time
+    }
+    const epsilon = 0.002
+    const safeEnd = appliedEnd - epsilon > appliedStart ? appliedEnd - epsilon : appliedStart
+    if (time < appliedStart) {
+      return appliedStart
+    }
+    if (time > safeEnd) {
+      return safeEnd
+    }
+    return time
+  }
+
   const updateStatus = (status: WindowedPlaybackStatus): void => {
     if (playbackStatus === status) {
       return
@@ -427,6 +442,15 @@ export const prepareWindowedPlayback = (
     if (!metadataLoaded) {
       return
     }
+    const clamped = clampWithinWindow(video.currentTime)
+    if (Math.abs(clamped - video.currentTime) > 0.002) {
+      try {
+        video.currentTime = clamped
+      } catch (error) {
+        // Ignore seek failures when constraining playback time.
+      }
+      return
+    }
     if (video.currentTime >= appliedEnd - 0.01) {
       if (!video.paused) {
         video.pause()
@@ -441,6 +465,25 @@ export const prepareWindowedPlayback = (
     }
   }
 
+  const handleSeeking = (): void => {
+    if (!metadataLoaded) {
+      return
+    }
+    const clamped = clampWithinWindow(video.currentTime)
+    if (Math.abs(clamped - video.currentTime) <= 0.002) {
+      return
+    }
+    try {
+      video.currentTime = clamped
+    } catch (error) {
+      options.onError?.(
+        error instanceof Error
+          ? error
+          : new Error('Unable to seek within the adjusted preview time window.')
+      )
+    }
+  }
+
   const handleError = (): void => {
     const mediaError = video.error
     const detail = mediaError?.message ?? 'The video format is not supported by this device.'
@@ -449,6 +492,7 @@ export const prepareWindowedPlayback = (
 
   video.addEventListener('loadedmetadata', handleLoadedMetadata)
   video.addEventListener('seeked', handleSeeked)
+  video.addEventListener('seeking', handleSeeking)
   video.addEventListener('play', handlePlay)
   video.addEventListener('timeupdate', handleTimeUpdate)
   video.addEventListener('error', handleError)
@@ -469,6 +513,7 @@ export const prepareWindowedPlayback = (
       clearSeekTimer()
       video.removeEventListener('loadedmetadata', handleLoadedMetadata)
       video.removeEventListener('seeked', handleSeeked)
+      video.removeEventListener('seeking', handleSeeking)
       video.removeEventListener('play', handlePlay)
       video.removeEventListener('timeupdate', handleTimeUpdate)
       video.removeEventListener('error', handleError)

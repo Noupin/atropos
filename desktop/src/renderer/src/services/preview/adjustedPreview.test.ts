@@ -195,6 +195,31 @@ describe('adjustedPreview helpers', () => {
     controller.dispose()
   })
 
+  it('keeps manual scrubbing within the playback window', () => {
+    const video = new MockVideoElement()
+    const controller = prepareWindowedPlayback(video as unknown as HTMLVideoElement, {
+      start: 30,
+      end: 40
+    })
+
+    video.readyState = 1
+    video.duration = 120
+    video.dispatchEvent(new Event('loadedmetadata'))
+    vi.advanceTimersByTime(200)
+
+    video.currentTime = 90
+    video.dispatchEvent(new Event('seeking'))
+    expect(video.currentTime).toBeLessThanOrEqual(40)
+    expect(video.currentTime).toBeGreaterThan(39.9)
+
+    video.currentTime = 5
+    video.dispatchEvent(new Event('seeking'))
+    expect(video.currentTime).toBeGreaterThanOrEqual(30)
+    expect(video.currentTime).toBeLessThan(30.1)
+
+    controller.dispose()
+  })
+
   it('adds file:// and app:// to the CSP media-src directive when missing', () => {
     const meta = document.createElement('meta')
     meta.setAttribute('http-equiv', 'Content-Security-Policy')
