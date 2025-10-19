@@ -1,11 +1,12 @@
 import type {
   ResolveProjectSourceRequest,
-  ResolveProjectSourceResponse
+  ResolveProjectSourceResponse,
+  BuildTrimmedPreviewRequest,
+  BuildTrimmedPreviewResponse
 } from '../../../../types/preview'
 
 const STORAGE_KEY = 'atropos.adjustedPreview.originalSources'
 const MIN_WINDOW_DURATION = 0.05
-const SEEK_DEBOUNCE_MS = 150
 const APP_MEDIA_PREFIX = 'app://local-media/'
 
 type PersistedSources = Record<string, string>
@@ -85,7 +86,7 @@ const readPreferredPath = (key: string): string | null => {
   return store[key] ?? null
 }
 
-const REQUIRED_MEDIA_SOURCES = ['file:', 'app:']
+const REQUIRED_MEDIA_SOURCES = ['file:', 'app:', 'blob:', 'data:']
 
 export const ensureCspAndElectronAllowLocalMedia = (): void => {
   if (!isBrowserEnvironment()) {
@@ -241,283 +242,207 @@ export type WindowRangeWarning = {
   applied: { start: number; end: number }
 }
 
-export type WindowedPlaybackStatus = 'idle' | 'loading' | 'seeking'
-
-export type WindowedPlaybackOptions = {
+export type TrimmedPreviewParams = {
+  filePath: string
   start: number
   end: number
-  onRangeApplied?: (range: { start: number; end: number }) => void
-  onInvalidRange?: (warning: WindowRangeWarning) => void
-  onStatusChange?: (status: WindowedPlaybackStatus) => void
+}
+
+export type TrimmedPreviewSuccess = {
+  kind: 'ready'
+  url: string
+  token: string
+  duration: number
+  strategy: 'ffmpeg'
+  applied: { start: number; end: number }
+  warning: WindowRangeWarning | null
+}
+
+export type TrimmedPreviewFailure = {
+  kind: 'error'
+  message: string
+  warning: WindowRangeWarning | null
+}
+
+export type TrimmedPreviewResult = TrimmedPreviewSuccess | TrimmedPreviewFailure
+
+export type TrimmedPlaybackGuardOptions = {
+  duration: number
   onEnded?: () => void
   onError?: (error: Error) => void
 }
 
-export type WindowedPlaybackController = {
-  updateWindow: (start: number, end: number) => void
+export type TrimmedPlaybackGuards = {
   dispose: () => void
 }
 
-const toSafeTime = (value: number): number => (Number.isFinite(value) && value >= 0 ? value : 0)
+export const clampPlaybackWindow = (
+  start: number,
+  end: number
+): { applied: { start: number; end: number }; warning: WindowRangeWarning | null } => {
+  const requestedStart = Number.isFinite(start) ? start : 0
+  const safeStart = requestedStart >= 0 ? requestedStart : 0
+  const requestedEnd = Number.isFinite(end) ? end : safeStart
+  let safeEnd = requestedEnd
+  let reason: WindowRangeWarningReason | null = null
 
-export const prepareWindowedPlayback = (
-  video: HTMLVideoElement,
-  options: WindowedPlaybackOptions
-): WindowedPlaybackController => {
-  let requestedStart = toSafeTime(options.start)
-  let requestedEnd = toSafeTime(options.end)
-  let appliedStart = requestedStart
-  let appliedEnd = Math.max(requestedStart + MIN_WINDOW_DURATION, requestedEnd)
-  let seekTimer: ReturnType<typeof setTimeout> | null = null
-  let metadataLoaded = video.readyState >= 1 && Number.isFinite(video.duration)
-  let knownDuration = metadataLoaded ? Math.max(0, video.duration) : Number.NaN
-  let playbackStatus: WindowedPlaybackStatus = metadataLoaded ? 'idle' : 'loading'
-  let resumeAfterSeek = false
-  let disposed = false
-
-  const clampWithinWindow = (time: number): number => {
-    if (!metadataLoaded) {
-      return time
-    }
-    const epsilon = 0.002
-    const safeEnd = appliedEnd - epsilon > appliedStart ? appliedEnd - epsilon : appliedStart
-    if (time < appliedStart) {
-      return appliedStart
-    }
-    if (time > safeEnd) {
-      return safeEnd
-    }
-    return time
+  if (safeStart !== start) {
+    reason = 'out_of_bounds'
   }
 
-  const updateStatus = (status: WindowedPlaybackStatus): void => {
-    if (playbackStatus === status) {
-      return
-    }
-    playbackStatus = status
-    options.onStatusChange?.(status)
+  if (requestedEnd <= safeStart) {
+    safeEnd = safeStart + MIN_WINDOW_DURATION
+    reason = 'reversed'
+  } else if (requestedEnd < safeStart + MIN_WINDOW_DURATION) {
+    safeEnd = safeStart + MIN_WINDOW_DURATION
+    reason = reason ?? 'out_of_bounds'
   }
 
-  if (!metadataLoaded) {
-    options.onStatusChange?.('loading')
-  }
-
-  const emitRange = (reason: WindowRangeWarningReason | null): void => {
-    options.onRangeApplied?.({ start: appliedStart, end: appliedEnd })
-    if (reason) {
-      options.onInvalidRange?.({
-        reason,
-        requested: { start: requestedStart, end: requestedEnd },
-        applied: { start: appliedStart, end: appliedEnd }
-      })
-    }
-  }
-
-  const clampToDuration = (value: number): number => {
-    if (!Number.isFinite(knownDuration)) {
-      return value
-    }
-    return Math.min(Math.max(0, value), knownDuration)
-  }
-
-  const applyWindow = (start: number, end: number): void => {
-    requestedStart = toSafeTime(start)
-    requestedEnd = toSafeTime(end)
-
-    const clampedStart = clampToDuration(requestedStart)
-    let clampedEnd = clampToDuration(requestedEnd)
-    let warning: WindowRangeWarningReason | null = null
-
-    if (!Number.isFinite(knownDuration) && clampedEnd < requestedEnd) {
-      warning = 'out_of_bounds'
-    }
-
-    if (clampedEnd <= clampedStart + 1e-3) {
-      warning = 'reversed'
-      const fallback = Number.isFinite(knownDuration)
-        ? Math.min(knownDuration, clampedStart + MIN_WINDOW_DURATION)
-        : clampedStart + MIN_WINDOW_DURATION
-      clampedEnd = Math.max(clampedStart + MIN_WINDOW_DURATION, fallback)
-    } else if (clampedStart !== requestedStart || clampedEnd !== requestedEnd) {
-      warning = warning ?? 'out_of_bounds'
-    }
-
-    appliedStart = clampedStart
-    appliedEnd = clampedEnd
-    emitRange(warning)
-
-    if (metadataLoaded) {
-      scheduleSeek()
-    }
-  }
-
-  const clearSeekTimer = (): void => {
-    if (!seekTimer) {
-      return
-    }
-    clearTimeout(seekTimer)
-    seekTimer = null
-  }
-
-  const scheduleSeek = (): void => {
-    if (disposed || !metadataLoaded) {
-      return
-    }
-    clearSeekTimer()
-    const shouldResume = !video.paused && !video.ended
-    updateStatus('seeking')
-    seekTimer = setTimeout(() => {
-      seekTimer = null
-      try {
-        if (shouldResume) {
-          resumeAfterSeek = true
-          video.pause()
+  const warning =
+    reason === null
+      ? null
+      : {
+          reason,
+          requested: { start, end },
+          applied: { start: safeStart, end: safeEnd }
         }
-        video.currentTime = appliedStart
-      } catch (error) {
-        options.onError?.(
-          error instanceof Error
-            ? error
-            : new Error('Unable to update the adjusted preview to the requested time window.')
-        )
-        updateStatus('idle')
-      }
-    }, SEEK_DEBOUNCE_MS)
+
+  return { applied: { start: safeStart, end: safeEnd }, warning }
+}
+
+const invokeBuildTrimmedPreview = async (
+  request: BuildTrimmedPreviewRequest
+): Promise<BuildTrimmedPreviewResponse> => {
+  if (!isBrowserEnvironment() || typeof window.api?.buildTrimmedPreview !== 'function') {
+    throw new Error('Trimmed preview bridge is unavailable')
   }
+  return window.api.buildTrimmedPreview(request)
+}
+
+export const buildTrimmedPreviewSource = async (
+  params: TrimmedPreviewParams
+): Promise<TrimmedPreviewResult> => {
+  const clamped = clampPlaybackWindow(params.start, params.end)
+  let response: BuildTrimmedPreviewResponse
+  try {
+    response = await invokeBuildTrimmedPreview({
+      filePath: params.filePath,
+      start: clamped.applied.start,
+      end: clamped.applied.end
+    })
+  } catch (error) {
+    console.error('[adjusted-preview] build trimmed preview failed', error)
+    return {
+      kind: 'error',
+      message: 'Unable to prepare the trimmed preview clip. Please try again.',
+      warning: clamped.warning
+    }
+  }
+
+  if (response.status !== 'ok') {
+    return { kind: 'error', message: response.message, warning: clamped.warning }
+  }
+
+  const url = `${APP_MEDIA_PREFIX}${encodeURIComponent(response.mediaToken)}`
+  return {
+    kind: 'ready',
+    url,
+    token: response.mediaToken,
+    duration: response.duration,
+    strategy: response.strategy,
+    applied: clamped.applied,
+    warning: clamped.warning
+  }
+}
+
+export const releaseTrimmedPreviewToken = async (token: string | null): Promise<void> => {
+  if (!token || !isBrowserEnvironment() || typeof window.api?.releaseMediaToken !== 'function') {
+    return
+  }
+  try {
+    await window.api.releaseMediaToken(token)
+  } catch (error) {
+    console.error('[adjusted-preview] failed to release trimmed preview token', { token }, error)
+  }
+}
+
+export const attachTrimmedPlaybackGuards = (
+  video: HTMLVideoElement,
+  options: TrimmedPlaybackGuardOptions
+): TrimmedPlaybackGuards => {
+  const safeDuration = Number.isFinite(options.duration)
+    ? Math.max(MIN_WINDOW_DURATION, options.duration)
+    : MIN_WINDOW_DURATION
 
   const handleLoadedMetadata = (): void => {
-    metadataLoaded = true
-    knownDuration = Number.isFinite(video.duration) ? Math.max(0, video.duration) : Number.NaN
-    applyWindow(requestedStart, requestedEnd)
-    updateStatus('seeking')
     try {
-      video.currentTime = appliedStart
-    } catch (error) {
-      options.onError?.(
-        error instanceof Error
-          ? error
-          : new Error('Unable to seek the adjusted preview to the requested start time.')
-      )
-      updateStatus('idle')
-    }
-  }
-
-  const handleSeeked = (): void => {
-    clearSeekTimer()
-    updateStatus('idle')
-    if (resumeAfterSeek) {
-      resumeAfterSeek = false
-      const playback = video.play()
-      if (playback && typeof playback.catch === 'function') {
-        playback.catch(() => undefined)
+      if (video.currentTime > 0.005) {
+        video.currentTime = 0
       }
+    } catch (error) {
+      // Ignore failures while resetting start time.
     }
   }
 
   const handlePlay = (): void => {
-    if (!metadataLoaded) {
-      resumeAfterSeek = true
-      video.pause()
-      return
-    }
-    const distance = Math.abs(video.currentTime - appliedStart)
-    if (distance > 0.025) {
-      resumeAfterSeek = true
-      updateStatus('seeking')
-      video.pause()
+    if (video.currentTime > 0.01) {
       try {
-        video.currentTime = appliedStart
+        video.currentTime = 0
       } catch (error) {
         options.onError?.(
           error instanceof Error
             ? error
             : new Error('Unable to reset playback to the trimmed start time.')
         )
-        updateStatus('idle')
       }
     }
   }
 
   const handleTimeUpdate = (): void => {
-    if (!metadataLoaded) {
-      return
-    }
-    const clamped = clampWithinWindow(video.currentTime)
-    if (Math.abs(clamped - video.currentTime) > 0.002) {
-      try {
-        video.currentTime = clamped
-      } catch (error) {
-        // Ignore seek failures when constraining playback time.
-      }
-      return
-    }
-    if (video.currentTime >= appliedEnd - 0.01) {
+    if (video.currentTime >= safeDuration - 0.01) {
       if (!video.paused) {
         video.pause()
       }
       try {
-        video.currentTime = appliedStart
+        video.currentTime = safeDuration
       } catch (error) {
-        // Ignore seek failures when finishing playback.
+        // Ignore failures when snapping to the end of the clip.
       }
       options.onEnded?.()
-      updateStatus('idle')
     }
   }
 
-  const handleSeeking = (): void => {
-    if (!metadataLoaded) {
-      return
-    }
-    const clamped = clampWithinWindow(video.currentTime)
-    if (Math.abs(clamped - video.currentTime) <= 0.002) {
-      return
-    }
+  const handleEnded = (): void => {
     try {
-      video.currentTime = clamped
+      video.currentTime = safeDuration
     } catch (error) {
-      options.onError?.(
-        error instanceof Error
-          ? error
-          : new Error('Unable to seek within the adjusted preview time window.')
-      )
+      // Ignore failures when forcing playback to the end position.
     }
+    options.onEnded?.()
   }
 
   const handleError = (): void => {
-    const mediaError = video.error
-    const detail = mediaError?.message ?? 'The video format is not supported by this device.'
+    const detail = video.error?.message ?? 'The video format is not supported by this device.'
     options.onError?.(new Error(detail))
   }
 
   video.addEventListener('loadedmetadata', handleLoadedMetadata)
-  video.addEventListener('seeked', handleSeeked)
-  video.addEventListener('seeking', handleSeeking)
   video.addEventListener('play', handlePlay)
   video.addEventListener('timeupdate', handleTimeUpdate)
+  video.addEventListener('ended', handleEnded)
   video.addEventListener('error', handleError)
 
-  if (metadataLoaded) {
-    applyWindow(requestedStart, requestedEnd)
+  if (video.readyState >= 1) {
+    handleLoadedMetadata()
   }
 
   return {
-    updateWindow: (start: number, end: number) => {
-      applyWindow(start, end)
-    },
     dispose: () => {
-      if (disposed) {
-        return
-      }
-      disposed = true
-      clearSeekTimer()
       video.removeEventListener('loadedmetadata', handleLoadedMetadata)
-      video.removeEventListener('seeked', handleSeeked)
-      video.removeEventListener('seeking', handleSeeking)
       video.removeEventListener('play', handlePlay)
       video.removeEventListener('timeupdate', handleTimeUpdate)
+      video.removeEventListener('ended', handleEnded)
       video.removeEventListener('error', handleError)
     }
   }
 }
-

@@ -19,7 +19,7 @@
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux",
-    "test": "vitest --config src/renderer/vitest.config.ts"
+    "test": "vitest --run --config src/renderer/vitest.config.ts && vitest --run --config src/main/vitest.config.ts"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",

@@ -2,7 +2,12 @@ import { contextBridge, ipcRenderer, shell } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { ElectronAPIWithShell } from '../types/electron'
-import type { ResolveProjectSourceRequest, ResolveProjectSourceResponse } from '../types/preview'
+import type {
+  ResolveProjectSourceRequest,
+  ResolveProjectSourceResponse,
+  BuildTrimmedPreviewRequest,
+  BuildTrimmedPreviewResponse
+} from '../types/preview'
 
 // Custom APIs for renderer
 type Clip = import('../renderer/src/types').Clip
@@ -16,6 +21,11 @@ const api = {
   resolveProjectSource: (
     request: ResolveProjectSourceRequest
   ): Promise<ResolveProjectSourceResponse> => ipcRenderer.invoke('clips:resolve-source', request),
+  buildTrimmedPreview: (
+    request: BuildTrimmedPreviewRequest
+  ): Promise<BuildTrimmedPreviewResponse> => ipcRenderer.invoke('clips:build-trimmed-preview', request),
+  releaseMediaToken: (token: string): Promise<void> =>
+    ipcRenderer.invoke('clips:release-media-token', token),
   onNavigationCommand: (callback: (direction: 'back' | 'forward') => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, direction: 'back' | 'forward') => {
       callback(direction)

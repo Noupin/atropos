@@ -8,7 +8,15 @@ import { randomUUID } from 'crypto'
 // Use Node.js path join to reference the icon file, as TypeScript does not support importing non-code assets.
 const icon = join(__dirname, '../../favicon.png')
 import { listAccountClips, resolveAccountClipsDirectory, resolveProjectSourceVideo } from './clipLibrary'
-import type { ResolveProjectSourceRequest } from '../types/preview'
+import type {
+  ResolveProjectSourceRequest,
+  BuildTrimmedPreviewRequest
+} from '../types/preview'
+import {
+  createTrimmedPreview,
+  removeTrimmedPreview,
+  sanitizeTrimWindow
+} from './trimmedPreview'
 
 type NavigationCommand = 'back' | 'forward'
 
@@ -34,18 +42,37 @@ let rendererMissingAlerted = false
 
 const LOCAL_MEDIA_PREFIX = 'local-media/'
 const MAX_LOCAL_MEDIA_TOKENS = 256
-const localMediaTokens = new Map<string, { filePath: string; createdAt: number }>()
+const localMediaTokens = new Map<
+  string,
+  { filePath: string; createdAt: number; temporary: boolean }
+>()
 
-const registerLocalMediaToken = (filePath: string): string => {
+const releaseLocalMediaToken = async (token: string): Promise<void> => {
+  const entry = localMediaTokens.get(token)
+  if (!entry) {
+    return
+  }
+  localMediaTokens.delete(token)
+  if (!entry.temporary) {
+    return
+  }
+  await removeTrimmedPreview(entry.filePath)
+}
+
+const registerLocalMediaToken = (filePath: string, options?: { temporary?: boolean }): string => {
   const token = randomUUID()
-  localMediaTokens.set(token, { filePath, createdAt: Date.now() })
+  localMediaTokens.set(token, {
+    filePath,
+    createdAt: Date.now(),
+    temporary: Boolean(options?.temporary)
+  })
   if (localMediaTokens.size > MAX_LOCAL_MEDIA_TOKENS) {
     const excess = localMediaTokens.size - MAX_LOCAL_MEDIA_TOKENS
     const keys = Array.from(localMediaTokens.keys())
     for (let index = 0; index < excess; index += 1) {
       const key = keys[index]
       if (key) {
-        localMediaTokens.delete(key)
+        void releaseLocalMediaToken(key)
       }
     }
   }
@@ -270,6 +297,8 @@ const registerIpcHandlers = (): void => {
   ipcMain.removeHandler('clips:open-folder')
   ipcMain.removeHandler('clips:resolve-source')
   ipcMain.removeHandler('open-video-file')
+  ipcMain.removeHandler('clips:build-trimmed-preview')
+  ipcMain.removeHandler('clips:release-media-token')
 
   ipcMain.on('ping', () => console.log('pong'))
   ipcMain.on('navigation:state', (_event, state: NavigationState) => {
@@ -307,7 +336,7 @@ const registerIpcHandlers = (): void => {
     try {
       const response = await resolveProjectSourceVideo(request)
       if (response.status === 'ok') {
-        const mediaToken = registerLocalMediaToken(response.filePath)
+        const mediaToken = registerLocalMediaToken(response.filePath, { temporary: false })
         return { ...response, mediaToken }
       }
       return response
@@ -338,6 +367,51 @@ const registerIpcHandlers = (): void => {
     } catch (error) {
       console.error('[file-picker] failed to open video picker dialog', error)
       return null
+    }
+  })
+
+  ipcMain.handle('clips:build-trimmed-preview', async (_event, request: BuildTrimmedPreviewRequest) => {
+    try {
+      const sanitized = sanitizeTrimWindow(request.start, request.end)
+      console.info('[adjusted-preview] build trimmed preview request', {
+        source: request.filePath,
+        start: sanitized.start,
+        end: sanitized.end,
+        duration: sanitized.duration
+      })
+      const result = await createTrimmedPreview({
+        filePath: request.filePath,
+        start: sanitized.start,
+        end: sanitized.end
+      })
+      const mediaToken = registerLocalMediaToken(result.outputPath, { temporary: true })
+      console.info('[adjusted-preview] trimmed preview ready', {
+        output: result.outputPath,
+        duration: result.duration,
+        strategy: result.strategy
+      })
+      return {
+        status: 'ok' as const,
+        mediaToken,
+        duration: result.duration,
+        strategy: result.strategy,
+        outputPath: result.outputPath
+      }
+    } catch (error) {
+      console.error('[adjusted-preview] failed to build trimmed preview', error)
+      const message =
+        error instanceof Error && error.message.length > 0
+          ? error.message
+          : 'Unable to create a trimmed preview clip.'
+      return { status: 'error' as const, message }
+    }
+  })
+
+  ipcMain.handle('clips:release-media-token', async (_event, token: string) => {
+    try {
+      await releaseLocalMediaToken(token)
+    } catch (error) {
+      console.error('[adjusted-preview] failed to release media token', { token }, error)
     }
   })
 }

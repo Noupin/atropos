@@ -5,6 +5,39 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Profile from '../pages/Profile'
 import type { AccountPlatformConnection, AccountSummary, AuthPingSummary } from '../types'
 
+const accessStateMock = {
+  isLoading: false,
+  isSubscriptionActive: true,
+  isTrialActive: false,
+  isAccessActive: true,
+  isOffline: false,
+  isOfflineLocked: false,
+  offlineExpiresAt: null,
+  offlineRemainingMs: null,
+  offlineLastVerifiedAt: null,
+  lastError: null,
+  trial: { totalRuns: 3, remainingRuns: 3, isActive: false, lastConsumedAt: null },
+  subscription: null,
+  access: null,
+  transfer: { status: 'none' },
+  pendingConsumption: false,
+  pendingConsumptionStage: null,
+  deviceHash: null
+}
+
+const markTrialRunPendingMock = vi.fn()
+const finalizeTrialRunMock = vi.fn()
+
+vi.mock('../state/access', () => ({
+  __esModule: true,
+  DEFAULT_TRIAL_RUNS: 3,
+  useAccess: () => ({
+    state: accessStateMock,
+    markTrialRunPending: markTrialRunPendingMock,
+    finalizeTrialRun: finalizeTrialRunMock
+  })
+}))
+
 vi.mock('../components/MarbleSelect', () => {
   return {
     default: ({

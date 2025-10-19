@@ -1,8 +1,10 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import {
   ensureCspAndElectronAllowLocalMedia,
-  prepareWindowedPlayback,
-  resolveOriginalSource
+  resolveOriginalSource,
+  buildTrimmedPreviewSource,
+  attachTrimmedPlaybackGuards,
+  clampPlaybackWindow
 } from './adjustedPreview'
 
 const buildMockWindow = () => {
@@ -13,7 +15,9 @@ const buildMockWindow = () => {
   document.head.appendChild(meta)
   return {
     api: {
-      resolveProjectSource: vi.fn()
+      resolveProjectSource: vi.fn(),
+      buildTrimmedPreview: vi.fn(),
+      releaseMediaToken: vi.fn()
     },
     electron: undefined,
     _meta: meta,
@@ -151,86 +155,86 @@ describe('adjustedPreview helpers', () => {
     }
   })
 
-  it('waits for metadata before seeking and resumes playback afterwards', async () => {
-    const video = new MockVideoElement()
-    const statusChanges: string[] = []
-    const controller = prepareWindowedPlayback(video as unknown as HTMLVideoElement, {
-      start: 5,
-      end: 10,
-      onStatusChange: (status) => statusChanges.push(status)
-    })
 
-    expect(statusChanges).toContain('loading')
+  it('clamps playback windows to a safe range', () => {
+    const reversed = clampPlaybackWindow(20, 18)
+    expect(reversed.applied.start).toBeCloseTo(20)
+    expect(reversed.applied.end).toBeGreaterThan(20)
+    expect(reversed.warning?.reason).toBe('reversed')
 
-    video.dispatchEvent(new Event('play'))
-    expect(video.pause).toHaveBeenCalled()
-
-    video.readyState = 1
-    video.duration = 60
-    video.dispatchEvent(new Event('loadedmetadata'))
-    expect(video.currentTime).toBeCloseTo(5)
-
-    video.dispatchEvent(new Event('seeked'))
-    await Promise.resolve()
-    expect(video.play).toHaveBeenCalled()
-
-    controller.dispose()
+    const bounded = clampPlaybackWindow(-5, 1)
+    expect(bounded.applied.start).toBe(0)
+    expect(bounded.applied.end).toBeGreaterThan(0)
+    expect(bounded.warning?.reason).toBe('out_of_bounds')
   })
 
-  it('clamps invalid playback windows and reports warnings', () => {
-    const video = new MockVideoElement()
-    video.readyState = 1
-    video.duration = 30
-    const warnings: string[] = []
-    const controller = prepareWindowedPlayback(video as unknown as HTMLVideoElement, {
-      start: 10,
-      end: 12,
-      onInvalidRange: (warning) => warnings.push(warning.reason)
+  it('builds trimmed preview sources using the Electron bridge', async () => {
+    vi.spyOn(window.api!, 'buildTrimmedPreview').mockResolvedValue({
+      status: 'ok',
+      mediaToken: 'trim-token',
+      duration: 14,
+      strategy: 'ffmpeg',
+      outputPath: '/tmp/preview.mp4'
     })
 
-    controller.updateWindow(20, 15)
-    vi.advanceTimersByTime(200)
-    expect(warnings).toContain('reversed')
-    expect(video.currentTime).toBeLessThanOrEqual(20)
-    controller.dispose()
+    const result = await buildTrimmedPreviewSource({
+      filePath: '/projects/test/video.mp4',
+      start: 300,
+      end: 314
+    })
+
+    expect(window.api!.buildTrimmedPreview).toHaveBeenCalledWith({
+      filePath: '/projects/test/video.mp4',
+      start: 300,
+      end: 314
+    })
+
+    expect(result.kind).toBe('ready')
+    if (result.kind === 'ready') {
+      expect(result.url).toBe('app://local-media/trim-token')
+      expect(result.duration).toBeCloseTo(14)
+      expect(result.applied.start).toBeCloseTo(300)
+      expect(result.applied.end).toBeCloseTo(314)
+    }
   })
 
-  it('keeps manual scrubbing within the playback window', () => {
-    const video = new MockVideoElement()
-    const controller = prepareWindowedPlayback(video as unknown as HTMLVideoElement, {
-      start: 30,
-      end: 40
+  it('reports errors when trimmed preview generation fails', async () => {
+    vi.spyOn(window.api!, 'buildTrimmedPreview').mockRejectedValue(new Error('ffmpeg missing'))
+
+    const result = await buildTrimmedPreviewSource({
+      filePath: '/projects/test/video.mp4',
+      start: 0,
+      end: 5
     })
 
-    video.readyState = 1
-    video.duration = 120
-    video.dispatchEvent(new Event('loadedmetadata'))
-    vi.advanceTimersByTime(200)
+    expect(result.kind).toBe('error')
+  })
 
-    video.currentTime = 90
-    video.dispatchEvent(new Event('seeking'))
-    expect(video.currentTime).toBeLessThanOrEqual(40)
-    expect(video.currentTime).toBeGreaterThan(39.9)
+  it('enforces playback duration with trimmed guards', () => {
+    const video = new MockVideoElement()
+    video.readyState = 1
+    video.duration = 14
+    const onEnded = vi.fn()
+
+    const guards = attachTrimmedPlaybackGuards(video as unknown as HTMLVideoElement, {
+      duration: 14,
+      onEnded
+    })
 
     video.currentTime = 5
-    video.dispatchEvent(new Event('seeking'))
-    expect(video.currentTime).toBeGreaterThanOrEqual(30)
-    expect(video.currentTime).toBeLessThan(30.1)
+    video.dispatchEvent(new Event('loadedmetadata'))
+    expect(video.currentTime).toBeCloseTo(0)
 
-    controller.dispose()
-  })
+    video.currentTime = 13.99
+    video.paused = false
+    video.dispatchEvent(new Event('timeupdate'))
+    expect(video.pause).toHaveBeenCalled()
+    expect(video.currentTime).toBeCloseTo(14)
+    expect(onEnded).toHaveBeenCalled()
 
-  it('adds file:// and app:// to the CSP media-src directive when missing', () => {
-    const meta = document.createElement('meta')
-    meta.setAttribute('http-equiv', 'Content-Security-Policy')
-    meta.setAttribute('content', "default-src 'self'; media-src 'self' data: blob:")
-    document.head.appendChild(meta)
+    video.dispatchEvent(new Event('ended'))
+    expect(video.currentTime).toBeCloseTo(14)
 
-    ensureCspAndElectronAllowLocalMedia()
-
-    const updated = meta.getAttribute('content')
-    expect(updated).toContain('file:')
-    expect(updated).toContain('app:')
+    guards.dispose()
   })
 })
-

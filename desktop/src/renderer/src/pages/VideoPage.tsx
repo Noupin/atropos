@@ -22,9 +22,11 @@ import {
 } from '../types'
 import {
   ensureCspAndElectronAllowLocalMedia,
-  prepareWindowedPlayback,
   resolveOriginalSource,
-  type WindowedPlaybackController,
+  buildTrimmedPreviewSource,
+  releaseTrimmedPreviewToken,
+  attachTrimmedPlaybackGuards,
+  type TrimmedPlaybackGuards,
   type WindowRangeWarning
 } from '../services/preview/adjustedPreview'
 
@@ -160,6 +162,9 @@ const delay = (ms: number): Promise<void> =>
 const DEFAULT_CALL_TO_ACTION = 'Invite viewers to subscribe for more highlights.'
 const DEFAULT_TAGS = 'clips, highlights, community'
 const DEFAULT_PLATFORM_NOTES = 'Share with the community playlist and pin on the channel page.'
+const WARNING_REVERSED_MESSAGE =
+  'End time must come after the start. We reset playback to the clip start.'
+const WARNING_OUT_OF_BOUNDS_MESSAGE = 'Playback window adjusted to stay within the video length.'
 
 type AdjustedSourceState =
   | { status: 'idle' }
@@ -168,7 +173,6 @@ type AdjustedSourceState =
       status: 'ready'
       key: string
       fileUrl: string
-      mediaUrl: string
       filePath: string
       origin: 'canonical' | 'preferred' | 'discovered'
       projectDir: string | null
@@ -181,6 +185,20 @@ type AdjustedSourceState =
       triedPreferred: boolean
     }
   | { status: 'error'; key: string; message: string }
+
+type AdjustedTrimmedState =
+  | { status: 'idle' }
+  | { status: 'loading'; token: string | null }
+  | {
+      status: 'ready'
+      token: string
+      url: string
+      duration: number
+      strategy: 'ffmpeg'
+      applied: { start: number; end: number }
+      warning: WindowRangeWarning | null
+    }
+  | { status: 'error'; message: string; warning: WindowRangeWarning | null }
 
 const VideoPage: FC = () => {
   const { id } = useParams<{ id: string }>()
@@ -276,7 +294,7 @@ const VideoPage: FC = () => {
   const [isSaving, setIsSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null)
-  const [previewMode, setPreviewMode] = useState<'adjusted' | 'original' | 'rendered'>(() =>
+  const [previewMode, setPreviewMode] = useState<'adjusted' | 'rendered'>(() =>
     getDefaultPreviewMode(sourceClip ?? null)
   )
   const [previewTarget, setPreviewTarget] = useState(() => ({
@@ -287,7 +305,9 @@ const VideoPage: FC = () => {
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const [isVideoBuffering, setIsVideoBuffering] = useState(false)
   const [adjustedSourceState, setAdjustedSourceState] = useState<AdjustedSourceState>({ status: 'idle' })
-  const adjustedPlaybackRef = useRef<WindowedPlaybackController | null>(null)
+  const [trimmedPreviewState, setTrimmedPreviewState] = useState<AdjustedTrimmedState>({ status: 'idle' })
+  const trimmedPlaybackGuardsRef = useRef<TrimmedPlaybackGuards | null>(null)
+  const trimmedTokenRef = useRef<string | null>(null)
   const [adjustedWarning, setAdjustedWarning] = useState<string | null>(null)
   const [adjustedPlaybackError, setAdjustedPlaybackError] = useState<string | null>(null)
   const [adjustedBuffering, setAdjustedBuffering] = useState(false)
@@ -351,6 +371,10 @@ const VideoPage: FC = () => {
   const originalEnd =
     clipState?.originalEndSeconds ?? originalStart + (clipState?.durationSec ?? 10)
   const supportsSourcePreview = Boolean(clipState)
+  const adjustedButtonEnabled =
+    supportsSourcePreview &&
+    adjustedSourceState.status !== 'missing' &&
+    adjustedSourceState.status !== 'error'
 
   const sourceStartBound = 0
   const sourceEndBound = useMemo(() => {
@@ -995,7 +1019,7 @@ const VideoPage: FC = () => {
           clipState.originalEndSeconds
         )
       })
-      setPreviewMode(getDefaultPreviewMode(clipState) === 'adjusted' ? 'original' : 'rendered')
+      setPreviewMode(getDefaultPreviewMode(clipState))
     }
     setSaveError(null)
     setSaveSuccess(null)
@@ -1079,82 +1103,38 @@ const VideoPage: FC = () => {
     return cacheBusted.length > 0 ? cacheBusted : clipState.playbackUrl
   }, [clipState])
 
-  const buildPreviewSrc = useCallback(
-    (range: { start: number; end: number }, variant: string) => {
-      if (!clipState) {
-        return ''
-      }
-      const safeStart = Math.max(0, Number.isFinite(range.start) ? range.start : 0)
-      const rawEnd = Number.isFinite(range.end) ? range.end : safeStart
-      const safeEnd =
-        rawEnd > safeStart + MIN_PREVIEW_DURATION ? rawEnd : safeStart + MIN_PREVIEW_DURATION
-      const cacheToken = `${clipState.id}-${variant}-${safeStart.toFixed(3)}-${safeEnd.toFixed(3)}`
-      const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
-      try {
-        const absolute =
-          clipState.previewUrl.startsWith('http://') ||
-          clipState.previewUrl.startsWith('https://') ||
-          clipState.previewUrl.startsWith('file://')
-            ? new URL(clipState.previewUrl)
-            : new URL(clipState.previewUrl, baseOrigin)
-        absolute.searchParams.set('start', safeStart.toFixed(3))
-        absolute.searchParams.set('end', safeEnd.toFixed(3))
-        absolute.searchParams.set('_', cacheToken)
-        return absolute.toString()
-      } catch (error) {
-        const separator = clipState.previewUrl.includes('?') ? '&' : '?'
-        return `${clipState.previewUrl}${separator}start=${safeStart.toFixed(3)}&end=${safeEnd.toFixed(
-          3
-        )}&_=${encodeURIComponent(cacheToken)}`
-      }
-    },
-    [clipState]
-  )
-
   const adjustedPreviewSrc = useMemo(() => {
-    if (adjustedSourceState.status === 'ready') {
-      return adjustedSourceState.mediaUrl
+    if (trimmedPreviewState.status === 'ready') {
+      return trimmedPreviewState.url
     }
     return null
-  }, [adjustedSourceState])
-
-  const originalPreviewRange = useMemo(() => {
-    if (!clipState) {
-      return { start: 0, end: minGap }
-    }
-    const originalStart = Math.max(0, clipState.originalStartSeconds)
-    const rawEnd = clipState.originalEndSeconds
-    const safeEnd =
-      rawEnd > originalStart + MIN_PREVIEW_DURATION ? rawEnd : originalStart + MIN_PREVIEW_DURATION
-    return { start: originalStart, end: safeEnd }
-  }, [clipState, minGap])
-
-  const originalPreviewSrc = useMemo(() => {
-    if (!clipState) {
-      return ''
-    }
-    return buildPreviewSrc(originalPreviewRange, 'original')
-  }, [buildPreviewSrc, clipState, originalPreviewRange])
+  }, [trimmedPreviewState])
 
   const previewSourceIsFile =
     previewMode === 'adjusted'
-      ? adjustedSourceState.status === 'ready'
+      ? trimmedPreviewState.status === 'ready'
       : clipState
-        ? clipState.previewUrl.startsWith('file://')
-        : false
+          ? clipState.previewUrl.startsWith('file://')
+          : false
 
   const currentPreviewRange = useMemo(() => {
     if (!clipState) {
       return { start: 0, end: 0 }
     }
-    if (previewMode === 'original') {
-      return originalPreviewRange
-    }
     if (previewMode === 'adjusted') {
+      if (trimmedPreviewState.status === 'ready') {
+        const { applied } = trimmedPreviewState
+        const target = previewTarget
+        const startAligned = Math.abs(applied.start - target.start) < 0.001
+        const endAligned = Math.abs(applied.end - target.end) < 0.001
+        if (startAligned && endAligned) {
+          return applied
+        }
+      }
       return previewTarget
     }
     return { start: clipState.startSeconds, end: clipState.endSeconds }
-  }, [clipState, originalPreviewRange, previewMode, previewTarget])
+  }, [clipState, previewMode, previewTarget, trimmedPreviewState])
 
   const sanitisedPreviewRange = useMemo(() => {
     const start = Math.max(
@@ -1173,19 +1153,25 @@ const VideoPage: FC = () => {
     playbackWindowRef.current = { start: previewStart, end: previewEnd }
   }, [previewStart, previewEnd])
 
+  const releaseCurrentTrimmedToken = useCallback(() => {
+    const token = trimmedTokenRef.current
+    if (!token) {
+      return
+    }
+    trimmedTokenRef.current = null
+    void releaseTrimmedPreviewToken(token)
+  }, [])
+
   useEffect(() => {
     if (!clipState) {
       setAdjustedSourceState({ status: 'idle' })
       setPendingSourceOverride(null)
+      setTrimmedPreviewState({ status: 'idle' })
+      releaseCurrentTrimmedToken()
     }
-  }, [clipState])
+  }, [clipState, releaseCurrentTrimmedToken])
 
-  const activeVideoSrcCandidate =
-    previewMode === 'rendered'
-      ? renderedSrc
-      : previewMode === 'original'
-        ? originalPreviewSrc
-        : adjustedPreviewSrc
+  const activeVideoSrcCandidate = previewMode === 'rendered' ? renderedSrc : adjustedPreviewSrc
 
   const activeVideoSrc =
     activeVideoSrcCandidate && activeVideoSrcCandidate.length > 0
@@ -1255,7 +1241,6 @@ const VideoPage: FC = () => {
           status: 'ready',
           key,
           fileUrl: result.fileUrl,
-          mediaUrl: result.mediaUrl,
           filePath: result.filePath,
           origin: result.origin,
           projectDir: result.projectDir ?? null
@@ -1290,44 +1275,164 @@ const VideoPage: FC = () => {
 
   useEffect(() => {
     if (previewMode !== 'adjusted') {
-      adjustedPlaybackRef.current?.dispose()
-      adjustedPlaybackRef.current = null
+      trimmedPlaybackGuardsRef.current?.dispose()
+      trimmedPlaybackGuardsRef.current = null
+      setTrimmedPreviewState({ status: 'idle' })
       setAdjustedBuffering(false)
+      setAdjustedWarning(null)
+      setAdjustedPlaybackError(null)
+      releaseCurrentTrimmedToken()
+      return
+    }
+
+    if (adjustedSourceState.status !== 'ready') {
+      trimmedPlaybackGuardsRef.current?.dispose()
+      trimmedPlaybackGuardsRef.current = null
+      setTrimmedPreviewState({ status: 'idle' })
+      setAdjustedBuffering(false)
+      releaseCurrentTrimmedToken()
       return
     }
 
     const element = previewVideoRef.current
-    if (!element || adjustedSourceState.status !== 'ready') {
-      adjustedPlaybackRef.current?.dispose()
-      adjustedPlaybackRef.current = null
+    if (!element) {
+      setTrimmedPreviewState({ status: 'idle' })
       setAdjustedBuffering(false)
       return
     }
 
-    setAdjustedPlaybackError(null)
+    const { filePath } = adjustedSourceState
+    const previousToken = trimmedTokenRef.current
+    let cancelled = false
 
-    const controller = prepareWindowedPlayback(element, {
-      start: playbackWindowRef.current.start,
-      end: playbackWindowRef.current.end,
-      onRangeApplied: () => {
-        setAdjustedWarning(null)
-      },
-      onInvalidRange: (warning: WindowRangeWarning) => {
-        if (warning.reason === 'reversed') {
-          setAdjustedWarning('End time must come after the start. We reset playback to the clip start.')
-        } else {
-          setAdjustedWarning('Playback window adjusted to stay within the video length.')
+    setAdjustedBuffering(true)
+    setAdjustedPlaybackError(null)
+    setTrimmedPreviewState((previous) => ({
+      status: 'loading',
+      token: previous.status === 'ready' ? previous.token : null
+    }))
+
+    ;(async () => {
+      const result = await buildTrimmedPreviewSource({
+        filePath,
+        start: previewStart,
+        end: previewEnd
+      })
+
+      if (cancelled) {
+        if (result.kind === 'ready') {
+          await releaseTrimmedPreviewToken(result.token)
         }
-      },
-      onStatusChange: (status) => {
-        setAdjustedBuffering(status !== 'idle')
-      },
+        return
+      }
+
+      if (result.kind === 'ready') {
+        console.info('[adjusted-preview] trimmed source ready', {
+          clipId: clipState?.id ?? null,
+          start: result.applied.start,
+          end: result.applied.end,
+          duration: result.duration,
+          strategy: result.strategy
+        })
+        trimmedTokenRef.current = result.token
+        playbackWindowRef.current = { ...result.applied }
+        setTrimmedPreviewState({
+          status: 'ready',
+          token: result.token,
+          url: result.url,
+          duration: result.duration,
+          strategy: result.strategy,
+          applied: result.applied,
+          warning: result.warning
+        })
+        setAdjustedBuffering(false)
+        setAdjustedPlaybackError(null)
+        if (result.warning) {
+          setAdjustedWarning(
+            result.warning.reason === 'reversed'
+              ? WARNING_REVERSED_MESSAGE
+              : WARNING_OUT_OF_BOUNDS_MESSAGE
+          )
+        } else {
+          setAdjustedWarning(null)
+        }
+        if (previousToken && previousToken !== result.token) {
+          void releaseTrimmedPreviewToken(previousToken)
+        }
+      } else {
+        console.error('[adjusted-preview] trimmed preview error', result.message)
+        trimmedTokenRef.current = null
+        setTrimmedPreviewState({
+          status: 'error',
+          message: result.message,
+          warning: result.warning
+        })
+        setAdjustedBuffering(false)
+        if (result.warning) {
+          setAdjustedWarning(
+            result.warning.reason === 'reversed'
+              ? WARNING_REVERSED_MESSAGE
+              : WARNING_OUT_OF_BOUNDS_MESSAGE
+          )
+        } else {
+          setAdjustedWarning(null)
+        }
+        setAdjustedPlaybackError(result.message)
+        if (previousToken) {
+          void releaseTrimmedPreviewToken(previousToken)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    adjustedSourceState,
+    clipState,
+    previewEnd,
+    previewMode,
+    previewStart,
+    releaseCurrentTrimmedToken
+  ])
+
+  useEffect(() => {
+    console.info('[adjusted-preview] preview mode selected', { mode: previewMode })
+    if (previewMode !== 'adjusted') {
+      setAdjustedWarning(null)
+      setAdjustedPlaybackError(null)
+    }
+  }, [previewMode])
+
+  useEffect(() => {
+    return () => {
+      trimmedPlaybackGuardsRef.current?.dispose()
+      trimmedPlaybackGuardsRef.current = null
+      releaseCurrentTrimmedToken()
+    }
+  }, [releaseCurrentTrimmedToken])
+
+  useEffect(() => {
+    trimmedPlaybackGuardsRef.current?.dispose()
+    trimmedPlaybackGuardsRef.current = null
+
+    if (previewMode !== 'adjusted' || trimmedPreviewState.status !== 'ready') {
+      return
+    }
+
+    const element = previewVideoRef.current
+    if (!element) {
+      return
+    }
+
+    const guards = attachTrimmedPlaybackGuards(element, {
+      duration: trimmedPreviewState.duration,
       onEnded: () => {
         if (clipState) {
           console.info('[adjusted-preview] playback reached end', {
             clipId: clipState.id,
-            start: playbackWindowRef.current.start,
-            end: playbackWindowRef.current.end
+            start: trimmedPreviewState.applied.start,
+            end: trimmedPreviewState.applied.end
           })
         }
       },
@@ -1339,34 +1444,15 @@ const VideoPage: FC = () => {
       }
     })
 
-    adjustedPlaybackRef.current = controller
-    controller.updateWindow(playbackWindowRef.current.start, playbackWindowRef.current.end)
+    trimmedPlaybackGuardsRef.current = guards
 
     return () => {
-      controller.dispose()
-      if (adjustedPlaybackRef.current === controller) {
-        adjustedPlaybackRef.current = null
+      guards.dispose()
+      if (trimmedPlaybackGuardsRef.current === guards) {
+        trimmedPlaybackGuardsRef.current = null
       }
     }
-  }, [adjustedSourceState, clipState, playbackWindowRef, previewMode])
-
-  useEffect(() => {
-    if (previewMode !== 'adjusted') {
-      return
-    }
-    const controller = adjustedPlaybackRef.current
-    if (!controller) {
-      return
-    }
-    controller.updateWindow(previewStart, previewEnd)
-  }, [previewEnd, previewMode, previewStart])
-
-  useEffect(() => {
-    if (previewMode !== 'adjusted') {
-      setAdjustedWarning(null)
-      setAdjustedPlaybackError(null)
-    }
-  }, [previewMode])
+  }, [clipState, previewMode, trimmedPreviewState])
 
   const handleVideoLoadStart = useCallback(() => {
     setIsVideoBuffering(true)
@@ -1792,35 +1878,19 @@ const VideoPage: FC = () => {
                 <div className="flex overflow-hidden rounded-lg border border-white/10">
                   <button
                     type="button"
-                    onClick={() => supportsSourcePreview && setPreviewMode('adjusted')}
+                    onClick={() => adjustedButtonEnabled && setPreviewMode('adjusted')}
                     className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                       previewMode === 'adjusted'
                         ? 'bg-[color:color-mix(in_srgb,var(--muted)_50%,transparent)] text-[var(--fg)]'
-                        : supportsSourcePreview
+                        : adjustedButtonEnabled
                           ? 'text-[var(--fg)] hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)]'
                           : 'cursor-not-allowed text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]'
                     }`}
                     aria-pressed={previewMode === 'adjusted'}
-                    aria-disabled={!supportsSourcePreview}
-                    disabled={!supportsSourcePreview}
+                    aria-disabled={!adjustedButtonEnabled}
+                    disabled={!adjustedButtonEnabled}
                   >
                     Adjusted preview
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => supportsSourcePreview && setPreviewMode('original')}
-                    className={`px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
-                      previewMode === 'original'
-                        ? 'bg-[color:color-mix(in_srgb,var(--muted)_50%,transparent)] text-[var(--fg)]'
-                        : supportsSourcePreview
-                          ? 'text-[var(--fg)] hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)]'
-                          : 'cursor-not-allowed text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]'
-                    }`}
-                    aria-pressed={previewMode === 'original'}
-                    aria-disabled={!supportsSourcePreview}
-                    disabled={!supportsSourcePreview}
-                  >
-                    Original clip
                   </button>
                   <button
                     type="button"
@@ -1843,9 +1913,9 @@ const VideoPage: FC = () => {
                     ? renderedOutOfSync
                       ? 'Viewing the last saved render. The exported clip will update after you save these adjustments.'
                       : 'Review the exported vertical clip with captions and layout applied.'
-                    : previewMode === 'original'
-                      ? 'Viewing the untouched source range from the original footage.'
-                      : 'Previewing the adjusted range directly from the source video without captions or layout.'}
+                    : adjustedSourceState.status === 'missing'
+                      ? 'Adjusted preview requires the original full-length video. Locate the file to enable trimming.'
+                      : 'Previewing the trimmed range directly from the original video without captions or layout.'}
               </p>
               {renderedOutOfSync ? (
                 <p className="text-xs font-medium text-[color:color-mix(in_srgb,var(--warning-strong)_80%,var(--accent-contrast))]">

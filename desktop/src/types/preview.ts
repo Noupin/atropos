@@ -31,3 +31,24 @@ export type ResolveProjectSourceResponse =
   | ResolveProjectSourceMissing
   | ResolveProjectSourceError
 
+export type BuildTrimmedPreviewRequest = {
+  filePath: string
+  start: number
+  end: number
+}
+
+export type BuildTrimmedPreviewSuccess = {
+  status: 'ok'
+  mediaToken: string
+  duration: number
+  strategy: 'ffmpeg'
+  outputPath: string
+}
+
+export type BuildTrimmedPreviewError = {
+  status: 'error'
+  message: string
+}
+
+export type BuildTrimmedPreviewResponse = BuildTrimmedPreviewSuccess | BuildTrimmedPreviewError
+
