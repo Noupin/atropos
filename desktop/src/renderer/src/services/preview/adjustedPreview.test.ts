@@ -1,7 +1,8 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import {
   ensureCspAndElectronAllowLocalMedia,
-  prepareWindowedPlayback,
+  normaliseWindowRange,
+  buildWindowedMediaUrl,
   resolveOriginalSource
 } from './adjustedPreview'
 
@@ -22,19 +23,6 @@ const buildMockWindow = () => {
     },
     removeEventListener: (event: string) => listeners.delete(event)
   }
-}
-
-class MockVideoElement extends EventTarget {
-  currentTime = 0
-  duration = Number.NaN
-  readyState = 0
-  paused = true
-  ended = false
-  error: MediaError | null = null
-  play = vi.fn<[], Promise<void>>().mockResolvedValue(undefined)
-  pause = vi.fn().mockImplementation(() => {
-    this.paused = true
-  })
 }
 
 describe('adjustedPreview helpers', () => {
@@ -151,73 +139,29 @@ describe('adjustedPreview helpers', () => {
     }
   })
 
-  it('waits for metadata before seeking and resumes playback afterwards', async () => {
-    const video = new MockVideoElement()
-    const statusChanges: string[] = []
-    const controller = prepareWindowedPlayback(video as unknown as HTMLVideoElement, {
-      start: 5,
-      end: 10,
-      onStatusChange: (status) => statusChanges.push(status)
-    })
+  it('normalises playback windows and reports warnings', () => {
+    const basic = normaliseWindowRange(5, 10, { duration: 60 })
+    expect(basic.range.start).toBeCloseTo(5)
+    expect(basic.range.end).toBeCloseTo(10)
+    expect(basic.warning).toBeNull()
 
-    expect(statusChanges).toContain('loading')
+    const reversed = normaliseWindowRange(12, 8, { duration: 30 })
+    expect(reversed.range.start).toBeCloseTo(12)
+    expect(reversed.range.end).toBeGreaterThan(reversed.range.start)
+    expect(reversed.warning?.reason).toBe('reversed')
 
-    video.dispatchEvent(new Event('play'))
-    expect(video.pause).toHaveBeenCalled()
-
-    video.readyState = 1
-    video.duration = 60
-    video.dispatchEvent(new Event('loadedmetadata'))
-    expect(video.currentTime).toBeCloseTo(5)
-
-    video.dispatchEvent(new Event('seeked'))
-    await Promise.resolve()
-    expect(video.play).toHaveBeenCalled()
-
-    controller.dispose()
+    const outOfBounds = normaliseWindowRange(28, 40, { duration: 30 })
+    expect(outOfBounds.range.start).toBeLessThanOrEqual(30)
+    expect(outOfBounds.range.end).toBeCloseTo(30)
+    expect(outOfBounds.warning?.reason).toBe('out_of_bounds')
   })
 
-  it('clamps invalid playback windows and reports warnings', () => {
-    const video = new MockVideoElement()
-    video.readyState = 1
-    video.duration = 30
-    const warnings: string[] = []
-    const controller = prepareWindowedPlayback(video as unknown as HTMLVideoElement, {
-      start: 10,
-      end: 12,
-      onInvalidRange: (warning) => warnings.push(warning.reason)
-    })
+  it('builds media fragment URLs for virtual sub-clips', () => {
+    const url = buildWindowedMediaUrl('app://local-media/token', { start: 3, end: 7.5 })
+    expect(url).toBe('app://local-media/token#t=3.000,7.500')
 
-    controller.updateWindow(20, 15)
-    vi.advanceTimersByTime(200)
-    expect(warnings).toContain('reversed')
-    expect(video.currentTime).toBeLessThanOrEqual(20)
-    controller.dispose()
-  })
-
-  it('keeps manual scrubbing within the playback window', () => {
-    const video = new MockVideoElement()
-    const controller = prepareWindowedPlayback(video as unknown as HTMLVideoElement, {
-      start: 30,
-      end: 40
-    })
-
-    video.readyState = 1
-    video.duration = 120
-    video.dispatchEvent(new Event('loadedmetadata'))
-    vi.advanceTimersByTime(200)
-
-    video.currentTime = 90
-    video.dispatchEvent(new Event('seeking'))
-    expect(video.currentTime).toBeLessThanOrEqual(40)
-    expect(video.currentTime).toBeGreaterThan(39.9)
-
-    video.currentTime = 5
-    video.dispatchEvent(new Event('seeking'))
-    expect(video.currentTime).toBeGreaterThanOrEqual(30)
-    expect(video.currentTime).toBeLessThan(30.1)
-
-    controller.dispose()
+    const withFragment = buildWindowedMediaUrl('file:///video.mp4#hash', { start: 0, end: 2.25 })
+    expect(withFragment).toBe('file:///video.mp4#t=0.000,2.250')
   })
 
   it('adds file:// and app:// to the CSP media-src directive when missing', () => {
