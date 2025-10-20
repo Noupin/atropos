@@ -702,6 +702,25 @@ const VideoPage: FC = () => {
     ]
   )
 
+  const runStepAnimation = useCallback(async (setSteps: (updater: (prev: SaveStepState[]) => SaveStepState[]) => void) => {
+    for (let index = 1; index < SAVE_STEP_DEFINITIONS.length; index += 1) {
+      await delay(200)
+      setSteps((prev) =>
+        prev.map((step, stepIndex) => {
+          if (stepIndex < index) {
+            return { ...step, status: 'completed' }
+          }
+          if (stepIndex === index) {
+            return { ...step, status: 'running' }
+          }
+          return { ...step, status: 'pending' }
+        })
+      )
+    }
+    await delay(200)
+    setSteps((prev) => prev.map((step) => ({ ...step, status: 'completed' })))
+  }, [])
+
   const handleRenderLayoutDefinition = useCallback(
     async (layout: LayoutDefinition) => {
       if (!clipState) {
@@ -1922,25 +1941,6 @@ const VideoPage: FC = () => {
       }
     }
   }, [clipState, previewEnd, previewMode, previewSourceIsFile, previewStart])
-
-  const runStepAnimation = useCallback(async (setSteps: (updater: (prev: SaveStepState[]) => SaveStepState[]) => void) => {
-    for (let index = 1; index < SAVE_STEP_DEFINITIONS.length; index += 1) {
-      await delay(200)
-      setSteps((prev) =>
-        prev.map((step, stepIndex) => {
-          if (stepIndex < index) {
-            return { ...step, status: 'completed' }
-          }
-          if (stepIndex === index) {
-            return { ...step, status: 'running' }
-          }
-          return { ...step, status: 'pending' }
-        })
-      )
-    }
-    await delay(200)
-    setSteps((prev) => prev.map((step) => ({ ...step, status: 'completed' })))
-  }, [])
 
   const handleSave = useCallback(async () => {
     if (!clipState) {
