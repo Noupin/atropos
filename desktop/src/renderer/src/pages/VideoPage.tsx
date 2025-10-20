@@ -12,7 +12,6 @@ import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import useSharedVolume from '../hooks/useSharedVolume'
 import VideoPreviewStage from '../components/VideoPreviewStage'
 import LayoutEditorPanel from '../components/layout/LayoutEditorPanel'
-import LayoutPreviewOverlay from '../components/layout/LayoutPreviewOverlay'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
 import {
@@ -2065,33 +2064,63 @@ const VideoPage: FC = () => {
   const layoutPanelStatus = layoutStatusMessage
   const layoutPanelError = layoutErrorMessage ?? layoutCollectionError
 
+  const tabNavigation = (
+    <nav
+      aria-label="Video modes"
+      className="inline-flex rounded-[16px] border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-1 text-sm font-semibold text-[var(--fg)] shadow-[0_14px_28px_rgba(43,42,40,0.16)]"
+    >
+      {VIDEO_PAGE_MODES.map((tab) => {
+        const isActive = activeMode === tab.id
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => handleModeChange(tab.id)}
+            aria-pressed={isActive}
+            className={`flex-1 whitespace-nowrap rounded-[12px] px-4 py-2 transition ${
+              isActive
+                ? 'bg-[color:color-mix(in_srgb,var(--accent)_24%,transparent)] text-[var(--fg)] shadow-[0_10px_18px_rgba(43,42,40,0.18)]'
+                : 'text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_60%,transparent)] hover:text-[var(--fg)]'
+            }`}
+          >
+            {tab.label}
+          </button>
+        )
+      })}
+    </nav>
+  )
+
+  if (activeMode === 'layout') {
+    return (
+      <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
+        <LayoutEditorPanel
+          tabNavigation={tabNavigation}
+          clip={clipState}
+          layoutCollection={layoutCollection}
+          isCollectionLoading={isLayoutCollectionLoading}
+          selectedLayout={activeLayoutDefinition}
+          selectedLayoutReference={activeLayoutReference}
+          isLayoutLoading={isLayoutLoading}
+          appliedLayoutId={clipState?.layoutId ?? null}
+          isSavingLayout={isSavingLayout}
+          isApplyingLayout={isApplyingLayout}
+          statusMessage={layoutPanelStatus}
+          errorMessage={layoutPanelError}
+          onSelectLayout={handleSelectLayout}
+          onCreateBlankLayout={handleCreateBlankLayout}
+          onLayoutChange={handleLayoutChange}
+          onSaveLayout={handleSaveLayoutDefinition}
+          onImportLayout={handleImportLayoutDefinition}
+          onExportLayout={handleExportLayoutDefinition}
+          onApplyLayout={handleApplyLayoutDefinition}
+        />
+      </section>
+    )
+  }
+
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
-      <div className="flex flex-wrap justify-start gap-3">
-        <nav
-          aria-label="Video modes"
-          className="inline-flex rounded-[16px] border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-1 text-sm font-semibold text-[var(--fg)] shadow-[0_14px_28px_rgba(43,42,40,0.16)]"
-        >
-          {VIDEO_PAGE_MODES.map((tab) => {
-            const isActive = activeMode === tab.id
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => handleModeChange(tab.id)}
-                aria-pressed={isActive}
-                className={`flex-1 whitespace-nowrap rounded-[12px] px-4 py-2 transition ${
-                  isActive
-                    ? 'bg-[color:color-mix(in_srgb,var(--accent)_24%,transparent)] text-[var(--fg)] shadow-[0_10px_18px_rgba(43,42,40,0.18)]'
-                    : 'text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_60%,transparent)] hover:text-[var(--fg)]'
-                }`}
-              >
-                {tab.label}
-              </button>
-            )
-          })}
-        </nav>
-      </div>
+      <div className="flex flex-wrap justify-start gap-3">{tabNavigation}</div>
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="flex-1 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
           <div className="flex h-full flex-col gap-4">
@@ -2117,13 +2146,6 @@ const VideoPage: FC = () => {
               >
                 Your browser does not support the video tag.
               </video>
-              {activeMode === 'layout' && activeLayoutDefinition ? (
-                <LayoutPreviewOverlay
-                  layout={activeLayoutDefinition}
-                  highlightCaptionArea
-                  className="pointer-events-none"
-                />
-              ) : null}
               {showVideoLoadingOverlay ? (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/40">
                   <div
@@ -2259,28 +2281,6 @@ const VideoPage: FC = () => {
             >
               {statusMessage}
             </div>
-          ) : null}
-          {activeMode === 'layout' ? (
-            <LayoutEditorPanel
-              clip={clipState}
-              layoutCollection={layoutCollection}
-              isCollectionLoading={isLayoutCollectionLoading}
-              selectedLayout={activeLayoutDefinition}
-              selectedLayoutReference={activeLayoutReference}
-              isLayoutLoading={isLayoutLoading}
-              appliedLayoutId={clipState?.layoutId ?? null}
-              isSavingLayout={isSavingLayout}
-              isApplyingLayout={isApplyingLayout}
-              statusMessage={layoutPanelStatus}
-              errorMessage={layoutPanelError}
-              onSelectLayout={handleSelectLayout}
-              onCreateBlankLayout={handleCreateBlankLayout}
-              onLayoutChange={handleLayoutChange}
-              onSaveLayout={handleSaveLayoutDefinition}
-              onImportLayout={handleImportLayoutDefinition}
-              onExportLayout={handleExportLayoutDefinition}
-              onApplyLayout={handleApplyLayoutDefinition}
-            />
           ) : null}
           {activeMode === 'metadata' ? (
             <form
