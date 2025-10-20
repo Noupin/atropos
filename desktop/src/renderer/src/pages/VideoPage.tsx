@@ -579,6 +579,45 @@ const VideoPage: FC = () => {
     []
   )
 
+  const applyUpdatedClip = useCallback(
+    (updated: Clip) => {
+      setClipState(updated)
+      setRangeStart(updated.startSeconds)
+      setRangeEnd(updated.endSeconds)
+      setTitle(updated.title)
+      setDescription(updated.description ?? '')
+      setStatusMessage(null)
+      setUploadStatus((previous) => (previous === 'scheduled' ? previous : 'ready'))
+      setWindowStart(Math.max(0, Math.min(updated.startSeconds, updated.originalStartSeconds)))
+      const fallbackSourceEnd = Math.max(
+        minGap,
+        updated.originalEndSeconds,
+        updated.endSeconds,
+        updated.originalStartSeconds + Math.max(updated.durationSec, minGap)
+      )
+      const updatedSourceEnd =
+        updated.sourceDurationSeconds != null && Number.isFinite(updated.sourceDurationSeconds)
+          ? Math.max(minGap, updated.sourceDurationSeconds)
+          : fallbackSourceEnd
+      const desiredWindowEnd = Math.max(
+        updated.endSeconds,
+        updated.originalEndSeconds,
+        updated.startSeconds + minGap,
+        updated.originalStartSeconds + minGap
+      )
+      setWindowEnd(Math.min(updatedSourceEnd, desiredWindowEnd))
+      setPreviewTarget({ start: updated.startSeconds, end: updated.endSeconds })
+      setPreviewMode(getDefaultPreviewMode(updated))
+      layoutAppliedIdRef.current = updated.layoutId ?? null
+      if (updated.layoutId) {
+        setActiveLayoutReference({ id: updated.layoutId, category: resolveLayoutCategory(updated.layoutId) })
+      } else {
+        setActiveLayoutReference(null)
+      }
+    },
+    [minGap, resolveLayoutCategory]
+  )
+
   const handleApplyLayoutDefinition = useCallback(
     async (layout: LayoutDefinition) => {
       if (!clipState) {
@@ -689,45 +728,6 @@ const VideoPage: FC = () => {
       setPreviewMode('rendered')
     }
   }, [clipState, previewMode])
-
-  const applyUpdatedClip = useCallback(
-    (updated: Clip) => {
-      setClipState(updated)
-      setRangeStart(updated.startSeconds)
-      setRangeEnd(updated.endSeconds)
-      setTitle(updated.title)
-      setDescription(updated.description ?? '')
-      setStatusMessage(null)
-      setUploadStatus((previous) => (previous === 'scheduled' ? previous : 'ready'))
-      setWindowStart(Math.max(0, Math.min(updated.startSeconds, updated.originalStartSeconds)))
-      const fallbackSourceEnd = Math.max(
-        minGap,
-        updated.originalEndSeconds,
-        updated.endSeconds,
-        updated.originalStartSeconds + Math.max(updated.durationSec, minGap)
-      )
-      const updatedSourceEnd =
-        updated.sourceDurationSeconds != null && Number.isFinite(updated.sourceDurationSeconds)
-          ? Math.max(minGap, updated.sourceDurationSeconds)
-          : fallbackSourceEnd
-      const desiredWindowEnd = Math.max(
-        updated.endSeconds,
-        updated.originalEndSeconds,
-        updated.startSeconds + minGap,
-        updated.originalStartSeconds + minGap
-      )
-      setWindowEnd(Math.min(updatedSourceEnd, desiredWindowEnd))
-      setPreviewTarget({ start: updated.startSeconds, end: updated.endSeconds })
-      setPreviewMode(getDefaultPreviewMode(updated))
-      layoutAppliedIdRef.current = updated.layoutId ?? null
-      if (updated.layoutId) {
-        setActiveLayoutReference({ id: updated.layoutId, category: resolveLayoutCategory(updated.layoutId) })
-      } else {
-        setActiveLayoutReference(null)
-      }
-    },
-    [minGap, resolveLayoutCategory]
-  )
 
   const handleModeChange = useCallback(
     (mode: VideoPageMode) => {
