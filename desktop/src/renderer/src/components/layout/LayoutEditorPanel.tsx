@@ -13,6 +13,7 @@ import type {
 import type { Clip } from '../../types'
 import LayoutCanvas from './LayoutCanvas'
 import type { LayoutCanvasSelection } from './LayoutCanvas'
+import { resolveOriginalSource } from '../../services/preview/adjustedPreview'
 
 type LayoutReference = {
   id: string
@@ -51,6 +52,12 @@ type UpdateOptions = {
 }
 
 type PreviewKind = 'source' | 'layout'
+
+type SourceMediaState = {
+  status: 'idle' | 'loading' | 'ready' | 'missing' | 'error'
+  url: string | null
+  message: string | null
+}
 
 const clamp = (value: number, min = 0, max = 1): number => Math.min(Math.max(value, min), max)
 
@@ -125,6 +132,39 @@ const formatTimecode = (value: number): string => {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
+const CollapseToggleIcon: FC<{ collapsed: boolean }> = ({ collapsed }) => (
+  <svg
+    viewBox="0 0 16 16"
+    aria-hidden="true"
+    className="h-4 w-4 text-[var(--fg)]"
+    focusable="false"
+  >
+    {collapsed ? (
+      <>
+        <path d="M12.5 2v12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <path
+          d="M4 8h4.75L6.75 6.5M8.75 8 6.75 9.5"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </>
+    ) : (
+      <>
+        <path d="M3.5 2v12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <path
+          d="M12 8H7.25L9.25 6.5M7.25 8l2 1.5"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </>
+    )}
+  </svg>
+)
+
 const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   tabNavigation,
   clip,
@@ -164,6 +204,11 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [sourceMedia, setSourceMedia] = useState<SourceMediaState>({
+    status: 'idle',
+    url: null,
+    message: null
+  })
 
   useEffect(() => {
     if (!selectedLayout) {
@@ -193,6 +238,54 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
       layoutVideoRef.current.currentTime = 0
     }
   }, [clip?.id])
+
+  useEffect(() => {
+    if (!clip) {
+      setSourceMedia({ status: 'idle', url: null, message: null })
+      return
+    }
+
+    let cancelled = false
+    setSourceMedia({ status: 'loading', url: null, message: null })
+
+    ;(async () => {
+      try {
+        const result = await resolveOriginalSource({
+          clipId: clip.id,
+          projectId: clip.videoId ?? null,
+          accountId: clip.accountId ?? null,
+          playbackUrl: clip.playbackUrl,
+          previewUrl: clip.previewUrl
+        })
+        if (cancelled) {
+          return
+        }
+        if (result.kind === 'ready') {
+          setSourceMedia({ status: 'ready', url: result.mediaUrl, message: null })
+        } else if (result.kind === 'missing') {
+          const message = result.projectDir
+            ? `Original video missing from ${result.projectDir}.`
+            : 'Original video file could not be located.'
+          setSourceMedia({ status: 'missing', url: null, message })
+        } else {
+          setSourceMedia({ status: 'error', url: null, message: result.message })
+        }
+      } catch (error) {
+        console.error('[layout-editor] failed to resolve original source', error)
+        if (!cancelled) {
+          setSourceMedia({
+            status: 'error',
+            url: null,
+            message: 'Unable to load the original video.'
+          })
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [clip?.accountId, clip?.id, clip?.playbackUrl, clip?.previewUrl, clip?.videoId])
 
   const updateLayout = useCallback(
     (updater: (layout: LayoutDefinition) => LayoutDefinition, options?: UpdateOptions) => {
@@ -759,8 +852,22 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     }))
   }, [])
 
-  const sourceVideoSource = clip?.sourceUrl ?? null
-  const layoutPreviewSource = clip?.previewUrl ?? clip?.playbackUrl ?? clip?.sourceUrl ?? null
+  const sourceVideoSource = sourceMedia.status === 'ready' ? sourceMedia.url : null
+  const layoutPreviewSource =
+    sourceVideoSource ?? clip?.previewUrl ?? clip?.playbackUrl ?? clip?.sourceUrl ?? null
+
+  const sourcePreviewMessage = useMemo(() => {
+    if (!clip) {
+      return 'Load a clip to preview the source video.'
+    }
+    if (sourceMedia.status === 'loading') {
+      return 'Loading original video…'
+    }
+    if (sourceMedia.status === 'missing' || sourceMedia.status === 'error') {
+      return sourceMedia.message ?? 'Unable to load the original video.'
+    }
+    return null
+  }, [clip, sourceMedia])
 
   const releasePlaybackSync = useCallback(() => {
     window.setTimeout(() => {
@@ -1074,48 +1181,53 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
             {layoutSections.map((section) => {
               const collapsed = collapsedSections[section.category]
               return (
-                <div key={section.category} className="flex min-w-[260px] flex-col gap-3">
-                  <button
-                    type="button"
-                    className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                    onClick={() => toggleSection(section.category)}
-                    aria-expanded={!collapsed}
-                    aria-controls={`layout-section-${section.category}`}
-                  >
-                    <span>{section.title}</span>
-                    <span className="text-xs font-normal text-white/60">{collapsed ? 'Show' : 'Hide'}</span>
-                  </button>
-                  <div id={`layout-section-${section.category}`} className="flex flex-col gap-3">
-                    {collapsed ? (
-                      <span className="rounded-xl border border-dashed border-white/10 bg-black/20 px-3 py-4 text-center text-xs text-white/50">
-                        Section collapsed
-                      </span>
-                    ) : (
-                      <div className="flex gap-3">
-                        {section.items.map((layout) => {
-                          const isSelected = selectedLayoutReference?.id === layout.id
-                          return (
-                            <button
-                              key={layout.id}
-                              type="button"
-                              onClick={() => onSelectLayout(layout.id, section.category)}
-                              className={`flex w-48 flex-col gap-1 rounded-2xl border px-3 py-3 text-left transition ${
-                                isSelected
-                                  ? 'border-[color:color-mix(in_srgb,var(--accent)_70%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_85%,transparent)] text-[var(--fg)] shadow-[0_8px_20px_rgba(0,0,0,0.35)]'
-                                  : 'border-white/10 bg-[color:color-mix(in_srgb,var(--card)_85%,transparent)] text-[var(--muted)] hover:border-white/20'
-                              }`}
-                            >
-                              <span className="truncate text-sm font-semibold text-[var(--fg)]">{layout.name}</span>
-                              <span className="line-clamp-2 text-xs text-[var(--muted)]">
-                                {layout.description ? layout.description : 'No description'}
-                              </span>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
+                <section key={section.category} className="flex min-w-[320px] flex-col gap-3">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-sm font-semibold text-[var(--fg)]">{section.title}</h3>
+                    <span className="text-xs text-[var(--muted)]">{section.items.length} layouts</span>
+                    <button
+                      type="button"
+                      className="ml-auto inline-flex items-center justify-center rounded-full border border-white/15 bg-white/10 p-1.5 text-[var(--fg)] transition hover:border-white/30 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                      onClick={() => toggleSection(section.category)}
+                      aria-expanded={!collapsed}
+                      aria-controls={`layout-section-${section.category}`}
+                    >
+                      <span className="sr-only">{collapsed ? `Expand ${section.title}` : `Collapse ${section.title}`}</span>
+                      <CollapseToggleIcon collapsed={collapsed} />
+                    </button>
                   </div>
-                </div>
+                  {collapsed ? (
+                    <div
+                      id={`layout-section-${section.category}`}
+                      className="flex min-h-[72px] items-center justify-center rounded-xl border border-dashed border-white/25 bg-white/10 px-3 py-3 text-xs text-white/80"
+                    >
+                      <span>{section.title} layouts hidden</span>
+                    </div>
+                  ) : (
+                    <div id={`layout-section-${section.category}`} className="flex gap-3">
+                      {section.items.map((layout) => {
+                        const isSelected = selectedLayoutReference?.id === layout.id
+                        return (
+                          <button
+                            key={layout.id}
+                            type="button"
+                            onClick={() => onSelectLayout(layout.id, section.category)}
+                            className={`flex w-48 flex-col gap-1 rounded-2xl border px-3 py-3 text-left transition ${
+                              isSelected
+                                ? 'border-[color:color-mix(in_srgb,var(--accent)_70%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_85%,transparent)] text-[var(--fg)] shadow-[0_8px_20px_rgba(0,0,0,0.35)]'
+                                : 'border-white/12 bg-[color:color-mix(in_srgb,var(--card)_85%,transparent)] text-[var(--muted)] hover:border-white/24'
+                            }`}
+                          >
+                            <span className="truncate text-sm font-semibold text-[var(--fg)]">{layout.name}</span>
+                            <span className="line-clamp-2 text-xs text-[var(--muted)]">
+                              {layout.description ? layout.description : 'No description'}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </section>
               )
             })}
           </div>
@@ -1163,7 +1275,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                 <video
                   ref={sourceVideoRef}
                   src={sourceVideoSource}
-                  className="h-full w-full object-contain"
+                  className="pointer-events-none h-full w-full object-contain"
                   playsInline
                   muted
                   preload="metadata"
@@ -1175,7 +1287,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                   aria-label="Source video preview"
                 />
               ) : (
-                <span className="text-xs text-white/60">Load a clip to preview the source video.</span>
+                <span className="text-xs text-white/70">{sourcePreviewMessage}</span>
               )
             }
             style={{ height: previewHeight }}
@@ -1205,7 +1317,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                 <video
                   ref={layoutVideoRef}
                   src={layoutPreviewSource}
-                  className="h-full w-full object-cover"
+                  className="pointer-events-none h-full w-full object-contain"
                   playsInline
                   muted
                   preload="metadata"

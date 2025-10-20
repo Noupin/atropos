@@ -4,6 +4,17 @@ import type { LayoutDefinition } from '../../../types/layouts'
 import LayoutCanvas from '../components/layout/LayoutCanvas'
 import LayoutEditorPanel from '../components/layout/LayoutEditorPanel'
 
+vi.mock('../services/preview/adjustedPreview', () => ({
+  resolveOriginalSource: vi.fn(async () => ({
+    kind: 'ready' as const,
+    fileUrl: 'source.mp4',
+    mediaUrl: 'source.mp4',
+    filePath: '/tmp/source.mp4',
+    origin: 'canonical' as const,
+    projectDir: null
+  }))
+}))
+
 type Selection = Parameters<typeof LayoutCanvas>[0]['selectedItemIds']
 
 describe('Layout editor interactions', () => {
@@ -405,7 +416,7 @@ describe('Layout editor interactions', () => {
     expect(await screen.findByText('Built-in layout')).not.toBeNull()
 
     fireEvent.click(builtInToggle)
-    await screen.findByText(/Section collapsed/i)
+    await screen.findByText(/layouts hidden/i)
     expect(builtInToggle.getAttribute('aria-expanded')).toBe('false')
 
     const customToggle = (await screen.findAllByRole('button', { name: /Custom/i })).find(
@@ -415,7 +426,7 @@ describe('Layout editor interactions', () => {
       throw new Error('Custom toggle not found')
     }
     fireEvent.click(customToggle)
-    await screen.findAllByText(/Section collapsed/i)
+    await screen.findAllByText(/layouts hidden/i)
   })
 
   it('applies transforms when dragging items on the layout preview', async () => {

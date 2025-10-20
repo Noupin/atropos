@@ -529,7 +529,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const canvasClassName = useMemo(
     () =>
       [
-        'relative flex w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black',
+        'relative flex max-w-full select-none items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black touch-none',
         className
       ]
         .filter(Boolean)
@@ -558,7 +558,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       role="presentation"
       aria-label={ariaLabel}
     >
-      <div className="absolute inset-0 flex items-center justify-center text-xs text-white/60">
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-white/60">
         {previewContent}
       </div>
       {showGrid ? (
