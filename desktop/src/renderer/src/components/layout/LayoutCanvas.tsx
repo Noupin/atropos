@@ -49,7 +49,11 @@ type LayoutCanvasProps = {
   layout: LayoutDefinition | null
   selectedItemIds: LayoutCanvasSelection
   onSelectionChange: (selection: LayoutCanvasSelection) => void
-  onTransform: (transforms: LayoutCanvasTransform[], options: { commit: boolean }) => void
+  onTransform: (
+    transforms: LayoutCanvasTransform[],
+    options: { commit: boolean },
+    target: 'frame' | 'crop'
+  ) => void
   onRequestBringForward: () => void
   onRequestSendBackward: () => void
   onRequestDuplicate: () => void
@@ -57,6 +61,11 @@ type LayoutCanvasProps = {
   showGrid: boolean
   showSafeMargins: boolean
   previewContent: ReactNode
+  transformTarget: 'frame' | 'crop'
+  renderItemContent?: (item: LayoutItem, context: { isSelected: boolean }) => ReactNode
+  getItemClasses?: (item: LayoutItem, isSelected: boolean) => string
+  labelVisibility?: 'always' | 'selected' | 'never'
+  isItemEditable?: (item: LayoutItem) => boolean
   className?: string
   style?: CSSProperties
   ariaLabel?: string
@@ -100,6 +109,22 @@ const getItemColorClasses = (item: LayoutItem): string => {
     return 'border-emerald-300/60 bg-emerald-500/15'
   }
   return 'border-amber-300/60 bg-amber-500/15'
+}
+
+const defaultCrop = { x: 0, y: 0, width: 1, height: 1 }
+
+const normaliseCropFrame = (item: LayoutItem): LayoutFrame => {
+  if ((item as LayoutVideoItem).kind !== 'video') {
+    return cloneFrame(item.frame)
+  }
+  const video = item as LayoutVideoItem
+  const crop = video.crop ?? defaultCrop
+  return {
+    x: clamp(crop.x),
+    y: clamp(crop.y),
+    width: clamp(crop.width),
+    height: clamp(crop.height)
+  }
 }
 
 const cloneFrame = (frame: LayoutFrame): LayoutFrame => ({ ...frame })
@@ -203,6 +228,11 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   showGrid,
   showSafeMargins,
   previewContent,
+  transformTarget,
+  renderItemContent,
+  getItemClasses,
+  labelVisibility = 'always',
+  isItemEditable,
   className,
   style,
   ariaLabel
@@ -216,6 +246,29 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const [floatingPosition, setFloatingPosition] = useState<{ x: number; y: number } | null>(null)
 
   useGuideFade(guidesRef, setActiveGuides)
+
+  const getDisplayFrame = useCallback(
+    (item: LayoutItem): LayoutFrame => {
+      if (transformTarget === 'crop') {
+        return normaliseCropFrame(item)
+      }
+      return cloneFrame(item.frame)
+    },
+    [transformTarget]
+  )
+
+  const itemIsEditable = useCallback(
+    (item: LayoutItem): boolean => {
+      if (typeof isItemEditable === 'function') {
+        return isItemEditable(item)
+      }
+      if (transformTarget === 'crop') {
+        return (item as LayoutVideoItem).kind === 'video'
+      }
+      return true
+    },
+    [isItemEditable, transformTarget]
+  )
 
   const sortedItems = useMemo(() => {
     if (!layout) {
@@ -308,10 +361,10 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         cancelAnimationFrame(rafRef.current)
       }
       rafRef.current = requestAnimationFrame(() => {
-        onTransform(transforms, options)
+        onTransform(transforms, options, transformTarget)
       })
     },
-    [onTransform]
+    [onTransform, transformTarget]
   )
 
   const handlePointerDown = useCallback(
@@ -327,14 +380,20 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           : [...selectedItemIds, item.id]
         : [item.id]
       onSelectionChange(selection)
+      if (!itemIsEditable(item)) {
+        return
+      }
       const originalFrames = new Map<string, LayoutFrame>()
       const targetIds = selection.length ? selection : [item.id]
       targetIds.forEach((id) => {
         const match = layout?.items.find((candidate) => candidate.id === id)
-        if (match) {
-          originalFrames.set(id, cloneFrame(match.frame))
+        if (match && itemIsEditable(match)) {
+          originalFrames.set(id, getDisplayFrame(match))
         }
       })
+      if (originalFrames.size === 0) {
+        return
+      }
       dragStateRef.current = {
         mode: 'move',
         pointerId: event.pointerId,
@@ -347,7 +406,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       ;(event.target as HTMLElement).setPointerCapture(event.pointerId)
       event.preventDefault()
     },
-    [layout?.items, onSelectionChange, selectedItemIds]
+    [getDisplayFrame, itemIsEditable, layout?.items, onSelectionChange, selectedItemIds]
   )
 
   const handleResizePointerDown = useCallback(
@@ -356,10 +415,13 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         return
       }
       event.stopPropagation()
+      if (!itemIsEditable(item)) {
+        return
+      }
       const maintainAspect = event.shiftKey || handle.length === 2
       const snapEnabled = event.altKey || event.metaKey
       onSelectionChange([item.id])
-      const originalFrame = cloneFrame(item.frame)
+      const originalFrame = getDisplayFrame(item)
       dragStateRef.current = {
         mode: 'resize',
         pointerId: event.pointerId,
@@ -374,7 +436,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       ;(event.target as HTMLElement).setPointerCapture(event.pointerId)
       event.preventDefault()
     },
-    [onSelectionChange]
+    [getDisplayFrame, itemIsEditable, onSelectionChange]
   )
 
   const handlePointerMove = useCallback(
@@ -495,12 +557,13 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     if (!activeSelection.length) {
       return null
     }
-    const minX = Math.min(...activeSelection.map((item) => item.frame.x))
-    const minY = Math.min(...activeSelection.map((item) => item.frame.y))
-    const maxX = Math.max(...activeSelection.map((item) => item.frame.x + item.frame.width))
-    const maxY = Math.max(...activeSelection.map((item) => item.frame.y + item.frame.height))
+    const frames = activeSelection.map((item) => getDisplayFrame(item))
+    const minX = Math.min(...frames.map((frame) => frame.x))
+    const minY = Math.min(...frames.map((frame) => frame.y))
+    const maxX = Math.max(...frames.map((frame) => frame.x + frame.width))
+    const maxY = Math.max(...frames.map((frame) => frame.y + frame.height))
     return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
-  }, [activeSelection])
+  }, [activeSelection, getDisplayFrame])
 
   const selectionLabel = useMemo(() => {
     if (!activeSelection.length) {
@@ -585,7 +648,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         />
       ))}
       {sortedItems.map((item) => {
-        const { frame } = item
+        const frame = getDisplayFrame(item)
         const left = fractionToPercent(frame.x)
         const top = fractionToPercent(frame.y)
         const width = fractionToPercent(frame.width)
@@ -593,11 +656,14 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const isSelected = selectedItemIds.includes(item.id)
         const isPrimarySelection = activeSelection[0]?.id === item.id
         const label = getItemLabel(item)
+        const classes = getItemClasses ? getItemClasses(item, isSelected) : getItemColorClasses(item)
+        const shouldShowLabel = labelVisibility === 'always' || (labelVisibility === 'selected' && isSelected)
+        const editable = itemIsEditable(item)
         return (
           <div
             key={item.id}
-            className={`absolute rounded-xl border bg-white/5 text-[10px] font-semibold uppercase tracking-wide text-white/80 shadow-lg transition ${
-              getItemColorClasses(item)
+            className={`absolute rounded-xl border text-[10px] font-semibold uppercase tracking-wide text-white/80 shadow-lg transition ${
+              classes
             } ${isSelected ? 'ring-2 ring-[var(--ring)]' : 'ring-0'}`}
             style={{ left, top, width, height }}
             onPointerDown={(event) => handlePointerDown(event, item)}
@@ -605,15 +671,22 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
             aria-label={label}
             data-item-id={item.id}
           >
-            <div className="pointer-events-none flex h-full w-full items-center justify-center px-2 text-center drop-shadow">
-              {label}
-            </div>
+            {renderItemContent ? (
+              <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
+                {renderItemContent(item, { isSelected })}
+              </div>
+            ) : null}
+            {shouldShowLabel ? (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-2 text-center drop-shadow">
+                {label}
+              </div>
+            ) : null}
             {isPrimarySelection && selectionBounds?.width && selectionBounds.height ? (
               <div className="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 rounded-full bg-black/80 px-3 py-1 text-[11px] font-medium text-white">
                 {selectionLabel}
               </div>
             ) : null}
-            {isPrimarySelection
+            {isPrimarySelection && editable
               ? handles.map((handle) => (
                   <button
                     key={handle.id}

@@ -36,11 +36,14 @@ describe('Layout editor interactions', () => {
       // @ts-expect-error jsdom polyfill for PointerEvent
       global.PointerEvent = PointerEventPolyfill
     }
-    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback: FrameRequestCallback) => {
-      callback(0)
-      return 0
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback: FrameRequestCallback) =>
+      window.setTimeout(() => {
+        callback(performance.now())
+      }, 0)
+    )
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((handle: number) => {
+      window.clearTimeout(handle)
     })
-    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
     Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', {
       value: vi.fn(),
       configurable: true
@@ -80,6 +83,32 @@ describe('Layout editor interactions', () => {
       writable: true,
       configurable: true
     })
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+      value: vi.fn(() => ({
+        save: vi.fn(),
+        restore: vi.fn(),
+        scale: vi.fn(),
+        clearRect: vi.fn(),
+        fillRect: vi.fn(),
+        beginPath: vi.fn(),
+        moveTo: vi.fn(),
+        lineTo: vi.fn(),
+        quadraticCurveTo: vi.fn(),
+        closePath: vi.fn(),
+        fill: vi.fn(),
+        drawImage: vi.fn(),
+        translate: vi.fn(),
+        rotate: vi.fn(),
+        font: '',
+        textAlign: 'center',
+        textBaseline: 'top',
+        measureText: vi.fn(() => ({ width: 100 } as TextMetrics)),
+        fillText: vi.fn(),
+        filter: '',
+        globalAlpha: 1
+      })),
+      configurable: true
+    })
   })
 
   const baseLayout: LayoutDefinition = {
@@ -114,6 +143,22 @@ describe('Layout editor interactions', () => {
     ]
   }
 
+  const pipelineSteps = [
+    { id: 'cut', label: 'Cut clip', description: 'Trim the footage', status: 'pending' as const },
+    {
+      id: 'subtitles',
+      label: 'Regenerate subtitles',
+      description: 'Update transcript timing',
+      status: 'pending' as const
+    },
+    {
+      id: 'render',
+      label: 'Render vertical clip',
+      description: 'Produce the final output',
+      status: 'pending' as const
+    }
+  ]
+
   it('selects and moves an item on the canvas', async () => {
     const onTransform = vi.fn()
     const onSelectionChange = vi.fn<(selection: Selection) => void>()
@@ -130,6 +175,7 @@ describe('Layout editor interactions', () => {
         showGrid
         showSafeMargins={false}
         previewContent={<div>preview</div>}
+        transformTarget="frame"
       />
     )
 
@@ -148,7 +194,8 @@ describe('Layout editor interactions', () => {
             frame: expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) })
           }
         ],
-        { commit: false }
+        { commit: false },
+        'frame'
       )
     })
 
@@ -158,7 +205,8 @@ describe('Layout editor interactions', () => {
         expect.arrayContaining([
           expect.objectContaining({ itemId: 'video-1' })
         ]),
-        { commit: true }
+        { commit: true },
+        'frame'
       )
     })
   })
@@ -216,6 +264,11 @@ describe('Layout editor interactions', () => {
         onImportLayout={vi.fn(async () => undefined)}
         onExportLayout={vi.fn(async () => undefined)}
         onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
       />
     )
 
@@ -260,6 +313,11 @@ describe('Layout editor interactions', () => {
         onImportLayout={vi.fn(async () => undefined)}
         onExportLayout={vi.fn(async () => undefined)}
         onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
       />
     )
 
@@ -326,6 +384,11 @@ describe('Layout editor interactions', () => {
         onImportLayout={vi.fn(async () => undefined)}
         onExportLayout={vi.fn(async () => undefined)}
         onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
       />
     )
 
@@ -403,6 +466,11 @@ describe('Layout editor interactions', () => {
         onImportLayout={vi.fn(async () => undefined)}
         onExportLayout={vi.fn(async () => undefined)}
         onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
       />
     )
 
@@ -484,6 +552,11 @@ describe('Layout editor interactions', () => {
         onImportLayout={vi.fn(async () => undefined)}
         onExportLayout={vi.fn(async () => undefined)}
         onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
       />
     )
 
@@ -539,11 +612,6 @@ describe('Layout editor interactions', () => {
     await waitFor(() => {
       const updatedLayoutItem = within(layoutCanvas).getByRole('group', { name: /Primary/i })
       expect(updatedLayoutItem.getAttribute('style')).not.toEqual(originalLayoutStyle)
-    })
-
-    await waitFor(() => {
-      const updatedSourceItem = within(sourceCanvas).getByRole('group', { name: /Primary/i })
-      expect(updatedSourceItem.getAttribute('style')).not.toEqual(originalSourceStyle)
     })
   })
 
@@ -601,6 +669,11 @@ describe('Layout editor interactions', () => {
         onImportLayout={vi.fn(async () => undefined)}
         onExportLayout={vi.fn(async () => undefined)}
         onApplyLayout={onApplyLayout}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
       />
     )
 

@@ -4,16 +4,28 @@ import type { LayoutCollection } from '../../../../types/api'
 import type {
   LayoutBackground,
   LayoutCategory,
+  LayoutCrop,
   LayoutDefinition,
   LayoutFrame,
   LayoutItem,
+  LayoutShapeItem,
   LayoutTextItem,
   LayoutVideoItem
 } from '../../../../types/layouts'
 import type { Clip } from '../../types'
 import LayoutCanvas from './LayoutCanvas'
 import type { LayoutCanvasSelection } from './LayoutCanvas'
+import LayoutCompositionSurface from './LayoutCompositionSurface'
 import { resolveOriginalSource } from '../../services/preview/adjustedPreview'
+
+type PipelineStepStatus = 'pending' | 'running' | 'completed' | 'failed'
+
+type PipelineStepState = {
+  id: string
+  label: string
+  description: string
+  status: PipelineStepStatus
+}
 
 type LayoutReference = {
   id: string
@@ -43,6 +55,11 @@ type LayoutEditorPanelProps = {
   onImportLayout: () => Promise<void>
   onExportLayout: (id: string, category: LayoutCategory) => Promise<void>
   onApplyLayout: (layout: LayoutDefinition) => Promise<void>
+  onRenderLayout: (layout: LayoutDefinition) => Promise<void>
+  renderSteps: PipelineStepState[]
+  isRenderingLayout: boolean
+  renderStatusMessage: string | null
+  renderErrorMessage: string | null
 }
 
 type UpdateOptions = {
@@ -61,6 +78,39 @@ type SourceMediaState = {
 
 const clamp = (value: number, min = 0, max = 1): number => Math.min(Math.max(value, min), max)
 
+const createDefaultCrop = (): LayoutCrop => ({ x: 0, y: 0, width: 1, height: 1, units: 'fraction' })
+
+const normaliseVideoCrop = (crop: LayoutCrop | null | undefined): LayoutCrop => ({
+  x: clamp(crop?.x ?? 0),
+  y: clamp(crop?.y ?? 0),
+  width: clamp(crop?.width ?? 1),
+  height: clamp(crop?.height ?? 1),
+  units: 'fraction'
+})
+
+const cloneLayoutItem = (item: LayoutItem): LayoutItem => {
+  if ((item as LayoutVideoItem).kind === 'video') {
+    const video = item as LayoutVideoItem
+    return {
+      ...video,
+      frame: { ...video.frame },
+      crop: normaliseVideoCrop(video.crop)
+    }
+  }
+  if ((item as LayoutTextItem).kind === 'text') {
+    const text = item as LayoutTextItem
+    return {
+      ...text,
+      frame: { ...text.frame }
+    }
+  }
+  const shape = item as LayoutShapeItem
+  return {
+    ...shape,
+    frame: { ...shape.frame }
+  }
+}
+
 const cloneLayout = (layout: LayoutDefinition): LayoutDefinition => ({
   ...layout,
   canvas: {
@@ -68,10 +118,7 @@ const cloneLayout = (layout: LayoutDefinition): LayoutDefinition => ({
     background: { ...layout.canvas.background }
   },
   captionArea: layout.captionArea ? { ...layout.captionArea } : null,
-  items: layout.items.map((item) => ({
-    ...item,
-    frame: { ...item.frame }
-  }))
+  items: layout.items.map((item) => cloneLayoutItem(item))
 })
 
 const createItemId = (prefix: string): string => `${prefix}-${Date.now().toString(36)}-${Math.round(Math.random() * 999)}`
@@ -120,6 +167,14 @@ const clampFrame = (frame: LayoutFrame): LayoutFrame => ({
   height: clamp(frame.height)
 })
 
+const clampCropFrame = (frame: LayoutFrame): LayoutCrop => ({
+  x: clamp(frame.x),
+  y: clamp(frame.y),
+  width: clamp(frame.width),
+  height: clamp(frame.height),
+  units: 'fraction'
+})
+
 const formatPercent = (value: number): string => `${Math.round(value * 100)}%`
 
 const formatTimecode = (value: number): string => {
@@ -134,32 +189,20 @@ const formatTimecode = (value: number): string => {
 
 const CollapseToggleIcon: FC<{ collapsed: boolean }> = ({ collapsed }) => (
   <svg
-    viewBox="0 0 16 16"
+    viewBox="0 0 20 20"
     aria-hidden="true"
     className="h-4 w-4 text-[var(--fg)]"
     focusable="false"
   >
     {collapsed ? (
       <>
-        <path d="M12.5 2v12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <path
-          d="M4 8h4.75L6.75 6.5M8.75 8 6.75 9.5"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+        <path d="M5 3v14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <path d="M8 10 13 6v8L8 10Z" fill="currentColor" />
       </>
     ) : (
       <>
-        <path d="M3.5 2v12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <path
-          d="M12 8H7.25L9.25 6.5M7.25 8l2 1.5"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+        <path d="M5 3v14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <path d="M12 6 7 10l5 4V6Z" fill="currentColor" />
       </>
     )}
   </svg>
@@ -184,7 +227,12 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   onSaveLayout,
   onImportLayout,
   onExportLayout,
-  onApplyLayout
+  onApplyLayout,
+  onRenderLayout,
+  renderSteps,
+  isRenderingLayout,
+  renderStatusMessage,
+  renderErrorMessage
 }) => {
   const [draftLayout, setDraftLayout] = useState<LayoutDefinition | null>(null)
   const [selectedItemIds, setSelectedItemIds] = useState<LayoutCanvasSelection>([])
@@ -312,7 +360,11 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   )
 
   const handleTransform = useCallback(
-    (transforms: { itemId: string; frame: LayoutFrame }[], options: { commit: boolean }) => {
+    (
+      transforms: { itemId: string; frame: LayoutFrame }[],
+      options: { commit: boolean },
+      target: 'frame' | 'crop'
+    ) => {
       updateLayout(
         (layout) => ({
           ...layout,
@@ -320,6 +372,13 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
             const match = transforms.find((transform) => transform.itemId === item.id)
             if (!match) {
               return item
+            }
+            if (target === 'crop' && item.kind === 'video') {
+              const video = item as LayoutVideoItem
+              return {
+                ...video,
+                crop: clampCropFrame(match.frame)
+              }
             }
             return {
               ...item,
@@ -345,12 +404,13 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           kind: 'video',
           source: 'primary',
           name: 'Primary video',
-          frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.6 },
-          scaleMode: 'cover',
-          rotation: null,
-          opacity: 1,
-          mirror: false,
-          zIndex: draftLayout.items.length
+      frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.6 },
+      crop: createDefaultCrop(),
+      scaleMode: 'cover',
+      rotation: null,
+      opacity: 1,
+      mirror: false,
+      zIndex: draftLayout.items.length
         }
       } else if (kind === 'text') {
         newItem = {
@@ -586,17 +646,24 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     }
     const duplicates: LayoutItem[] = draftLayout.items
       .filter((item) => selectedItemIds.includes(item.id))
-      .map((item) => ({
-        ...item,
-        id: createItemId(item.kind),
-        frame: clampFrame({
-          x: clamp(item.frame.x + 0.03),
-          y: clamp(item.frame.y + 0.03),
-          width: item.frame.width,
-          height: item.frame.height
-        }),
-        zIndex: draftLayout.items.length + 1
-      }))
+      .map((item) => {
+        const cloned = cloneLayoutItem(item)
+        const shiftedFrame = clampFrame({
+          x: clamp(cloned.frame.x + 0.03),
+          y: clamp(cloned.frame.y + 0.03),
+          width: cloned.frame.width,
+          height: cloned.frame.height
+        })
+        return {
+          ...cloned,
+          id: createItemId(item.kind),
+          frame: shiftedFrame,
+          ...(cloned.kind === 'video'
+            ? { crop: clampCropFrame((cloned as LayoutVideoItem).crop ?? createDefaultCrop()) }
+            : {}),
+          zIndex: draftLayout.items.length + 1
+        }
+      })
     updateLayout(
       (layout) => ({
         ...layout,
@@ -611,10 +678,9 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     if (!draftLayout || selectedItemIds.length === 0) {
       return
     }
-    const items = draftLayout.items.filter((item) => selectedItemIds.includes(item.id)).map((item) => ({
-      ...item,
-      frame: { ...item.frame }
-    }))
+    const items = draftLayout.items
+      .filter((item) => selectedItemIds.includes(item.id))
+      .map((item) => cloneLayoutItem(item))
     setClipboard(items)
   }, [draftLayout, selectedItemIds])
 
@@ -622,17 +688,24 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     if (!clipboard || !draftLayout) {
       return
     }
-    const clones = clipboard.map((item) => ({
-      ...item,
-      id: createItemId(item.kind),
-      frame: clampFrame({
-        x: clamp(item.frame.x + 0.05),
-        y: clamp(item.frame.y + 0.05),
-        width: item.frame.width,
-        height: item.frame.height
-      }),
-      zIndex: draftLayout.items.length + 1
-    }))
+    const clones = clipboard.map((item) => {
+      const cloned = cloneLayoutItem(item)
+      const shiftedFrame = clampFrame({
+        x: clamp(cloned.frame.x + 0.05),
+        y: clamp(cloned.frame.y + 0.05),
+        width: cloned.frame.width,
+        height: cloned.frame.height
+      })
+      return {
+        ...cloned,
+        id: createItemId(item.kind),
+        frame: shiftedFrame,
+        ...(cloned.kind === 'video'
+          ? { crop: clampCropFrame((cloned as LayoutVideoItem).crop ?? createDefaultCrop()) }
+          : {}),
+        zIndex: draftLayout.items.length + 1
+      }
+    })
     updateLayout(
       (layout) => ({
         ...layout,
@@ -779,6 +852,13 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     await onImportLayout()
   }, [onImportLayout])
 
+  const handleRender = useCallback(async () => {
+    if (!draftLayout) {
+      return
+    }
+    await onRenderLayout(draftLayout)
+  }, [draftLayout, onRenderLayout])
+
   const bringSelectionIntoView = useCallback(() => {
     if (!draftLayout || selectedItemIds.length === 0) {
       return
@@ -789,6 +869,13 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         items: layout.items.map((item) => {
           if (!selectedItemIds.includes(item.id)) {
             return item
+          }
+          if (item.kind === 'video') {
+            return {
+              ...item,
+              frame: clampFrame(item.frame),
+              crop: clampCropFrame(normaliseVideoCrop((item as LayoutVideoItem).crop))
+            }
           }
           return {
             ...item,
@@ -813,7 +900,16 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     }
     return selectedItems.some((item) => {
       const frame = item.frame
-      return frame.x < 0 || frame.y < 0 || frame.x + frame.width > 1 || frame.y + frame.height > 1
+      if (frame.x < 0 || frame.y < 0 || frame.x + frame.width > 1 || frame.y + frame.height > 1) {
+        return true
+      }
+      if (item.kind === 'video') {
+        const crop = normaliseVideoCrop((item as LayoutVideoItem).crop)
+        if (crop.x < 0 || crop.y < 0 || crop.x + crop.width > 1 || crop.y + crop.height > 1) {
+          return true
+        }
+      }
+      return false
     })
   }, [selectedItems])
 
@@ -852,9 +948,24 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     }))
   }, [])
 
+  const layoutPreviewItemClasses = useCallback((item: LayoutItem, isSelected: boolean) => {
+    if ((item as LayoutVideoItem).kind === 'video') {
+      return isSelected
+        ? 'border-[color:color-mix(in_srgb,var(--accent)_70%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_45%,transparent)]'
+        : 'border-white/35 bg-transparent'
+    }
+    if ((item as LayoutTextItem).kind === 'text') {
+      return isSelected
+        ? 'border-emerald-300/70 bg-emerald-500/25'
+        : 'border-emerald-300/55 bg-emerald-500/15'
+    }
+    return isSelected
+      ? 'border-amber-300/70 bg-amber-500/25'
+      : 'border-amber-300/55 bg-amber-500/15'
+  }, [])
+
   const sourceVideoSource = sourceMedia.status === 'ready' ? sourceMedia.url : null
-  const layoutPreviewSource =
-    sourceVideoSource ?? clip?.previewUrl ?? clip?.playbackUrl ?? clip?.sourceUrl ?? null
+  const layoutPreviewSource = sourceVideoSource
 
   const sourcePreviewMessage = useMemo(() => {
     if (!clip) {
@@ -1036,6 +1147,14 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     return Math.max(1, currentTime || 0)
   }, [currentTime, effectiveDuration])
 
+  const shouldShowRenderSteps = useMemo(
+    () =>
+      renderSteps.some((step) => step.status !== 'pending') ||
+      Boolean(renderStatusMessage) ||
+      Boolean(renderErrorMessage),
+    [renderErrorMessage, renderStatusMessage, renderSteps]
+  )
+
   const previewHeight = 'clamp(280px, 60vh, 640px)'
 
   const clipDuration = clip?.durationSec ?? 0
@@ -1199,7 +1318,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                   {collapsed ? (
                     <div
                       id={`layout-section-${section.category}`}
-                      className="flex min-h-[72px] items-center justify-center rounded-xl border border-dashed border-white/25 bg-white/10 px-3 py-3 text-xs text-white/80"
+                      className="flex min-h-[72px] items-center justify-center rounded-xl border border-dashed border-white/25 bg-white/10 px-3 py-3 text-xs text-[var(--fg)]"
                     >
                       <span>{section.title} layouts hidden</span>
                     </div>
@@ -1290,6 +1409,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                 <span className="text-xs text-white/70">{sourcePreviewMessage}</span>
               )
             }
+            transformTarget="crop"
             style={{ height: previewHeight }}
             ariaLabel="Source preview canvas"
           />
@@ -1314,24 +1434,27 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
             showSafeMargins={showSafeMargins}
             previewContent={
               layoutPreviewSource ? (
-                <video
-                  ref={layoutVideoRef}
-                  src={layoutPreviewSource}
-                  className="pointer-events-none h-full w-full object-contain"
-                  playsInline
-                  muted
-                  preload="metadata"
+                <LayoutCompositionSurface
+                  layout={draftLayout}
+                  videoRef={layoutVideoRef}
+                  source={layoutPreviewSource}
+                  isPlaying={isPlaying}
+                  currentTime={currentTime}
                   onLoadedMetadata={() => handleVideoLoadedMetadata('layout')}
                   onPlay={() => handleVideoPlay('layout')}
                   onPause={() => handleVideoPause('layout')}
                   onTimeUpdate={() => handleVideoTimeUpdate('layout')}
                   onSeeked={() => handleVideoSeeked('layout')}
-                  aria-label="Layout preview video"
+                  className="pointer-events-none"
+                  ariaLabel="Layout preview video"
                 />
               ) : (
                 <span className="text-xs text-white/60">No preview source available.</span>
               )
             }
+            transformTarget="frame"
+            labelVisibility="selected"
+            getItemClasses={layoutPreviewItemClasses}
             style={{ height: previewHeight }}
             ariaLabel="Layout preview canvas"
           />
@@ -1684,6 +1807,70 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           </div>
         )}
       </form>
+      <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className="marble-button marble-button--solid px-3 py-2 text-sm"
+            onClick={handleRender}
+            disabled={!draftLayout || isRenderingLayout}
+          >
+            {isRenderingLayout ? 'Rendering…' : 'Render with this layout'}
+          </button>
+          <p className="text-xs text-[var(--muted)]">
+            Rebuild the clip using your latest layout adjustments.
+          </p>
+        </div>
+        {shouldShowRenderSteps ? (
+          <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_55%,transparent)] p-4 text-sm text-[var(--muted)]">
+            <h3 className="text-sm font-semibold text-[var(--fg)]">Rendering progress</h3>
+            <ol className="mt-3 space-y-3">
+              {renderSteps.map((step) => {
+                const isCompleted = step.status === 'completed'
+                const isRunning = step.status === 'running'
+                const isFailed = step.status === 'failed'
+                const indicatorClasses = isCompleted
+                  ? 'border-[color:color-mix(in_srgb,var(--success-strong)_45%,var(--edge))] bg-[color:var(--success-soft)] text-[color:color-mix(in_srgb,var(--success-strong)_85%,var(--accent-contrast))]'
+                  : isFailed
+                    ? 'border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]'
+                    : isRunning
+                      ? 'border-[var(--ring)] text-[var(--ring)]'
+                      : 'border-white/15 text-[var(--muted)]'
+                return (
+                  <li key={step.id} className="flex items-start gap-3">
+                    <span
+                      className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${indicatorClasses}`}
+                      aria-hidden
+                    >
+                      {isRunning ? (
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      ) : isCompleted ? (
+                        '✓'
+                      ) : isFailed ? (
+                        '!'
+                      ) : (
+                        '•'
+                      )}
+                    </span>
+                    <div>
+                      <p className="font-medium text-[var(--fg)]">{step.label}</p>
+                      <p className="text-xs">{step.description}</p>
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+            {renderStatusMessage ? (
+              <p className="mt-3 text-xs text-[var(--fg)]">{renderStatusMessage}</p>
+            ) : null}
+            {renderErrorMessage ? (
+              <p className="mt-3 text-xs text-[color:color-mix(in_srgb,var(--error-strong)_80%,var(--accent-contrast))]">
+                {renderErrorMessage}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </section>
   )
 }

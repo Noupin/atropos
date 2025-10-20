@@ -353,6 +353,10 @@ const VideoPage: FC = () => {
   const [isApplyingLayout, setIsApplyingLayout] = useState(false)
   const [layoutStatusMessage, setLayoutStatusMessage] = useState<string | null>(null)
   const [layoutErrorMessage, setLayoutErrorMessage] = useState<string | null>(null)
+  const [layoutRenderSteps, setLayoutRenderSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
+  const [isLayoutRendering, setIsLayoutRendering] = useState(false)
+  const [layoutRenderStatusMessage, setLayoutRenderStatusMessage] = useState<string | null>(null)
+  const [layoutRenderErrorMessage, setLayoutRenderErrorMessage] = useState<string | null>(null)
 
   const resolveLayoutCategory = useCallback(
     (identifier: string | null | undefined): LayoutCategory | null => {
@@ -369,6 +373,12 @@ const VideoPage: FC = () => {
     },
     [layoutCollection]
   )
+
+  useEffect(() => {
+    setLayoutRenderSteps(createInitialSaveSteps())
+    setLayoutRenderStatusMessage(null)
+    setLayoutRenderErrorMessage(null)
+  }, [activeLayoutDefinition?.id])
 
   const refreshLayoutCollection = useCallback(async () => {
     setIsLayoutCollectionLoading(true)
@@ -690,6 +700,41 @@ const VideoPage: FC = () => {
       handleSaveLayoutDefinition,
       jobId
     ]
+  )
+
+  const handleRenderLayoutDefinition = useCallback(
+    async (layout: LayoutDefinition) => {
+      if (!clipState) {
+        setLayoutErrorMessage('Load a clip before rendering a layout.')
+        return
+      }
+      setLayoutRenderSteps(
+        SAVE_STEP_DEFINITIONS.map((step, index) => ({
+          ...step,
+          status: index === 0 ? 'running' : 'pending'
+        }))
+      )
+      setIsLayoutRendering(true)
+      setLayoutRenderStatusMessage(null)
+      setLayoutRenderErrorMessage(null)
+      try {
+        await handleApplyLayoutDefinition(layout)
+        await runStepAnimation(setLayoutRenderSteps)
+        setLayoutRenderStatusMessage('Rendering started with the latest layout. We will notify you when it finishes.')
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unable to render the clip with this layout. Please try again.'
+        setLayoutRenderErrorMessage(message)
+        setLayoutRenderSteps((prev) =>
+          prev.map((step) => (step.status === 'running' ? { ...step, status: 'failed' } : step))
+        )
+      } finally {
+        setIsLayoutRendering(false)
+      }
+    },
+    [clipState, handleApplyLayoutDefinition, runStepAnimation]
   )
 
   const originalStart = clipState?.originalStartSeconds ?? 0
@@ -1878,10 +1923,10 @@ const VideoPage: FC = () => {
     }
   }, [clipState, previewEnd, previewMode, previewSourceIsFile, previewStart])
 
-  const runSaveStepAnimation = useCallback(async () => {
+  const runStepAnimation = useCallback(async (setSteps: (updater: (prev: SaveStepState[]) => SaveStepState[]) => void) => {
     for (let index = 1; index < SAVE_STEP_DEFINITIONS.length; index += 1) {
       await delay(200)
-      setSaveSteps((prev) =>
+      setSteps((prev) =>
         prev.map((step, stepIndex) => {
           if (stepIndex < index) {
             return { ...step, status: 'completed' }
@@ -1894,7 +1939,7 @@ const VideoPage: FC = () => {
       )
     }
     await delay(200)
-    setSaveSteps((prev) => prev.map((step) => ({ ...step, status: 'completed' })))
+    setSteps((prev) => prev.map((step) => ({ ...step, status: 'completed' })))
   }, [])
 
   const handleSave = useCallback(async () => {
@@ -1941,7 +1986,7 @@ const VideoPage: FC = () => {
         })
         applyUpdatedClip(updated)
       }
-      await runSaveStepAnimation()
+      await runStepAnimation(setSaveSteps)
       setSaveSuccess('Clip boundaries updated successfully.')
     } catch (error) {
       const message =
@@ -1955,16 +2000,7 @@ const VideoPage: FC = () => {
     } finally {
       setIsSaving(false)
     }
-  }, [
-    applyUpdatedClip,
-    clipState,
-    context,
-    rangeEnd,
-    rangeStart,
-    runSaveStepAnimation,
-    accountId,
-    jobId
-  ])
+  }, [applyUpdatedClip, clipState, context, rangeEnd, rangeStart, runStepAnimation, accountId, jobId])
 
   if (!clipState) {
     return (
@@ -2113,6 +2149,11 @@ const VideoPage: FC = () => {
           onImportLayout={handleImportLayoutDefinition}
           onExportLayout={handleExportLayoutDefinition}
           onApplyLayout={handleApplyLayoutDefinition}
+          onRenderLayout={handleRenderLayoutDefinition}
+          renderSteps={layoutRenderSteps}
+          isRenderingLayout={isLayoutRendering}
+          renderStatusMessage={layoutRenderStatusMessage}
+          renderErrorMessage={layoutRenderErrorMessage}
         />
       </section>
     )
