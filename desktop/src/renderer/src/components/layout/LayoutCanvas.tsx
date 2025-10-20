@@ -2,7 +2,8 @@ import type {
   FC,
   PointerEvent as ReactPointerEvent,
   MutableRefObject,
-  ReactNode
+  ReactNode,
+  CSSProperties
 } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
@@ -56,6 +57,9 @@ type LayoutCanvasProps = {
   showGrid: boolean
   showSafeMargins: boolean
   previewContent: ReactNode
+  className?: string
+  style?: CSSProperties
+  ariaLabel?: string
 }
 
 type Guide = {
@@ -198,7 +202,10 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   onRequestDelete,
   showGrid,
   showSafeMargins,
-  previewContent
+  previewContent,
+  className,
+  style,
+  ariaLabel
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const dragStateRef = useRef<DragState | null>(null)
@@ -512,16 +519,44 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     onSelectionChange([])
   }, [onSelectionChange])
 
+  const aspectRatio = useMemo(() => {
+    if (layout && layout.canvas.height > 0) {
+      return layout.canvas.width / layout.canvas.height
+    }
+    return 9 / 16
+  }, [layout])
+
+  const canvasClassName = useMemo(
+    () =>
+      [
+        'relative flex w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black',
+        className
+      ]
+        .filter(Boolean)
+        .join(' '),
+    [className]
+  )
+
+  const canvasStyle: CSSProperties = useMemo(
+    () => ({
+      ...(style ?? {}),
+      aspectRatio: aspectRatio > 0 ? `${aspectRatio}` : '9 / 16'
+    }),
+    [aspectRatio, style]
+  )
+
   return (
     <div
       ref={containerRef}
-      className="relative flex aspect-[9/16] w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black"
+      className={canvasClassName}
+      style={canvasStyle}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={clearDragState}
       onPointerCancel={clearDragState}
       onPointerDown={handleCanvasPointerDown}
       role="presentation"
+      aria-label={ariaLabel}
     >
       <div className="absolute inset-0 flex items-center justify-center text-xs text-white/60">
         {previewContent}

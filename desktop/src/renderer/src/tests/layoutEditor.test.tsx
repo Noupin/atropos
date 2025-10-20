@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, beforeAll, vi, it, expect } from 'vitest'
 import type { LayoutDefinition } from '../../../types/layouts'
 import LayoutCanvas from '../components/layout/LayoutCanvas'
@@ -8,6 +8,23 @@ type Selection = Parameters<typeof LayoutCanvas>[0]['selectedItemIds']
 
 describe('Layout editor interactions', () => {
   beforeAll(() => {
+    if (typeof window.PointerEvent === 'undefined') {
+      class PointerEventPolyfill extends MouseEvent {
+        pointerId: number
+        pointerType: string
+        isPrimary: boolean
+        constructor(type: string, props?: PointerEventInit) {
+          super(type, props)
+          this.pointerId = props?.pointerId ?? 1
+          this.pointerType = props?.pointerType ?? 'mouse'
+          this.isPrimary = props?.isPrimary ?? true
+        }
+      }
+      // @ts-expect-error jsdom polyfill for PointerEvent
+      window.PointerEvent = PointerEventPolyfill
+      // @ts-expect-error jsdom polyfill for PointerEvent
+      global.PointerEvent = PointerEventPolyfill
+    }
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback: FrameRequestCallback) => {
       callback(0)
       return 0
@@ -40,6 +57,16 @@ describe('Layout editor interactions', () => {
     })
     Object.defineProperty(HTMLMediaElement.prototype, 'pause', {
       value: vi.fn(),
+      configurable: true
+    })
+    Object.defineProperty(HTMLMediaElement.prototype, 'currentTime', {
+      value: 0,
+      writable: true,
+      configurable: true
+    })
+    Object.defineProperty(HTMLMediaElement.prototype, 'duration', {
+      value: 0,
+      writable: true,
       configurable: true
     })
   })
@@ -125,8 +152,82 @@ describe('Layout editor interactions', () => {
     })
   })
 
+  it('mirrors selection across both previews', async () => {
+    const clip = {
+      id: 'clip-1',
+      title: 'Demo clip',
+      channel: 'Channel',
+      views: null,
+      createdAt: new Date().toISOString(),
+      durationSec: 120,
+      sourceDurationSeconds: 180,
+      thumbnail: null,
+      playbackUrl: 'playback.mp4',
+      previewUrl: 'preview.mp4',
+      description: '',
+      sourceUrl: 'source.mp4',
+      sourceTitle: '',
+      sourcePublishedAt: null,
+      videoId: 'video-1',
+      videoTitle: 'Video',
+      rating: null,
+      quote: null,
+      reason: null,
+      timestampUrl: null,
+      timestampSeconds: null,
+      accountId: null,
+      startSeconds: 0,
+      endSeconds: 60,
+      originalStartSeconds: 0,
+      originalEndSeconds: 60,
+      hasAdjustments: false,
+      layoutId: null
+    }
+
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={clip}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={vi.fn()}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+      />
+    )
+
+    const sourceCanvas = await screen.findByLabelText('Source preview canvas')
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = layoutCanvases[layoutCanvases.length - 1]
+    if (!layoutCanvas) {
+      throw new Error('Layout preview canvas not found')
+    }
+    const sourceItem = within(sourceCanvas).getByRole('group', { name: /Primary/i })
+    fireEvent.pointerDown(sourceItem, { pointerId: 1, clientX: 20, clientY: 20 })
+
+    await waitFor(() => {
+      expect(within(sourceCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
+      expect(within(layoutCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
+    })
+  })
+
   it('updates canvas properties via the inspector', async () => {
-    const onLayoutChange = vi.fn()
+    let capturedLayout: LayoutDefinition | null = null
+    const onLayoutChange = vi.fn((layout: LayoutDefinition) => {
+      capturedLayout = layout
+    })
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
@@ -153,13 +254,286 @@ describe('Layout editor interactions', () => {
 
     const widthInputs = await screen.findAllByLabelText(/Canvas width/i)
     const widthInput = widthInputs[0]
-    fireEvent.change(widthInput, { target: { value: '720' } })
+    await act(async () => {
+      fireEvent.change(widthInput, { target: { value: 720 } })
+    })
+
+    await waitFor(() => {
+      expect(capturedLayout?.canvas.width).toBe(720)
+    })
+  })
+
+  it('keeps the source and layout previews in sync while playing', async () => {
+    const onLayoutChange = vi.fn()
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={{
+          id: 'clip-sync',
+          title: 'Sync clip',
+          channel: 'Channel',
+          views: null,
+          createdAt: new Date().toISOString(),
+          durationSec: 90,
+          sourceDurationSeconds: 120,
+          thumbnail: null,
+          playbackUrl: 'playback.mp4',
+          previewUrl: 'preview.mp4',
+          description: '',
+          sourceUrl: 'source.mp4',
+          sourceTitle: '',
+          sourcePublishedAt: null,
+          videoId: 'video-sync',
+          videoTitle: 'Video',
+          rating: null,
+          quote: null,
+          reason: null,
+          timestampUrl: null,
+          timestampSeconds: null,
+          accountId: null,
+          startSeconds: 0,
+          endSeconds: 45,
+          originalStartSeconds: 0,
+          originalEndSeconds: 45,
+          hasAdjustments: false,
+          layoutId: null
+        }}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={onLayoutChange}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+      />
+    )
+
+    const [sourceVideo] = (await screen.findAllByLabelText('Source video preview')) as HTMLVideoElement[]
+    const [layoutVideo] = (await screen.findAllByLabelText('Layout preview video')) as HTMLVideoElement[]
+
+    Object.defineProperty(sourceVideo, 'duration', { value: 120, configurable: true })
+    const layoutPlay = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(layoutVideo, 'play', {
+      value: layoutPlay,
+      configurable: true
+    })
+    Object.defineProperty(sourceVideo, 'currentTime', { value: 5, writable: true, configurable: true })
+    Object.defineProperty(layoutVideo, 'currentTime', { value: 0, writable: true, configurable: true })
+
+    fireEvent.loadedMetadata(sourceVideo)
+    fireEvent.loadedMetadata(layoutVideo)
+    fireEvent.play(sourceVideo)
+
+    await waitFor(() => {
+      expect(layoutPlay).toHaveBeenCalled()
+    })
+    expect(layoutVideo.currentTime).toBe(5)
+  })
+
+  it('collapses layout sections inside the horizontal picker', async () => {
+    const onSelectLayout = vi.fn()
+    const layoutCollection = {
+      builtin: [
+        {
+          id: 'builtin-1',
+          name: 'Built-in layout',
+          description: 'Default view',
+          author: null,
+          tags: [],
+          category: 'builtin' as const,
+          version: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ],
+      custom: [
+        {
+          id: 'custom-1',
+          name: 'My layout',
+          description: null,
+          author: null,
+          tags: [],
+          category: 'custom' as const,
+          version: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ]
+    }
+
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={null}
+        layoutCollection={layoutCollection}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={onSelectLayout}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={vi.fn()}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+      />
+    )
+
+    const builtInToggle = (await screen.findAllByRole('button', { name: /Built-in/i })).find(
+      (button) => button.getAttribute('aria-controls') === 'layout-section-builtin'
+    )
+    if (!builtInToggle) {
+      throw new Error('Built-in toggle not found')
+    }
+    expect(builtInToggle.getAttribute('aria-expanded')).toBe('true')
+    expect(await screen.findByText('Built-in layout')).not.toBeNull()
+
+    fireEvent.click(builtInToggle)
+    await screen.findByText(/Section collapsed/i)
+    expect(builtInToggle.getAttribute('aria-expanded')).toBe('false')
+
+    const customToggle = (await screen.findAllByRole('button', { name: /Custom/i })).find(
+      (button) => button.getAttribute('aria-controls') === 'layout-section-custom'
+    )
+    if (!customToggle) {
+      throw new Error('Custom toggle not found')
+    }
+    fireEvent.click(customToggle)
+    await screen.findAllByText(/Section collapsed/i)
+  })
+
+  it('applies transforms when dragging items on the layout preview', async () => {
+    let capturedLayout: LayoutDefinition | null = null
+    const onLayoutChange = vi.fn((layout: LayoutDefinition) => {
+      capturedLayout = layout
+    })
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={{
+          id: 'clip-drag',
+          title: 'Drag clip',
+          channel: 'Channel',
+          views: null,
+          createdAt: new Date().toISOString(),
+          durationSec: 120,
+          sourceDurationSeconds: 180,
+          thumbnail: null,
+          playbackUrl: 'playback.mp4',
+          previewUrl: 'preview.mp4',
+          description: '',
+          sourceUrl: 'source.mp4',
+          sourceTitle: '',
+          sourcePublishedAt: null,
+          videoId: 'video-drag',
+          videoTitle: 'Video',
+          rating: null,
+          quote: null,
+          reason: null,
+          timestampUrl: null,
+          timestampSeconds: null,
+          accountId: null,
+          startSeconds: 0,
+          endSeconds: 60,
+          originalStartSeconds: 0,
+          originalEndSeconds: 60,
+          hasAdjustments: false,
+          layoutId: null
+        }}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={onLayoutChange}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+      />
+    )
+
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = layoutCanvases[layoutCanvases.length - 1]
+    if (!layoutCanvas) {
+      throw new Error('Layout preview canvas not found')
+    }
+
+    const sourceCanvases = await screen.findAllByLabelText('Source preview canvas')
+    const sourceCanvas = sourceCanvases[sourceCanvases.length - 1]
+    if (!sourceCanvas) {
+      throw new Error('Source preview canvas not found')
+    }
+
+    const layoutItem = within(layoutCanvas).getByRole('group', { name: /Primary/i })
+    const sourceItem = within(sourceCanvas).getByRole('group', { name: /Primary/i })
+    const originalLayoutStyle = layoutItem.getAttribute('style') ?? ''
+    const originalSourceStyle = sourceItem.getAttribute('style') ?? ''
+
+    await act(async () => {
+      layoutItem.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: 20, clientY: 20, buttons: 1 })
+      )
+    })
+
+    await act(async () => {
+      layoutCanvas.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientX: 70, clientY: 120, buttons: 1 })
+      )
+    })
+
+    await act(async () => {
+      layoutCanvas.dispatchEvent(
+        new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: 70, clientY: 120 })
+      )
+    })
 
     await waitFor(() => {
       expect(onLayoutChange).toHaveBeenCalled()
+      expect(capturedLayout).not.toBeNull()
     })
-    const lastCall = onLayoutChange.mock.calls.at(-1)
-    expect(lastCall?.[0].canvas.width).toBe(720)
+
+    if (!capturedLayout) {
+      throw new Error('Layout did not update')
+    }
+    const updatedFrame = capturedLayout.items[0].frame
+    if (!Number.isFinite(updatedFrame.x) || !Number.isFinite(updatedFrame.y)) {
+      throw new Error(`Updated frame invalid: ${JSON.stringify(updatedFrame)}`)
+    }
+    expect(updatedFrame.x).toBeGreaterThan(baseLayout.items[0].frame.x)
+
+    await waitFor(() => {
+      const updatedLayoutItem = within(layoutCanvas).getByRole('group', { name: /Primary/i })
+      expect(updatedLayoutItem.getAttribute('style')).not.toEqual(originalLayoutStyle)
+    })
+
+    await waitFor(() => {
+      const updatedSourceItem = within(sourceCanvas).getByRole('group', { name: /Primary/i })
+      expect(updatedSourceItem.getAttribute('style')).not.toEqual(originalSourceStyle)
+    })
   })
 
   it('saves and applies the layout from the toolbar', async () => {
@@ -181,7 +555,7 @@ describe('Layout editor interactions', () => {
           playbackUrl: 'video.mp4',
           previewUrl: 'video.mp4',
           description: '',
-          sourceUrl: '',
+          sourceUrl: 'source.mp4',
           sourceTitle: '',
           sourcePublishedAt: null,
           videoId: 'video',

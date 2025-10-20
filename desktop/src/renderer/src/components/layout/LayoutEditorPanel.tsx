@@ -1,5 +1,5 @@
 import type { ChangeEvent, FC, FormEvent, ReactNode } from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { LayoutCollection } from '../../../../types/api'
 import type {
   LayoutBackground,
@@ -11,7 +11,6 @@ import type {
   LayoutVideoItem
 } from '../../../../types/layouts'
 import type { Clip } from '../../types'
-import VideoPreviewStage from '../VideoPreviewStage'
 import LayoutCanvas from './LayoutCanvas'
 import type { LayoutCanvasSelection } from './LayoutCanvas'
 
@@ -50,6 +49,8 @@ type UpdateOptions = {
   emitChange?: boolean
   trackHistory?: boolean
 }
+
+type PreviewKind = 'source' | 'layout'
 
 const clamp = (value: number, min = 0, max = 1): number => Math.min(Math.max(value, min), max)
 
@@ -114,6 +115,16 @@ const clampFrame = (frame: LayoutFrame): LayoutFrame => ({
 
 const formatPercent = (value: number): string => `${Math.round(value * 100)}%`
 
+const formatTimecode = (value: number): string => {
+  if (!Number.isFinite(value)) {
+    return '0:00'
+  }
+  const total = Math.max(0, value)
+  const minutes = Math.floor(total / 60)
+  const seconds = Math.floor(total % 60)
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
 const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   tabNavigation,
   clip,
@@ -143,6 +154,16 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
   const [showGrid, setShowGrid] = useState(true)
   const [showSafeMargins, setShowSafeMargins] = useState(false)
+  const [collapsedSections, setCollapsedSections] = useState<Record<LayoutCategory, boolean>>({
+    builtin: false,
+    custom: false
+  })
+  const sourceVideoRef = useRef<HTMLVideoElement | null>(null)
+  const layoutVideoRef = useRef<HTMLVideoElement | null>(null)
+  const playbackSyncRef = useRef(false)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
 
   useEffect(() => {
     if (!selectedLayout) {
@@ -157,6 +178,21 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     setHistory([])
     setFuture([])
   }, [selectedLayout])
+
+  useEffect(() => {
+    setIsPlaying(false)
+    setCurrentTime(0)
+    setDuration(0)
+    playbackSyncRef.current = false
+    if (sourceVideoRef.current) {
+      sourceVideoRef.current.pause()
+      sourceVideoRef.current.currentTime = 0
+    }
+    if (layoutVideoRef.current) {
+      layoutVideoRef.current.pause()
+      layoutVideoRef.current.currentTime = 0
+    }
+  }, [clip?.id])
 
   const updateLayout = useCallback(
     (updater: (layout: LayoutDefinition) => LayoutDefinition, options?: UpdateOptions) => {
@@ -702,21 +738,199 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     return `${selectedItems.length} items selected`
   }, [selectedItems, selectedItem])
 
-  const availableLayouts = useMemo(() => {
+  const layoutSections = useMemo(() => {
     if (!layoutCollection) {
       return []
     }
-    const rows: Array<{ title: string; category: LayoutCategory; items: LayoutCollection['builtin'] }> = []
+    const sections: Array<{ title: string; category: LayoutCategory; items: LayoutCollection['builtin'] }> = []
     if (layoutCollection.builtin.length > 0) {
-      rows.push({ title: 'Built-in layouts', category: 'builtin', items: layoutCollection.builtin })
+      sections.push({ title: 'Built-in', category: 'builtin', items: layoutCollection.builtin })
     }
     if (layoutCollection.custom.length > 0) {
-      rows.push({ title: 'Custom layouts', category: 'custom', items: layoutCollection.custom })
+      sections.push({ title: 'Custom', category: 'custom', items: layoutCollection.custom })
     }
-    return rows
+    return sections
   }, [layoutCollection])
 
-  const previewVideoSource = clip?.previewUrl ?? clip?.playbackUrl ?? null
+  const toggleSection = useCallback((category: LayoutCategory) => {
+    setCollapsedSections((current) => ({
+      ...current,
+      [category]: !current[category]
+    }))
+  }, [])
+
+  const sourceVideoSource = clip?.sourceUrl ?? null
+  const layoutPreviewSource = clip?.previewUrl ?? clip?.playbackUrl ?? clip?.sourceUrl ?? null
+
+  const releasePlaybackSync = useCallback(() => {
+    window.setTimeout(() => {
+      playbackSyncRef.current = false
+    }, 0)
+  }, [])
+
+  const getVideoPair = useCallback(
+    (origin: PreviewKind): { source: HTMLVideoElement | null; peer: HTMLVideoElement | null } => {
+      if (origin === 'source') {
+        return { source: sourceVideoRef.current, peer: layoutVideoRef.current }
+      }
+      return { source: layoutVideoRef.current, peer: sourceVideoRef.current }
+    },
+    []
+  )
+
+  const handleVideoLoadedMetadata = useCallback(
+    (origin: PreviewKind) => {
+      const { source } = getVideoPair(origin)
+      if (!source || Number.isNaN(source.duration) || !Number.isFinite(source.duration)) {
+        return
+      }
+      setDuration((current) => (current > 0 ? Math.max(current, source.duration) : source.duration))
+    },
+    [getVideoPair]
+  )
+
+  const handleVideoPlay = useCallback(
+    (origin: PreviewKind) => {
+      const { source, peer } = getVideoPair(origin)
+      if (!source) {
+        return
+      }
+      setIsPlaying(true)
+      if (!peer || playbackSyncRef.current) {
+        return
+      }
+      playbackSyncRef.current = true
+      peer.currentTime = source.currentTime
+      const result = peer.play()
+      if (result && typeof (result as Promise<void>).then === 'function') {
+        ;(result as Promise<void>).catch(() => undefined).finally(releasePlaybackSync)
+      } else {
+        releasePlaybackSync()
+      }
+    },
+    [getVideoPair, releasePlaybackSync]
+  )
+
+  const handleVideoPause = useCallback(
+    (origin: PreviewKind) => {
+      if (playbackSyncRef.current) {
+        return
+      }
+      const { source, peer } = getVideoPair(origin)
+      if (!source) {
+        return
+      }
+      setIsPlaying(false)
+      if (!peer) {
+        return
+      }
+      playbackSyncRef.current = true
+      peer.pause()
+      peer.currentTime = source.currentTime
+      releasePlaybackSync()
+    },
+    [getVideoPair, releasePlaybackSync]
+  )
+
+  const handleVideoTimeUpdate = useCallback(
+    (origin: PreviewKind) => {
+      const { source, peer } = getVideoPair(origin)
+      if (!source) {
+        return
+      }
+      setCurrentTime(source.currentTime)
+      if (!peer || playbackSyncRef.current) {
+        return
+      }
+      const difference = Math.abs(peer.currentTime - source.currentTime)
+      if (difference > 0.05) {
+        playbackSyncRef.current = true
+        peer.currentTime = source.currentTime
+        releasePlaybackSync()
+      }
+    },
+    [getVideoPair, releasePlaybackSync]
+  )
+
+  const handleVideoSeeked = useCallback(
+    (origin: PreviewKind) => {
+      const { source, peer } = getVideoPair(origin)
+      if (!source) {
+        return
+      }
+      setCurrentTime(source.currentTime)
+      if (!peer) {
+        return
+      }
+      playbackSyncRef.current = true
+      peer.currentTime = source.currentTime
+      releasePlaybackSync()
+    },
+    [getVideoPair, releasePlaybackSync]
+  )
+
+  const handleTogglePlayback = useCallback(() => {
+    const active =
+      (sourceVideoRef.current && !sourceVideoRef.current.paused ? sourceVideoRef.current : null) ??
+      (layoutVideoRef.current && !layoutVideoRef.current.paused ? layoutVideoRef.current : null)
+    const target = active ?? layoutVideoRef.current ?? sourceVideoRef.current
+    if (!target) {
+      return
+    }
+    if (target.paused) {
+      target.play().catch(() => undefined)
+    } else {
+      target.pause()
+    }
+  }, [])
+
+  const effectiveDuration = useMemo(() => {
+    if (duration > 0 && Number.isFinite(duration)) {
+      return duration
+    }
+    if (clip?.sourceDurationSeconds && clip.sourceDurationSeconds > 0) {
+      return clip.sourceDurationSeconds
+    }
+    if (clip?.durationSec && clip.durationSec > 0) {
+      return clip.durationSec
+    }
+    return 0
+  }, [clip?.durationSec, clip?.sourceDurationSeconds, duration])
+
+  const handleSeek = useCallback(
+    (value: number) => {
+      const bounded = effectiveDuration > 0 ? Math.min(Math.max(0, value), effectiveDuration) : Math.max(0, value)
+      setCurrentTime(bounded)
+      playbackSyncRef.current = true
+      if (sourceVideoRef.current) {
+        sourceVideoRef.current.currentTime = bounded
+      }
+      if (layoutVideoRef.current) {
+        layoutVideoRef.current.currentTime = bounded
+      }
+      releasePlaybackSync()
+    },
+    [effectiveDuration, releasePlaybackSync]
+  )
+
+  const formattedTimeLabel = useMemo(() => {
+    if (effectiveDuration <= 0) {
+      return formatTimecode(currentTime)
+    }
+    return `${formatTimecode(currentTime)} / ${formatTimecode(effectiveDuration)}`
+  }, [currentTime, effectiveDuration])
+
+  const hasPreview = Boolean(sourceVideoSource || layoutPreviewSource)
+
+  const sliderMax = useMemo(() => {
+    if (effectiveDuration > 0) {
+      return effectiveDuration
+    }
+    return Math.max(1, currentTime || 0)
+  }, [currentTime, effectiveDuration])
+
+  const previewHeight = 'clamp(280px, 60vh, 640px)'
+
   const clipDuration = clip?.durationSec ?? 0
   const transportRangeLabel =
     clip && clipDuration > 0
@@ -854,39 +1068,57 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           </button>
         </div>
       </div>
-      {availableLayouts.length > 0 ? (
-        <div className="space-y-4">
-          {availableLayouts.map((row) => (
-            <div key={row.category} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_65%,transparent)]">
-                  {row.title}
-                </h3>
-              </div>
-              <div className="flex gap-3 overflow-x-auto pb-2">
-                {row.items.map((layout) => {
-                  const isActive = selectedLayoutReference?.id === layout.id
-                  return (
-                    <button
-                      key={layout.id}
-                      type="button"
-                      onClick={() => onSelectLayout(layout.id, row.category)}
-                      className={`flex w-56 flex-shrink-0 flex-col gap-2 rounded-2xl border px-4 py-3 text-left shadow-sm transition ${
-                        isActive
-                          ? 'border-[var(--ring)] bg-[color:color-mix(in_srgb,var(--ring)_20%,var(--card))] text-[var(--fg)]'
-                          : 'border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] text-[var(--muted)] hover:border-[var(--ring)]'
-                      }`}
-                    >
-                      <span className="text-sm font-semibold text-[var(--fg)]">{layout.name}</span>
-                      <span className="text-xs text-[var(--muted)]">
-                        {layout.description ? layout.description : 'No description'}
+      {layoutSections.length > 0 ? (
+        <div className="rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] p-4">
+          <div className="flex w-full gap-6 overflow-x-auto pb-1">
+            {layoutSections.map((section) => {
+              const collapsed = collapsedSections[section.category]
+              return (
+                <div key={section.category} className="flex min-w-[260px] flex-col gap-3">
+                  <button
+                    type="button"
+                    className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-semibold text-white transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    onClick={() => toggleSection(section.category)}
+                    aria-expanded={!collapsed}
+                    aria-controls={`layout-section-${section.category}`}
+                  >
+                    <span>{section.title}</span>
+                    <span className="text-xs font-normal text-white/60">{collapsed ? 'Show' : 'Hide'}</span>
+                  </button>
+                  <div id={`layout-section-${section.category}`} className="flex flex-col gap-3">
+                    {collapsed ? (
+                      <span className="rounded-xl border border-dashed border-white/10 bg-black/20 px-3 py-4 text-center text-xs text-white/50">
+                        Section collapsed
                       </span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
+                    ) : (
+                      <div className="flex gap-3">
+                        {section.items.map((layout) => {
+                          const isSelected = selectedLayoutReference?.id === layout.id
+                          return (
+                            <button
+                              key={layout.id}
+                              type="button"
+                              onClick={() => onSelectLayout(layout.id, section.category)}
+                              className={`flex w-48 flex-col gap-1 rounded-2xl border px-3 py-3 text-left transition ${
+                                isSelected
+                                  ? 'border-[color:color-mix(in_srgb,var(--accent)_70%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_85%,transparent)] text-[var(--fg)] shadow-[0_8px_20px_rgba(0,0,0,0.35)]'
+                                  : 'border-white/10 bg-[color:color-mix(in_srgb,var(--card)_85%,transparent)] text-[var(--muted)] hover:border-white/20'
+                              }`}
+                            >
+                              <span className="truncate text-sm font-semibold text-[var(--fg)]">{layout.name}</span>
+                              <span className="line-clamp-2 text-xs text-[var(--muted)]">
+                                {layout.description ? layout.description : 'No description'}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       ) : isCollectionLoading ? (
         <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-4 py-3 text-sm text-[var(--muted)]">
@@ -911,33 +1143,10 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
       ) : null}
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="flex flex-col gap-3">
-          <h3 className="text-sm font-semibold text-[var(--fg)]">Source preview</h3>
-          <VideoPreviewStage height="clamp(240px, 50vh, 520px)">
-            {previewVideoSource ? (
-              <video
-                src={previewVideoSource}
-                className="h-full w-full object-contain"
-                controls
-                aria-label="Source video preview"
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center text-xs text-white/60">
-                Load a clip to preview the source video.
-              </div>
-            )}
-          </VideoPreviewStage>
-          <div className="flex items-center justify-between rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-3 py-2 text-xs text-[var(--muted)]">
-            <div className="flex items-center gap-2">
-              <button type="button" className="rounded-full bg-white/10 px-2 py-1 text-[10px] text-white">
-                ▶︎
-              </button>
-              <span>Transport controls mirrored from the trimming view.</span>
-            </div>
-            <span>{transportRangeLabel}</span>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-[var(--fg)]">Source preview</h3>
+            <span className="text-xs text-[var(--muted)]">Original footage</span>
           </div>
-        </div>
-        <div className="flex flex-col gap-3">
-          <h3 className="text-sm font-semibold text-[var(--fg)]">Layout preview</h3>
           <LayoutCanvas
             layout={draftLayout}
             selectedItemIds={selectedItemIds}
@@ -950,43 +1159,108 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
             showGrid={showGrid}
             showSafeMargins={showSafeMargins}
             previewContent={
-              previewVideoSource ? (
+              sourceVideoSource ? (
                 <video
-                  src={previewVideoSource}
-                  className="h-full w-full object-cover"
-                  muted
-                  loop
-                  autoPlay
+                  ref={sourceVideoRef}
+                  src={sourceVideoSource}
+                  className="h-full w-full object-contain"
                   playsInline
+                  muted
+                  preload="metadata"
+                  onLoadedMetadata={() => handleVideoLoadedMetadata('source')}
+                  onPlay={() => handleVideoPlay('source')}
+                  onPause={() => handleVideoPause('source')}
+                  onTimeUpdate={() => handleVideoTimeUpdate('source')}
+                  onSeeked={() => handleVideoSeeked('source')}
+                  aria-label="Source video preview"
+                />
+              ) : (
+                <span className="text-xs text-white/60">Load a clip to preview the source video.</span>
+              )
+            }
+            style={{ height: previewHeight }}
+            ariaLabel="Source preview canvas"
+          />
+        </div>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-[var(--fg)]">Layout preview</h3>
+            {appliedLayoutId ? (
+              <span className="text-xs text-[var(--muted)]">Applied: {appliedLayoutId}</span>
+            ) : null}
+          </div>
+          <LayoutCanvas
+            layout={draftLayout}
+            selectedItemIds={selectedItemIds}
+            onSelectionChange={setSelectedItemIds}
+            onTransform={handleTransform}
+            onRequestBringForward={bringSelectionForward}
+            onRequestSendBackward={sendSelectionBackward}
+            onRequestDuplicate={duplicateSelection}
+            onRequestDelete={handleRemoveSelected}
+            showGrid={showGrid}
+            showSafeMargins={showSafeMargins}
+            previewContent={
+              layoutPreviewSource ? (
+                <video
+                  ref={layoutVideoRef}
+                  src={layoutPreviewSource}
+                  className="h-full w-full object-cover"
+                  playsInline
+                  muted
+                  preload="metadata"
+                  onLoadedMetadata={() => handleVideoLoadedMetadata('layout')}
+                  onPlay={() => handleVideoPlay('layout')}
+                  onPause={() => handleVideoPause('layout')}
+                  onTimeUpdate={() => handleVideoTimeUpdate('layout')}
+                  onSeeked={() => handleVideoSeeked('layout')}
                   aria-label="Layout preview video"
                 />
               ) : (
-                <span>No preview source available.</span>
+                <span className="text-xs text-white/60">No preview source available.</span>
               )
             }
+            style={{ height: previewHeight }}
+            ariaLabel="Layout preview canvas"
           />
-          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={showGrid}
-                onChange={(event) => setShowGrid(event.target.checked)}
-              />
-              Show grid
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={showSafeMargins}
-                onChange={(event) => setShowSafeMargins(event.target.checked)}
-              />
-              Safe margins
-            </label>
-            {appliedLayoutId ? (
-              <span className="ml-auto text-xs text-[var(--muted)]">Applied layout: {appliedLayoutId}</span>
-            ) : null}
-          </div>
         </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-4 py-3 text-xs text-[var(--muted)]">
+        <button
+          type="button"
+          className="marble-button marble-button--ghost px-3 py-1 text-xs"
+          onClick={handleTogglePlayback}
+          disabled={!hasPreview}
+        >
+          {isPlaying ? 'Pause' : 'Play'}
+        </button>
+        <input
+          type="range"
+          min={0}
+          max={sliderMax}
+          step={0.05}
+          value={Math.min(currentTime, sliderMax)}
+          onChange={(event) => handleSeek(Number.parseFloat(event.target.value))}
+          disabled={!hasPreview || effectiveDuration <= 0}
+          className="h-1 flex-1 cursor-pointer accent-[var(--ring)]"
+          aria-label="Scrub preview"
+        />
+        <span className="font-semibold text-[var(--fg)]">{formattedTimeLabel}</span>
+        <span aria-hidden="true" className="hidden sm:inline">·</span>
+        <span>{transportRangeLabel}</span>
+        <span aria-hidden="true" className="hidden sm:inline">·</span>
+        <label className="inline-flex items-center gap-1">
+          <input type="checkbox" checked={showGrid} onChange={(event) => setShowGrid(event.target.checked)} />
+          Grid
+        </label>
+        <label className="inline-flex items-center gap-1">
+          <input
+            type="checkbox"
+            checked={showSafeMargins}
+            onChange={(event) => setShowSafeMargins(event.target.checked)}
+          />
+          Safe margins
+        </label>
       </div>
       <form onSubmit={handleSave} className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
