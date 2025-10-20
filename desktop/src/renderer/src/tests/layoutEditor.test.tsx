@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, beforeAll, vi, it, expect } from 'vitest'
-import type { LayoutDefinition } from '../../../types/layouts'
+import type { LayoutDefinition, LayoutVideoItem } from '../../../types/layouts'
 import LayoutCanvas from '../components/layout/LayoutCanvas'
 import LayoutEditorPanel from '../components/layout/LayoutEditorPanel'
 
@@ -287,6 +287,61 @@ describe('Layout editor interactions', () => {
     })
   })
 
+  it('lets editors toggle the aspect ratio lock on video items', async () => {
+    let latestLayout: LayoutDefinition | null = null
+    const onLayoutChange = vi.fn((next: LayoutDefinition) => {
+      latestLayout = next
+    })
+
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={null}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={onLayoutChange}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = layoutCanvases[layoutCanvases.length - 1]
+    const videoItem = within(layoutCanvas).getByRole('group', { name: /primary/i })
+    fireEvent.pointerDown(videoItem, { pointerId: 1, clientX: 10, clientY: 10 })
+
+    const aspectToggles = await screen.findAllByLabelText('Lock video frame aspect ratio')
+    const aspectToggle = aspectToggles[aspectToggles.length - 1]
+    expect((aspectToggle as HTMLInputElement).checked).toBe(true)
+
+    await act(async () => {
+      fireEvent.click(aspectToggle)
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange).toHaveBeenCalled()
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.lockAspectRatio).toBe(false)
+    })
+  })
+
   it('updates canvas properties via the inspector', async () => {
     let capturedLayout: LayoutDefinition | null = null
     const onLayoutChange = vi.fn((layout: LayoutDefinition) => {
@@ -328,7 +383,9 @@ describe('Layout editor interactions', () => {
     })
 
     await waitFor(() => {
-      expect(capturedLayout?.canvas.width).toBe(720)
+      expect(onLayoutChange).toHaveBeenCalled()
+      const latest = onLayoutChange.mock.calls.at(-1)?.[0] as LayoutDefinition | undefined
+      expect(latest?.canvas.width).toBe(720)
     })
   })
 

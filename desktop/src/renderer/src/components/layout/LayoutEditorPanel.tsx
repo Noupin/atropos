@@ -94,7 +94,8 @@ const cloneLayoutItem = (item: LayoutItem): LayoutItem => {
     return {
       ...video,
       frame: { ...video.frame },
-      crop: normaliseVideoCrop(video.crop)
+      crop: normaliseVideoCrop(video.crop),
+      lockAspectRatio: video.lockAspectRatio ?? true
     }
   }
   if ((item as LayoutTextItem).kind === 'text') {
@@ -257,6 +258,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     url: null,
     message: null
   })
+  const [sourceAspectRatio, setSourceAspectRatio] = useState<number | null>(null)
 
   useEffect(() => {
     if (!selectedLayout) {
@@ -277,6 +279,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     setCurrentTime(0)
     setDuration(0)
     playbackSyncRef.current = false
+    setSourceAspectRatio(null)
     if (sourceVideoRef.current) {
       sourceVideoRef.current.pause()
       sourceVideoRef.current.currentTime = 0
@@ -334,6 +337,12 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
       cancelled = true
     }
   }, [clip?.accountId, clip?.id, clip?.playbackUrl, clip?.previewUrl, clip?.videoId])
+
+  useEffect(() => {
+    if (sourceMedia.status !== 'ready') {
+      setSourceAspectRatio(null)
+    }
+  }, [sourceMedia.status])
 
   const updateLayout = useCallback(
     (updater: (layout: LayoutDefinition) => LayoutDefinition, options?: UpdateOptions) => {
@@ -404,13 +413,14 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           kind: 'video',
           source: 'primary',
           name: 'Primary video',
-      frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.6 },
-      crop: createDefaultCrop(),
-      scaleMode: 'cover',
-      rotation: null,
-      opacity: 1,
-      mirror: false,
-      zIndex: draftLayout.items.length
+          frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.6 },
+          crop: createDefaultCrop(),
+          scaleMode: 'cover',
+          rotation: null,
+          opacity: 1,
+          mirror: false,
+          lockAspectRatio: true,
+          zIndex: draftLayout.items.length
         }
       } else if (kind === 'text') {
         newItem = {
@@ -1003,6 +1013,9 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         return
       }
       setDuration((current) => (current > 0 ? Math.max(current, source.duration) : source.duration))
+      if (source.videoWidth > 0 && source.videoHeight > 0) {
+        setSourceAspectRatio(source.videoWidth / source.videoHeight)
+      }
     },
     [getVideoPair]
   )
@@ -1410,6 +1423,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               )
             }
             transformTarget="crop"
+            aspectRatioOverride={sourceAspectRatio ?? undefined}
             style={{ height: previewHeight }}
             ariaLabel="Source preview canvas"
           />
@@ -1581,6 +1595,15 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                     Mirror horizontally
                   </label>
                 </div>
+                <label className="flex items-center justify-between gap-2 rounded-lg bg-[color:color-mix(in_srgb,var(--card)_75%,transparent)] px-3 py-2 text-xs text-[var(--muted)]">
+                  <span className="font-medium text-[var(--fg)]">Lock aspect ratio</span>
+                  <input
+                    type="checkbox"
+                    checked={(selectedItem as LayoutVideoItem).lockAspectRatio ?? true}
+                    onChange={(event) => handleChangeVideoField(selectedItem.id, 'lockAspectRatio', event.target.checked)}
+                    aria-label="Lock video frame aspect ratio"
+                  />
+                </label>
               </fieldset>
             ) : null}
             {selectedItem.kind === 'text' ? (

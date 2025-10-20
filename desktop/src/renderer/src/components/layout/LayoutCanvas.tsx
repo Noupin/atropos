@@ -62,6 +62,7 @@ type LayoutCanvasProps = {
   showSafeMargins: boolean
   previewContent: ReactNode
   transformTarget: 'frame' | 'crop'
+  aspectRatioOverride?: number | null
   renderItemContent?: (item: LayoutItem, context: { isSelected: boolean }) => ReactNode
   getItemClasses?: (item: LayoutItem, isSelected: boolean) => string
   labelVisibility?: 'always' | 'selected' | 'never'
@@ -168,6 +169,14 @@ const maintainAspectResize = (
   }
 }
 
+const itemHasAspectLock = (item: LayoutItem): boolean => {
+  if ((item as LayoutVideoItem).kind !== 'video') {
+    return false
+  }
+  const video = item as LayoutVideoItem
+  return video.lockAspectRatio !== false
+}
+
 const resizeFrame = (
   frame: LayoutFrame,
   handle: ResizeHandle,
@@ -235,6 +244,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   isItemEditable,
   className,
   style,
+  aspectRatioOverride,
   ariaLabel
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -372,6 +382,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       if (!containerRef.current) {
         return
       }
+      event.stopPropagation()
       const maintainAspect = event.shiftKey
       const snapEnabled = event.altKey || event.metaKey
       const selection = event.shiftKey
@@ -418,7 +429,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       if (!itemIsEditable(item)) {
         return
       }
-      const maintainAspect = event.shiftKey || handle.length === 2
+      const maintainAspect = itemHasAspectLock(item) || event.shiftKey
       const snapEnabled = event.altKey || event.metaKey
       onSelectionChange([item.id])
       const originalFrame = getDisplayFrame(item)
@@ -583,11 +594,14 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   }, [onSelectionChange])
 
   const aspectRatio = useMemo(() => {
+    if (aspectRatioOverride && aspectRatioOverride > 0) {
+      return aspectRatioOverride
+    }
     if (layout && layout.canvas.height > 0) {
       return layout.canvas.width / layout.canvas.height
     }
     return 9 / 16
-  }, [layout])
+  }, [aspectRatioOverride, layout])
 
   const canvasClassName = useMemo(
     () =>
