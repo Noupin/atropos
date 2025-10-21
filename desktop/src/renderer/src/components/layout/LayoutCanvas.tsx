@@ -173,13 +173,23 @@ const getContrastingTextColor = (hexColor: string): string => {
   return luminance > 0.55 ? '#0f172a' : '#f8fafc'
 }
 
+const toTranslucent = (hexColor: string, alpha: number): string => {
+  const rgb = hexToRgb(hexColor)
+  const clamped = Math.min(Math.max(alpha, 0), 1)
+  if (!rgb) {
+    const fallback = Math.round(clamped * 100) / 100
+    return `rgba(59,113,202,${fallback})`
+  }
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${clamped})`
+}
+
 const createAppearance = (base: string, mode: 'dark' | 'light'): ItemAppearance => {
-  const background =
-    mode === 'dark' ? mixHexColors(base, '#0f172a', 0.65) : mixHexColors(base, '#ffffff', 0.82)
-  const border = mode === 'dark' ? mixHexColors(base, '#ffffff', 0.35) : mixHexColors(base, '#0f172a', 0.35)
-  const handleBackground = mode === 'dark' ? mixHexColors(base, '#ffffff', 0.85) : mixHexColors(base, '#ffffff', 0.65)
-  const handleBorder = mode === 'dark' ? mixHexColors(base, '#ffffff', 0.55) : mixHexColors(base, '#0f172a', 0.45)
-  const labelColor = getContrastingTextColor(background)
+  const baseTint = mode === 'dark' ? mixHexColors(base, '#0f172a', 0.55) : mixHexColors(base, '#ffffff', 0.78)
+  const background = toTranslucent(baseTint, 0.22)
+  const border = mode === 'dark' ? mixHexColors(base, '#ffffff', 0.55) : mixHexColors(base, '#0f172a', 0.55)
+  const handleBackground = toTranslucent(mixHexColors(base, '#ffffff', 0.9), 0.9)
+  const handleBorder = mode === 'dark' ? mixHexColors(base, '#ffffff', 0.65) : mixHexColors(base, '#0f172a', 0.6)
+  const labelColor = getContrastingTextColor(baseTint)
   return {
     backgroundColor: background,
     borderColor: border,
@@ -697,6 +707,21 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     [layout, selectedItemIds]
   )
 
+  const primarySelectionId = useMemo(
+    () => (selectedItemIds.length ? selectedItemIds[selectedItemIds.length - 1] : null),
+    [selectedItemIds]
+  )
+
+  const primarySelection = useMemo(() => {
+    if (!activeSelection.length) {
+      return null
+    }
+    if (!primarySelectionId) {
+      return activeSelection[0] ?? null
+    }
+    return activeSelection.find((item) => item.id === primarySelectionId) ?? activeSelection[0] ?? null
+  }, [activeSelection, primarySelectionId])
+
   const selectionBounds = useMemo(() => {
     if (!activeSelection.length) {
       return null
@@ -719,7 +744,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     return `${activeSelection.length} items`
   }, [activeSelection])
 
-  const primarySelection = activeSelection.length === 1 ? activeSelection[0] : null
   const primaryIsVideo = Boolean(primarySelection && (primarySelection as LayoutVideoItem).kind === 'video')
   const primaryAspectLocked = Boolean(
     primarySelection && primaryIsVideo && itemHasAspectLock(primarySelection, transformTarget)
@@ -813,7 +837,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const width = fractionToPercent(frame.width)
         const height = fractionToPercent(frame.height)
         const isSelected = selectedItemIds.includes(item.id)
-        const isPrimarySelection = activeSelection[0]?.id === item.id
+        const isPrimarySelection = primarySelection?.id === item.id
         const label = getItemLabel(item)
         const palette = getItemAppearance(item)
         const classes = getItemClasses ? getItemClasses(item, isSelected) : ''
