@@ -822,6 +822,60 @@ describe('Layout editor interactions', () => {
     })
   })
 
+  it('mirrors the selection toolbar across canvases', async () => {
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={null}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={vi.fn()}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const sourceCanvases = await screen.findAllByLabelText('Source preview canvas')
+    const sourceCanvas = sourceCanvases[sourceCanvases.length - 1]
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = layoutCanvases[layoutCanvases.length - 1]
+
+    const sourceVideo = within(sourceCanvas).getByRole('group', { name: /primary/i })
+    fireEvent.pointerDown(sourceVideo, { pointerId: 61, clientX: 48, clientY: 48 })
+
+    await waitFor(() => {
+      const layoutVideo = within(layoutCanvas).getByRole('group', { name: /primary/i })
+      expect(layoutVideo.className).toContain('ring-2')
+      expect(within(layoutCanvas).getByRole('button', { name: 'Bring forward' })).toBeTruthy()
+    })
+
+    const eastHandle = within(layoutCanvas).getByLabelText('Resize east')
+    fireEvent.pointerDown(eastHandle, { pointerId: 62, clientX: 196, clientY: 112 })
+    fireEvent.pointerUp(layoutCanvas, { pointerId: 62, clientX: 196, clientY: 112 })
+
+    await waitFor(() => {
+      const layoutVideo = within(layoutCanvas).getByRole('group', { name: /primary/i })
+      expect(layoutVideo.className).toContain('ring-2')
+    })
+  })
+
   it('updates canvas properties via the inspector', async () => {
     let capturedLayout: LayoutDefinition | null = null
     const onLayoutChange = vi.fn((layout: LayoutDefinition) => {

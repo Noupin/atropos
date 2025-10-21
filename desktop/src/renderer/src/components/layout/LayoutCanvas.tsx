@@ -799,6 +799,15 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     [selectedItemIds]
   )
 
+  useEffect(() => {
+    if (selectedItemIds.length === 0) {
+      setToolbarAnchorId(null)
+      return
+    }
+    const nextAnchor = selectedItemIds[selectedItemIds.length - 1]
+    setToolbarAnchorId((current) => (current === nextAnchor ? current : nextAnchor))
+  }, [selectedItemIds])
+
   const primarySelection = useMemo(() => {
     if (!activeSelection.length) {
       return null
