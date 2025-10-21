@@ -88,14 +88,72 @@ const normaliseVideoCrop = (crop: LayoutCrop | null | undefined): LayoutCrop => 
   units: 'fraction'
 })
 
+const alignCropToFrame = (video: LayoutVideoItem): LayoutCrop => {
+  const crop = normaliseVideoCrop(video.crop)
+  const frameWidth = clamp(video.frame.width)
+  const frameHeight = clamp(video.frame.height)
+  if (frameWidth <= 0 || frameHeight <= 0) {
+    return crop
+  }
+  const targetAspect = frameWidth / frameHeight
+  if (!Number.isFinite(targetAspect) || targetAspect <= 0) {
+    return crop
+  }
+
+  let width = clamp(crop.width)
+  let height = clamp(crop.height)
+  if (width <= 0 || height <= 0) {
+    return { x: clamp(crop.x), y: clamp(crop.y), width: clamp(width), height: clamp(height), units: 'fraction' }
+  }
+
+  const currentAspect = width / height
+  if (Math.abs(currentAspect - targetAspect) < 0.0001) {
+    return { x: clamp(crop.x), y: clamp(crop.y), width, height, units: 'fraction' }
+  }
+
+  if (currentAspect > targetAspect) {
+    width = height * targetAspect
+  } else {
+    height = width / targetAspect
+  }
+
+  const scale = Math.min(1, width > 0 ? 1 / width : 1, height > 0 ? 1 / height : 1)
+  width *= scale
+  height *= scale
+
+  const centerX = clamp(crop.x + crop.width / 2)
+  const centerY = clamp(crop.y + crop.height / 2)
+  let x = centerX - width / 2
+  let y = centerY - height / 2
+
+  if (x < 0) {
+    x = 0
+  }
+  if (y < 0) {
+    y = 0
+  }
+  if (x + width > 1) {
+    x = 1 - width
+  }
+  if (y + height > 1) {
+    y = 1 - height
+  }
+
+  return { x: clamp(x), y: clamp(y), width: clamp(width), height: clamp(height), units: 'fraction' }
+}
+
 const cloneLayoutItem = (item: LayoutItem): LayoutItem => {
   if ((item as LayoutVideoItem).kind === 'video') {
     const video = item as LayoutVideoItem
+    const lockAspectRatio = video.lockAspectRatio ?? true
+    const normalisedCrop = normaliseVideoCrop(video.crop)
     return {
       ...video,
       frame: { ...video.frame },
-      crop: normaliseVideoCrop(video.crop),
-      lockAspectRatio: video.lockAspectRatio ?? true
+      crop: lockAspectRatio
+        ? alignCropToFrame({ ...video, crop: normalisedCrop })
+        : normalisedCrop,
+      lockAspectRatio
     }
   }
   if ((item as LayoutTextItem).kind === 'text') {
@@ -389,6 +447,19 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                 crop: clampCropFrame(match.frame)
               }
             }
+            if (item.kind === 'video') {
+              const updated: LayoutVideoItem = {
+                ...item,
+                frame: clampFrame(match.frame)
+              }
+              if (updated.lockAspectRatio !== false) {
+                return {
+                  ...updated,
+                  crop: alignCropToFrame(updated)
+                }
+              }
+              return updated
+            }
             return {
               ...item,
               frame: clampFrame(match.frame)
@@ -482,17 +553,35 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
       updateLayout(
         (layout) => ({
           ...layout,
-          items: layout.items.map((item) =>
-            item.id === itemId
-              ? {
-                  ...item,
-                  frame: {
-                    ...item.frame,
-                    [field]: clamp(value)
-                  }
+          items: layout.items.map((item) => {
+            if (item.id !== itemId) {
+              return item
+            }
+            if (item.kind === 'video') {
+              const nextFrame = {
+                ...item.frame,
+                [field]: clamp(value)
+              }
+              const updated: LayoutVideoItem = {
+                ...item,
+                frame: nextFrame
+              }
+              if (updated.lockAspectRatio !== false) {
+                return {
+                  ...updated,
+                  crop: alignCropToFrame(updated)
                 }
-              : item
-          )
+              }
+              return updated
+            }
+            return {
+              ...item,
+              frame: {
+                ...item.frame,
+                [field]: clamp(value)
+              }
+            }
+          })
         }),
         { trackHistory: true }
       )
@@ -508,6 +597,20 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           items: layout.items.map((item) => {
             if (item.id !== itemId || item.kind !== 'video') {
               return item
+            }
+            if (field === 'lockAspectRatio') {
+              const shouldLock = Boolean(value)
+              const updated: LayoutVideoItem = {
+                ...item,
+                lockAspectRatio: shouldLock
+              }
+              if (shouldLock) {
+                return {
+                  ...updated,
+                  crop: alignCropToFrame(updated)
+                }
+              }
+              return updated
             }
             return {
               ...item,

@@ -134,38 +134,66 @@ const maintainAspectResize = (
   frame: LayoutFrame,
   handle: ResizeHandle,
   deltaX: number,
-  deltaY: number
+  deltaY: number,
+  aspectRatio?: number
 ): LayoutFrame => {
-  const aspect = frame.width === 0 ? 1 : frame.width / frame.height
-  let width = frame.width
-  let height = frame.height
-  let x = frame.x
-  let y = frame.y
-  if (handle.includes('e')) {
-    width = clamp(frame.width + deltaX, 0, 1 - frame.x)
-    height = width / aspect
+  const ratio =
+    aspectRatio && Number.isFinite(aspectRatio) && aspectRatio > 0
+      ? aspectRatio
+      : frame.width === 0
+        ? 1
+        : frame.width / Math.max(frame.height, 0.0001)
+  const resized = resizeFrame(frame, handle, deltaX, deltaY)
+  let { x, y, width, height } = resized
+
+  if (width <= 0 || height <= 0) {
+    return {
+      x: clamp(x),
+      y: clamp(y),
+      width: clamp(width),
+      height: clamp(height)
+    }
   }
-  if (handle.includes('s')) {
-    height = clamp(frame.height + deltaY, 0, 1 - frame.y)
-    width = height * aspect
+
+  const widthFromHeight = height * ratio
+  const heightFromWidth = width / ratio
+
+  if (handle.includes('e') || handle.includes('w')) {
+    height = heightFromWidth
+  } else if (handle.includes('n') || handle.includes('s')) {
+    width = widthFromHeight
+  } else {
+    if (Math.abs(heightFromWidth - height) < Math.abs(widthFromHeight - width)) {
+      height = heightFromWidth
+    } else {
+      width = widthFromHeight
+    }
   }
+
+  if (width > 1 - x) {
+    width = 1 - x
+    height = width / ratio
+  }
+  if (height > 1 - y) {
+    height = 1 - y
+    width = height * ratio
+  }
+
+  width = clamp(width)
+  height = clamp(height)
+
   if (handle.includes('w')) {
-    const nextWidth = clamp(frame.width - deltaX, 0, frame.x + frame.width)
-    width = nextWidth
-    height = width / aspect
-    x = frame.x + (frame.width - width)
+    x = clamp(resized.x + resized.width - width)
   }
   if (handle.includes('n')) {
-    const nextHeight = clamp(frame.height - deltaY, 0, frame.y + frame.height)
-    height = nextHeight
-    width = height * aspect
-    y = frame.y + (frame.height - height)
+    y = clamp(resized.y + resized.height - height)
   }
+
   return {
     x: clamp(x),
     y: clamp(y),
-    width: clamp(width),
-    height: clamp(height)
+    width,
+    height
   }
 }
 
@@ -433,6 +461,17 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       const snapEnabled = event.altKey || event.metaKey
       onSelectionChange([item.id])
       const originalFrame = getDisplayFrame(item)
+      let aspectRatioValue: number | undefined
+      if (transformTarget === 'crop' && (item as LayoutVideoItem).kind === 'video') {
+        const video = item as LayoutVideoItem
+        const frameWidth = clamp(video.frame.width)
+        const frameHeight = clamp(video.frame.height)
+        if (frameWidth > 0 && frameHeight > 0) {
+          aspectRatioValue = frameWidth / frameHeight
+        }
+      } else if (originalFrame.width > 0 && originalFrame.height > 0) {
+        aspectRatioValue = originalFrame.width / Math.max(originalFrame.height, 0.0001)
+      }
       dragStateRef.current = {
         mode: 'resize',
         pointerId: event.pointerId,
@@ -442,12 +481,12 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         maintainAspect,
         snapEnabled,
         originalFrames: new Map([[item.id, originalFrame]]),
-        aspectRatio: originalFrame.width / Math.max(originalFrame.height, 0.0001)
+        aspectRatio: aspectRatioValue
       }
       ;(event.target as HTMLElement).setPointerCapture(event.pointerId)
       event.preventDefault()
     },
-    [getDisplayFrame, itemIsEditable, onSelectionChange]
+    [getDisplayFrame, itemIsEditable, onSelectionChange, transformTarget]
   )
 
   const handlePointerMove = useCallback(
@@ -479,8 +518,8 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       } else if (state.mode === 'resize' && state.handle) {
         state.originalFrames.forEach((original, id) => {
           let nextFrame: LayoutFrame
-          if (state.maintainAspect && state.aspectRatio) {
-            nextFrame = maintainAspectResize(original, state.handle!, deltaX, deltaY)
+          if (state.maintainAspect) {
+            nextFrame = maintainAspectResize(original, state.handle!, deltaX, deltaY, state.aspectRatio)
           } else {
             nextFrame = resizeFrame(original, state.handle!, deltaX, deltaY)
           }
@@ -526,8 +565,8 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       } else if (state.mode === 'resize' && state.handle) {
         state.originalFrames.forEach((original, id) => {
           let frame: LayoutFrame
-          if (state.maintainAspect && state.aspectRatio) {
-            frame = maintainAspectResize(original, state.handle!, deltaX, deltaY)
+          if (state.maintainAspect) {
+            frame = maintainAspectResize(original, state.handle!, deltaX, deltaY, state.aspectRatio)
           } else {
             frame = resizeFrame(original, state.handle!, deltaX, deltaY)
           }
@@ -635,8 +674,8 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       role="presentation"
       aria-label={ariaLabel}
     >
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-white/60">
-        {previewContent}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="flex h-full w-full items-center justify-center text-xs text-white/60">{previewContent}</div>
       </div>
       {showGrid ? (
         <div className="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-25">

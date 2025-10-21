@@ -285,6 +285,136 @@ describe('Layout editor interactions', () => {
       expect(within(sourceCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
       expect(within(layoutCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
     })
+
+    const layoutItem = within(layoutCanvas).getByRole('group', { name: /Primary/i })
+    const resizeHandle = within(layoutItem).getByLabelText('Resize south-east')
+    fireEvent.pointerDown(resizeHandle, { pointerId: 2, clientX: 120, clientY: 220 })
+    fireEvent.pointerMove(layoutCanvas, { pointerId: 2, clientX: 150, clientY: 250 })
+    fireEvent.pointerUp(layoutCanvas, { pointerId: 2, clientX: 150, clientY: 250 })
+
+    await waitFor(() => {
+      expect(within(layoutCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
+      expect(within(sourceCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
+    })
+  })
+
+  it('keeps the layout preview aspect ratio aligned with the canvas settings', async () => {
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={null}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={vi.fn()}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = layoutCanvases[layoutCanvases.length - 1] as HTMLDivElement
+    expect(Number.parseFloat(layoutCanvas.style.aspectRatio)).toBeCloseTo(
+      baseLayout.canvas.width / baseLayout.canvas.height,
+      3
+    )
+
+    const widthInput = screen.getByLabelText('Canvas width (px)') as HTMLInputElement
+    const heightInput = screen.getByLabelText('Canvas height (px)') as HTMLInputElement
+
+    await act(async () => {
+      fireEvent.change(widthInput, { target: { value: '1920' } })
+      fireEvent.change(heightInput, { target: { value: '1080' } })
+    })
+
+    await waitFor(() => {
+      expect(Number.parseFloat(layoutCanvas.style.aspectRatio)).toBeCloseTo(1920 / 1080, 3)
+    })
+  })
+
+  it('aligns the source crop with the frame aspect ratio when locked', async () => {
+    let latestLayout: LayoutDefinition | null = null
+    const onLayoutChange = vi.fn((layout: LayoutDefinition) => {
+      latestLayout = layout
+    })
+
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={null}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={onLayoutChange}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const sourceCanvases = await screen.findAllByLabelText('Source preview canvas')
+    const sourceCanvas = sourceCanvases[sourceCanvases.length - 1]
+    const sourceItemInitial = within(sourceCanvas).getByRole('group', { name: /Primary/i })
+    fireEvent.pointerDown(sourceItemInitial, { pointerId: 7, clientX: 24, clientY: 32 })
+
+    await waitFor(() => {
+      expect(within(sourceCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
+    })
+
+    const sourceItem = within(sourceCanvas).getByRole('group', { name: /Primary/i })
+    const handle = within(sourceItem).getByLabelText('Resize south-east')
+    fireEvent.pointerDown(handle, { pointerId: 8, clientX: 120, clientY: 260 })
+    fireEvent.pointerMove(sourceCanvas, { pointerId: 8, clientX: 150, clientY: 300 })
+    fireEvent.pointerUp(sourceCanvas, { pointerId: 8, clientX: 150, clientY: 300 })
+
+    await waitFor(() => {
+      expect(onLayoutChange).toHaveBeenCalled()
+    })
+
+    const capturedLayout = latestLayout ?? (onLayoutChange.mock.calls.at(-1)?.[0] as LayoutDefinition | undefined)
+    expect(capturedLayout).toBeTruthy()
+    const updatedVideo = capturedLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+    expect(updatedVideo).toBeTruthy()
+    const crop = updatedVideo?.crop
+    expect(crop).toBeTruthy()
+    const cropRatio = crop && crop.height ? crop.width / crop.height : null
+    const frameRatio = updatedVideo ? updatedVideo.frame.width / updatedVideo.frame.height : null
+    expect(cropRatio).not.toBeNull()
+    expect(frameRatio).not.toBeNull()
+    if (cropRatio != null && frameRatio != null) {
+      expect(cropRatio).toBeCloseTo(frameRatio, 3)
+    }
   })
 
   it('lets editors toggle the aspect ratio lock on video items', async () => {
@@ -377,9 +507,9 @@ describe('Layout editor interactions', () => {
     )
 
     const widthInputs = await screen.findAllByLabelText(/Canvas width/i)
-    const widthInput = widthInputs[0]
+    const widthInput = widthInputs[widthInputs.length - 1]
     await act(async () => {
-      fireEvent.change(widthInput, { target: { value: 720 } })
+      fireEvent.change(widthInput, { target: { value: '720' } })
     })
 
     await waitFor(() => {
