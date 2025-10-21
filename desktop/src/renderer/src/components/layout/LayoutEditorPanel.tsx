@@ -474,6 +474,8 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   const sourceVideoRef = useRef<HTMLVideoElement | null>(null)
   const layoutVideoRef = useRef<HTMLVideoElement | null>(null)
   const playbackSyncRef = useRef(false)
+  const skipSelectionResetRef = useRef(false)
+  const lastLoadedLayoutIdRef = useRef<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -535,13 +537,30 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
       setSelectedItemIds([])
       setHistory([])
       setFuture([])
+      lastLoadedLayoutIdRef.current = null
+      skipSelectionResetRef.current = false
       return
     }
+
+    const layoutId = selectedLayout.id
+    const previousId = lastLoadedLayoutIdRef.current
+    const isDifferentLayout = layoutId !== previousId
+
     setDraftLayout(cloneLayout(selectedLayout))
-    setSelectedItemIds([])
-    setHistory([])
-    setFuture([])
-  }, [selectedLayout])
+
+    if (!skipSelectionResetRef.current) {
+      setSelectedItemIds([])
+      setHistory([])
+      setFuture([])
+    } else if (isDifferentLayout) {
+      setSelectedItemIds([])
+      setHistory([])
+      setFuture([])
+    }
+
+    skipSelectionResetRef.current = false
+    lastLoadedLayoutIdRef.current = layoutId
+  }, [selectedLayout, setSelectedItemIds])
 
   useEffect(() => {
     setIsPlaying(false)
@@ -633,7 +652,13 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           setFuture([])
         }
         if (emitChange) {
-          onLayoutChange(next)
+          skipSelectionResetRef.current = true
+          try {
+            onLayoutChange(next)
+          } catch (error) {
+            skipSelectionResetRef.current = false
+            throw error
+          }
         }
         return next
       })

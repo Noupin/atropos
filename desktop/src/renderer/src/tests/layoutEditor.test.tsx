@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { useState } from 'react'
 import { describe, beforeAll, afterEach, vi, it, expect } from 'vitest'
 import type { LayoutDefinition, LayoutVideoItem } from '../../../types/layouts'
 import LayoutCanvas from '../components/layout/LayoutCanvas'
@@ -873,6 +874,58 @@ describe('Layout editor interactions', () => {
     await waitFor(() => {
       const layoutVideo = within(layoutCanvas).getByRole('group', { name: /primary/i })
       expect(layoutVideo.className).toContain('ring-2')
+    })
+  })
+
+  it('keeps the selection when the parent syncs the layout state', async () => {
+    const LayoutHarness = () => {
+      const [layout, setLayout] = useState<LayoutDefinition>(baseLayout)
+
+      return (
+        <LayoutEditorPanel
+          tabNavigation={<div />}
+          clip={null}
+          layoutCollection={null}
+          isCollectionLoading={false}
+          selectedLayout={layout}
+          selectedLayoutReference={{ id: layout.id, category: 'custom' }}
+          isLayoutLoading={false}
+          appliedLayoutId={null}
+          isSavingLayout={false}
+          isApplyingLayout={false}
+          statusMessage={null}
+          errorMessage={null}
+          onSelectLayout={vi.fn()}
+          onCreateBlankLayout={vi.fn()}
+          onLayoutChange={setLayout}
+          onSaveLayout={vi.fn(async () => layout)}
+          onImportLayout={vi.fn(async () => undefined)}
+          onExportLayout={vi.fn(async () => undefined)}
+          onApplyLayout={vi.fn(async () => undefined)}
+          onRenderLayout={vi.fn(async () => undefined)}
+          renderSteps={pipelineSteps}
+          isRenderingLayout={false}
+          renderStatusMessage={null}
+          renderErrorMessage={null}
+        />
+      )
+    }
+
+    render(<LayoutHarness />)
+
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = layoutCanvases[layoutCanvases.length - 1]
+    const videoItem = within(layoutCanvas).getByRole('group', { name: /primary/i })
+
+    fireEvent.pointerDown(videoItem, { pointerId: 101, clientX: 24, clientY: 36 })
+    fireEvent.pointerMove(layoutCanvas, { pointerId: 101, clientX: 84, clientY: 136 })
+    fireEvent.pointerUp(layoutCanvas, { pointerId: 101, clientX: 84, clientY: 136 })
+
+    await waitFor(() => {
+      const layoutVideo = within(layoutCanvas).getByRole('group', { name: /primary/i })
+      expect(layoutVideo.className).toContain('ring-2')
+      const toolbarButton = within(layoutCanvas).getByRole('button', { name: 'Bring forward' })
+      expect(toolbarButton).toBeInstanceOf(HTMLButtonElement)
     })
   })
 
