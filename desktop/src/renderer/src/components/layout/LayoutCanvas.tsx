@@ -16,6 +16,10 @@ import type {
 
 export type LayoutCanvasSelection = string[]
 
+type ColorScheme = 'dark' | 'light'
+
+type CSSWithVars = CSSProperties & Partial<Record<'--ring', string>>
+
 type LayoutCanvasTransform = {
   itemId: string
   frame: LayoutFrame
@@ -89,6 +93,61 @@ const SNAP_POINTS = [0, 0.25, 0.5, 0.75, 1]
 const SNAP_THRESHOLD = 0.02
 
 const GUIDE_FADE_DELAY = 200
+
+const detectColorScheme = (): ColorScheme => {
+  if (typeof document === 'undefined') {
+    return 'dark'
+  }
+  return document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+}
+
+const useColorScheme = (): ColorScheme => {
+  const [scheme, setScheme] = useState<ColorScheme>(() => detectColorScheme())
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return
+    }
+
+    const root = document.documentElement
+    const updateScheme = () => {
+      const next = detectColorScheme()
+      setScheme((current) => (current === next ? current : next))
+    }
+
+    updateScheme()
+
+    let observer: MutationObserver | null = null
+    if (typeof MutationObserver !== 'undefined') {
+      observer = new MutationObserver(updateScheme)
+      observer.observe(root, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] })
+    }
+
+    let media: MediaQueryList | null = null
+    const handleMediaChange = () => updateScheme()
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      media = window.matchMedia('(prefers-color-scheme: dark)')
+      if (typeof media.addEventListener === 'function') {
+        media.addEventListener('change', handleMediaChange)
+      } else if (typeof media.addListener === 'function') {
+        media.addListener(handleMediaChange)
+      }
+    }
+
+    return () => {
+      observer?.disconnect()
+      if (media) {
+        if (typeof media.removeEventListener === 'function') {
+          media.removeEventListener('change', handleMediaChange)
+        } else if (typeof media.removeListener === 'function') {
+          media.removeListener(handleMediaChange)
+        }
+      }
+    }
+  }, [])
+
+  return scheme
+}
 
 const getItemLabel = (item: LayoutItem): string => {
   if ((item as LayoutVideoItem).kind === 'video') {
@@ -183,13 +242,14 @@ const toTranslucent = (hexColor: string, alpha: number): string => {
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${clamped})`
 }
 
-const createAppearance = (base: string, mode: 'dark' | 'light'): ItemAppearance => {
-  const baseTint = mode === 'dark' ? mixHexColors(base, '#0f172a', 0.55) : mixHexColors(base, '#ffffff', 0.78)
-  const background = toTranslucent(baseTint, 0.22)
-  const border = mode === 'dark' ? mixHexColors(base, '#ffffff', 0.55) : mixHexColors(base, '#0f172a', 0.55)
-  const handleBackground = toTranslucent(mixHexColors(base, '#ffffff', 0.9), 0.9)
-  const handleBorder = mode === 'dark' ? mixHexColors(base, '#ffffff', 0.65) : mixHexColors(base, '#0f172a', 0.6)
-  const labelColor = getContrastingTextColor(baseTint)
+const createAppearance = (base: string, mode: ColorScheme): ItemAppearance => {
+  const surfaceBlend = mode === 'dark' ? mixHexColors(base, '#1f2937', 0.4) : mixHexColors(base, '#f8fafc', 0.6)
+  const accentMix = mode === 'dark' ? mixHexColors(surfaceBlend, '#bfdbfe', 0.55) : mixHexColors(surfaceBlend, '#1e293b', 0.45)
+  const background = toTranslucent(surfaceBlend, mode === 'dark' ? 0.35 : 0.24)
+  const border = accentMix
+  const handleBackground = toTranslucent(mixHexColors(surfaceBlend, '#ffffff', 0.7), mode === 'dark' ? 0.92 : 0.82)
+  const handleBorder = mixHexColors(accentMix, mode === 'dark' ? '#e2e8f0' : '#1e293b', mode === 'dark' ? 0.35 : 0.4)
+  const labelColor = getContrastingTextColor(mixHexColors(surfaceBlend, mode === 'dark' ? '#0f172a' : '#f8fafc', 0.2))
   return {
     backgroundColor: background,
     borderColor: border,
@@ -199,14 +259,14 @@ const createAppearance = (base: string, mode: 'dark' | 'light'): ItemAppearance 
   }
 }
 
-const getItemAppearance = (item: LayoutItem): ItemAppearance => {
+const getItemAppearance = (item: LayoutItem, scheme: ColorScheme): ItemAppearance => {
   if ((item as LayoutVideoItem).kind === 'video') {
-    return createAppearance('#2563eb', 'dark')
+    return createAppearance('#38bdf8', scheme)
   }
   if ((item as LayoutTextItem).kind === 'text') {
-    return createAppearance('#10b981', 'light')
+    return createAppearance('#ec4899', scheme)
   }
-  return createAppearance('#f59e0b', 'light')
+  return createAppearance('#fbbf24', scheme)
 }
 
 const defaultCrop = { x: 0, y: 0, width: 1, height: 1 }
@@ -378,6 +438,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   onRequestSnapAspectRatio,
   getAspectRatioForItem
 }) => {
+  const colorScheme = useColorScheme()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const dragStateRef = useRef<DragState | null>(null)
   const rafRef = useRef<number | null>(null)
@@ -385,8 +446,18 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const [activeGuides, setActiveGuides] = useState<Guide[]>([])
   const [floatingLabel, setFloatingLabel] = useState<string | null>(null)
   const [floatingPosition, setFloatingPosition] = useState<{ x: number; y: number } | null>(null)
+  const [toolbarAnchorId, setToolbarAnchorId] = useState<string | null>(null)
 
   useGuideFade(guidesRef, setActiveGuides)
+
+  useEffect(() => {
+    if (selectedItemIds.length === 0) {
+      setToolbarAnchorId((current) => (current === null ? current : null))
+      return
+    }
+    const nextId = selectedItemIds[selectedItemIds.length - 1] ?? null
+    setToolbarAnchorId((current) => (current === nextId ? current : nextId))
+  }, [selectedItemIds])
 
   const getDisplayFrame = useCallback(
     (item: LayoutItem): LayoutFrame => {
@@ -522,6 +593,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           : [...selectedItemIds, item.id]
         : [item.id]
       onSelectionChange(selection)
+      setToolbarAnchorId(selection.length ? selection[selection.length - 1] ?? null : null)
       if (!itemIsEditable(item)) {
         return
       }
@@ -549,7 +621,14 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       ;(event.target as HTMLElement).setPointerCapture(event.pointerId)
       event.preventDefault()
     },
-    [getDisplayFrame, itemIsEditable, layout?.items, onSelectionChange, selectedItemIds]
+    [
+      getDisplayFrame,
+      itemIsEditable,
+      layout?.items,
+      onSelectionChange,
+      selectedItemIds,
+      setToolbarAnchorId
+    ]
   )
 
   const handleResizePointerDown = useCallback(
@@ -564,6 +643,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       const maintainAspect = itemHasAspectLock(item, transformTarget) || event.shiftKey
       const snapEnabled = event.altKey || event.metaKey
       onSelectionChange([item.id])
+      setToolbarAnchorId(item.id)
       const originalFrame = getDisplayFrame(item)
       let aspectRatioValue: number | undefined
       if (typeof getAspectRatioForItem === 'function') {
@@ -590,7 +670,14 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       ;(event.target as HTMLElement).setPointerCapture(event.pointerId)
       event.preventDefault()
     },
-    [getAspectRatioForItem, getDisplayFrame, itemIsEditable, onSelectionChange, transformTarget]
+    [
+      getAspectRatioForItem,
+      getDisplayFrame,
+      itemIsEditable,
+      onSelectionChange,
+      setToolbarAnchorId,
+      transformTarget
+    ]
   )
 
   const handlePointerMove = useCallback(
@@ -744,17 +831,44 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     return `${activeSelection.length} items`
   }, [activeSelection])
 
+  const ringColor = useMemo(
+    () => (colorScheme === 'dark' ? 'rgba(125, 211, 252, 0.68)' : 'rgba(37, 99, 235, 0.6)'),
+    [colorScheme]
+  )
+
+  const selectionOutlineColor = useMemo(
+    () => (colorScheme === 'dark' ? 'rgba(226, 232, 240, 0.55)' : 'rgba(30, 41, 59, 0.45)'),
+    [colorScheme]
+  )
+
+  const toolbarStyle = useMemo<CSSWithVars | undefined>(() => {
+    if (!selectionBounds) {
+      return undefined
+    }
+    const centerX = selectionBounds.x + selectionBounds.width / 2
+    const top = Math.max(selectionBounds.y, 0)
+    return {
+      left: fractionToPercent(centerX),
+      top: fractionToPercent(top),
+      transform: 'translate(-50%, -100%) translateY(-18px)',
+      '--ring': ringColor
+    }
+  }, [ringColor, selectionBounds])
+
   const primaryIsVideo = Boolean(primarySelection && (primarySelection as LayoutVideoItem).kind === 'video')
   const primaryAspectLocked = Boolean(
     primarySelection && primaryIsVideo && itemHasAspectLock(primarySelection, transformTarget)
   )
+
+  const showToolbar = Boolean(primarySelection && activeSelection.length === 1 && toolbarAnchorId === primarySelection.id)
 
   const handleCanvasPointerDown = useCallback(() => {
     if (dragStateRef.current) {
       return
     }
     onSelectionChange([])
-  }, [onSelectionChange])
+    setToolbarAnchorId(null)
+  }, [onSelectionChange, setToolbarAnchorId])
 
   const stopToolbarPointerPropagation = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     event.stopPropagation()
@@ -773,7 +887,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const canvasClassName = useMemo(
     () =>
       [
-        'relative flex max-w-full select-none items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black touch-none',
+        'relative flex max-w-full select-none items-center justify-center overflow-hidden rounded-2xl border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_68%,transparent)] text-[var(--fg)] touch-none',
         className
       ]
         .filter(Boolean)
@@ -805,17 +919,22 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       aria-label={ariaLabel}
     >
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="flex h-full w-full items-center justify-center text-xs text-white/60">{previewContent}</div>
+        <div className="flex h-full w-full items-center justify-center text-xs text-[var(--muted)]">
+          {previewContent}
+        </div>
       </div>
       {showGrid ? (
-        <div className="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-25">
+        <div className="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-40">
           {Array.from({ length: 9 }).map((_, index) => (
-            <div key={index} className="border border-white/20" />
+            <div
+              key={index}
+              className="border border-[color:color-mix(in_srgb,var(--edge-soft)_70%,transparent)]"
+            />
           ))}
         </div>
       ) : null}
       {showSafeMargins ? (
-        <div className="pointer-events-none absolute inset-[8%] rounded-2xl border-2 border-dashed border-white/30" />
+        <div className="pointer-events-none absolute inset-[8%] rounded-2xl border-2 border-dashed border-[color:color-mix(in_srgb,var(--accent)_55%,transparent)]" />
       ) : null}
       {activeGuides.map((guide) => (
         <div
@@ -839,7 +958,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const isSelected = selectedItemIds.includes(item.id)
         const isPrimarySelection = primarySelection?.id === item.id
         const label = getItemLabel(item)
-        const palette = getItemAppearance(item)
+          const palette = getItemAppearance(item, colorScheme)
         const classes = getItemClasses ? getItemClasses(item, isSelected) : ''
         const shouldShowLabel = labelVisibility === 'always' || (labelVisibility === 'selected' && isSelected)
         const editable = itemIsEditable(item)
@@ -849,14 +968,17 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
             className={`absolute rounded-xl border text-[10px] font-semibold uppercase tracking-wide shadow-lg transition ${classes} ${
               isSelected ? 'ring-2 ring-[var(--ring)]' : 'ring-0'
             }`}
-            style={{
-              left,
-              top,
-              width,
-              height,
-              backgroundColor: palette.backgroundColor,
-              borderColor: palette.borderColor
-            }}
+            style={
+              {
+                left,
+                top,
+                width,
+                height,
+                backgroundColor: palette.backgroundColor,
+                borderColor: palette.borderColor,
+                '--ring': ringColor
+              } as CSSWithVars
+            }
             onPointerDown={(event) => handlePointerDown(event, item)}
             role="group"
             aria-label={label}
@@ -876,7 +998,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
               </div>
             ) : null}
             {isPrimarySelection && selectionBounds?.width && selectionBounds.height ? (
-              <div className="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 rounded-full bg-black/80 px-3 py-1 text-[11px] font-medium text-white">
+              <div className="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 rounded-full border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_92%,transparent)] px-3 py-1 text-[11px] font-medium text-[var(--fg)] shadow-[0_8px_20px_rgba(15,23,42,0.35)]">
                 {selectionLabel}
               </div>
             ) : null}
@@ -888,10 +1010,13 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                     aria-label={handle.label}
                     className={`absolute h-3 w-3 rounded-full border text-transparent transition hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${handle.className}`}
                     onPointerDown={(event) => handleResizePointerDown(event, item, handle.id)}
-                    style={{
-                      backgroundColor: palette.handleBackgroundColor,
-                      borderColor: palette.handleBorderColor
-                    }}
+                    style={
+                      {
+                        backgroundColor: palette.handleBackgroundColor,
+                        borderColor: palette.handleBorderColor,
+                        '--ring': ringColor
+                      } as CSSWithVars
+                    }
                   >
                     •
                   </button>
@@ -902,18 +1027,19 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       })}
       {selectionBounds ? (
         <div
-          className="pointer-events-none absolute rounded-[18px] border-2 border-white/40"
+          className="pointer-events-none absolute rounded-[18px] border-2"
           style={{
             left: fractionToPercent(selectionBounds.x),
             top: fractionToPercent(selectionBounds.y),
             width: fractionToPercent(selectionBounds.width),
-            height: fractionToPercent(selectionBounds.height)
+            height: fractionToPercent(selectionBounds.height),
+            borderColor: selectionOutlineColor
           }}
         />
       ) : null}
       {floatingLabel && floatingPosition ? (
         <div
-          className="pointer-events-none absolute -translate-y-8 rounded-full bg-black/80 px-3 py-1 text-[11px] font-semibold text-white shadow-lg"
+          className="pointer-events-none absolute -translate-y-8 rounded-full border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_90%,transparent)] px-3 py-1 text-[11px] font-semibold text-[var(--fg)] shadow-[0_10px_24px_rgba(15,23,42,0.35)]"
           style={{
             left: `${floatingPosition.x - (containerRef.current?.getBoundingClientRect().left ?? 0)}px`,
             top: `${floatingPosition.y - (containerRef.current?.getBoundingClientRect().top ?? 0)}px`
@@ -922,9 +1048,11 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           {floatingLabel}
         </div>
       ) : null}
-      {activeSelection.length === 1
+      {showToolbar && toolbarStyle
         ? (() => {
             const buttons: Array<{ key: string; node: ReactNode }> = []
+            const toolbarButtonClass =
+              'rounded-full px-2 py-1 text-xs text-[var(--fg)] transition hover:bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]'
             if (primaryIsVideo && onRequestToggleAspectLock) {
               const aspectContext = transformTarget === 'crop' ? 'crop' : 'frame'
               const lockLabel = primaryAspectLocked
@@ -935,7 +1063,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                 node: (
                   <button
                     type="button"
-                    className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    className={toolbarButtonClass}
                     onPointerDown={stopToolbarPointerPropagation}
                     onClick={() => onRequestToggleAspectLock(transformTarget)}
                   >
@@ -952,7 +1080,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                 node: (
                   <button
                     type="button"
-                    className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    className={toolbarButtonClass}
                     onPointerDown={stopToolbarPointerPropagation}
                     onClick={() => onRequestSnapAspectRatio(transformTarget)}
                   >
@@ -967,7 +1095,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                 node: (
                   <button
                     type="button"
-                    className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    className={toolbarButtonClass}
                     onPointerDown={stopToolbarPointerPropagation}
                     onClick={onRequestBringForward}
                   >
@@ -980,7 +1108,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                 node: (
                   <button
                     type="button"
-                    className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    className={toolbarButtonClass}
                     onPointerDown={stopToolbarPointerPropagation}
                     onClick={onRequestSendBackward}
                   >
@@ -993,7 +1121,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                 node: (
                   <button
                     type="button"
-                    className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    className={toolbarButtonClass}
                     onPointerDown={stopToolbarPointerPropagation}
                     onClick={onRequestDuplicate}
                   >
@@ -1006,7 +1134,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                 node: (
                   <button
                     type="button"
-                    className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    className={toolbarButtonClass}
                     onPointerDown={stopToolbarPointerPropagation}
                     onClick={onRequestDelete}
                   >
@@ -1016,16 +1144,19 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
               }
             )
             return (
-              <div className="pointer-events-none absolute -bottom-10 left-1/2 flex -translate-x-1/2 gap-2">
+              <div className="pointer-events-none absolute z-20" style={toolbarStyle}>
                 <div
-                  className="pointer-events-auto inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-[11px] text-white shadow-lg"
+                  className="pointer-events-auto inline-flex items-center gap-1 rounded-full border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_92%,transparent)] px-3 py-1 text-[11px] text-[var(--fg)] shadow-[0_12px_28px_rgba(15,23,42,0.4)]"
                   onPointerDown={stopToolbarPointerPropagation}
                 >
                   {buttons.map((entry, index) => (
                     <Fragment key={entry.key}>
                       {entry.node}
                       {index < buttons.length - 1 ? (
-                        <span aria-hidden="true" className="text-white/40">
+                        <span
+                          aria-hidden="true"
+                          className="text-[color:color-mix(in_srgb,var(--fg)_45%,transparent)]"
+                        >
                           ·
                         </span>
                       ) : null}
