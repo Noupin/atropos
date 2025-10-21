@@ -437,7 +437,8 @@ describe('Layout editor interactions', () => {
     })
 
     const initialRatio = baseLayout.canvas.width / baseLayout.canvas.height
-    expect(readRatio(sourceCanvas)).toBeCloseTo(initialRatio, 3)
+    const fallbackSourceRatio = 16 / 9
+    expect(readRatio(sourceCanvas)).toBeCloseTo(fallbackSourceRatio, 3)
     expect(readRatio(layoutCanvas)).toBeCloseTo(initialRatio, 3)
 
     const widthInput = screen.getByLabelText('Canvas width (px)') as HTMLInputElement
@@ -450,8 +451,8 @@ describe('Layout editor interactions', () => {
 
     await waitFor(() => {
       const updatedRatio = 1920 / 1080
-      expect(readRatio(sourceCanvas)).toBeCloseTo(updatedRatio, 3)
       expect(readRatio(layoutCanvas)).toBeCloseTo(updatedRatio, 3)
+      expect(readRatio(sourceCanvas)).toBeCloseTo(fallbackSourceRatio, 3)
     })
   })
 
@@ -509,6 +510,8 @@ describe('Layout editor interactions', () => {
       expect(onLayoutChange).toHaveBeenCalled()
     })
 
+    const changeCountBeforeSnap = onLayoutChange.mock.calls.length
+
     const capturedLayout = latestLayout ?? (onLayoutChange.mock.calls.at(-1)?.[0] as LayoutDefinition | undefined)
     expect(capturedLayout).toBeTruthy()
     const updatedVideo = capturedLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
@@ -564,18 +567,258 @@ describe('Layout editor interactions', () => {
     const videoItem = within(layoutCanvas).getByRole('group', { name: /primary/i })
     fireEvent.pointerDown(videoItem, { pointerId: 1, clientX: 10, clientY: 10 })
 
-    const aspectToggles = await screen.findAllByLabelText('Lock video frame aspect ratio')
-    const aspectToggle = aspectToggles[aspectToggles.length - 1]
-    expect((aspectToggle as HTMLInputElement).checked).toBe(true)
+    const unlockButtons = within(layoutCanvas).getAllByRole('button', { name: 'Unlock frame aspect' })
+    const unlockButton = unlockButtons[unlockButtons.length - 1]
 
     await act(async () => {
-      fireEvent.click(aspectToggle)
+      fireEvent.click(unlockButton)
     })
 
     await waitFor(() => {
       expect(onLayoutChange).toHaveBeenCalled()
       const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
       expect(updatedVideo?.lockAspectRatio).toBe(false)
+    })
+
+    const lockButtons = within(layoutCanvas).getAllByRole('button', { name: 'Lock frame aspect' })
+    const lockButton = lockButtons[lockButtons.length - 1]
+
+    await act(async () => {
+      fireEvent.click(lockButton)
+    })
+
+    await waitFor(() => {
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.lockAspectRatio).not.toBe(false)
+    })
+  })
+
+  it('lets editors toggle the crop aspect lock from the source canvas', async () => {
+    let latestLayout: LayoutDefinition | null = null
+    const onLayoutChange = vi.fn((next: LayoutDefinition) => {
+      latestLayout = next
+    })
+
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={null}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={onLayoutChange}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const sourceCanvases = await screen.findAllByLabelText('Source preview canvas')
+    const sourceCanvas = sourceCanvases[sourceCanvases.length - 1]
+    const videoItem = within(sourceCanvas).getByRole('group', { name: /primary/i })
+    fireEvent.pointerDown(videoItem, { pointerId: 4, clientX: 16, clientY: 16 })
+
+    const unlockButtons = within(sourceCanvas).getAllByRole('button', { name: 'Unlock crop aspect' })
+    const unlockButton = unlockButtons[unlockButtons.length - 1]
+
+    await act(async () => {
+      fireEvent.click(unlockButton)
+    })
+
+    await waitFor(() => {
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.lockCropAspectRatio).toBe(false)
+      expect(updatedVideo?.lockAspectRatio).not.toBe(false)
+    })
+
+    const lockButtons = within(sourceCanvas).getAllByRole('button', { name: 'Lock crop aspect' })
+    const lockButton = lockButtons[lockButtons.length - 1]
+
+    await act(async () => {
+      fireEvent.click(lockButton)
+    })
+
+    await waitFor(() => {
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.lockCropAspectRatio).not.toBe(false)
+    })
+  })
+
+  it('snaps frame bounds to the source aspect ratio on demand', async () => {
+    let latestLayout: LayoutDefinition | null = null
+    const onLayoutChange = vi.fn((next: LayoutDefinition) => {
+      latestLayout = next
+    })
+
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={null}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={onLayoutChange}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = layoutCanvases[layoutCanvases.length - 1]
+    const videoItem = within(layoutCanvas).getByRole('group', { name: /primary/i })
+    fireEvent.pointerDown(videoItem, { pointerId: 22, clientX: 12, clientY: 12 })
+
+    const unlockButtons = within(layoutCanvas).getAllByRole('button', { name: 'Unlock frame aspect' })
+    const unlockButton = unlockButtons[unlockButtons.length - 1]
+
+    await act(async () => {
+      fireEvent.click(unlockButton)
+    })
+
+    await waitFor(() => {
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.lockAspectRatio).toBe(false)
+    })
+
+    const eastHandle = within(videoItem).getByLabelText('Resize east')
+    fireEvent.pointerDown(eastHandle, { pointerId: 23, clientX: 220, clientY: 140 })
+    fireEvent.pointerMove(layoutCanvas, { pointerId: 23, clientX: 160, clientY: 140 })
+    fireEvent.pointerUp(layoutCanvas, { pointerId: 23, clientX: 160, clientY: 140 })
+
+    await waitFor(() => {
+      expect(onLayoutChange).toHaveBeenCalled()
+    })
+
+    const changeCountBeforeSnap = onLayoutChange.mock.calls.length
+
+    const distortedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+    expect(distortedVideo).toBeTruthy()
+    const distortedRatio = distortedVideo
+      ? distortedVideo.frame.width / Math.max(distortedVideo.frame.height, 0.0001)
+      : null
+    expect(distortedRatio).not.toBeNull()
+    if (distortedRatio != null) {
+      expect(distortedRatio).toBeLessThan(16 / 9)
+    }
+
+    const snapButtons = within(layoutCanvas).getAllByRole('button', { name: 'Snap frame to video' })
+    const snapButton = snapButtons[snapButtons.length - 1]
+
+    await act(async () => {
+      fireEvent.click(snapButton)
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange).toHaveBeenCalledTimes(changeCountBeforeSnap + 1)
+    })
+
+    const snappedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+    expect(snappedVideo).toBeTruthy()
+    if (snappedVideo) {
+      const snappedRatio = snappedVideo.frame.width / Math.max(snappedVideo.frame.height, 0.0001)
+      expect(snappedRatio).not.toBeCloseTo(distortedRatio ?? snappedRatio, 3)
+      if (snappedVideo.crop) {
+        const cropRatio = snappedVideo.crop.width / Math.max(snappedVideo.crop.height, 0.0001)
+        expect(cropRatio).toBeCloseTo(snappedRatio, 3)
+      }
+    }
+  })
+
+  it('keeps the selection active while interacting with toolbar actions', async () => {
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={null}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={vi.fn()}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = layoutCanvases[layoutCanvases.length - 1]
+    const videoItem = within(layoutCanvas).getByRole('group', { name: /primary/i })
+
+    fireEvent.pointerDown(videoItem, { pointerId: 51, clientX: 20, clientY: 24 })
+
+    await waitFor(() => {
+      expect(within(layoutCanvas).getByRole('group', { name: /primary/i }).className).toContain('ring-2')
+    })
+
+    const toggleButtons = within(layoutCanvas).getAllByRole('button', { name: /frame aspect/i })
+    const toggleButton = toggleButtons[toggleButtons.length - 1]
+
+    fireEvent.pointerDown(toggleButton, { pointerId: 52, clientX: 32, clientY: 8 })
+    fireEvent.pointerUp(toggleButton, { pointerId: 52, clientX: 32, clientY: 8 })
+
+    await act(async () => {
+      fireEvent.click(toggleButton)
+    })
+
+    await waitFor(() => {
+      expect(within(layoutCanvas).getByRole('group', { name: /primary/i }).className).toContain('ring-2')
+    })
+
+    const bringForwardButton = within(layoutCanvas).getByRole('button', { name: 'Bring forward' })
+    fireEvent.pointerDown(bringForwardButton, { pointerId: 53, clientX: 48, clientY: 8 })
+    fireEvent.pointerUp(bringForwardButton, { pointerId: 53, clientX: 48, clientY: 8 })
+
+    await act(async () => {
+      fireEvent.click(bringForwardButton)
+    })
+
+    await waitFor(() => {
+      expect(within(layoutCanvas).getByRole('group', { name: /primary/i }).className).toContain('ring-2')
     })
   })
 

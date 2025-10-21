@@ -220,19 +220,112 @@ const alignCropToFrame = (video: LayoutVideoItem): LayoutCrop => {
   return { x: clamp(x), y: clamp(y), width: clamp(width), height: clamp(height), units: 'fraction' }
 }
 
+const snapFrameToAspect = (frame: LayoutFrame, aspect: number): LayoutFrame => {
+  if (!Number.isFinite(aspect) || aspect <= 0) {
+    return clampFrame(frame)
+  }
+  const width = clamp(frame.width)
+  const height = clamp(frame.height)
+  if (width <= 0 || height <= 0) {
+    return clampFrame(frame)
+  }
+  const currentAspect = width / Math.max(height, 0.0001)
+  if (Math.abs(currentAspect - aspect) < 0.0001) {
+    return clampFrame(frame)
+  }
+  let nextWidth = width
+  let nextHeight = height
+  if (currentAspect > aspect) {
+    nextWidth = Math.min(width, height * aspect)
+    nextHeight = nextWidth / aspect
+  } else {
+    nextHeight = Math.min(height, width / aspect)
+    nextWidth = nextHeight * aspect
+  }
+  nextWidth = clamp(nextWidth)
+  nextHeight = clamp(nextHeight)
+  const centerX = clamp(frame.x + width / 2)
+  const centerY = clamp(frame.y + height / 2)
+  let nextX = clamp(centerX - nextWidth / 2)
+  let nextY = clamp(centerY - nextHeight / 2)
+  if (nextX + nextWidth > 1) {
+    nextX = clamp(1 - nextWidth)
+  }
+  if (nextY + nextHeight > 1) {
+    nextY = clamp(1 - nextHeight)
+  }
+  return {
+    x: clamp(nextX),
+    y: clamp(nextY),
+    width: clamp(nextWidth),
+    height: clamp(nextHeight)
+  }
+}
+
+const snapCropToAspect = (crop: LayoutCrop, aspect: number): LayoutCrop => {
+  if (!Number.isFinite(aspect) || aspect <= 0) {
+    return clampCropFrame(crop)
+  }
+  const normalised = clampCropFrame(crop)
+  const width = normalised.width
+  const height = normalised.height
+  if (width <= 0 || height <= 0) {
+    return normalised
+  }
+  const currentAspect = width / Math.max(height, 0.0001)
+  if (Math.abs(currentAspect - aspect) < 0.0001) {
+    return normalised
+  }
+  let nextWidth = width
+  let nextHeight = height
+  if (currentAspect > aspect) {
+    nextWidth = Math.min(width, height * aspect)
+    nextHeight = nextWidth / aspect
+  } else {
+    nextHeight = Math.min(height, width / aspect)
+    nextWidth = nextHeight * aspect
+  }
+  nextWidth = clamp(nextWidth)
+  nextHeight = clamp(nextHeight)
+  const centerX = clamp(normalised.x + width / 2)
+  const centerY = clamp(normalised.y + height / 2)
+  let nextX = clamp(centerX - nextWidth / 2)
+  let nextY = clamp(centerY - nextHeight / 2)
+  if (nextX + nextWidth > 1) {
+    nextX = clamp(1 - nextWidth)
+  }
+  if (nextY + nextHeight > 1) {
+    nextY = clamp(1 - nextHeight)
+  }
+  return {
+    x: clamp(nextX),
+    y: clamp(nextY),
+    width: clamp(nextWidth),
+    height: clamp(nextHeight),
+    units: 'fraction'
+  }
+}
+
 const cloneLayoutItem = (item: LayoutItem): LayoutItem => {
   if ((item as LayoutVideoItem).kind === 'video') {
     const video = item as LayoutVideoItem
-    const lockAspectRatio = video.lockAspectRatio ?? true
     const normalisedCrop = normaliseVideoCrop(video.crop)
-    return {
+    const lockAspectRatio = video.lockAspectRatio ?? true
+    const lockCropAspectRatio = video.lockCropAspectRatio ?? true
+    const base: LayoutVideoItem = {
       ...video,
       frame: { ...video.frame },
-      crop: lockAspectRatio
-        ? alignCropToFrame({ ...video, crop: normalisedCrop })
-        : normalisedCrop,
-      lockAspectRatio
+      crop: normalisedCrop,
+      lockAspectRatio,
+      lockCropAspectRatio
     }
+    if (lockAspectRatio || lockCropAspectRatio) {
+      return {
+        ...base,
+        crop: alignCropToFrame({ ...base, crop: normalisedCrop })
+      }
+    }
+    return base
   }
   if ((item as LayoutTextItem).kind === 'text') {
     const text = item as LayoutTextItem
@@ -331,16 +424,11 @@ const CollapseToggleIcon: FC<{ collapsed: boolean }> = ({ collapsed }) => (
     className="h-4 w-4 text-[var(--fg)]"
     focusable="false"
   >
+    <path d="M6 3v14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     {collapsed ? (
-      <>
-        <path d="M5 3v14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <path d="M8 10 13 6v8L8 10Z" fill="currentColor" />
-      </>
+      <path d="M9 10 13.5 6.5v7L9 10Z" fill="currentColor" />
     ) : (
-      <>
-        <path d="M5 3v14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <path d="M12 6 7 10l5 4V6Z" fill="currentColor" />
-      </>
+      <path d="M11 6.5 6.5 10 11 13.5v-7Z" fill="currentColor" />
     )}
   </svg>
 )
@@ -399,6 +487,24 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   )
   const [sourceContainer, setSourceContainer] = useState<HTMLDivElement | null>(null)
   const [layoutContainer, setLayoutContainer] = useState<HTMLDivElement | null>(null)
+  const [sourceVideoDimensions, setSourceVideoDimensions] = useState<{ width: number; height: number } | null>(null)
+
+  const layoutAspectRatio = useMemo(() => {
+    if (draftLayout && draftLayout.canvas.height > 0) {
+      const ratio = draftLayout.canvas.width / draftLayout.canvas.height
+      if (Number.isFinite(ratio) && ratio > 0) {
+        return ratio
+      }
+    }
+    return 9 / 16
+  }, [draftLayout])
+
+  const sourceAspectRatio = useMemo(() => {
+    if (sourceVideoDimensions && sourceVideoDimensions.width > 0 && sourceVideoDimensions.height > 0) {
+      return sourceVideoDimensions.width / sourceVideoDimensions.height
+    }
+    return 16 / 9
+  }, [sourceVideoDimensions])
 
   const handleSourceContainerRef = useCallback((node: HTMLDivElement | null) => {
     setSourceContainer(node)
@@ -442,6 +548,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     setCurrentTime(0)
     setDuration(0)
     playbackSyncRef.current = false
+    setSourceVideoDimensions(null)
     if (sourceVideoRef.current) {
       sourceVideoRef.current.pause()
       sourceVideoRef.current.currentTime = 0
@@ -460,6 +567,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
 
     let cancelled = false
     setSourceMedia({ status: 'loading', url: null, message: null })
+    setSourceVideoDimensions(null)
 
     ;(async () => {
       try {
@@ -549,9 +657,24 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
             }
             if (target === 'crop' && item.kind === 'video') {
               const video = item as LayoutVideoItem
+              const nextCrop = clampCropFrame(match.frame)
+              if (video.lockCropAspectRatio === false) {
+                return {
+                  ...video,
+                  crop: nextCrop
+                }
+              }
+              const frameWidth = clamp(video.frame.width)
+              const frameHeight = clamp(video.frame.height)
+              if (frameWidth > 0 && frameHeight > 0) {
+                return {
+                  ...video,
+                  crop: snapCropToAspect(nextCrop, frameWidth / Math.max(frameHeight, 0.0001))
+                }
+              }
               return {
                 ...video,
-                crop: clampCropFrame(match.frame)
+                crop: nextCrop
               }
             }
             if (item.kind === 'video') {
@@ -579,6 +702,105 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     [updateLayout]
   )
 
+  const handleToggleAspectLock = useCallback(
+    (target: 'frame' | 'crop') => {
+      if (!selectedItemIds.length) {
+        return
+      }
+      const selected = new Set(selectedItemIds)
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: layout.items.map((item) => {
+            if (item.kind !== 'video' || !selected.has(item.id)) {
+              return item
+            }
+            if (target === 'crop') {
+              const currentlyLocked = item.lockCropAspectRatio !== false
+              const nextLocked = !currentlyLocked
+              const updated: LayoutVideoItem = {
+                ...item,
+                lockCropAspectRatio: nextLocked
+              }
+              if (nextLocked) {
+                return {
+                  ...updated,
+                  crop: alignCropToFrame(updated)
+                }
+              }
+              return updated
+            }
+            const currentlyLocked = item.lockAspectRatio !== false
+            const nextLocked = !currentlyLocked
+            const updated: LayoutVideoItem = {
+              ...item,
+              lockAspectRatio: nextLocked
+            }
+            if (nextLocked) {
+              return {
+                ...updated,
+                crop: alignCropToFrame(updated)
+              }
+            }
+            return updated
+          })
+        }),
+        { trackHistory: true }
+      )
+    },
+    [selectedItemIds, updateLayout]
+  )
+
+  const handleSnapAspectRatio = useCallback(
+    (target: 'frame' | 'crop') => {
+      if (!selectedItemIds.length) {
+        return
+      }
+      const selected = new Set(selectedItemIds)
+      const baseAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: layout.items.map((item) => {
+            if (item.kind !== 'video' || !selected.has(item.id)) {
+              return item
+            }
+            if (target === 'crop') {
+              const frameWidth = clamp(item.frame.width)
+              const frameHeight = clamp(item.frame.height)
+              if (frameWidth > 0 && frameHeight > 0) {
+                return {
+                  ...item,
+                  crop: snapCropToAspect(normaliseVideoCrop(item.crop), frameWidth / Math.max(frameHeight, 0.0001))
+                }
+              }
+              return item
+            }
+            const crop = normaliseVideoCrop(item.crop)
+            const cropWidth = clamp(crop.width)
+            const cropHeight = clamp(crop.height)
+            const contentAspect =
+              cropWidth > 0 && cropHeight > 0
+                ? (baseAspect * cropWidth) / Math.max(cropHeight, 0.0001)
+                : baseAspect
+            const snappedFrame = snapFrameToAspect(item.frame, contentAspect)
+            const nextVideo: LayoutVideoItem = {
+              ...item,
+              frame: snappedFrame
+            }
+            const nextCrop = item.lockCropAspectRatio === false ? crop : alignCropToFrame({ ...nextVideo, crop })
+            return {
+              ...nextVideo,
+              crop: nextCrop
+            }
+          })
+        }),
+        { trackHistory: true }
+      )
+    },
+    [layoutAspectRatio, selectedItemIds, sourceAspectRatio, updateLayout]
+  )
+
   const handleAddItem = useCallback(
     (kind: LayoutItem['kind']) => {
       if (!draftLayout) {
@@ -598,6 +820,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           opacity: 1,
           mirror: false,
           lockAspectRatio: true,
+          lockCropAspectRatio: true,
           zIndex: draftLayout.items.length
         }
       } else if (kind === 'text') {
@@ -1168,21 +1391,37 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     }))
   }, [])
 
-  const layoutPreviewItemClasses = useCallback((item: LayoutItem, isSelected: boolean) => {
-    if ((item as LayoutVideoItem).kind === 'video') {
-      return isSelected
-        ? 'border-[color:color-mix(in_srgb,var(--accent)_70%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_45%,transparent)]'
-        : 'border-white/35 bg-transparent'
-    }
-    if ((item as LayoutTextItem).kind === 'text') {
-      return isSelected
-        ? 'border-emerald-300/70 bg-emerald-500/25'
-        : 'border-emerald-300/55 bg-emerald-500/15'
-    }
-    return isSelected
-      ? 'border-amber-300/70 bg-amber-500/25'
-      : 'border-amber-300/55 bg-amber-500/15'
-  }, [])
+  const getAspectRatioForItem = useCallback(
+    (item: LayoutItem, target: 'frame' | 'crop'): number | null => {
+      if ((item as LayoutVideoItem).kind !== 'video') {
+        return null
+      }
+      const video = item as LayoutVideoItem
+      if (target === 'crop') {
+        if (video.lockCropAspectRatio === false) {
+          return null
+        }
+        const frameWidth = clamp(video.frame.width)
+        const frameHeight = clamp(video.frame.height)
+        if (frameWidth > 0 && frameHeight > 0) {
+          return frameWidth / Math.max(frameHeight, 0.0001)
+        }
+        return null
+      }
+      if (video.lockAspectRatio === false) {
+        return null
+      }
+      const baseAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
+      const crop = normaliseVideoCrop(video.crop)
+      const cropWidth = clamp(crop.width)
+      const cropHeight = clamp(crop.height)
+      if (cropWidth > 0 && cropHeight > 0) {
+        return (baseAspect * cropWidth) / Math.max(cropHeight, 0.0001)
+      }
+      return baseAspect
+    },
+    [layoutAspectRatio, sourceAspectRatio]
+  )
 
   const sourceVideoSource = sourceMedia.status === 'ready' ? sourceMedia.url : null
   const layoutPreviewSource = sourceVideoSource
@@ -1223,6 +1462,9 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         return
       }
       setDuration((current) => (current > 0 ? Math.max(current, source.duration) : source.duration))
+      if (origin === 'source' && source.videoWidth > 0 && source.videoHeight > 0) {
+        setSourceVideoDimensions({ width: source.videoWidth, height: source.videoHeight })
+      }
     },
     [getVideoPair]
   )
@@ -1375,16 +1617,6 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     [renderErrorMessage, renderStatusMessage, renderSteps]
   )
 
-  const layoutAspectRatio = useMemo(() => {
-    if (draftLayout && draftLayout.canvas.height > 0) {
-      const ratio = draftLayout.canvas.width / draftLayout.canvas.height
-      if (Number.isFinite(ratio) && ratio > 0) {
-        return ratio
-      }
-    }
-    return 9 / 16
-  }, [draftLayout])
-
   const basePreviewHeight = useMemo(() => {
     const viewport = Number.isFinite(viewportHeight) ? viewportHeight : 900
     const scaled = viewport * 0.6
@@ -1392,22 +1624,23 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     return clamped > 0 ? clamped : 480
   }, [viewportHeight])
 
-  const sourcePreviewSize = usePreviewSize(sourceContainer, layoutAspectRatio, basePreviewHeight)
+  const sourcePreviewSize = usePreviewSize(sourceContainer, sourceAspectRatio, basePreviewHeight)
   const layoutPreviewSize = usePreviewSize(layoutContainer, layoutAspectRatio, basePreviewHeight)
 
-  const fallbackWidth = Math.max(0, layoutAspectRatio * basePreviewHeight)
+  const sourceFallbackWidth = Math.max(0, sourceAspectRatio * basePreviewHeight)
+  const layoutFallbackWidth = Math.max(0, layoutAspectRatio * basePreviewHeight)
 
   const sourceCanvasStyle = useMemo(() => {
-    const width = Math.max(0, sourcePreviewSize.width || fallbackWidth)
+    const width = Math.max(0, sourcePreviewSize.width || sourceFallbackWidth)
     const height = Math.max(0, sourcePreviewSize.height || basePreviewHeight)
     return { width, height, maxWidth: '100%' as const }
-  }, [basePreviewHeight, fallbackWidth, sourcePreviewSize.height, sourcePreviewSize.width])
+  }, [basePreviewHeight, sourceFallbackWidth, sourcePreviewSize.height, sourcePreviewSize.width])
 
   const layoutCanvasStyle = useMemo(() => {
-    const width = Math.max(0, layoutPreviewSize.width || fallbackWidth)
+    const width = Math.max(0, layoutPreviewSize.width || layoutFallbackWidth)
     const height = Math.max(0, layoutPreviewSize.height || basePreviewHeight)
     return { width, height, maxWidth: '100%' as const }
-  }, [basePreviewHeight, fallbackWidth, layoutPreviewSize.height, layoutPreviewSize.width])
+  }, [basePreviewHeight, layoutFallbackWidth, layoutPreviewSize.height, layoutPreviewSize.width])
 
   const clipDuration = clip?.durationSec ?? 0
   const transportRangeLabel =
@@ -1570,7 +1803,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                   {collapsed ? (
                     <div
                       id={`layout-section-${section.category}`}
-                      className="flex min-h-[72px] items-center justify-center rounded-xl border border-dashed border-white/25 bg-white/10 px-3 py-3 text-xs text-[var(--fg)]"
+                      className="flex min-h-[72px] items-center justify-center rounded-xl border border-dashed border-white/25 bg-white/10 px-3 py-3 text-xs text-white"
                     >
                       <span>{section.title} layouts hidden</span>
                     </div>
@@ -1667,6 +1900,10 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                 )
               }
               transformTarget="crop"
+              aspectRatioOverride={sourceAspectRatio}
+              onRequestToggleAspectLock={handleToggleAspectLock}
+              onRequestSnapAspectRatio={handleSnapAspectRatio}
+              getAspectRatioForItem={getAspectRatioForItem}
               style={sourceCanvasStyle}
               ariaLabel="Source preview canvas"
             />
@@ -1717,7 +1954,10 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               }
               transformTarget="frame"
               labelVisibility="selected"
-              getItemClasses={layoutPreviewItemClasses}
+              aspectRatioOverride={layoutAspectRatio}
+              onRequestToggleAspectLock={handleToggleAspectLock}
+              onRequestSnapAspectRatio={handleSnapAspectRatio}
+              getAspectRatioForItem={getAspectRatioForItem}
               style={layoutCanvasStyle}
               ariaLabel="Layout preview canvas"
             />
@@ -1845,15 +2085,6 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                     Mirror horizontally
                   </label>
                 </div>
-                <label className="flex items-center justify-between gap-2 rounded-lg bg-[color:color-mix(in_srgb,var(--card)_75%,transparent)] px-3 py-2 text-xs text-[var(--muted)]">
-                  <span className="font-medium text-[var(--fg)]">Lock aspect ratio</span>
-                  <input
-                    type="checkbox"
-                    checked={(selectedItem as LayoutVideoItem).lockAspectRatio ?? true}
-                    onChange={(event) => handleChangeVideoField(selectedItem.id, 'lockAspectRatio', event.target.checked)}
-                    aria-label="Lock video frame aspect ratio"
-                  />
-                </label>
               </fieldset>
             ) : null}
             {selectedItem.kind === 'text' ? (

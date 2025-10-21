@@ -5,7 +5,7 @@ import type {
   ReactNode,
   CSSProperties
 } from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   LayoutDefinition,
   LayoutFrame,
@@ -43,6 +43,7 @@ type DragState = {
   snapEnabled: boolean
   originalFrames: Map<string, LayoutFrame>
   aspectRatio?: number
+  target: 'frame' | 'crop'
 }
 
 type LayoutCanvasProps = {
@@ -70,6 +71,9 @@ type LayoutCanvasProps = {
   className?: string
   style?: CSSProperties
   ariaLabel?: string
+  onRequestToggleAspectLock?: (target: 'frame' | 'crop') => void
+  onRequestSnapAspectRatio?: (target: 'frame' | 'crop') => void
+  getAspectRatioForItem?: (item: LayoutItem, target: 'frame' | 'crop') => number | null
 }
 
 type Guide = {
@@ -102,14 +106,97 @@ const getItemLabel = (item: LayoutItem): string => {
   return 'Background layer'
 }
 
-const getItemColorClasses = (item: LayoutItem): string => {
+type ItemAppearance = {
+  backgroundColor: string
+  borderColor: string
+  labelColor: string
+  handleBackgroundColor: string
+  handleBorderColor: string
+}
+
+const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
+  const normalised = hex.replace('#', '')
+  if (![3, 6].includes(normalised.length)) {
+    return null
+  }
+  const expanded =
+    normalised.length === 3
+      ? normalised
+          .split('')
+          .map((char) => char + char)
+          .join('')
+      : normalised
+  const value = Number.parseInt(expanded, 16)
+  if (Number.isNaN(value)) {
+    return null
+  }
+  return {
+    r: (value >> 16) & 0xff,
+    g: (value >> 8) & 0xff,
+    b: value & 0xff
+  }
+}
+
+const mixHexColors = (base: string, target: string, ratio: number): string => {
+  const clampRatio = Math.min(Math.max(ratio, 0), 1)
+  const from = hexToRgb(base)
+  const to = hexToRgb(target)
+  if (!from || !to) {
+    return base
+  }
+  const mix = (channelFrom: number, channelTo: number): number =>
+    Math.round(channelFrom + (channelTo - channelFrom) * clampRatio)
+  const r = mix(from.r, to.r)
+  const g = mix(from.g, to.g)
+  const b = mix(from.b, to.b)
+  const toHex = (channel: number): string => channel.toString(16).padStart(2, '0')
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`
+}
+
+const getRelativeLuminance = (hexColor: string): number => {
+  const rgb = hexToRgb(hexColor)
+  if (!rgb) {
+    return 0.5
+  }
+  const normalise = (value: number): number => {
+    const channel = value / 255
+    return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4)
+  }
+  const r = normalise(rgb.r)
+  const g = normalise(rgb.g)
+  const b = normalise(rgb.b)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+const getContrastingTextColor = (hexColor: string): string => {
+  const luminance = getRelativeLuminance(hexColor)
+  return luminance > 0.55 ? '#0f172a' : '#f8fafc'
+}
+
+const createAppearance = (base: string, mode: 'dark' | 'light'): ItemAppearance => {
+  const background =
+    mode === 'dark' ? mixHexColors(base, '#0f172a', 0.65) : mixHexColors(base, '#ffffff', 0.82)
+  const border = mode === 'dark' ? mixHexColors(base, '#ffffff', 0.35) : mixHexColors(base, '#0f172a', 0.35)
+  const handleBackground = mode === 'dark' ? mixHexColors(base, '#ffffff', 0.85) : mixHexColors(base, '#ffffff', 0.65)
+  const handleBorder = mode === 'dark' ? mixHexColors(base, '#ffffff', 0.55) : mixHexColors(base, '#0f172a', 0.45)
+  const labelColor = getContrastingTextColor(background)
+  return {
+    backgroundColor: background,
+    borderColor: border,
+    labelColor,
+    handleBackgroundColor: handleBackground,
+    handleBorderColor: handleBorder
+  }
+}
+
+const getItemAppearance = (item: LayoutItem): ItemAppearance => {
   if ((item as LayoutVideoItem).kind === 'video') {
-    return 'border-blue-300/70 bg-blue-500/15'
+    return createAppearance('#2563eb', 'dark')
   }
   if ((item as LayoutTextItem).kind === 'text') {
-    return 'border-emerald-300/60 bg-emerald-500/15'
+    return createAppearance('#10b981', 'light')
   }
-  return 'border-amber-300/60 bg-amber-500/15'
+  return createAppearance('#f59e0b', 'light')
 }
 
 const defaultCrop = { x: 0, y: 0, width: 1, height: 1 }
@@ -197,11 +284,14 @@ const maintainAspectResize = (
   }
 }
 
-const itemHasAspectLock = (item: LayoutItem): boolean => {
+const itemHasAspectLock = (item: LayoutItem, target: 'frame' | 'crop'): boolean => {
   if ((item as LayoutVideoItem).kind !== 'video') {
     return false
   }
   const video = item as LayoutVideoItem
+  if (target === 'crop') {
+    return video.lockCropAspectRatio !== false
+  }
   return video.lockAspectRatio !== false
 }
 
@@ -273,7 +363,10 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   className,
   style,
   aspectRatioOverride,
-  ariaLabel
+  ariaLabel,
+  onRequestToggleAspectLock,
+  onRequestSnapAspectRatio,
+  getAspectRatioForItem
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const dragStateRef = useRef<DragState | null>(null)
@@ -440,7 +533,8 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         startY: event.clientY,
         maintainAspect,
         snapEnabled,
-        originalFrames
+        originalFrames,
+        target: transformTarget
       }
       ;(event.target as HTMLElement).setPointerCapture(event.pointerId)
       event.preventDefault()
@@ -457,19 +551,18 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       if (!itemIsEditable(item)) {
         return
       }
-      const maintainAspect = itemHasAspectLock(item) || event.shiftKey
+      const maintainAspect = itemHasAspectLock(item, transformTarget) || event.shiftKey
       const snapEnabled = event.altKey || event.metaKey
       onSelectionChange([item.id])
       const originalFrame = getDisplayFrame(item)
       let aspectRatioValue: number | undefined
-      if (transformTarget === 'crop' && (item as LayoutVideoItem).kind === 'video') {
-        const video = item as LayoutVideoItem
-        const frameWidth = clamp(video.frame.width)
-        const frameHeight = clamp(video.frame.height)
-        if (frameWidth > 0 && frameHeight > 0) {
-          aspectRatioValue = frameWidth / frameHeight
+      if (typeof getAspectRatioForItem === 'function') {
+        const ratio = getAspectRatioForItem(item, transformTarget)
+        if (ratio && Number.isFinite(ratio) && ratio > 0) {
+          aspectRatioValue = ratio
         }
-      } else if (originalFrame.width > 0 && originalFrame.height > 0) {
+      }
+      if (!aspectRatioValue && originalFrame.width > 0 && originalFrame.height > 0) {
         aspectRatioValue = originalFrame.width / Math.max(originalFrame.height, 0.0001)
       }
       dragStateRef.current = {
@@ -481,12 +574,13 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         maintainAspect,
         snapEnabled,
         originalFrames: new Map([[item.id, originalFrame]]),
-        aspectRatio: aspectRatioValue
+        aspectRatio: aspectRatioValue,
+        target: transformTarget
       }
       ;(event.target as HTMLElement).setPointerCapture(event.pointerId)
       event.preventDefault()
     },
-    [getDisplayFrame, itemIsEditable, onSelectionChange, transformTarget]
+    [getAspectRatioForItem, getDisplayFrame, itemIsEditable, onSelectionChange, transformTarget]
   )
 
   const handlePointerMove = useCallback(
@@ -625,12 +719,22 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     return `${activeSelection.length} items`
   }, [activeSelection])
 
+  const primarySelection = activeSelection.length === 1 ? activeSelection[0] : null
+  const primaryIsVideo = Boolean(primarySelection && (primarySelection as LayoutVideoItem).kind === 'video')
+  const primaryAspectLocked = Boolean(
+    primarySelection && primaryIsVideo && itemHasAspectLock(primarySelection, transformTarget)
+  )
+
   const handleCanvasPointerDown = useCallback(() => {
     if (dragStateRef.current) {
       return
     }
     onSelectionChange([])
   }, [onSelectionChange])
+
+  const stopToolbarPointerPropagation = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    event.stopPropagation()
+  }, [])
 
   const aspectRatio = useMemo(() => {
     if (aspectRatioOverride && aspectRatioOverride > 0) {
@@ -711,16 +815,24 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const isSelected = selectedItemIds.includes(item.id)
         const isPrimarySelection = activeSelection[0]?.id === item.id
         const label = getItemLabel(item)
-        const classes = getItemClasses ? getItemClasses(item, isSelected) : getItemColorClasses(item)
+        const palette = getItemAppearance(item)
+        const classes = getItemClasses ? getItemClasses(item, isSelected) : ''
         const shouldShowLabel = labelVisibility === 'always' || (labelVisibility === 'selected' && isSelected)
         const editable = itemIsEditable(item)
         return (
           <div
             key={item.id}
-            className={`absolute rounded-xl border text-[10px] font-semibold uppercase tracking-wide text-white/80 shadow-lg transition ${
-              classes
-            } ${isSelected ? 'ring-2 ring-[var(--ring)]' : 'ring-0'}`}
-            style={{ left, top, width, height }}
+            className={`absolute rounded-xl border text-[10px] font-semibold uppercase tracking-wide shadow-lg transition ${classes} ${
+              isSelected ? 'ring-2 ring-[var(--ring)]' : 'ring-0'
+            }`}
+            style={{
+              left,
+              top,
+              width,
+              height,
+              backgroundColor: palette.backgroundColor,
+              borderColor: palette.borderColor
+            }}
             onPointerDown={(event) => handlePointerDown(event, item)}
             role="group"
             aria-label={label}
@@ -732,7 +844,10 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
               </div>
             ) : null}
             {shouldShowLabel ? (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-2 text-center drop-shadow">
+              <div
+                className="pointer-events-none absolute inset-0 flex items-center justify-center px-2 text-center font-semibold drop-shadow-[0_1px_2px_rgba(15,23,42,0.45)]"
+                style={{ color: palette.labelColor }}
+              >
                 {label}
               </div>
             ) : null}
@@ -747,8 +862,12 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                     key={handle.id}
                     type="button"
                     aria-label={handle.label}
-                    className={`absolute h-3 w-3 rounded-full border border-white/80 bg-white text-transparent transition hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${handle.className}`}
+                    className={`absolute h-3 w-3 rounded-full border text-transparent transition hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${handle.className}`}
                     onPointerDown={(event) => handleResizePointerDown(event, item, handle.id)}
+                    style={{
+                      backgroundColor: palette.handleBackgroundColor,
+                      borderColor: palette.handleBorderColor
+                    }}
                   >
                     •
                   </button>
@@ -779,49 +898,120 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           {floatingLabel}
         </div>
       ) : null}
-      {activeSelection.length === 1 ? (
-        <div className="pointer-events-none absolute -bottom-10 left-1/2 flex -translate-x-1/2 gap-2">
-          <div className="pointer-events-auto inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-[11px] text-white shadow-lg">
-            <button
-              type="button"
-              className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              onClick={onRequestBringForward}
-            >
-              Bring forward
-            </button>
-            <span aria-hidden="true" className="text-white/40">
-              ·
-            </span>
-            <button
-              type="button"
-              className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              onClick={onRequestSendBackward}
-            >
-              Send backward
-            </button>
-            <span aria-hidden="true" className="text-white/40">
-              ·
-            </span>
-            <button
-              type="button"
-              className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              onClick={onRequestDuplicate}
-            >
-              Duplicate
-            </button>
-            <span aria-hidden="true" className="text-white/40">
-              ·
-            </span>
-            <button
-              type="button"
-              className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              onClick={onRequestDelete}
-            >
-              Remove
-            </button>
-          </div>
-        </div>
-      ) : null}
+      {activeSelection.length === 1
+        ? (() => {
+            const buttons: Array<{ key: string; node: ReactNode }> = []
+            if (primaryIsVideo && onRequestToggleAspectLock) {
+              const aspectContext = transformTarget === 'crop' ? 'crop' : 'frame'
+              const lockLabel = primaryAspectLocked
+                ? `Unlock ${aspectContext} aspect`
+                : `Lock ${aspectContext} aspect`
+              buttons.push({
+                key: 'toggle-aspect',
+                node: (
+                  <button
+                    type="button"
+                    className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    onPointerDown={stopToolbarPointerPropagation}
+                    onClick={() => onRequestToggleAspectLock(transformTarget)}
+                  >
+                    {lockLabel}
+                  </button>
+                )
+              })
+            }
+            if (primaryIsVideo && onRequestSnapAspectRatio) {
+              const snapLabel =
+                transformTarget === 'crop' ? 'Snap crop to frame' : 'Snap frame to video'
+              buttons.push({
+                key: 'snap-aspect',
+                node: (
+                  <button
+                    type="button"
+                    className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    onPointerDown={stopToolbarPointerPropagation}
+                    onClick={() => onRequestSnapAspectRatio(transformTarget)}
+                  >
+                    {snapLabel}
+                  </button>
+                )
+              })
+            }
+            buttons.push(
+              {
+                key: 'bring-forward',
+                node: (
+                  <button
+                    type="button"
+                    className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    onPointerDown={stopToolbarPointerPropagation}
+                    onClick={onRequestBringForward}
+                  >
+                    Bring forward
+                  </button>
+                )
+              },
+              {
+                key: 'send-backward',
+                node: (
+                  <button
+                    type="button"
+                    className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    onPointerDown={stopToolbarPointerPropagation}
+                    onClick={onRequestSendBackward}
+                  >
+                    Send backward
+                  </button>
+                )
+              },
+              {
+                key: 'duplicate',
+                node: (
+                  <button
+                    type="button"
+                    className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    onPointerDown={stopToolbarPointerPropagation}
+                    onClick={onRequestDuplicate}
+                  >
+                    Duplicate
+                  </button>
+                )
+              },
+              {
+                key: 'remove',
+                node: (
+                  <button
+                    type="button"
+                    className="rounded-full px-2 py-1 text-xs hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    onPointerDown={stopToolbarPointerPropagation}
+                    onClick={onRequestDelete}
+                  >
+                    Remove
+                  </button>
+                )
+              }
+            )
+            return (
+              <div className="pointer-events-none absolute -bottom-10 left-1/2 flex -translate-x-1/2 gap-2">
+                <div
+                  className="pointer-events-auto inline-flex items-center gap-1 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-[11px] text-white shadow-lg"
+                  onPointerDown={stopToolbarPointerPropagation}
+                >
+                  {buttons.map((entry, index) => (
+                    <Fragment key={entry.key}>
+                      {entry.node}
+                      {index < buttons.length - 1 ? (
+                        <span aria-hidden="true" className="text-white/40">
+                          ·
+                        </span>
+                      ) : null}
+                    </Fragment>
+                  ))}
+                </div>
+              </div>
+            )
+          })()
+        : null}
     </div>
   )
 }

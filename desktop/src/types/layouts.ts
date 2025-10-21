@@ -60,6 +60,7 @@ export type LayoutVideoItem = {
   opacity?: number | null
   mirror?: boolean
   lockAspectRatio?: boolean | null
+  lockCropAspectRatio?: boolean | null
   zIndex?: number
 }
 
