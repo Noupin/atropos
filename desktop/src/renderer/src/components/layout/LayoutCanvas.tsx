@@ -653,13 +653,15 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     [className]
   )
 
-  const canvasStyle: CSSProperties = useMemo(
-    () => ({
-      ...(style ?? {}),
-      aspectRatio: aspectRatio > 0 ? `${aspectRatio}` : '9 / 16'
-    }),
-    [aspectRatio, style]
-  )
+  const canvasStyle: CSSProperties = useMemo(() => {
+    const base: CSSProperties = { ...(style ?? {}) }
+    const hasExplicitWidth = base.width != null
+    const hasExplicitHeight = base.height != null
+    if (!hasExplicitWidth || !hasExplicitHeight) {
+      base.aspectRatio = aspectRatio > 0 ? `${aspectRatio}` : '9 / 16'
+    }
+    return base
+  }, [aspectRatio, style])
 
   return (
     <div

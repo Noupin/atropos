@@ -14,8 +14,8 @@ import type {
 } from '../../../../types/layouts'
 import type { Clip } from '../../types'
 import LayoutCanvas from './LayoutCanvas'
-import type { LayoutCanvasSelection } from './LayoutCanvas'
 import LayoutCompositionSurface from './LayoutCompositionSurface'
+import { useLayoutSelection } from './layoutSelectionStore'
 import { resolveOriginalSource } from '../../services/preview/adjustedPreview'
 
 type PipelineStepStatus = 'pending' | 'running' | 'completed' | 'failed'
@@ -74,6 +74,84 @@ type SourceMediaState = {
   status: 'idle' | 'loading' | 'ready' | 'missing' | 'error'
   url: string | null
   message: string | null
+}
+
+type PreviewSize = {
+  width: number
+  height: number
+}
+
+const usePreviewSize = (
+  element: HTMLElement | null,
+  aspectRatio: number,
+  targetHeight: number
+): PreviewSize => {
+  const [size, setSize] = useState<PreviewSize>({ width: 0, height: 0 })
+
+  const recompute = useCallback(() => {
+    if (!element || !Number.isFinite(aspectRatio) || aspectRatio <= 0) {
+      setSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
+      return
+    }
+
+    const rect = element.getBoundingClientRect()
+    const containerWidth = rect.width || element.clientWidth || 0
+    const containerHeight = rect.height || element.clientHeight || 0
+    const maxHeight = targetHeight > 0 ? targetHeight : containerHeight
+    const limitedHeight = containerHeight > 0 ? Math.min(containerHeight, Math.max(maxHeight, 0)) : Math.max(maxHeight, 0)
+
+    let height = limitedHeight > 0 ? limitedHeight : targetHeight
+    if (!Number.isFinite(height) || height <= 0) {
+      height = targetHeight
+    }
+
+    if (!Number.isFinite(height) || height <= 0) {
+      setSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
+      return
+    }
+
+    let width = height * aspectRatio
+    const widthLimit = containerWidth > 0 ? containerWidth : width
+
+    if (width > widthLimit && widthLimit > 0) {
+      width = widthLimit
+      height = width / aspectRatio
+    }
+
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      setSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
+      return
+    }
+
+    setSize((prev) => {
+      if (Math.abs(prev.width - width) < 0.5 && Math.abs(prev.height - height) < 0.5) {
+        return prev
+      }
+      return { width, height }
+    })
+  }, [aspectRatio, element, targetHeight])
+
+  useEffect(() => {
+    recompute()
+  }, [recompute])
+
+  useEffect(() => {
+    if (!element) {
+      return
+    }
+    if (typeof ResizeObserver === 'undefined') {
+      return
+    }
+    const observer = new ResizeObserver(() => {
+      recompute()
+    })
+    observer.observe(element)
+    return () => {
+      observer.disconnect()
+    }
+  }, [element, recompute])
+
+  return size
 }
 
 const clamp = (value: number, min = 0, max = 1): number => Math.min(Math.max(value, min), max)
@@ -294,7 +372,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   renderErrorMessage
 }) => {
   const [draftLayout, setDraftLayout] = useState<LayoutDefinition | null>(null)
-  const [selectedItemIds, setSelectedItemIds] = useState<LayoutCanvasSelection>([])
+  const [selectedItemIds, setSelectedItemIds] = useLayoutSelection()
   const [history, setHistory] = useState<LayoutDefinition[]>([])
   const [future, setFuture] = useState<LayoutDefinition[]>([])
   const [clipboard, setClipboard] = useState<LayoutItem[] | null>(null)
@@ -316,7 +394,34 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     url: null,
     message: null
   })
-  const [sourceAspectRatio, setSourceAspectRatio] = useState<number | null>(null)
+  const [viewportHeight, setViewportHeight] = useState<number>(() =>
+    typeof window !== 'undefined' && Number.isFinite(window.innerHeight) ? window.innerHeight : 900
+  )
+  const [sourceContainer, setSourceContainer] = useState<HTMLDivElement | null>(null)
+  const [layoutContainer, setLayoutContainer] = useState<HTMLDivElement | null>(null)
+
+  const handleSourceContainerRef = useCallback((node: HTMLDivElement | null) => {
+    setSourceContainer(node)
+  }, [])
+
+  const handleLayoutContainerRef = useCallback((node: HTMLDivElement | null) => {
+    setLayoutContainer(node)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    const handleResize = () => {
+      if (Number.isFinite(window.innerHeight)) {
+        setViewportHeight(window.innerHeight)
+      }
+    }
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [])
 
   useEffect(() => {
     if (!selectedLayout) {
@@ -337,7 +442,6 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     setCurrentTime(0)
     setDuration(0)
     playbackSyncRef.current = false
-    setSourceAspectRatio(null)
     if (sourceVideoRef.current) {
       sourceVideoRef.current.pause()
       sourceVideoRef.current.currentTime = 0
@@ -397,10 +501,13 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   }, [clip?.accountId, clip?.id, clip?.playbackUrl, clip?.previewUrl, clip?.videoId])
 
   useEffect(() => {
-    if (sourceMedia.status !== 'ready') {
-      setSourceAspectRatio(null)
+    if (!draftLayout) {
+      setSelectedItemIds([])
+      return
     }
-  }, [sourceMedia.status])
+    const validIds = new Set(draftLayout.items.map((item) => item.id))
+    setSelectedItemIds((current) => current.filter((id) => validIds.has(id)))
+  }, [draftLayout, setSelectedItemIds])
 
   const updateLayout = useCallback(
     (updater: (layout: LayoutDefinition) => LayoutDefinition, options?: UpdateOptions) => {
@@ -1116,9 +1223,6 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         return
       }
       setDuration((current) => (current > 0 ? Math.max(current, source.duration) : source.duration))
-      if (source.videoWidth > 0 && source.videoHeight > 0) {
-        setSourceAspectRatio(source.videoWidth / source.videoHeight)
-      }
     },
     [getVideoPair]
   )
@@ -1271,7 +1375,39 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     [renderErrorMessage, renderStatusMessage, renderSteps]
   )
 
-  const previewHeight = 'clamp(280px, 60vh, 640px)'
+  const layoutAspectRatio = useMemo(() => {
+    if (draftLayout && draftLayout.canvas.height > 0) {
+      const ratio = draftLayout.canvas.width / draftLayout.canvas.height
+      if (Number.isFinite(ratio) && ratio > 0) {
+        return ratio
+      }
+    }
+    return 9 / 16
+  }, [draftLayout])
+
+  const basePreviewHeight = useMemo(() => {
+    const viewport = Number.isFinite(viewportHeight) ? viewportHeight : 900
+    const scaled = viewport * 0.6
+    const clamped = Math.max(280, Math.min(640, Number.isFinite(scaled) ? scaled : 480))
+    return clamped > 0 ? clamped : 480
+  }, [viewportHeight])
+
+  const sourcePreviewSize = usePreviewSize(sourceContainer, layoutAspectRatio, basePreviewHeight)
+  const layoutPreviewSize = usePreviewSize(layoutContainer, layoutAspectRatio, basePreviewHeight)
+
+  const fallbackWidth = Math.max(0, layoutAspectRatio * basePreviewHeight)
+
+  const sourceCanvasStyle = useMemo(() => {
+    const width = Math.max(0, sourcePreviewSize.width || fallbackWidth)
+    const height = Math.max(0, sourcePreviewSize.height || basePreviewHeight)
+    return { width, height, maxWidth: '100%' as const }
+  }, [basePreviewHeight, fallbackWidth, sourcePreviewSize.height, sourcePreviewSize.width])
+
+  const layoutCanvasStyle = useMemo(() => {
+    const width = Math.max(0, layoutPreviewSize.width || fallbackWidth)
+    const height = Math.max(0, layoutPreviewSize.height || basePreviewHeight)
+    return { width, height, maxWidth: '100%' as const }
+  }, [basePreviewHeight, fallbackWidth, layoutPreviewSize.height, layoutPreviewSize.width])
 
   const clipDuration = clip?.durationSec ?? 0
   const transportRangeLabel =
@@ -1494,42 +1630,47 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
             <h3 className="text-sm font-semibold text-[var(--fg)]">Source preview</h3>
             <span className="text-xs text-[var(--muted)]">Original footage</span>
           </div>
-          <LayoutCanvas
-            layout={draftLayout}
-            selectedItemIds={selectedItemIds}
-            onSelectionChange={setSelectedItemIds}
-            onTransform={handleTransform}
-            onRequestBringForward={bringSelectionForward}
-            onRequestSendBackward={sendSelectionBackward}
-            onRequestDuplicate={duplicateSelection}
-            onRequestDelete={handleRemoveSelected}
-            showGrid={showGrid}
-            showSafeMargins={showSafeMargins}
-            previewContent={
-              sourceVideoSource ? (
-                <video
-                  ref={sourceVideoRef}
-                  src={sourceVideoSource}
-                  className="pointer-events-none h-full w-full object-contain"
-                  playsInline
-                  muted
-                  preload="metadata"
-                  onLoadedMetadata={() => handleVideoLoadedMetadata('source')}
-                  onPlay={() => handleVideoPlay('source')}
-                  onPause={() => handleVideoPause('source')}
-                  onTimeUpdate={() => handleVideoTimeUpdate('source')}
-                  onSeeked={() => handleVideoSeeked('source')}
-                  aria-label="Source video preview"
-                />
-              ) : (
-                <span className="text-xs text-white/70">{sourcePreviewMessage}</span>
-              )
-            }
-            transformTarget="crop"
-            aspectRatioOverride={sourceAspectRatio ?? undefined}
-            style={{ height: previewHeight }}
-            ariaLabel="Source preview canvas"
-          />
+          <div
+            ref={handleSourceContainerRef}
+            className="flex w-full items-center justify-center"
+            style={{ minHeight: basePreviewHeight }}
+          >
+            <LayoutCanvas
+              layout={draftLayout}
+              selectedItemIds={selectedItemIds}
+              onSelectionChange={setSelectedItemIds}
+              onTransform={handleTransform}
+              onRequestBringForward={bringSelectionForward}
+              onRequestSendBackward={sendSelectionBackward}
+              onRequestDuplicate={duplicateSelection}
+              onRequestDelete={handleRemoveSelected}
+              showGrid={showGrid}
+              showSafeMargins={showSafeMargins}
+              previewContent={
+                sourceVideoSource ? (
+                  <video
+                    ref={sourceVideoRef}
+                    src={sourceVideoSource}
+                    className="pointer-events-none h-full w-full object-contain"
+                    playsInline
+                    muted
+                    preload="metadata"
+                    onLoadedMetadata={() => handleVideoLoadedMetadata('source')}
+                    onPlay={() => handleVideoPlay('source')}
+                    onPause={() => handleVideoPause('source')}
+                    onTimeUpdate={() => handleVideoTimeUpdate('source')}
+                    onSeeked={() => handleVideoSeeked('source')}
+                    aria-label="Source video preview"
+                  />
+                ) : (
+                  <span className="text-xs text-white/70">{sourcePreviewMessage}</span>
+                )
+              }
+              transformTarget="crop"
+              style={sourceCanvasStyle}
+              ariaLabel="Source preview canvas"
+            />
+          </div>
         </div>
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
@@ -1538,43 +1679,49 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               <span className="text-xs text-[var(--muted)]">Applied: {appliedLayoutId}</span>
             ) : null}
           </div>
-          <LayoutCanvas
-            layout={draftLayout}
-            selectedItemIds={selectedItemIds}
-            onSelectionChange={setSelectedItemIds}
-            onTransform={handleTransform}
-            onRequestBringForward={bringSelectionForward}
-            onRequestSendBackward={sendSelectionBackward}
-            onRequestDuplicate={duplicateSelection}
-            onRequestDelete={handleRemoveSelected}
-            showGrid={showGrid}
-            showSafeMargins={showSafeMargins}
-            previewContent={
-              layoutPreviewSource ? (
-                <LayoutCompositionSurface
-                  layout={draftLayout}
-                  videoRef={layoutVideoRef}
-                  source={layoutPreviewSource}
-                  isPlaying={isPlaying}
-                  currentTime={currentTime}
-                  onLoadedMetadata={() => handleVideoLoadedMetadata('layout')}
-                  onPlay={() => handleVideoPlay('layout')}
-                  onPause={() => handleVideoPause('layout')}
-                  onTimeUpdate={() => handleVideoTimeUpdate('layout')}
-                  onSeeked={() => handleVideoSeeked('layout')}
-                  className="pointer-events-none"
-                  ariaLabel="Layout preview video"
-                />
-              ) : (
-                <span className="text-xs text-white/60">No preview source available.</span>
-              )
-            }
-            transformTarget="frame"
-            labelVisibility="selected"
-            getItemClasses={layoutPreviewItemClasses}
-            style={{ height: previewHeight }}
-            ariaLabel="Layout preview canvas"
-          />
+          <div
+            ref={handleLayoutContainerRef}
+            className="flex w-full items-center justify-center"
+            style={{ minHeight: basePreviewHeight }}
+          >
+            <LayoutCanvas
+              layout={draftLayout}
+              selectedItemIds={selectedItemIds}
+              onSelectionChange={setSelectedItemIds}
+              onTransform={handleTransform}
+              onRequestBringForward={bringSelectionForward}
+              onRequestSendBackward={sendSelectionBackward}
+              onRequestDuplicate={duplicateSelection}
+              onRequestDelete={handleRemoveSelected}
+              showGrid={showGrid}
+              showSafeMargins={showSafeMargins}
+              previewContent={
+                layoutPreviewSource ? (
+                  <LayoutCompositionSurface
+                    layout={draftLayout}
+                    videoRef={layoutVideoRef}
+                    source={layoutPreviewSource}
+                    isPlaying={isPlaying}
+                    currentTime={currentTime}
+                    onLoadedMetadata={() => handleVideoLoadedMetadata('layout')}
+                    onPlay={() => handleVideoPlay('layout')}
+                    onPause={() => handleVideoPause('layout')}
+                    onTimeUpdate={() => handleVideoTimeUpdate('layout')}
+                    onSeeked={() => handleVideoSeeked('layout')}
+                    className="pointer-events-none"
+                    ariaLabel="Layout preview video"
+                  />
+                ) : (
+                  <span className="text-xs text-white/60">No preview source available.</span>
+                )
+              }
+              transformTarget="frame"
+              labelVisibility="selected"
+              getItemClasses={layoutPreviewItemClasses}
+              style={layoutCanvasStyle}
+              ariaLabel="Layout preview canvas"
+            />
+          </div>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-4 py-3 text-xs text-[var(--muted)]">

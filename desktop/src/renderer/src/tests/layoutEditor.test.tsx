@@ -1,8 +1,9 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { describe, beforeAll, vi, it, expect } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { describe, beforeAll, afterEach, vi, it, expect } from 'vitest'
 import type { LayoutDefinition, LayoutVideoItem } from '../../../types/layouts'
 import LayoutCanvas from '../components/layout/LayoutCanvas'
 import LayoutEditorPanel from '../components/layout/LayoutEditorPanel'
+import { resetLayoutSelection } from '../components/layout/layoutSelectionStore'
 
 vi.mock('../services/preview/adjustedPreview', () => ({
   resolveOriginalSource: vi.fn(async () => ({
@@ -35,6 +36,35 @@ describe('Layout editor interactions', () => {
       window.PointerEvent = PointerEventPolyfill
       // @ts-expect-error jsdom polyfill for PointerEvent
       global.PointerEvent = PointerEventPolyfill
+    }
+    if (typeof window.ResizeObserver === 'undefined') {
+      class ResizeObserverPolyfill {
+        private readonly callback: ResizeObserverCallback
+
+        constructor(callback: ResizeObserverCallback) {
+          this.callback = callback
+        }
+
+        observe(target: Element) {
+          this.callback(
+            [
+              {
+                target,
+                contentRect: target.getBoundingClientRect()
+              } as ResizeObserverEntry
+            ],
+            this as unknown as ResizeObserver
+          )
+        }
+
+        unobserve() {}
+
+        disconnect() {}
+      }
+      // @ts-expect-error jsdom polyfill for ResizeObserver
+      window.ResizeObserver = ResizeObserverPolyfill
+      // @ts-expect-error jsdom polyfill for ResizeObserver
+      global.ResizeObserver = ResizeObserverPolyfill
     }
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback: FrameRequestCallback) =>
       window.setTimeout(() => {
@@ -109,6 +139,11 @@ describe('Layout editor interactions', () => {
       })),
       configurable: true
     })
+  })
+
+  afterEach(() => {
+    cleanup()
+    resetLayoutSelection()
   })
 
   const baseLayout: LayoutDefinition = {
@@ -298,7 +333,7 @@ describe('Layout editor interactions', () => {
     })
   })
 
-  it('keeps the layout preview aspect ratio aligned with the canvas settings', async () => {
+  it('clears the selection when clicking on the canvas background', async () => {
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
@@ -328,12 +363,82 @@ describe('Layout editor interactions', () => {
       />
     )
 
+    const sourceCanvasElements = await screen.findAllByLabelText('Source preview canvas')
+    const sourceCanvas = sourceCanvasElements[sourceCanvasElements.length - 1]
+    const layoutCanvasElements = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = layoutCanvasElements[layoutCanvasElements.length - 1]
+    const sourceItem = within(sourceCanvas).getByRole('group', { name: /Primary/i })
+
+    fireEvent.pointerDown(sourceItem, { pointerId: 11, clientX: 32, clientY: 48 })
+
+    await waitFor(() => {
+      expect(within(sourceCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
+      expect(within(layoutCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
+    })
+
+    fireEvent.pointerUp(sourceCanvas, { pointerId: 11, clientX: 32, clientY: 48 })
+
+    fireEvent.pointerDown(sourceCanvas, { pointerId: 12, clientX: 4, clientY: 4 })
+    fireEvent.pointerUp(sourceCanvas, { pointerId: 12, clientX: 4, clientY: 4 })
+
+    await waitFor(() => {
+      expect(within(sourceCanvas).getByRole('group', { name: /Primary/i }).className).not.toContain('ring-2')
+      expect(within(layoutCanvas).getByRole('group', { name: /Primary/i }).className).not.toContain('ring-2')
+    })
+  })
+
+  it('keeps both previews aligned with the canvas aspect ratio', async () => {
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={null}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={vi.fn()}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const sourceCanvases = await screen.findAllByLabelText('Source preview canvas')
+    const sourceCanvas = sourceCanvases[sourceCanvases.length - 1] as HTMLDivElement
     const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
     const layoutCanvas = layoutCanvases[layoutCanvases.length - 1] as HTMLDivElement
-    expect(Number.parseFloat(layoutCanvas.style.aspectRatio)).toBeCloseTo(
-      baseLayout.canvas.width / baseLayout.canvas.height,
-      3
-    )
+
+    const readRatio = (element: HTMLDivElement): number => {
+      const width = Number.parseFloat(element.style.width || '0')
+      const height = Number.parseFloat(element.style.height || '0')
+      if (width <= 0 || height <= 0) {
+        return 0
+      }
+      return width / height
+    }
+
+    await waitFor(() => {
+      expect(readRatio(sourceCanvas)).toBeGreaterThan(0)
+      expect(readRatio(layoutCanvas)).toBeGreaterThan(0)
+    })
+
+    const initialRatio = baseLayout.canvas.width / baseLayout.canvas.height
+    expect(readRatio(sourceCanvas)).toBeCloseTo(initialRatio, 3)
+    expect(readRatio(layoutCanvas)).toBeCloseTo(initialRatio, 3)
 
     const widthInput = screen.getByLabelText('Canvas width (px)') as HTMLInputElement
     const heightInput = screen.getByLabelText('Canvas height (px)') as HTMLInputElement
@@ -344,7 +449,9 @@ describe('Layout editor interactions', () => {
     })
 
     await waitFor(() => {
-      expect(Number.parseFloat(layoutCanvas.style.aspectRatio)).toBeCloseTo(1920 / 1080, 3)
+      const updatedRatio = 1920 / 1080
+      expect(readRatio(sourceCanvas)).toBeCloseTo(updatedRatio, 3)
+      expect(readRatio(layoutCanvas)).toBeCloseTo(updatedRatio, 3)
     })
   })
 
