@@ -1165,7 +1165,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           : handleIsActive
             ? 'opacity-70'
             : isHovered
-              ? 'opacity-45'
+              ? 'opacity-30'
               : 'opacity-0'
         const handlePointerClass = showHandles ? 'pointer-events-auto' : 'pointer-events-none'
         return (
@@ -1184,7 +1184,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                 height,
                 backgroundColor: palette.backgroundColor,
                 borderColor,
-                borderWidth: isSelected ? '2px' : '1px',
+                borderWidth: isSelected ? '3px' : '1px',
                 opacity: isSelected || isHovered ? 1 : 0.9,
                 '--ring': ringColor
               } as CSSWithVars
@@ -1220,7 +1220,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                     aria-label={handle.label}
                     data-handle={handle.id}
                     data-item-id={item.id}
-                    className={`absolute h-3 w-3 border-2 text-transparent transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${handle.className} ${handleOpacityClass} ${handlePointerClass}`}
+                    className={`absolute h-4 w-4 rounded-none border-2 text-transparent transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${handle.className} ${handleOpacityClass} ${handlePointerClass}`}
                     onPointerDown={(event) => {
                       event.preventDefault()
                     }}
@@ -1241,7 +1241,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       })}
       {selectionBounds ? (
         <div
-          className="pointer-events-none absolute border-[3px]"
+          className="pointer-events-none absolute border-[4px]"
           data-testid="selection-outline"
           style={{
             left: fractionToPercent(selectionBounds.x),

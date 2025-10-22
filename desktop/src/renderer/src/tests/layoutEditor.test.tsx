@@ -481,7 +481,16 @@ describe('Layout editor interactions', () => {
     await waitFor(() => {
       expect(within(canvas).getByRole('group', { name: /Top frame/i }).className).toContain('ring-2')
       expect(within(canvas).getByRole('group', { name: /Top frame/i }).className).toContain('rounded-none')
-      expect(within(canvas).getByTestId('selection-outline').className).toContain('border-[3px]')
+      expect(within(canvas).getByTestId('selection-outline').className).toContain('border-[4px]')
+      const topHandles = within(
+        within(canvas).getByRole('group', { name: /Top frame/i })
+      ).getAllByRole('button', { name: /Resize/i })
+      topHandles.forEach((handle) => {
+        expect(handle.className).toContain('rounded-none')
+        expect(handle.className).toContain('h-4')
+        expect(handle.className).toContain('w-4')
+        expect(handle.className).toContain('opacity-100')
+      })
     })
 
     await act(async () => {
@@ -491,7 +500,16 @@ describe('Layout editor interactions', () => {
 
     await waitFor(() => {
       expect(within(canvas).getByRole('group', { name: /Bottom frame/i }).className).toContain('ring-2')
-      expect(within(canvas).getByTestId('selection-outline').className).toContain('border-[3px]')
+      expect(within(canvas).getByTestId('selection-outline').className).toContain('border-[4px]')
+      const bottomHandles = within(
+        within(canvas).getByRole('group', { name: /Bottom frame/i })
+      ).getAllByRole('button', { name: /Resize/i })
+      bottomHandles.forEach((handle) => {
+        expect(handle.className).toContain('rounded-none')
+        expect(handle.className).toContain('h-4')
+        expect(handle.className).toContain('w-4')
+        expect(handle.className).toContain('opacity-100')
+      })
     })
 
     await act(async () => {
@@ -501,7 +519,16 @@ describe('Layout editor interactions', () => {
 
     await waitFor(() => {
       expect(within(canvas).getByRole('group', { name: /Top frame/i }).className).toContain('ring-2')
-      expect(within(canvas).getByTestId('selection-outline').className).toContain('border-[3px]')
+      expect(within(canvas).getByTestId('selection-outline').className).toContain('border-[4px]')
+      const topHandles = within(
+        within(canvas).getByRole('group', { name: /Top frame/i })
+      ).getAllByRole('button', { name: /Resize/i })
+      topHandles.forEach((handle) => {
+        expect(handle.className).toContain('rounded-none')
+        expect(handle.className).toContain('h-4')
+        expect(handle.className).toContain('w-4')
+        expect(handle.className).toContain('opacity-100')
+      })
     })
   })
 
