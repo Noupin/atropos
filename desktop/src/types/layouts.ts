@@ -59,6 +59,8 @@ export type LayoutVideoItem = {
   rotation?: number | null
   opacity?: number | null
   mirror?: boolean
+  lockAspectRatio?: boolean | null
+  lockCropAspectRatio?: boolean | null
   zIndex?: number
 }
 

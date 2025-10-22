@@ -12,7 +12,6 @@ import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import useSharedVolume from '../hooks/useSharedVolume'
 import VideoPreviewStage from '../components/VideoPreviewStage'
 import LayoutEditorPanel from '../components/layout/LayoutEditorPanel'
-import LayoutPreviewOverlay from '../components/layout/LayoutPreviewOverlay'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
 import {
@@ -354,6 +353,10 @@ const VideoPage: FC = () => {
   const [isApplyingLayout, setIsApplyingLayout] = useState(false)
   const [layoutStatusMessage, setLayoutStatusMessage] = useState<string | null>(null)
   const [layoutErrorMessage, setLayoutErrorMessage] = useState<string | null>(null)
+  const [layoutRenderSteps, setLayoutRenderSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
+  const [isLayoutRendering, setIsLayoutRendering] = useState(false)
+  const [layoutRenderStatusMessage, setLayoutRenderStatusMessage] = useState<string | null>(null)
+  const [layoutRenderErrorMessage, setLayoutRenderErrorMessage] = useState<string | null>(null)
 
   const resolveLayoutCategory = useCallback(
     (identifier: string | null | undefined): LayoutCategory | null => {
@@ -370,6 +373,12 @@ const VideoPage: FC = () => {
     },
     [layoutCollection]
   )
+
+  useEffect(() => {
+    setLayoutRenderSteps(createInitialSaveSteps())
+    setLayoutRenderStatusMessage(null)
+    setLayoutRenderErrorMessage(null)
+  }, [activeLayoutDefinition?.id])
 
   const refreshLayoutCollection = useCallback(async () => {
     setIsLayoutCollectionLoading(true)
@@ -691,6 +700,60 @@ const VideoPage: FC = () => {
       handleSaveLayoutDefinition,
       jobId
     ]
+  )
+
+  const runStepAnimation = useCallback(async (setSteps: (updater: (prev: SaveStepState[]) => SaveStepState[]) => void) => {
+    for (let index = 1; index < SAVE_STEP_DEFINITIONS.length; index += 1) {
+      await delay(200)
+      setSteps((prev) =>
+        prev.map((step, stepIndex) => {
+          if (stepIndex < index) {
+            return { ...step, status: 'completed' }
+          }
+          if (stepIndex === index) {
+            return { ...step, status: 'running' }
+          }
+          return { ...step, status: 'pending' }
+        })
+      )
+    }
+    await delay(200)
+    setSteps((prev) => prev.map((step) => ({ ...step, status: 'completed' })))
+  }, [])
+
+  const handleRenderLayoutDefinition = useCallback(
+    async (layout: LayoutDefinition) => {
+      if (!clipState) {
+        setLayoutErrorMessage('Load a clip before rendering a layout.')
+        return
+      }
+      setLayoutRenderSteps(
+        SAVE_STEP_DEFINITIONS.map((step, index) => ({
+          ...step,
+          status: index === 0 ? 'running' : 'pending'
+        }))
+      )
+      setIsLayoutRendering(true)
+      setLayoutRenderStatusMessage(null)
+      setLayoutRenderErrorMessage(null)
+      try {
+        await handleApplyLayoutDefinition(layout)
+        await runStepAnimation(setLayoutRenderSteps)
+        setLayoutRenderStatusMessage('Rendering started with the latest layout. We will notify you when it finishes.')
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unable to render the clip with this layout. Please try again.'
+        setLayoutRenderErrorMessage(message)
+        setLayoutRenderSteps((prev) =>
+          prev.map((step) => (step.status === 'running' ? { ...step, status: 'failed' } : step))
+        )
+      } finally {
+        setIsLayoutRendering(false)
+      }
+    },
+    [clipState, handleApplyLayoutDefinition, runStepAnimation]
   )
 
   const originalStart = clipState?.originalStartSeconds ?? 0
@@ -1879,25 +1942,6 @@ const VideoPage: FC = () => {
     }
   }, [clipState, previewEnd, previewMode, previewSourceIsFile, previewStart])
 
-  const runSaveStepAnimation = useCallback(async () => {
-    for (let index = 1; index < SAVE_STEP_DEFINITIONS.length; index += 1) {
-      await delay(200)
-      setSaveSteps((prev) =>
-        prev.map((step, stepIndex) => {
-          if (stepIndex < index) {
-            return { ...step, status: 'completed' }
-          }
-          if (stepIndex === index) {
-            return { ...step, status: 'running' }
-          }
-          return { ...step, status: 'pending' }
-        })
-      )
-    }
-    await delay(200)
-    setSaveSteps((prev) => prev.map((step) => ({ ...step, status: 'completed' })))
-  }, [])
-
   const handleSave = useCallback(async () => {
     if (!clipState) {
       return
@@ -1942,7 +1986,7 @@ const VideoPage: FC = () => {
         })
         applyUpdatedClip(updated)
       }
-      await runSaveStepAnimation()
+      await runStepAnimation(setSaveSteps)
       setSaveSuccess('Clip boundaries updated successfully.')
     } catch (error) {
       const message =
@@ -1956,16 +2000,7 @@ const VideoPage: FC = () => {
     } finally {
       setIsSaving(false)
     }
-  }, [
-    applyUpdatedClip,
-    clipState,
-    context,
-    rangeEnd,
-    rangeStart,
-    runSaveStepAnimation,
-    accountId,
-    jobId
-  ])
+  }, [applyUpdatedClip, clipState, context, rangeEnd, rangeStart, runStepAnimation, accountId, jobId])
 
   if (!clipState) {
     return (
@@ -2065,33 +2100,68 @@ const VideoPage: FC = () => {
   const layoutPanelStatus = layoutStatusMessage
   const layoutPanelError = layoutErrorMessage ?? layoutCollectionError
 
+  const tabNavigation = (
+    <nav
+      aria-label="Video modes"
+      className="inline-flex rounded-[16px] border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-1 text-sm font-semibold text-[var(--fg)] shadow-[0_14px_28px_rgba(43,42,40,0.16)]"
+    >
+      {VIDEO_PAGE_MODES.map((tab) => {
+        const isActive = activeMode === tab.id
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => handleModeChange(tab.id)}
+            aria-pressed={isActive}
+            className={`flex-1 whitespace-nowrap rounded-[12px] px-4 py-2 transition ${
+              isActive
+                ? 'bg-[color:color-mix(in_srgb,var(--accent)_24%,transparent)] text-[var(--fg)] shadow-[0_10px_18px_rgba(43,42,40,0.18)]'
+                : 'text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_60%,transparent)] hover:text-[var(--fg)]'
+            }`}
+          >
+            {tab.label}
+          </button>
+        )
+      })}
+    </nav>
+  )
+
+  if (activeMode === 'layout') {
+    return (
+      <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
+        <LayoutEditorPanel
+          tabNavigation={tabNavigation}
+          clip={clipState}
+          layoutCollection={layoutCollection}
+          isCollectionLoading={isLayoutCollectionLoading}
+          selectedLayout={activeLayoutDefinition}
+          selectedLayoutReference={activeLayoutReference}
+          isLayoutLoading={isLayoutLoading}
+          appliedLayoutId={clipState?.layoutId ?? null}
+          isSavingLayout={isSavingLayout}
+          isApplyingLayout={isApplyingLayout}
+          statusMessage={layoutPanelStatus}
+          errorMessage={layoutPanelError}
+          onSelectLayout={handleSelectLayout}
+          onCreateBlankLayout={handleCreateBlankLayout}
+          onLayoutChange={handleLayoutChange}
+          onSaveLayout={handleSaveLayoutDefinition}
+          onImportLayout={handleImportLayoutDefinition}
+          onExportLayout={handleExportLayoutDefinition}
+          onApplyLayout={handleApplyLayoutDefinition}
+          onRenderLayout={handleRenderLayoutDefinition}
+          renderSteps={layoutRenderSteps}
+          isRenderingLayout={isLayoutRendering}
+          renderStatusMessage={layoutRenderStatusMessage}
+          renderErrorMessage={layoutRenderErrorMessage}
+        />
+      </section>
+    )
+  }
+
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
-      <div className="flex flex-wrap justify-start gap-3">
-        <nav
-          aria-label="Video modes"
-          className="inline-flex rounded-[16px] border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-1 text-sm font-semibold text-[var(--fg)] shadow-[0_14px_28px_rgba(43,42,40,0.16)]"
-        >
-          {VIDEO_PAGE_MODES.map((tab) => {
-            const isActive = activeMode === tab.id
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => handleModeChange(tab.id)}
-                aria-pressed={isActive}
-                className={`flex-1 whitespace-nowrap rounded-[12px] px-4 py-2 transition ${
-                  isActive
-                    ? 'bg-[color:color-mix(in_srgb,var(--accent)_24%,transparent)] text-[var(--fg)] shadow-[0_10px_18px_rgba(43,42,40,0.18)]'
-                    : 'text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_60%,transparent)] hover:text-[var(--fg)]'
-                }`}
-              >
-                {tab.label}
-              </button>
-            )
-          })}
-        </nav>
-      </div>
+      <div className="flex flex-wrap justify-start gap-3">{tabNavigation}</div>
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="flex-1 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
           <div className="flex h-full flex-col gap-4">
@@ -2117,13 +2187,6 @@ const VideoPage: FC = () => {
               >
                 Your browser does not support the video tag.
               </video>
-              {activeMode === 'layout' && activeLayoutDefinition ? (
-                <LayoutPreviewOverlay
-                  layout={activeLayoutDefinition}
-                  highlightCaptionArea
-                  className="pointer-events-none"
-                />
-              ) : null}
               {showVideoLoadingOverlay ? (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/40">
                   <div
@@ -2259,28 +2322,6 @@ const VideoPage: FC = () => {
             >
               {statusMessage}
             </div>
-          ) : null}
-          {activeMode === 'layout' ? (
-            <LayoutEditorPanel
-              clip={clipState}
-              layoutCollection={layoutCollection}
-              isCollectionLoading={isLayoutCollectionLoading}
-              selectedLayout={activeLayoutDefinition}
-              selectedLayoutReference={activeLayoutReference}
-              isLayoutLoading={isLayoutLoading}
-              appliedLayoutId={clipState?.layoutId ?? null}
-              isSavingLayout={isSavingLayout}
-              isApplyingLayout={isApplyingLayout}
-              statusMessage={layoutPanelStatus}
-              errorMessage={layoutPanelError}
-              onSelectLayout={handleSelectLayout}
-              onCreateBlankLayout={handleCreateBlankLayout}
-              onLayoutChange={handleLayoutChange}
-              onSaveLayout={handleSaveLayoutDefinition}
-              onImportLayout={handleImportLayoutDefinition}
-              onExportLayout={handleExportLayoutDefinition}
-              onApplyLayout={handleApplyLayoutDefinition}
-            />
           ) : null}
           {activeMode === 'metadata' ? (
             <form

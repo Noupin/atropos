@@ -1,14 +1,10 @@
-import type {
-  ChangeEvent,
-  FC,
-  FormEvent,
-  PointerEvent as ReactPointerEvent
-} from 'react'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent, FC, FormEvent, ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { LayoutCollection } from '../../../../types/api'
 import type {
   LayoutBackground,
   LayoutCategory,
+  LayoutCrop,
   LayoutDefinition,
   LayoutFrame,
   LayoutItem,
@@ -17,7 +13,19 @@ import type {
   LayoutVideoItem
 } from '../../../../types/layouts'
 import type { Clip } from '../../types'
-import LayoutPreviewOverlay from './LayoutPreviewOverlay'
+import LayoutCanvas from './LayoutCanvas'
+import LayoutCompositionSurface from './LayoutCompositionSurface'
+import { useLayoutSelection } from './layoutSelectionStore'
+import { resolveOriginalSource } from '../../services/preview/adjustedPreview'
+
+type PipelineStepStatus = 'pending' | 'running' | 'completed' | 'failed'
+
+type PipelineStepState = {
+  id: string
+  label: string
+  description: string
+  status: PipelineStepStatus
+}
 
 type LayoutReference = {
   id: string
@@ -25,6 +33,7 @@ type LayoutReference = {
 }
 
 type LayoutEditorPanelProps = {
+  tabNavigation: ReactNode
   clip: Clip | null
   layoutCollection: LayoutCollection | null
   isCollectionLoading: boolean
@@ -46,20 +55,291 @@ type LayoutEditorPanelProps = {
   onImportLayout: () => Promise<void>
   onExportLayout: (id: string, category: LayoutCategory) => Promise<void>
   onApplyLayout: (layout: LayoutDefinition) => Promise<void>
+  onRenderLayout: (layout: LayoutDefinition) => Promise<void>
+  renderSteps: PipelineStepState[]
+  isRenderingLayout: boolean
+  renderStatusMessage: string | null
+  renderErrorMessage: string | null
 }
 
-type DragState = {
-  itemId: string
-  pointerId: number
-  startX: number
-  startY: number
-  frame: LayoutFrame
-  containerRect: DOMRect
+type UpdateOptions = {
+  transient?: boolean
+  emitChange?: boolean
+  trackHistory?: boolean
 }
 
-type LayoutKind = LayoutItem['kind']
+type PreviewKind = 'source' | 'layout'
+
+type SourceMediaState = {
+  status: 'idle' | 'loading' | 'ready' | 'missing' | 'error'
+  url: string | null
+  message: string | null
+}
+
+type PreviewSize = {
+  width: number
+  height: number
+}
+
+const usePreviewSize = (
+  element: HTMLElement | null,
+  aspectRatio: number,
+  targetHeight: number
+): PreviewSize => {
+  const [size, setSize] = useState<PreviewSize>({ width: 0, height: 0 })
+
+  const recompute = useCallback(() => {
+    if (!element || !Number.isFinite(aspectRatio) || aspectRatio <= 0) {
+      setSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
+      return
+    }
+
+    const rect = element.getBoundingClientRect()
+    const containerWidth = rect.width || element.clientWidth || 0
+    const containerHeight = rect.height || element.clientHeight || 0
+    const maxHeight = targetHeight > 0 ? targetHeight : containerHeight
+    const limitedHeight = containerHeight > 0 ? Math.min(containerHeight, Math.max(maxHeight, 0)) : Math.max(maxHeight, 0)
+
+    let height = limitedHeight > 0 ? limitedHeight : targetHeight
+    if (!Number.isFinite(height) || height <= 0) {
+      height = targetHeight
+    }
+
+    if (!Number.isFinite(height) || height <= 0) {
+      setSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
+      return
+    }
+
+    let width = height * aspectRatio
+    const widthLimit = containerWidth > 0 ? containerWidth : width
+
+    if (width > widthLimit && widthLimit > 0) {
+      width = widthLimit
+      height = width / aspectRatio
+    }
+
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      setSize((prev) => (prev.width === 0 && prev.height === 0 ? prev : { width: 0, height: 0 }))
+      return
+    }
+
+    setSize((prev) => {
+      if (Math.abs(prev.width - width) < 0.5 && Math.abs(prev.height - height) < 0.5) {
+        return prev
+      }
+      return { width, height }
+    })
+  }, [aspectRatio, element, targetHeight])
+
+  useEffect(() => {
+    recompute()
+  }, [recompute])
+
+  useEffect(() => {
+    if (!element) {
+      return
+    }
+    if (typeof ResizeObserver === 'undefined') {
+      return
+    }
+    const observer = new ResizeObserver(() => {
+      recompute()
+    })
+    observer.observe(element)
+    return () => {
+      observer.disconnect()
+    }
+  }, [element, recompute])
+
+  return size
+}
 
 const clamp = (value: number, min = 0, max = 1): number => Math.min(Math.max(value, min), max)
+
+const createDefaultCrop = (): LayoutCrop => ({ x: 0, y: 0, width: 1, height: 1, units: 'fraction' })
+
+const normaliseVideoCrop = (crop: LayoutCrop | null | undefined): LayoutCrop => ({
+  x: clamp(crop?.x ?? 0),
+  y: clamp(crop?.y ?? 0),
+  width: clamp(crop?.width ?? 1),
+  height: clamp(crop?.height ?? 1),
+  units: 'fraction'
+})
+
+const alignCropToFrame = (video: LayoutVideoItem): LayoutCrop => {
+  const crop = normaliseVideoCrop(video.crop)
+  const frameWidth = clamp(video.frame.width)
+  const frameHeight = clamp(video.frame.height)
+  if (frameWidth <= 0 || frameHeight <= 0) {
+    return crop
+  }
+  const targetAspect = frameWidth / frameHeight
+  if (!Number.isFinite(targetAspect) || targetAspect <= 0) {
+    return crop
+  }
+
+  let width = clamp(crop.width)
+  let height = clamp(crop.height)
+  if (width <= 0 || height <= 0) {
+    return { x: clamp(crop.x), y: clamp(crop.y), width: clamp(width), height: clamp(height), units: 'fraction' }
+  }
+
+  const currentAspect = width / height
+  if (Math.abs(currentAspect - targetAspect) < 0.0001) {
+    return { x: clamp(crop.x), y: clamp(crop.y), width, height, units: 'fraction' }
+  }
+
+  if (currentAspect > targetAspect) {
+    width = height * targetAspect
+  } else {
+    height = width / targetAspect
+  }
+
+  const scale = Math.min(1, width > 0 ? 1 / width : 1, height > 0 ? 1 / height : 1)
+  width *= scale
+  height *= scale
+
+  const centerX = clamp(crop.x + crop.width / 2)
+  const centerY = clamp(crop.y + crop.height / 2)
+  let x = centerX - width / 2
+  let y = centerY - height / 2
+
+  if (x < 0) {
+    x = 0
+  }
+  if (y < 0) {
+    y = 0
+  }
+  if (x + width > 1) {
+    x = 1 - width
+  }
+  if (y + height > 1) {
+    y = 1 - height
+  }
+
+  return { x: clamp(x), y: clamp(y), width: clamp(width), height: clamp(height), units: 'fraction' }
+}
+
+const snapFrameToAspect = (frame: LayoutFrame, aspect: number): LayoutFrame => {
+  if (!Number.isFinite(aspect) || aspect <= 0) {
+    return clampFrame(frame)
+  }
+  const width = clamp(frame.width)
+  const height = clamp(frame.height)
+  if (width <= 0 || height <= 0) {
+    return clampFrame(frame)
+  }
+  const currentAspect = width / Math.max(height, 0.0001)
+  if (Math.abs(currentAspect - aspect) < 0.0001) {
+    return clampFrame(frame)
+  }
+  let nextWidth = width
+  let nextHeight = height
+  if (currentAspect > aspect) {
+    nextWidth = Math.min(width, height * aspect)
+    nextHeight = nextWidth / aspect
+  } else {
+    nextHeight = Math.min(height, width / aspect)
+    nextWidth = nextHeight * aspect
+  }
+  nextWidth = clamp(nextWidth)
+  nextHeight = clamp(nextHeight)
+  const centerX = clamp(frame.x + width / 2)
+  const centerY = clamp(frame.y + height / 2)
+  let nextX = clamp(centerX - nextWidth / 2)
+  let nextY = clamp(centerY - nextHeight / 2)
+  if (nextX + nextWidth > 1) {
+    nextX = clamp(1 - nextWidth)
+  }
+  if (nextY + nextHeight > 1) {
+    nextY = clamp(1 - nextHeight)
+  }
+  return {
+    x: clamp(nextX),
+    y: clamp(nextY),
+    width: clamp(nextWidth),
+    height: clamp(nextHeight)
+  }
+}
+
+const snapCropToAspect = (crop: LayoutCrop, aspect: number): LayoutCrop => {
+  if (!Number.isFinite(aspect) || aspect <= 0) {
+    return clampCropFrame(crop)
+  }
+  const normalised = clampCropFrame(crop)
+  const width = normalised.width
+  const height = normalised.height
+  if (width <= 0 || height <= 0) {
+    return normalised
+  }
+  const currentAspect = width / Math.max(height, 0.0001)
+  if (Math.abs(currentAspect - aspect) < 0.0001) {
+    return normalised
+  }
+  let nextWidth = width
+  let nextHeight = height
+  if (currentAspect > aspect) {
+    nextWidth = Math.min(width, height * aspect)
+    nextHeight = nextWidth / aspect
+  } else {
+    nextHeight = Math.min(height, width / aspect)
+    nextWidth = nextHeight * aspect
+  }
+  nextWidth = clamp(nextWidth)
+  nextHeight = clamp(nextHeight)
+  const centerX = clamp(normalised.x + width / 2)
+  const centerY = clamp(normalised.y + height / 2)
+  let nextX = clamp(centerX - nextWidth / 2)
+  let nextY = clamp(centerY - nextHeight / 2)
+  if (nextX + nextWidth > 1) {
+    nextX = clamp(1 - nextWidth)
+  }
+  if (nextY + nextHeight > 1) {
+    nextY = clamp(1 - nextHeight)
+  }
+  return {
+    x: clamp(nextX),
+    y: clamp(nextY),
+    width: clamp(nextWidth),
+    height: clamp(nextHeight),
+    units: 'fraction'
+  }
+}
+
+const cloneLayoutItem = (item: LayoutItem): LayoutItem => {
+  if ((item as LayoutVideoItem).kind === 'video') {
+    const video = item as LayoutVideoItem
+    const normalisedCrop = normaliseVideoCrop(video.crop)
+    const lockAspectRatio = video.lockAspectRatio ?? true
+    const lockCropAspectRatio = video.lockCropAspectRatio ?? true
+    const base: LayoutVideoItem = {
+      ...video,
+      frame: { ...video.frame },
+      crop: normalisedCrop,
+      lockAspectRatio,
+      lockCropAspectRatio
+    }
+    if (lockAspectRatio || lockCropAspectRatio) {
+      return {
+        ...base,
+        crop: alignCropToFrame({ ...base, crop: normalisedCrop })
+      }
+    }
+    return base
+  }
+  if ((item as LayoutTextItem).kind === 'text') {
+    const text = item as LayoutTextItem
+    return {
+      ...text,
+      frame: { ...text.frame }
+    }
+  }
+  const shape = item as LayoutShapeItem
+  return {
+    ...shape,
+    frame: { ...shape.frame }
+  }
+}
 
 const cloneLayout = (layout: LayoutDefinition): LayoutDefinition => ({
   ...layout,
@@ -68,29 +348,10 @@ const cloneLayout = (layout: LayoutDefinition): LayoutDefinition => ({
     background: { ...layout.canvas.background }
   },
   captionArea: layout.captionArea ? { ...layout.captionArea } : null,
-  items: layout.items.map((item) => {
-    if (item.kind === 'video') {
-      const video = item as LayoutVideoItem
-      return {
-        ...video,
-        frame: { ...video.frame },
-        crop: video.crop ? { ...video.crop } : null
-      }
-    }
-    if (item.kind === 'text') {
-      const text = item as LayoutTextItem
-      return {
-        ...text,
-        frame: { ...text.frame }
-      }
-    }
-    const shape = item as LayoutShapeItem
-    return {
-      ...shape,
-      frame: { ...shape.frame }
-    }
-  })
+  items: layout.items.map((item) => cloneLayoutItem(item))
 })
+
+const createItemId = (prefix: string): string => `${prefix}-${Date.now().toString(36)}-${Math.round(Math.random() * 999)}`
 
 const createDefaultLayout = (): LayoutDefinition => ({
   id: 'untitled-layout',
@@ -111,11 +372,69 @@ const createDefaultLayout = (): LayoutDefinition => ({
   items: []
 })
 
-const getLayoutIcon = (category: LayoutCategory): string => (category === 'builtin' ? '🏛️' : '👤')
+const getBackgroundDefaults = (kind: LayoutBackground['kind']): LayoutBackground => {
+  if (kind === 'color') {
+    return { kind: 'color', color: '#000000', opacity: 1 }
+  }
+  if (kind === 'image') {
+    return { kind: 'image', source: '', mode: 'cover', tint: null }
+  }
+  return { kind: 'blur', radius: 45, opacity: 0.6, brightness: 0.55 }
+}
 
-const createItemId = (prefix: string): string => `${prefix}-${Date.now().toString(36)}-${Math.round(Math.random() * 999)}`
+const isInputTarget = (element: EventTarget | null): boolean => {
+  if (!(element instanceof HTMLElement)) {
+    return false
+  }
+  const tagName = element.tagName.toLowerCase()
+  return ['input', 'textarea', 'select', 'button'].includes(tagName) || element.isContentEditable
+}
+
+const clampFrame = (frame: LayoutFrame): LayoutFrame => ({
+  x: clamp(frame.x),
+  y: clamp(frame.y),
+  width: clamp(frame.width),
+  height: clamp(frame.height)
+})
+
+const clampCropFrame = (frame: LayoutFrame): LayoutCrop => ({
+  x: clamp(frame.x),
+  y: clamp(frame.y),
+  width: clamp(frame.width),
+  height: clamp(frame.height),
+  units: 'fraction'
+})
+
+const formatPercent = (value: number): string => `${Math.round(value * 100)}%`
+
+const formatTimecode = (value: number): string => {
+  if (!Number.isFinite(value)) {
+    return '0:00'
+  }
+  const total = Math.max(0, value)
+  const minutes = Math.floor(total / 60)
+  const seconds = Math.floor(total % 60)
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+const CollapseToggleIcon: FC<{ collapsed: boolean }> = ({ collapsed }) => (
+  <svg
+    viewBox="0 0 20 20"
+    aria-hidden="true"
+    className="h-4 w-4 text-[var(--fg)]"
+    focusable="false"
+  >
+    <path d="M6 3v14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    {collapsed ? (
+      <path d="M9 10 13.5 6.5v7L9 10Z" fill="currentColor" />
+    ) : (
+      <path d="M11 6.5 6.5 10 11 13.5v-7Z" fill="currentColor" />
+    )}
+  </svg>
+)
 
 const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
+  tabNavigation,
   clip,
   layoutCollection,
   isCollectionLoading,
@@ -133,33 +452,213 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   onSaveLayout,
   onImportLayout,
   onExportLayout,
-  onApplyLayout
+  onApplyLayout,
+  onRenderLayout,
+  renderSteps,
+  isRenderingLayout,
+  renderStatusMessage,
+  renderErrorMessage
 }) => {
   const [draftLayout, setDraftLayout] = useState<LayoutDefinition | null>(null)
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [selectedItemId, setSelectedItemId] = useLayoutSelection()
+  const [history, setHistory] = useState<LayoutDefinition[]>([])
+  const [future, setFuture] = useState<LayoutDefinition[]>([])
+  const [clipboard, setClipboard] = useState<LayoutItem[] | null>(null)
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
-  const editorRef = useRef<HTMLDivElement | null>(null)
-  const dragStateRef = useRef<DragState | null>(null)
+  const [showGrid, setShowGrid] = useState(true)
+  const [showSafeMargins, setShowSafeMargins] = useState(false)
+  const [collapsedSections, setCollapsedSections] = useState<Record<LayoutCategory, boolean>>({
+    builtin: false,
+    custom: false
+  })
+  const sourceVideoRef = useRef<HTMLVideoElement | null>(null)
+  const layoutVideoRef = useRef<HTMLVideoElement | null>(null)
+  const playbackSyncRef = useRef(false)
+  const skipSelectionResetRef = useRef(false)
+  const lastLoadedLayoutIdRef = useRef<string | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [sourceMedia, setSourceMedia] = useState<SourceMediaState>({
+    status: 'idle',
+    url: null,
+    message: null
+  })
+  const [viewportHeight, setViewportHeight] = useState<number>(() =>
+    typeof window !== 'undefined' && Number.isFinite(window.innerHeight) ? window.innerHeight : 900
+  )
+  const [sourceContainer, setSourceContainer] = useState<HTMLDivElement | null>(null)
+  const [layoutContainer, setLayoutContainer] = useState<HTMLDivElement | null>(null)
+  const [sourceVideoDimensions, setSourceVideoDimensions] = useState<{ width: number; height: number } | null>(null)
+
+  const layoutAspectRatio = useMemo(() => {
+    if (draftLayout && draftLayout.canvas.height > 0) {
+      const ratio = draftLayout.canvas.width / draftLayout.canvas.height
+      if (Number.isFinite(ratio) && ratio > 0) {
+        return ratio
+      }
+    }
+    return 9 / 16
+  }, [draftLayout])
+
+  const sourceAspectRatio = useMemo(() => {
+    if (sourceVideoDimensions && sourceVideoDimensions.width > 0 && sourceVideoDimensions.height > 0) {
+      return sourceVideoDimensions.width / sourceVideoDimensions.height
+    }
+    return 16 / 9
+  }, [sourceVideoDimensions])
+
+  const handleSourceContainerRef = useCallback((node: HTMLDivElement | null) => {
+    setSourceContainer(node)
+  }, [])
+
+  const handleLayoutContainerRef = useCallback((node: HTMLDivElement | null) => {
+    setLayoutContainer(node)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    const handleResize = () => {
+      if (Number.isFinite(window.innerHeight)) {
+        setViewportHeight(window.innerHeight)
+      }
+    }
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [])
 
   useEffect(() => {
     if (!selectedLayout) {
       setDraftLayout(null)
       setSelectedItemId(null)
+      setHistory([])
+      setFuture([])
+      lastLoadedLayoutIdRef.current = null
+      skipSelectionResetRef.current = false
       return
     }
-    setDraftLayout(cloneLayout(selectedLayout))
-    setSelectedItemId(null)
-  }, [selectedLayout])
 
-  const handleUpdateLayout = useCallback(
-    (updater: (layout: LayoutDefinition) => LayoutDefinition, emitChange = true) => {
+    const layoutId = selectedLayout.id
+    const previousId = lastLoadedLayoutIdRef.current
+    const isDifferentLayout = layoutId !== previousId
+
+    setDraftLayout(cloneLayout(selectedLayout))
+
+    if (!skipSelectionResetRef.current) {
+      setSelectedItemId(null)
+      setHistory([])
+      setFuture([])
+    } else if (isDifferentLayout) {
+      setSelectedItemId(null)
+      setHistory([])
+      setFuture([])
+    }
+
+    skipSelectionResetRef.current = false
+    lastLoadedLayoutIdRef.current = layoutId
+  }, [selectedLayout, setSelectedItemId])
+
+  useEffect(() => {
+    setIsPlaying(false)
+    setCurrentTime(0)
+    setDuration(0)
+    playbackSyncRef.current = false
+    setSourceVideoDimensions(null)
+    if (sourceVideoRef.current) {
+      sourceVideoRef.current.pause()
+      sourceVideoRef.current.currentTime = 0
+    }
+    if (layoutVideoRef.current) {
+      layoutVideoRef.current.pause()
+      layoutVideoRef.current.currentTime = 0
+    }
+  }, [clip?.id])
+
+  useEffect(() => {
+    if (!clip) {
+      setSourceMedia({ status: 'idle', url: null, message: null })
+      return
+    }
+
+    let cancelled = false
+    setSourceMedia({ status: 'loading', url: null, message: null })
+    setSourceVideoDimensions(null)
+
+    ;(async () => {
+      try {
+        const result = await resolveOriginalSource({
+          clipId: clip.id,
+          projectId: clip.videoId ?? null,
+          accountId: clip.accountId ?? null,
+          playbackUrl: clip.playbackUrl,
+          previewUrl: clip.previewUrl
+        })
+        if (cancelled) {
+          return
+        }
+        if (result.kind === 'ready') {
+          setSourceMedia({ status: 'ready', url: result.mediaUrl, message: null })
+        } else if (result.kind === 'missing') {
+          const message = result.projectDir
+            ? `Original video missing from ${result.projectDir}.`
+            : 'Original video file could not be located.'
+          setSourceMedia({ status: 'missing', url: null, message })
+        } else {
+          setSourceMedia({ status: 'error', url: null, message: result.message })
+        }
+      } catch (error) {
+        console.error('[layout-editor] failed to resolve original source', error)
+        if (!cancelled) {
+          setSourceMedia({
+            status: 'error',
+            url: null,
+            message: 'Unable to load the original video.'
+          })
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [clip?.accountId, clip?.id, clip?.playbackUrl, clip?.previewUrl, clip?.videoId])
+
+  useEffect(() => {
+    if (!draftLayout) {
+      setSelectedItemId(null)
+      return
+    }
+    const validIds = new Set(draftLayout.items.map((item) => item.id))
+    setSelectedItemId((current) => (current && validIds.has(current) ? current : null))
+  }, [draftLayout, setSelectedItemId])
+
+  const updateLayout = useCallback(
+    (updater: (layout: LayoutDefinition) => LayoutDefinition, options?: UpdateOptions) => {
       setDraftLayout((previous) => {
         if (!previous) {
           return previous
         }
-        const next = updater(previous)
+        const transient = options?.transient ?? false
+        const emitChange = options?.emitChange ?? !transient
+        const trackHistory = options?.trackHistory ?? !transient
+        const snapshot = cloneLayout(previous)
+        const next = updater(snapshot)
+        if (trackHistory) {
+          setHistory((current) => [...current.slice(-19), cloneLayout(previous)])
+          setFuture([])
+        }
         if (emitChange) {
-          onLayoutChange(next)
+          skipSelectionResetRef.current = true
+          try {
+            onLayoutChange(next)
+          } catch (error) {
+            skipSelectionResetRef.current = false
+            throw error
+          }
         }
         return next
       })
@@ -167,106 +666,192 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     [onLayoutChange]
   )
 
-  const handleNameChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const value = event.target.value
-      handleUpdateLayout((layout) => ({ ...layout, name: value }))
+  const handleTransform = useCallback(
+    (
+      transforms: { itemId: string; frame: LayoutFrame }[],
+      options: { commit: boolean },
+      target: 'frame' | 'crop'
+    ) => {
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: layout.items.map((item) => {
+            const match = transforms.find((transform) => transform.itemId === item.id)
+            if (!match) {
+              return item
+            }
+            if (target === 'crop' && item.kind === 'video') {
+              const video = item as LayoutVideoItem
+              const nextCrop = clampCropFrame(match.frame)
+              if (video.lockCropAspectRatio === false) {
+                return {
+                  ...video,
+                  crop: nextCrop
+                }
+              }
+              const frameWidth = clamp(video.frame.width)
+              const frameHeight = clamp(video.frame.height)
+              if (frameWidth > 0 && frameHeight > 0) {
+                return {
+                  ...video,
+                  crop: snapCropToAspect(nextCrop, frameWidth / Math.max(frameHeight, 0.0001))
+                }
+              }
+              return {
+                ...video,
+                crop: nextCrop
+              }
+            }
+            if (item.kind === 'video') {
+              const updated: LayoutVideoItem = {
+                ...item,
+                frame: clampFrame(match.frame)
+              }
+              if (updated.lockAspectRatio !== false) {
+                return {
+                  ...updated,
+                  crop: alignCropToFrame(updated)
+                }
+              }
+              return updated
+            }
+            return {
+              ...item,
+              frame: clampFrame(match.frame)
+            }
+          })
+        }),
+        { transient: !options.commit, trackHistory: options.commit }
+      )
     },
-    [handleUpdateLayout]
+    [updateLayout]
   )
 
-  const handleDescriptionChange = useCallback(
-    (event: ChangeEvent<HTMLTextAreaElement>) => {
-      const value = event.target.value
-      handleUpdateLayout((layout) => ({ ...layout, description: value.length > 0 ? value : null }))
-    },
-    [handleUpdateLayout]
-  )
-
-  const handleCanvasChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const { name, value } = event.target
-      const numericValue = Number.parseInt(value, 10)
-      if (!Number.isFinite(numericValue) || numericValue <= 0) {
+  const handleToggleAspectLock = useCallback(
+    (target: 'frame' | 'crop') => {
+      if (!selectedItemId) {
         return
       }
-      handleUpdateLayout((layout) => ({
-        ...layout,
-        canvas: {
-          ...layout.canvas,
-          [name]: numericValue
-        }
-      }))
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: layout.items.map((item) => {
+            if (item.kind !== 'video' || item.id !== selectedItemId) {
+              return item
+            }
+            if (target === 'crop') {
+              const currentlyLocked = item.lockCropAspectRatio !== false
+              const nextLocked = !currentlyLocked
+              const updated: LayoutVideoItem = {
+                ...item,
+                lockCropAspectRatio: nextLocked
+              }
+              if (nextLocked) {
+                return {
+                  ...updated,
+                  crop: alignCropToFrame(updated)
+                }
+              }
+              return updated
+            }
+            const currentlyLocked = item.lockAspectRatio !== false
+            const nextLocked = !currentlyLocked
+            const updated: LayoutVideoItem = {
+              ...item,
+              lockAspectRatio: nextLocked
+            }
+            if (nextLocked) {
+              return {
+                ...updated,
+                crop: alignCropToFrame(updated)
+              }
+            }
+            return updated
+          })
+        }),
+        { trackHistory: true }
+      )
     },
-    [handleUpdateLayout]
+    [selectedItemId, updateLayout]
   )
 
-  const handleBackgroundKindChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
-      const kind = event.target.value as LayoutBackground['kind']
-      handleUpdateLayout((layout) => ({
-        ...layout,
-        canvas: {
-          ...layout.canvas,
-          background: {
-            kind,
-            ...(kind === 'blur'
-              ? { radius: 45, opacity: 0.6, brightness: 0.55 }
-              : kind === 'color'
-              ? { color: '#000000', opacity: 1 }
-              : { source: '', mode: 'cover' })
-          }
-        }
-      }))
+  const handleSnapAspectRatio = useCallback(
+    (target: 'frame' | 'crop') => {
+      if (!selectedItemId) {
+        return
+      }
+      const baseAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: layout.items.map((item) => {
+            if (item.kind !== 'video' || item.id !== selectedItemId) {
+              return item
+            }
+            if (target === 'crop') {
+              const frameWidth = clamp(item.frame.width)
+              const frameHeight = clamp(item.frame.height)
+              if (frameWidth > 0 && frameHeight > 0) {
+                return {
+                  ...item,
+                  crop: snapCropToAspect(normaliseVideoCrop(item.crop), frameWidth / Math.max(frameHeight, 0.0001))
+                }
+              }
+              return item
+            }
+            const crop = normaliseVideoCrop(item.crop)
+            const cropWidth = clamp(crop.width)
+            const cropHeight = clamp(crop.height)
+            const contentAspect =
+              cropWidth > 0 && cropHeight > 0
+                ? (baseAspect * cropWidth) / Math.max(cropHeight, 0.0001)
+                : baseAspect
+            const snappedFrame = snapFrameToAspect(item.frame, contentAspect)
+            const nextVideo: LayoutVideoItem = {
+              ...item,
+              frame: snappedFrame
+            }
+            const nextCrop = item.lockCropAspectRatio === false ? crop : alignCropToFrame({ ...nextVideo, crop })
+            return {
+              ...nextVideo,
+              crop: nextCrop
+            }
+          })
+        }),
+        { trackHistory: true }
+      )
     },
-    [handleUpdateLayout]
+    [layoutAspectRatio, selectedItemId, sourceAspectRatio, updateLayout]
   )
 
-  const handleBackgroundFieldChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-      const { name, value } = event.target
-      handleUpdateLayout((layout) => ({
-        ...layout,
-        canvas: {
-          ...layout.canvas,
-          background: {
-            ...layout.canvas.background,
-            [name]: name === 'radius' ? Number.parseInt(value, 10) || 0 : value
-          }
-        }
-      }))
-    },
-    [handleUpdateLayout]
-  )
-
-  const addItem = useCallback(
-    (kind: LayoutKind) => {
+  const handleAddItem = useCallback(
+    (kind: LayoutItem['kind']) => {
       if (!draftLayout) {
         return
       }
-      const newLayout = cloneLayout(draftLayout)
-      const baseFrame: LayoutFrame = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 }
-      let item: LayoutItem
+      let newItem: LayoutItem
       if (kind === 'video') {
-        item = {
+        newItem = {
           id: createItemId('video'),
           kind: 'video',
           source: 'primary',
-          frame: baseFrame,
           name: 'Primary video',
-          crop: null,
+          frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.6 },
+          crop: createDefaultCrop(),
           scaleMode: 'cover',
           rotation: null,
           opacity: 1,
           mirror: false,
-          zIndex: newLayout.items.length
+          lockAspectRatio: true,
+          lockCropAspectRatio: true,
+          zIndex: draftLayout.items.length
         }
       } else if (kind === 'text') {
-        item = {
+        newItem = {
           id: createItemId('text'),
           kind: 'text',
-          content: 'Add your title',
-          frame: { x: 0.1, y: 0.75, width: 0.8, height: 0.2 },
+          content: 'Add your headline',
+          frame: { x: 0.12, y: 0.72, width: 0.76, height: 0.2 },
           align: 'center',
           color: '#ffffff',
           fontFamily: null,
@@ -276,186 +861,449 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           lineHeight: 1.2,
           uppercase: false,
           opacity: 1,
-          zIndex: newLayout.items.length
+          zIndex: draftLayout.items.length
         }
       } else {
-        item = {
+        newItem = {
           id: createItemId('shape'),
           kind: 'shape',
           frame: { x: 0, y: 0, width: 1, height: 1 },
           color: '#000000',
-          borderRadius: 32,
           opacity: 0.4,
+          borderRadius: 32,
           zIndex: 0
         }
       }
-      newLayout.items = [...newLayout.items, item]
-      setDraftLayout(newLayout)
-      onLayoutChange(newLayout)
-      setSelectedItemId(item.id)
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: [...layout.items, newItem]
+        }),
+        { trackHistory: true }
+      )
+      setSelectedItemId(newItem.id)
       setIsAddMenuOpen(false)
     },
-    [draftLayout, onLayoutChange]
+    [draftLayout, setSelectedItemId, updateLayout]
   )
 
-  const removeSelectedItem = useCallback(() => {
+  const handleRemoveSelected = useCallback(() => {
     if (!draftLayout || !selectedItemId) {
       return
     }
-    const newLayout = cloneLayout(draftLayout)
-    newLayout.items = newLayout.items.filter((item) => item.id !== selectedItemId)
-    setDraftLayout(newLayout)
-    onLayoutChange(newLayout)
+    updateLayout(
+      (layout) => ({
+        ...layout,
+        items: layout.items.filter((item) => item.id !== selectedItemId)
+      }),
+      { trackHistory: true }
+    )
     setSelectedItemId(null)
-  }, [draftLayout, onLayoutChange, selectedItemId])
+  }, [draftLayout, selectedItemId, setSelectedItemId, updateLayout])
 
-  const handleItemPointerDown = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>, item: LayoutItem) => {
-      if (!editorRef.current) {
-        return
-      }
-      const rect = editorRef.current.getBoundingClientRect()
-      dragStateRef.current = {
-        itemId: item.id,
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        frame: { ...item.frame },
-        containerRect: rect
-      }
-      setSelectedItemId(item.id)
-      ;(event.target as HTMLElement).setPointerCapture(event.pointerId)
-      event.preventDefault()
-    },
-    []
-  )
-
-  const handlePointerMove = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      const state = dragStateRef.current
-      if (!state || !draftLayout) {
-        return
-      }
-      if (state.pointerId !== event.pointerId) {
-        return
-      }
-      const { containerRect, frame } = state
-      const deltaX = (event.clientX - state.startX) / containerRect.width
-      const deltaY = (event.clientY - state.startY) / containerRect.height
-      const newX = clamp(frame.x + deltaX, 0, 1 - frame.width)
-      const newY = clamp(frame.y + deltaY, 0, 1 - frame.height)
-      const newLayout = cloneLayout(draftLayout)
-      newLayout.items = newLayout.items.map((item) =>
-        item.id === state.itemId
-          ? {
-              ...item,
-              frame: {
-                ...item.frame,
-                x: Number.isFinite(newX) ? clamp(newX) : item.frame.x,
-                y: Number.isFinite(newY) ? clamp(newY) : item.frame.y
-              }
+  const handleChangeItemFrameValue = useCallback(
+    (itemId: string, field: keyof LayoutFrame, value: number) => {
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: layout.items.map((item) => {
+            if (item.id !== itemId) {
+              return item
             }
-          : item
-      )
-      setDraftLayout(newLayout)
-      onLayoutChange(newLayout)
-    },
-    [draftLayout, onLayoutChange]
-  )
-
-  const handlePointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const state = dragStateRef.current
-    if (!state) {
-      return
-    }
-    if (state.pointerId === event.pointerId) {
-      dragStateRef.current = null
-      ;(event.target as HTMLElement).releasePointerCapture(event.pointerId)
-    }
-  }, [])
-
-  const handleItemFieldChange = useCallback(
-    (
-      itemId: string,
-      field: keyof LayoutFrame | keyof LayoutVideoItem | keyof LayoutTextItem | keyof LayoutShapeItem,
-      rawValue: string | number
-    ) => {
-      if (!draftLayout) {
-        return
-      }
-      const newLayout = cloneLayout(draftLayout)
-      newLayout.items = newLayout.items.map((item) => {
-        if (item.id !== itemId) {
-          return item
-        }
-        if (field in item.frame) {
-          const numericValue = typeof rawValue === 'number' ? rawValue : Number.parseFloat(rawValue)
-          if (Number.isFinite(numericValue)) {
-            const clamped = clamp(numericValue)
+            if (item.kind === 'video') {
+              const nextFrame = {
+                ...item.frame,
+                [field]: clamp(value)
+              }
+              const updated: LayoutVideoItem = {
+                ...item,
+                frame: nextFrame
+              }
+              if (updated.lockAspectRatio !== false) {
+                return {
+                  ...updated,
+                  crop: alignCropToFrame(updated)
+                }
+              }
+              return updated
+            }
             return {
               ...item,
               frame: {
                 ...item.frame,
-                [field]: clamped
+                [field]: clamp(value)
               }
             }
-          }
-          return item
-        }
-        if (item.kind === 'video') {
-          const video = item as LayoutVideoItem
-          if (field === 'scaleMode') {
-            return { ...video, scaleMode: (rawValue as LayoutVideoItem['scaleMode']) ?? 'cover' }
-          }
-          if (field === 'rotation') {
-            const numericValue = typeof rawValue === 'number' ? rawValue : Number.parseFloat(rawValue)
-            return { ...video, rotation: Number.isFinite(numericValue) ? numericValue : null }
-          }
-          if (field === 'mirror') {
-            return { ...video, mirror: rawValue === 'true' || rawValue === true }
-          }
-          if (field === 'opacity') {
-            const numericValue = typeof rawValue === 'number' ? rawValue : Number.parseFloat(rawValue)
-            return { ...video, opacity: Number.isFinite(numericValue) ? clamp(numericValue) : video.opacity }
-          }
-        }
-        if (item.kind === 'text') {
-          const text = item as LayoutTextItem
-          if (field === 'content') {
-            return { ...text, content: String(rawValue) }
-          }
-          if (field === 'align') {
-            return { ...text, align: rawValue as LayoutTextItem['align'] }
-          }
-          if (field === 'color') {
-            return { ...text, color: String(rawValue) }
-          }
-          if (field === 'fontSize') {
-            const numericValue = typeof rawValue === 'number' ? rawValue : Number.parseFloat(rawValue)
-            return { ...text, fontSize: Number.isFinite(numericValue) ? numericValue : text.fontSize }
-          }
-        }
-        if (item.kind === 'shape') {
-          const shape = item as LayoutShapeItem
-          if (field === 'color') {
-            return { ...shape, color: String(rawValue) }
-          }
-          if (field === 'opacity') {
-            const numericValue = typeof rawValue === 'number' ? rawValue : Number.parseFloat(rawValue)
-            return { ...shape, opacity: Number.isFinite(numericValue) ? clamp(numericValue) : shape.opacity }
-          }
-        }
-        return item
-      })
-      setDraftLayout(newLayout)
-      onLayoutChange(newLayout)
+          })
+        }),
+        { trackHistory: true }
+      )
     },
-    [draftLayout, onLayoutChange]
+    [updateLayout]
   )
 
+  const handleChangeVideoField = useCallback(
+    (itemId: string, field: keyof LayoutVideoItem, value: LayoutVideoItem[keyof LayoutVideoItem]) => {
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: layout.items.map((item) => {
+            if (item.id !== itemId || item.kind !== 'video') {
+              return item
+            }
+            if (field === 'lockAspectRatio') {
+              const shouldLock = Boolean(value)
+              const updated: LayoutVideoItem = {
+                ...item,
+                lockAspectRatio: shouldLock
+              }
+              if (shouldLock) {
+                return {
+                  ...updated,
+                  crop: alignCropToFrame(updated)
+                }
+              }
+              return updated
+            }
+            return {
+              ...item,
+              [field]: value
+            }
+          })
+        }),
+        { trackHistory: true }
+      )
+    },
+    [updateLayout]
+  )
+
+  const handleChangeTextField = useCallback(
+    (
+      itemId: string,
+      field: keyof LayoutTextItem,
+      value: LayoutTextItem[keyof LayoutTextItem]
+    ) => {
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: layout.items.map((item) => {
+            if (item.id !== itemId || item.kind !== 'text') {
+              return item
+            }
+            return {
+              ...item,
+              [field]: value
+            }
+          })
+        }),
+        { trackHistory: true }
+      )
+    },
+    [updateLayout]
+  )
+
+  const handleCanvasDimensionChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const { name, value } = event.target
+      const numeric = Number.parseInt(value, 10)
+      if (!Number.isFinite(numeric) || numeric <= 0) {
+        return
+      }
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          canvas: {
+            ...layout.canvas,
+            [name]: numeric
+          }
+        }),
+        { trackHistory: true }
+      )
+    },
+    [updateLayout]
+  )
+
+  const handleBackgroundKindChange = useCallback(
+    (event: ChangeEvent<HTMLSelectElement>) => {
+      const kind = event.target.value as LayoutBackground['kind']
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          canvas: {
+            ...layout.canvas,
+            background: getBackgroundDefaults(kind)
+          }
+        }),
+        { trackHistory: true }
+      )
+    },
+    [updateLayout]
+  )
+
+  const handleBackgroundFieldChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      const { name, value } = event.target
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          canvas: {
+            ...layout.canvas,
+            background: {
+              ...layout.canvas.background,
+              [name]: name === 'radius' || name === 'opacity' || name === 'brightness'
+                ? Number.parseFloat(value)
+                : value
+            }
+          }
+        }),
+        { trackHistory: true }
+      )
+    },
+    [updateLayout]
+  )
+
+  const bringSelectionForward = useCallback(() => {
+    if (!draftLayout || !selectedItemId) {
+      return
+    }
+    updateLayout(
+      (layout) => {
+        const updatedItems = layout.items.map((item) => {
+          if (item.id !== selectedItemId) {
+            return item
+          }
+          const z = 'zIndex' in item && typeof item.zIndex === 'number' ? item.zIndex : 0
+          return { ...item, zIndex: z + 1 }
+        })
+        return {
+          ...layout,
+          items: updatedItems
+        }
+      },
+      { trackHistory: true }
+    )
+  }, [draftLayout, selectedItemId, updateLayout])
+
+  const sendSelectionBackward = useCallback(() => {
+    if (!draftLayout || !selectedItemId) {
+      return
+    }
+    updateLayout(
+      (layout) => {
+        const updatedItems = layout.items.map((item) => {
+          if (item.id !== selectedItemId) {
+            return item
+          }
+          const z = 'zIndex' in item && typeof item.zIndex === 'number' ? item.zIndex : 0
+          return { ...item, zIndex: Math.max(0, z - 1) }
+        })
+        return {
+          ...layout,
+          items: updatedItems
+        }
+      },
+      { trackHistory: true }
+    )
+  }, [draftLayout, selectedItemId, updateLayout])
+
+  const duplicateSelection = useCallback(() => {
+    if (!draftLayout || !selectedItemId) {
+      return
+    }
+    const original = draftLayout.items.find((item) => item.id === selectedItemId)
+    if (!original) {
+      return
+    }
+    const cloned = cloneLayoutItem(original)
+    const shiftedFrame = clampFrame({
+      x: clamp(cloned.frame.x + 0.03),
+      y: clamp(cloned.frame.y + 0.03),
+      width: cloned.frame.width,
+      height: cloned.frame.height
+    })
+    const duplicate: LayoutItem = {
+      ...cloned,
+      id: createItemId(original.kind),
+      frame: shiftedFrame,
+      ...(cloned.kind === 'video'
+        ? { crop: clampCropFrame((cloned as LayoutVideoItem).crop ?? createDefaultCrop()) }
+        : {}),
+      zIndex: draftLayout.items.length + 1
+    }
+    updateLayout(
+      (layout) => ({
+        ...layout,
+        items: [...layout.items, duplicate]
+      }),
+      { trackHistory: true }
+    )
+    setSelectedItemId(duplicate.id)
+  }, [draftLayout, selectedItemId, setSelectedItemId, updateLayout])
+
+  const handleCopySelection = useCallback(() => {
+    if (!draftLayout || !selectedItemId) {
+      return
+    }
+    const item = draftLayout.items.find((candidate) => candidate.id === selectedItemId)
+    if (!item) {
+      return
+    }
+    setClipboard([cloneLayoutItem(item)])
+  }, [draftLayout, selectedItemId])
+
+  const handlePaste = useCallback(() => {
+    if (!clipboard || !draftLayout) {
+      return
+    }
+    const clones = clipboard.map((item) => {
+      const cloned = cloneLayoutItem(item)
+      const shiftedFrame = clampFrame({
+        x: clamp(cloned.frame.x + 0.05),
+        y: clamp(cloned.frame.y + 0.05),
+        width: cloned.frame.width,
+        height: cloned.frame.height
+      })
+      return {
+        ...cloned,
+        id: createItemId(item.kind),
+        frame: shiftedFrame,
+        ...(cloned.kind === 'video'
+          ? { crop: clampCropFrame((cloned as LayoutVideoItem).crop ?? createDefaultCrop()) }
+          : {}),
+        zIndex: draftLayout.items.length + 1
+      }
+    })
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: [...layout.items, ...clones]
+        }),
+        { trackHistory: true }
+      )
+    const lastClone = clones[clones.length - 1]
+    setSelectedItemId(lastClone ? lastClone.id : null)
+  }, [clipboard, draftLayout, setSelectedItemId, updateLayout])
+
+  const undo = useCallback(() => {
+    setHistory((current) => {
+      if (current.length === 0 || !draftLayout) {
+        return current
+      }
+      const previous = current[current.length - 1]
+      setDraftLayout(cloneLayout(previous))
+      setFuture((futureStack) => [cloneLayout(draftLayout), ...futureStack])
+      onLayoutChange(previous)
+      return current.slice(0, -1)
+    })
+  }, [draftLayout, onLayoutChange])
+
+  const redo = useCallback(() => {
+    setFuture((current) => {
+      if (current.length === 0 || !draftLayout) {
+        return current
+      }
+      const next = current[0]
+      setDraftLayout(cloneLayout(next))
+      setHistory((historyStack) => [...historyStack, cloneLayout(draftLayout)])
+      onLayoutChange(next)
+      return current.slice(1)
+    })
+  }, [draftLayout, onLayoutChange])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!draftLayout || isInputTarget(event.target)) {
+        return
+      }
+      const isMac = navigator.platform.toLowerCase().includes('mac')
+      const primaryMod = isMac ? event.metaKey : event.ctrlKey
+      if (event.key === 'Escape') {
+        setSelectedItemId(null)
+        return
+      }
+      if (primaryMod && event.key.toLowerCase() === 'z') {
+        event.preventDefault()
+        if (event.shiftKey) {
+          redo()
+        } else {
+          undo()
+        }
+        return
+      }
+      if (primaryMod && event.key.toLowerCase() === 'c') {
+        event.preventDefault()
+        handleCopySelection()
+        return
+      }
+      if (primaryMod && event.key.toLowerCase() === 'v') {
+        event.preventDefault()
+        handlePaste()
+        return
+      }
+      if (primaryMod && event.key.toLowerCase() === 'd') {
+        event.preventDefault()
+        duplicateSelection()
+        return
+      }
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault()
+        handleRemoveSelected()
+        return
+      }
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+        event.preventDefault()
+        if (!selectedItemId) {
+          return
+        }
+        const delta = event.shiftKey ? 0.02 : 0.005
+        const dx = event.key === 'ArrowRight' ? delta : event.key === 'ArrowLeft' ? -delta : 0
+        const dy = event.key === 'ArrowDown' ? delta : event.key === 'ArrowUp' ? -delta : 0
+        if (dx === 0 && dy === 0) {
+          return
+        }
+        updateLayout(
+          (layout) => ({
+            ...layout,
+            items: layout.items.map((item) =>
+              item.id === selectedItemId
+                ? {
+                    ...item,
+                    frame: clampFrame({
+                      x: item.frame.x + dx,
+                      y: item.frame.y + dy,
+                      width: item.frame.width,
+                      height: item.frame.height
+                    })
+                  }
+                : item
+            )
+          }),
+          { trackHistory: true }
+        )
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [
+    draftLayout,
+    duplicateSelection,
+    handleCopySelection,
+    handlePaste,
+    handleRemoveSelected,
+    redo,
+    selectedItemId,
+    setSelectedItemId,
+    undo,
+    updateLayout
+  ])
+
   const handleSave = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault()
+    async (event?: FormEvent) => {
+      if (event) {
+        event.preventDefault()
+      }
       if (!draftLayout) {
         return
       }
@@ -467,24 +1315,6 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     [draftLayout, onSaveLayout, selectedLayoutReference]
   )
 
-  const handleExport = useCallback(async () => {
-    if (!selectedLayoutReference) {
-      return
-    }
-    if (!selectedLayoutReference.category) {
-      // Try both categories, default to builtin
-      await onExportLayout(selectedLayoutReference.id, 'custom').catch(async () => {
-        await onExportLayout(selectedLayoutReference.id, 'builtin')
-      })
-      return
-    }
-    await onExportLayout(selectedLayoutReference.id, selectedLayoutReference.category)
-  }, [onExportLayout, selectedLayoutReference])
-
-  const handleImport = useCallback(async () => {
-    await onImportLayout()
-  }, [onImportLayout])
-
   const handleApply = useCallback(async () => {
     if (!draftLayout) {
       return
@@ -492,486 +1322,1096 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     await onApplyLayout(draftLayout)
   }, [draftLayout, onApplyLayout])
 
-  const availableLayouts = useMemo(() => {
-    if (!layoutCollection) {
+  const handleExport = useCallback(async () => {
+    if (!selectedLayoutReference) {
+      return
+    }
+    const category = selectedLayoutReference.category ?? 'custom'
+    await onExportLayout(selectedLayoutReference.id, category)
+  }, [onExportLayout, selectedLayoutReference])
+
+  const handleImport = useCallback(async () => {
+    await onImportLayout()
+  }, [onImportLayout])
+
+  const handleRender = useCallback(async () => {
+    if (!draftLayout) {
+      return
+    }
+    await onRenderLayout(draftLayout)
+  }, [draftLayout, onRenderLayout])
+
+  const bringSelectionIntoView = useCallback(() => {
+    if (!draftLayout || !selectedItemId) {
+      return
+    }
+    updateLayout(
+      (layout) => ({
+        ...layout,
+        items: layout.items.map((item) => {
+          if (item.id !== selectedItemId) {
+            return item
+          }
+          if (item.kind === 'video') {
+            return {
+              ...item,
+              frame: clampFrame(item.frame),
+              crop: clampCropFrame(normaliseVideoCrop((item as LayoutVideoItem).crop))
+            }
+          }
+          return {
+            ...item,
+            frame: clampFrame(item.frame)
+          }
+        })
+      }),
+      { trackHistory: true }
+    )
+  }, [draftLayout, selectedItemId, updateLayout])
+
+  const selectedItem = useMemo(() => {
+    if (!draftLayout || !selectedItemId) {
       return null
     }
-    return [
-      { title: 'Built-in', category: 'builtin' as LayoutCategory, items: layoutCollection.builtin },
-      { title: 'Custom', category: 'custom' as LayoutCategory, items: layoutCollection.custom }
-    ]
+    return draftLayout.items.find((item) => item.id === selectedItemId) ?? null
+  }, [draftLayout, selectedItemId])
+
+  const selectionOffCanvas = useMemo(() => {
+    if (!selectedItem) {
+      return false
+    }
+    const frame = selectedItem.frame
+    if (frame.x < 0 || frame.y < 0 || frame.x + frame.width > 1 || frame.y + frame.height > 1) {
+      return true
+    }
+    if (selectedItem.kind === 'video') {
+      const crop = normaliseVideoCrop((selectedItem as LayoutVideoItem).crop)
+      if (crop.x < 0 || crop.y < 0 || crop.x + crop.width > 1 || crop.y + crop.height > 1) {
+        return true
+      }
+    }
+    return false
+  }, [selectedItem])
+
+  const selectionLabel = useMemo(() => {
+    if (!selectedItem) {
+      return 'Canvas settings'
+    }
+    if (selectedItem.kind === 'video') {
+      return 'Video window'
+    }
+    if (selectedItem.kind === 'text') {
+      return 'Text overlay'
+    }
+    return 'Background layer'
+  }, [selectedItem])
+
+  const layoutSections = useMemo(() => {
+    if (!layoutCollection) {
+      return []
+    }
+    const sections: Array<{ title: string; category: LayoutCategory; items: LayoutCollection['builtin'] }> = []
+    if (layoutCollection.builtin.length > 0) {
+      sections.push({ title: 'Built-in', category: 'builtin', items: layoutCollection.builtin })
+    }
+    if (layoutCollection.custom.length > 0) {
+      sections.push({ title: 'Custom', category: 'custom', items: layoutCollection.custom })
+    }
+    return sections
   }, [layoutCollection])
 
+  const toggleSection = useCallback((category: LayoutCategory) => {
+    setCollapsedSections((current) => ({
+      ...current,
+      [category]: !current[category]
+    }))
+  }, [])
+
+  const getAspectRatioForItem = useCallback(
+    (item: LayoutItem, target: 'frame' | 'crop'): number | null => {
+      if ((item as LayoutVideoItem).kind !== 'video') {
+        return null
+      }
+      const video = item as LayoutVideoItem
+      if (target === 'crop') {
+        if (video.lockCropAspectRatio === false) {
+          return null
+        }
+        const frameWidth = clamp(video.frame.width)
+        const frameHeight = clamp(video.frame.height)
+        if (frameWidth > 0 && frameHeight > 0) {
+          return frameWidth / Math.max(frameHeight, 0.0001)
+        }
+        return null
+      }
+      if (video.lockAspectRatio === false) {
+        return null
+      }
+      const baseAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
+      const crop = normaliseVideoCrop(video.crop)
+      const cropWidth = clamp(crop.width)
+      const cropHeight = clamp(crop.height)
+      if (cropWidth > 0 && cropHeight > 0) {
+        return (baseAspect * cropWidth) / Math.max(cropHeight, 0.0001)
+      }
+      return baseAspect
+    },
+    [layoutAspectRatio, sourceAspectRatio]
+  )
+
+  const sourceVideoSource = sourceMedia.status === 'ready' ? sourceMedia.url : null
+  const layoutPreviewSource = sourceVideoSource
+
+  const sourcePreviewMessage = useMemo(() => {
+    if (!clip) {
+      return 'Load a clip to preview the source video.'
+    }
+    if (sourceMedia.status === 'loading') {
+      return 'Loading original video…'
+    }
+    if (sourceMedia.status === 'missing' || sourceMedia.status === 'error') {
+      return sourceMedia.message ?? 'Unable to load the original video.'
+    }
+    return null
+  }, [clip, sourceMedia])
+
+  const releasePlaybackSync = useCallback(() => {
+    window.setTimeout(() => {
+      playbackSyncRef.current = false
+    }, 0)
+  }, [])
+
+  const getVideoPair = useCallback(
+    (origin: PreviewKind): { source: HTMLVideoElement | null; peer: HTMLVideoElement | null } => {
+      if (origin === 'source') {
+        return { source: sourceVideoRef.current, peer: layoutVideoRef.current }
+      }
+      return { source: layoutVideoRef.current, peer: sourceVideoRef.current }
+    },
+    []
+  )
+
+  const handleVideoLoadedMetadata = useCallback(
+    (origin: PreviewKind) => {
+      const { source } = getVideoPair(origin)
+      if (!source || Number.isNaN(source.duration) || !Number.isFinite(source.duration)) {
+        return
+      }
+      setDuration((current) => (current > 0 ? Math.max(current, source.duration) : source.duration))
+      if (origin === 'source' && source.videoWidth > 0 && source.videoHeight > 0) {
+        setSourceVideoDimensions({ width: source.videoWidth, height: source.videoHeight })
+      }
+    },
+    [getVideoPair]
+  )
+
+  const handleVideoPlay = useCallback(
+    (origin: PreviewKind) => {
+      const { source, peer } = getVideoPair(origin)
+      if (!source) {
+        return
+      }
+      setIsPlaying(true)
+      if (!peer || playbackSyncRef.current) {
+        return
+      }
+      playbackSyncRef.current = true
+      peer.currentTime = source.currentTime
+      const result = peer.play()
+      if (result && typeof (result as Promise<void>).then === 'function') {
+        ;(result as Promise<void>).catch(() => undefined).finally(releasePlaybackSync)
+      } else {
+        releasePlaybackSync()
+      }
+    },
+    [getVideoPair, releasePlaybackSync]
+  )
+
+  const handleVideoPause = useCallback(
+    (origin: PreviewKind) => {
+      if (playbackSyncRef.current) {
+        return
+      }
+      const { source, peer } = getVideoPair(origin)
+      if (!source) {
+        return
+      }
+      setIsPlaying(false)
+      if (!peer) {
+        return
+      }
+      playbackSyncRef.current = true
+      peer.pause()
+      peer.currentTime = source.currentTime
+      releasePlaybackSync()
+    },
+    [getVideoPair, releasePlaybackSync]
+  )
+
+  const handleVideoTimeUpdate = useCallback(
+    (origin: PreviewKind) => {
+      const { source, peer } = getVideoPair(origin)
+      if (!source) {
+        return
+      }
+      setCurrentTime(source.currentTime)
+      if (!peer || playbackSyncRef.current) {
+        return
+      }
+      const difference = Math.abs(peer.currentTime - source.currentTime)
+      if (difference > 0.05) {
+        playbackSyncRef.current = true
+        peer.currentTime = source.currentTime
+        releasePlaybackSync()
+      }
+    },
+    [getVideoPair, releasePlaybackSync]
+  )
+
+  const handleVideoSeeked = useCallback(
+    (origin: PreviewKind) => {
+      const { source, peer } = getVideoPair(origin)
+      if (!source) {
+        return
+      }
+      setCurrentTime(source.currentTime)
+      if (!peer) {
+        return
+      }
+      playbackSyncRef.current = true
+      peer.currentTime = source.currentTime
+      releasePlaybackSync()
+    },
+    [getVideoPair, releasePlaybackSync]
+  )
+
+  const handleTogglePlayback = useCallback(() => {
+    const active =
+      (sourceVideoRef.current && !sourceVideoRef.current.paused ? sourceVideoRef.current : null) ??
+      (layoutVideoRef.current && !layoutVideoRef.current.paused ? layoutVideoRef.current : null)
+    const target = active ?? layoutVideoRef.current ?? sourceVideoRef.current
+    if (!target) {
+      return
+    }
+    if (target.paused) {
+      target.play().catch(() => undefined)
+    } else {
+      target.pause()
+    }
+  }, [])
+
+  const effectiveDuration = useMemo(() => {
+    if (duration > 0 && Number.isFinite(duration)) {
+      return duration
+    }
+    if (clip?.sourceDurationSeconds && clip.sourceDurationSeconds > 0) {
+      return clip.sourceDurationSeconds
+    }
+    if (clip?.durationSec && clip.durationSec > 0) {
+      return clip.durationSec
+    }
+    return 0
+  }, [clip?.durationSec, clip?.sourceDurationSeconds, duration])
+
+  const handleSeek = useCallback(
+    (value: number) => {
+      const bounded = effectiveDuration > 0 ? Math.min(Math.max(0, value), effectiveDuration) : Math.max(0, value)
+      setCurrentTime(bounded)
+      playbackSyncRef.current = true
+      if (sourceVideoRef.current) {
+        sourceVideoRef.current.currentTime = bounded
+      }
+      if (layoutVideoRef.current) {
+        layoutVideoRef.current.currentTime = bounded
+      }
+      releasePlaybackSync()
+    },
+    [effectiveDuration, releasePlaybackSync]
+  )
+
+  const formattedTimeLabel = useMemo(() => {
+    if (effectiveDuration <= 0) {
+      return formatTimecode(currentTime)
+    }
+    return `${formatTimecode(currentTime)} / ${formatTimecode(effectiveDuration)}`
+  }, [currentTime, effectiveDuration])
+
+  const hasPreview = Boolean(sourceVideoSource || layoutPreviewSource)
+
+  const sliderMax = useMemo(() => {
+    if (effectiveDuration > 0) {
+      return effectiveDuration
+    }
+    return Math.max(1, currentTime || 0)
+  }, [currentTime, effectiveDuration])
+
+  const shouldShowRenderSteps = useMemo(
+    () =>
+      renderSteps.some((step) => step.status !== 'pending') ||
+      Boolean(renderStatusMessage) ||
+      Boolean(renderErrorMessage),
+    [renderErrorMessage, renderStatusMessage, renderSteps]
+  )
+
+  const basePreviewHeight = useMemo(() => {
+    const viewport = Number.isFinite(viewportHeight) ? viewportHeight : 900
+    const scaled = viewport * 0.6
+    const clamped = Math.max(280, Math.min(640, Number.isFinite(scaled) ? scaled : 480))
+    return clamped > 0 ? clamped : 480
+  }, [viewportHeight])
+
+  const sourcePreviewSize = usePreviewSize(sourceContainer, sourceAspectRatio, basePreviewHeight)
+  const layoutPreviewSize = usePreviewSize(layoutContainer, layoutAspectRatio, basePreviewHeight)
+
+  const sourceFallbackWidth = Math.max(0, sourceAspectRatio * basePreviewHeight)
+  const layoutFallbackWidth = Math.max(0, layoutAspectRatio * basePreviewHeight)
+
+  const sourceCanvasStyle = useMemo(() => {
+    const width = Math.max(0, sourcePreviewSize.width || sourceFallbackWidth)
+    const height = Math.max(0, sourcePreviewSize.height || basePreviewHeight)
+    return { width, height, maxWidth: '100%' as const }
+  }, [basePreviewHeight, sourceFallbackWidth, sourcePreviewSize.height, sourcePreviewSize.width])
+
+  const layoutCanvasStyle = useMemo(() => {
+    const width = Math.max(0, layoutPreviewSize.width || layoutFallbackWidth)
+    const height = Math.max(0, layoutPreviewSize.height || basePreviewHeight)
+    return { width, height, maxWidth: '100%' as const }
+  }, [basePreviewHeight, layoutFallbackWidth, layoutPreviewSize.height, layoutPreviewSize.width])
+
+  const clipDuration = clip?.durationSec ?? 0
+  const transportRangeLabel =
+    clip && clipDuration > 0
+      ? `${formatPercent(clip.startSeconds / clipDuration)} – ${formatPercent(clip.endSeconds / clipDuration)}`
+      : clip
+      ? `${clip.startSeconds.toFixed(1)}s – ${clip.endSeconds.toFixed(1)}s`
+      : 'No clip loaded'
+
+  const handleNameChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const value = event.target.value
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          name: value
+        }),
+        { trackHistory: true }
+      )
+    },
+    [updateLayout]
+  )
+
+  const handleDescriptionChange = useCallback(
+    (event: ChangeEvent<HTMLTextAreaElement>) => {
+      const value = event.target.value
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          description: value.length > 0 ? value : null
+        }),
+        { trackHistory: true }
+      )
+    },
+    [updateLayout]
+  )
+
   return (
-    <div className="flex h-full flex-col gap-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-[var(--fg)]">Layout editor</h2>
-          <p className="text-xs text-[var(--muted)]">
-            Arrange video windows, text overlays, and shapes. Drag items on the canvas to reposition them.
-          </p>
-        </div>
+    <section className="flex w-full flex-1 flex-col gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        {tabNavigation}
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            className="marble-button marble-button--ghost px-3 py-2 text-sm"
             onClick={() => {
               const fresh = createDefaultLayout()
               setDraftLayout(fresh)
+              setSelectedItemId(null)
               onCreateBlankLayout()
               onLayoutChange(fresh)
-              setSelectedItemId(null)
             }}
-            className="marble-button marble-button--ghost px-3 py-1 text-xs font-semibold"
           >
             New layout
           </button>
+          <div className="relative">
+            <button
+              type="button"
+              className="marble-button marble-button--ghost px-3 py-2 text-sm"
+              onClick={() => setIsAddMenuOpen((value) => !value)}
+              aria-haspopup="menu"
+              aria-expanded={isAddMenuOpen}
+            >
+              Add item ▾
+            </button>
+            {isAddMenuOpen ? (
+              <div
+                role="menu"
+                className="absolute right-0 z-20 mt-2 w-44 overflow-hidden rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_75%,transparent)] shadow-[0_16px_32px_rgba(0,0,0,0.35)]"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => handleAddItem('video')}
+                  className="block w-full px-4 py-2 text-left text-sm text-[var(--fg)] hover:bg-white/10"
+                >
+                  Video window
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => handleAddItem('text')}
+                  className="block w-full px-4 py-2 text-left text-sm text-[var(--fg)] hover:bg-white/10"
+                >
+                  Text overlay
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => handleAddItem('shape')}
+                  className="block w-full px-4 py-2 text-left text-sm text-[var(--fg)] hover:bg-white/10"
+                >
+                  Background layer
+                </button>
+              </div>
+            ) : null}
+          </div>
           <button
             type="button"
-            onClick={() => setIsAddMenuOpen((prev) => !prev)}
-            className="marble-button marble-button--outline px-3 py-1 text-xs font-semibold"
-          >
-            Add item
-          </button>
-          <button
-            type="button"
-            onClick={removeSelectedItem}
-            className="marble-button marble-button--ghost px-3 py-1 text-xs font-semibold disabled:opacity-60"
+            className="marble-button marble-button--ghost px-3 py-2 text-sm"
+            onClick={handleRemoveSelected}
             disabled={!selectedItemId}
           >
             Remove selected
           </button>
           <button
             type="button"
+            className="marble-button marble-button--ghost px-3 py-2 text-sm"
             onClick={handleImport}
-            className="marble-button marble-button--ghost px-3 py-1 text-xs font-semibold"
-            disabled={isSavingLayout}
           >
-            Import layout JSON
+            Import JSON
           </button>
           <button
             type="button"
+            className="marble-button marble-button--ghost px-3 py-2 text-sm"
             onClick={handleExport}
-            className="marble-button marble-button--ghost px-3 py-1 text-xs font-semibold"
             disabled={!selectedLayoutReference}
           >
-            Export layout JSON
+            Export JSON
+          </button>
+          <button
+            type="button"
+            className="marble-button marble-button--solid px-3 py-2 text-sm"
+            onClick={handleSave}
+            disabled={!draftLayout || isSavingLayout}
+          >
+            {isSavingLayout ? 'Saving…' : 'Save layout'}
+          </button>
+          <button
+            type="button"
+            className="marble-button marble-button--outline px-3 py-2 text-sm"
+            onClick={handleApply}
+            disabled={!draftLayout || isApplyingLayout}
+          >
+            {isApplyingLayout ? 'Applying…' : clip ? 'Apply to clip' : 'Set as default'}
           </button>
         </div>
-      </header>
-      {isAddMenuOpen ? (
-        <div className="flex flex-wrap gap-2 rounded-lg border border-white/10 bg-black/40 p-3 text-xs">
-          <button
-            type="button"
-            className="marble-button marble-button--solid px-3 py-1"
-            onClick={() => addItem('video')}
-          >
-            Video window
-          </button>
-          <button
-            type="button"
-            className="marble-button marble-button--solid px-3 py-1"
-            onClick={() => addItem('text')}
-          >
-            Text overlay
-          </button>
-          <button
-            type="button"
-            className="marble-button marble-button--solid px-3 py-1"
-            onClick={() => addItem('shape')}
-          >
-            Background block
-          </button>
+      </div>
+      {layoutSections.length > 0 ? (
+        <div className="rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] p-4">
+          <div className="flex w-full gap-6 overflow-x-auto pb-1">
+            {layoutSections.map((section) => {
+              const collapsed = collapsedSections[section.category]
+              return (
+                <section key={section.category} className="flex min-w-[320px] flex-col gap-3">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-sm font-semibold text-[var(--fg)]">{section.title}</h3>
+                    <span className="text-xs text-[var(--muted)]">{section.items.length} layouts</span>
+                    <button
+                      type="button"
+                      className="ml-auto inline-flex items-center justify-center rounded-full border border-white/15 bg-white/10 p-1.5 text-[var(--fg)] transition hover:border-white/30 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                      onClick={() => toggleSection(section.category)}
+                      aria-expanded={!collapsed}
+                      aria-controls={`layout-section-${section.category}`}
+                    >
+                      <span className="sr-only">{collapsed ? `Expand ${section.title}` : `Collapse ${section.title}`}</span>
+                      <CollapseToggleIcon collapsed={collapsed} />
+                    </button>
+                  </div>
+                  {collapsed ? (
+                    <div
+                      id={`layout-section-${section.category}`}
+                      className="flex min-h-[72px] items-center justify-center rounded-xl border border-dashed border-white/25 bg-white/10 px-3 py-3 text-xs text-white"
+                    >
+                      <span>{section.title} layouts hidden</span>
+                    </div>
+                  ) : (
+                    <div id={`layout-section-${section.category}`} className="flex gap-3">
+                      {section.items.map((layout) => {
+                        const isSelected = selectedLayoutReference?.id === layout.id
+                        return (
+                          <button
+                            key={layout.id}
+                            type="button"
+                            onClick={() => onSelectLayout(layout.id, section.category)}
+                            className={`flex w-48 flex-col gap-1 rounded-2xl border px-3 py-3 text-left transition ${
+                              isSelected
+                                ? 'border-[color:color-mix(in_srgb,var(--accent)_70%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_85%,transparent)] text-[var(--fg)] shadow-[0_8px_20px_rgba(0,0,0,0.35)]'
+                                : 'border-white/12 bg-[color:color-mix(in_srgb,var(--card)_85%,transparent)] text-[var(--muted)] hover:border-white/24'
+                            }`}
+                          >
+                            <span className="truncate text-sm font-semibold text-[var(--fg)]">{layout.name}</span>
+                            <span className="line-clamp-2 text-xs text-[var(--muted)]">
+                              {layout.description ? layout.description : 'No description'}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </section>
+              )
+            })}
+          </div>
+        </div>
+      ) : isCollectionLoading ? (
+        <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-4 py-3 text-sm text-[var(--muted)]">
+          Loading layouts…
         </div>
       ) : null}
-      <section className="flex flex-col gap-4">
-        <h3 className="text-sm font-semibold text-[var(--fg)]">Layouts</h3>
-        <div className="flex flex-col gap-3">
-          {isCollectionLoading ? (
-            <p className="text-xs text-[var(--muted)]">Loading layouts…</p>
-          ) : availableLayouts ? (
-            availableLayouts.map((group) => (
-              <Fragment key={group.category}>
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                    {group.title}
-                  </h4>
-                  <span className="text-[10px] text-[var(--muted)]">{group.items.length} layouts</span>
-                </div>
-                {group.items.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-white/10 bg-black/40 p-3 text-xs text-[var(--muted)]">
-                    No layouts in this group.
-                  </p>
-                ) : (
-                  <div className="flex gap-3 overflow-x-auto pb-2">
-                    {group.items.map((summary) => {
-                      const isActive = selectedLayoutReference?.id === summary.id
-                      return (
-                        <button
-                          key={`${group.category}-${summary.id}`}
-                          type="button"
-                          onClick={() => onSelectLayout(summary.id, group.category)}
-                          className={`min-w-[200px] max-w-[200px] rounded-xl border p-3 text-left transition ${
-                            isActive
-                              ? 'border-[var(--ring)] bg-[color:color-mix(in_srgb,var(--ring)_15%,var(--card))]'
-                              : 'border-white/10 bg-[color:color-mix(in_srgb,var(--card)_65%,transparent)] hover:border-[var(--ring)]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl" aria-hidden>
-                              {getLayoutIcon(group.category)}
-                            </span>
-                            <div className="flex flex-col">
-                              <span className="text-sm font-semibold text-[var(--fg)]">{summary.name}</span>
-                              <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
-                                {group.category === 'builtin' ? 'Built-in' : 'Custom'}
-                              </span>
-                            </div>
-                          </div>
-                          {summary.description ? (
-                            <p className="mt-2 line-clamp-3 text-xs text-[var(--muted)]">{summary.description}</p>
-                          ) : null}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </Fragment>
-            ))
-          ) : (
-            <p className="text-xs text-[var(--muted)]">No layouts available.</p>
-          )}
+      {statusMessage ? (
+        <div
+          role="status"
+          className="rounded-xl border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-4 py-3 text-sm text-[var(--fg)]"
+        >
+          {statusMessage}
         </div>
-      </section>
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,320px)]">
-        <div className="relative aspect-[9/16] overflow-hidden rounded-2xl border border-white/10 bg-black" ref={editorRef}>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="pointer-events-none text-xs text-[var(--muted)]">
-              {isLayoutLoading
-                ? 'Loading layout…'
-                : draftLayout
-                ? 'Drag items to reposition them.'
-                : 'Select a layout to begin editing.'}
-            </div>
+      ) : null}
+      {errorMessage ? (
+        <div
+          role="alert"
+          className="rounded-xl border border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:color-mix(in_srgb,var(--error-soft)_80%,transparent)] px-4 py-3 text-sm text-[color:var(--error-contrast)]"
+        >
+          {errorMessage}
+        </div>
+      ) : null}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-[var(--fg)]">Source preview</h3>
+            <span className="text-xs text-[var(--muted)]">Original footage</span>
           </div>
-          {draftLayout && !isLayoutLoading ? (
-            <div
-              className="absolute inset-0"
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerLeave={() => {
-                dragStateRef.current = null
-              }}
-            >
-              <LayoutPreviewOverlay
-                layout={draftLayout}
-                selectedItemId={selectedItemId}
-                interactive
-                onItemPointerDown={handleItemPointerDown}
-                highlightCaptionArea
-              />
+          <div
+            ref={handleSourceContainerRef}
+            className="flex w-full items-center justify-center"
+            style={{ minHeight: basePreviewHeight }}
+          >
+            <LayoutCanvas
+              layout={draftLayout}
+              selectedItemId={selectedItemId}
+              onSelectionChange={setSelectedItemId}
+              onTransform={handleTransform}
+              onRequestBringForward={bringSelectionForward}
+              onRequestSendBackward={sendSelectionBackward}
+              onRequestDuplicate={duplicateSelection}
+              onRequestDelete={handleRemoveSelected}
+              showGrid={showGrid}
+              showSafeMargins={showSafeMargins}
+              previewContent={
+                sourceVideoSource ? (
+                  <video
+                    ref={sourceVideoRef}
+                    src={sourceVideoSource}
+                    className="pointer-events-none h-full w-full object-contain"
+                    playsInline
+                    muted
+                    preload="metadata"
+                    onLoadedMetadata={() => handleVideoLoadedMetadata('source')}
+                    onPlay={() => handleVideoPlay('source')}
+                    onPause={() => handleVideoPause('source')}
+                    onTimeUpdate={() => handleVideoTimeUpdate('source')}
+                    onSeeked={() => handleVideoSeeked('source')}
+                    aria-label="Source video preview"
+                  />
+                ) : (
+                  <span className="text-xs text-white/70">{sourcePreviewMessage}</span>
+                )
+              }
+              transformTarget="crop"
+              aspectRatioOverride={sourceAspectRatio}
+              onRequestToggleAspectLock={handleToggleAspectLock}
+              onRequestSnapAspectRatio={handleSnapAspectRatio}
+              getAspectRatioForItem={getAspectRatioForItem}
+              style={sourceCanvasStyle}
+              ariaLabel="Source preview canvas"
+            />
+          </div>
+        </div>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-[var(--fg)]">Layout preview</h3>
+            {appliedLayoutId ? (
+              <span className="text-xs text-[var(--muted)]">Applied: {appliedLayoutId}</span>
+            ) : null}
+          </div>
+          <div
+            ref={handleLayoutContainerRef}
+            className="flex w-full items-center justify-center"
+            style={{ minHeight: basePreviewHeight }}
+          >
+            <LayoutCanvas
+              layout={draftLayout}
+              selectedItemId={selectedItemId}
+              onSelectionChange={setSelectedItemId}
+              onTransform={handleTransform}
+              onRequestBringForward={bringSelectionForward}
+              onRequestSendBackward={sendSelectionBackward}
+              onRequestDuplicate={duplicateSelection}
+              onRequestDelete={handleRemoveSelected}
+              showGrid={showGrid}
+              showSafeMargins={showSafeMargins}
+              previewContent={
+                layoutPreviewSource ? (
+                  <LayoutCompositionSurface
+                    layout={draftLayout}
+                    videoRef={layoutVideoRef}
+                    source={layoutPreviewSource}
+                    isPlaying={isPlaying}
+                    currentTime={currentTime}
+                    onLoadedMetadata={() => handleVideoLoadedMetadata('layout')}
+                    onPlay={() => handleVideoPlay('layout')}
+                    onPause={() => handleVideoPause('layout')}
+                    onTimeUpdate={() => handleVideoTimeUpdate('layout')}
+                    onSeeked={() => handleVideoSeeked('layout')}
+                    className="pointer-events-none"
+                    ariaLabel="Layout preview video"
+                  />
+                ) : (
+                  <span className="text-xs text-white/60">No preview source available.</span>
+                )
+              }
+              transformTarget="frame"
+              labelVisibility="selected"
+              aspectRatioOverride={layoutAspectRatio}
+              onRequestToggleAspectLock={handleToggleAspectLock}
+              onRequestSnapAspectRatio={handleSnapAspectRatio}
+              getAspectRatioForItem={getAspectRatioForItem}
+              style={layoutCanvasStyle}
+              ariaLabel="Layout preview canvas"
+            />
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] px-4 py-3 text-xs text-[var(--muted)]">
+        <button
+          type="button"
+          className="marble-button marble-button--ghost px-3 py-1 text-xs"
+          onClick={handleTogglePlayback}
+          disabled={!hasPreview}
+        >
+          {isPlaying ? 'Pause' : 'Play'}
+        </button>
+        <input
+          type="range"
+          min={0}
+          max={sliderMax}
+          step={0.05}
+          value={Math.min(currentTime, sliderMax)}
+          onChange={(event) => handleSeek(Number.parseFloat(event.target.value))}
+          disabled={!hasPreview || effectiveDuration <= 0}
+          className="h-1 flex-1 cursor-pointer accent-[var(--ring)]"
+          aria-label="Scrub preview"
+        />
+        <span className="font-semibold text-[var(--fg)]">{formattedTimeLabel}</span>
+        <span aria-hidden="true" className="hidden sm:inline">·</span>
+        <span>{transportRangeLabel}</span>
+        <span aria-hidden="true" className="hidden sm:inline">·</span>
+        <label className="inline-flex items-center gap-1">
+          <input type="checkbox" checked={showGrid} onChange={(event) => setShowGrid(event.target.checked)} />
+          Grid
+        </label>
+        <label className="inline-flex items-center gap-1">
+          <input
+            type="checkbox"
+            checked={showSafeMargins}
+            onChange={(event) => setShowSafeMargins(event.target.checked)}
+          />
+          Safe margins
+        </label>
+      </div>
+      <form onSubmit={handleSave} className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-[var(--fg)]">{selectionLabel}</h3>
+          {selectionOffCanvas ? (
+            <div className="flex items-center gap-3 rounded-full border border-[color:color-mix(in_srgb,var(--warning-strong)_60%,var(--edge))] bg-[color:var(--warning-soft)] px-3 py-1 text-xs text-[color:var(--warning-contrast)]">
+              <span>Part of this selection sits outside the canvas.</span>
+              <button
+                type="button"
+                className="rounded-full bg-[color:color-mix(in_srgb,var(--warning-contrast)_15%,transparent)] px-2 py-1 text-xs font-semibold"
+                onClick={bringSelectionIntoView}
+              >
+                Bring into view
+              </button>
             </div>
           ) : null}
         </div>
-        <form onSubmit={handleSave} className="flex max-h-[620px] flex-col gap-4 overflow-y-auto pr-1">
-          <fieldset className="flex flex-col gap-2 rounded-xl border border-white/10 bg-black/40 p-4">
-            <legend className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Layout details</legend>
-            <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
-              Name
-              <input
-                type="text"
-                value={draftLayout?.name ?? ''}
-                onChange={handleNameChange}
-                placeholder="Layout name"
-                className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
-              Description
-              <textarea
-                value={draftLayout?.description ?? ''}
-                onChange={handleDescriptionChange}
-                placeholder="Describe this layout"
-                rows={3}
-                className="resize-none rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              />
-            </label>
-            <div className="grid grid-cols-2 gap-3 text-xs text-[var(--muted)]">
-              <label className="flex flex-col gap-1">
-                Canvas width (px)
-                <input
-                  type="number"
-                  min={100}
-                  name="width"
-                  value={draftLayout?.canvas.width ?? 1080}
-                  onChange={handleCanvasChange}
-                  className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                Canvas height (px)
-                <input
-                  type="number"
-                  min={100}
-                  name="height"
-                  value={draftLayout?.canvas.height ?? 1920}
-                  onChange={handleCanvasChange}
-                  className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                />
-              </label>
-            </div>
-            <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
-              Background type
-              <select
-                value={draftLayout?.canvas.background.kind ?? 'blur'}
-                onChange={handleBackgroundKindChange}
-                className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-              >
-                <option value="blur">Blurred video</option>
-                <option value="color">Solid colour</option>
-                <option value="image">Image</option>
-              </select>
-            </label>
-            {draftLayout?.canvas.background.kind === 'blur' ? (
+        {selectedItem ? (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <fieldset className="flex flex-col gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-4">
+              <legend className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                Position & size
+              </legend>
               <div className="grid grid-cols-2 gap-3 text-xs text-[var(--muted)]">
-                <label className="flex flex-col gap-1">
-                  Radius
-                  <input
-                    type="number"
-                    name="radius"
-                    min={0}
-                    value={draftLayout.canvas.background.radius ?? 45}
-                    onChange={handleBackgroundFieldChange}
-                    className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  Opacity
-                  <input
-                    type="number"
-                    name="opacity"
-                    step="0.05"
-                    min={0}
-                    max={1}
-                    value={draftLayout.canvas.background.opacity ?? 0.6}
-                    onChange={handleBackgroundFieldChange}
-                    className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  />
-                </label>
+                {(Object.keys(selectedItem.frame) as Array<keyof LayoutFrame>).map((key) => (
+                  <label key={key} className="flex flex-col gap-1">
+                    {key.toUpperCase()}
+                    <input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      max={1}
+                      value={selectedItem.frame[key].toFixed(2)}
+                      onChange={(event) => handleChangeItemFrameValue(selectedItem.id, key, Number.parseFloat(event.target.value))}
+                      className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    />
+                  </label>
+                ))}
               </div>
-            ) : null}
-            {draftLayout?.canvas.background.kind === 'color' ? (
-              <div className="grid grid-cols-2 gap-3 text-xs text-[var(--muted)]">
-                <label className="flex flex-col gap-1">
-                  Colour
+            </fieldset>
+            {selectedItem.kind === 'video' ? (
+              <fieldset className="flex flex-col gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-4">
+                <legend className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                  Video settings
+                </legend>
+                <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                  Name
                   <input
                     type="text"
-                    name="color"
-                    value={draftLayout.canvas.background.color ?? '#000000'}
-                    onChange={handleBackgroundFieldChange}
+                    value={(selectedItem as LayoutVideoItem).name ?? ''}
+                    onChange={(event) => handleChangeVideoField(selectedItem.id, 'name', event.target.value)}
                     className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                   />
                 </label>
-                <label className="flex flex-col gap-1">
-                  Opacity
-                  <input
-                    type="number"
-                    name="opacity"
-                    step="0.05"
-                    min={0}
-                    max={1}
-                    value={draftLayout.canvas.background.opacity ?? 1}
-                    onChange={handleBackgroundFieldChange}
-                    className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  />
-                </label>
-              </div>
-            ) : null}
-            {draftLayout?.canvas.background.kind === 'image' ? (
-              <div className="grid grid-cols-1 gap-3 text-xs text-[var(--muted)]">
-                <label className="flex flex-col gap-1">
-                  Image path
-                  <input
-                    type="text"
-                    name="source"
-                    value={draftLayout.canvas.background.source ?? ''}
-                    onChange={handleBackgroundFieldChange}
-                    placeholder="Relative or absolute image path"
-                    className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  Fit mode
+                <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                  Scale mode
                   <select
-                    name="mode"
-                    value={draftLayout.canvas.background.mode ?? 'cover'}
-                    onChange={handleBackgroundFieldChange}
-                    className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    value={(selectedItem as LayoutVideoItem).scaleMode ?? 'cover'}
+                    onChange={(event) => handleChangeVideoField(selectedItem.id, 'scaleMode', event.target.value as LayoutVideoItem['scaleMode'])}
+                    className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                   >
                     <option value="cover">Cover</option>
                     <option value="contain">Contain</option>
+                    <option value="fill">Fill</option>
                   </select>
                 </label>
-              </div>
+                <div className="grid grid-cols-2 gap-3 text-xs text-[var(--muted)]">
+                  <label className="flex flex-col gap-1">
+                    Rotation (°)
+                    <input
+                      type="number"
+                      value={(selectedItem as LayoutVideoItem).rotation ?? 0}
+                      onChange={(event) => handleChangeVideoField(selectedItem.id, 'rotation', Number.parseFloat(event.target.value))}
+                      className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={(selectedItem as LayoutVideoItem).mirror ?? false}
+                      onChange={(event) => handleChangeVideoField(selectedItem.id, 'mirror', event.target.checked)}
+                    />
+                    Mirror horizontally
+                  </label>
+                </div>
+              </fieldset>
             ) : null}
-          </fieldset>
-          <fieldset className="flex flex-col gap-2 rounded-xl border border-white/10 bg-black/40 p-4">
-            <legend className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Items</legend>
-            {draftLayout?.items.length ? (
-              <ul className="flex flex-col gap-2">
-                {draftLayout.items.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedItemId(item.id)}
-                      className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition ${
-                        selectedItemId === item.id
-                          ? 'border-[var(--ring)] bg-[color:color-mix(in_srgb,var(--ring)_18%,var(--card))] text-[var(--fg)]'
-                          : 'border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] text-[var(--muted)] hover:border-[var(--ring)]'
-                      }`}
+            {selectedItem.kind === 'text' ? (
+              <fieldset className="flex flex-col gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-4">
+                <legend className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                  Text settings
+                </legend>
+                <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                  Content
+                  <textarea
+                    value={(selectedItem as LayoutTextItem).content}
+                    onChange={(event) => handleChangeTextField(selectedItem.id, 'content', event.target.value)}
+                    rows={3}
+                    className="resize-none rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                  Colour
+                  <input
+                    type="text"
+                    value={(selectedItem as LayoutTextItem).color ?? '#ffffff'}
+                    onChange={(event) => handleChangeTextField(selectedItem.id, 'color', event.target.value)}
+                    className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  />
+                </label>
+                <div className="grid grid-cols-3 gap-3 text-xs text-[var(--muted)]">
+                  <label className="flex flex-col gap-1">
+                    Size
+                    <input
+                      type="number"
+                      value={(selectedItem as LayoutTextItem).fontSize ?? 48}
+                      onChange={(event) => handleChangeTextField(selectedItem.id, 'fontSize', Number.parseFloat(event.target.value))}
+                      className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    Weight
+                    <select
+                      value={(selectedItem as LayoutTextItem).fontWeight ?? 'bold'}
+                      onChange={(event) => handleChangeTextField(selectedItem.id, 'fontWeight', event.target.value as LayoutTextItem['fontWeight'])}
+                      className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
                     >
-                      <span className="font-semibold capitalize text-[var(--fg)]">{item.kind}</span>
-                      <span className="ml-2 text-xs text-[var(--muted)]">{item.id}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-xs text-[var(--muted)]">No items yet. Use “Add item” to insert video windows or overlays.</p>
-            )}
-          </fieldset>
-          {selectedItemId ? (
-            <fieldset className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/40 p-4">
-              <legend className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Item properties</legend>
-              {draftLayout?.items
-                .filter((item) => item.id === selectedItemId)
-                .map((item) => (
-                  <Fragment key={item.id}>
-                    <div className="grid grid-cols-2 gap-3 text-xs text-[var(--muted)]">
-                      {(['x', 'y', 'width', 'height'] as Array<keyof LayoutFrame>).map((key) => (
-                        <label key={key} className="flex flex-col gap-1">
-                          {key.charAt(0).toUpperCase() + key.slice(1)}
-                          <input
-                            type="number"
-                            step="0.01"
-                            min={0}
-                            max={1}
-                            value={Number(item.frame[key]).toFixed(2)}
-                            onChange={(event) => handleItemFieldChange(item.id, key, Number.parseFloat(event.target.value))}
-                            className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                          />
-                        </label>
-                      ))}
-                    </div>
-                    {item.kind === 'video' ? (
-                      <div className="grid grid-cols-2 gap-3 text-xs text-[var(--muted)]">
-                        <label className="flex flex-col gap-1">
-                          Scale mode
-                          <select
-                            value={(item as LayoutVideoItem).scaleMode ?? 'cover'}
-                            onChange={(event) => handleItemFieldChange(item.id, 'scaleMode', event.target.value)}
-                            className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                          >
-                            <option value="cover">Cover</option>
-                            <option value="contain">Contain</option>
-                            <option value="fill">Fill</option>
-                          </select>
-                        </label>
-                        <label className="flex flex-col gap-1">
-                          Rotation
-                          <input
-                            type="number"
-                            step="1"
-                            value={(item as LayoutVideoItem).rotation ?? 0}
-                            onChange={(event) => handleItemFieldChange(item.id, 'rotation', Number.parseFloat(event.target.value))}
-                            className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                          />
-                        </label>
-                      </div>
-                    ) : null}
-                    {item.kind === 'text' ? (
-                      <div className="flex flex-col gap-3 text-xs text-[var(--muted)]">
-                        <label className="flex flex-col gap-1">
-                          Text content
-                          <textarea
-                            value={(item as LayoutTextItem).content}
-                            onChange={(event) => handleItemFieldChange(item.id, 'content', event.target.value)}
-                            rows={3}
-                            className="resize-none rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1">
-                          Colour
-                          <input
-                            type="text"
-                            value={(item as LayoutTextItem).color ?? '#ffffff'}
-                            onChange={(event) => handleItemFieldChange(item.id, 'color', event.target.value)}
-                            className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                          />
-                        </label>
-                      </div>
-                    ) : null}
-                    {item.kind === 'shape' ? (
-                      <div className="flex flex-col gap-3 text-xs text-[var(--muted)]">
-                        <label className="flex flex-col gap-1">
-                          Colour
-                          <input
-                            type="text"
-                            value={(item as LayoutShapeItem).color ?? '#000000'}
-                            onChange={(event) => handleItemFieldChange(item.id, 'color', event.target.value)}
-                            className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1">
-                          Opacity
-                          <input
-                            type="number"
-                            min={0}
-                            max={1}
-                            step="0.05"
-                            value={(item as LayoutShapeItem).opacity ?? 1}
-                            onChange={(event) => handleItemFieldChange(item.id, 'opacity', Number.parseFloat(event.target.value))}
-                            className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                          />
-                        </label>
-                      </div>
-                    ) : null}
-                  </Fragment>
-                ))}
-            </fieldset>
-          ) : null}
-          <div className="flex flex-col gap-3">
-            {statusMessage ? (
-              <p className="text-xs font-semibold text-[color:var(--success-strong)]">{statusMessage}</p>
+                      <option value="normal">Normal</option>
+                      <option value="bold">Bold</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    Align
+                    <select
+                      value={(selectedItem as LayoutTextItem).align ?? 'center'}
+                      onChange={(event) => handleChangeTextField(selectedItem.id, 'align', event.target.value as LayoutTextItem['align'])}
+                      className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    >
+                      <option value="left">Left</option>
+                      <option value="center">Center</option>
+                      <option value="right">Right</option>
+                    </select>
+                  </label>
+                </div>
+              </fieldset>
             ) : null}
-            {errorMessage ? (
-              <p className="text-xs font-semibold text-[color:var(--error-strong)]">{errorMessage}</p>
-            ) : null}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="submit"
-                className="marble-button marble-button--solid px-4 py-2 text-sm font-semibold"
-                disabled={!draftLayout || isSavingLayout}
-              >
-                {isSavingLayout ? 'Saving…' : 'Save layout'}
-              </button>
-              <button
-                type="button"
-                onClick={handleApply}
-                className="marble-button marble-button--outline px-4 py-2 text-sm font-semibold disabled:opacity-60"
-                disabled={!draftLayout || isApplyingLayout || (!clip && !appliedLayoutId)}
-              >
-                {isApplyingLayout ? 'Applying…' : clip ? 'Apply to clip' : 'Set as default'}
-              </button>
-              {appliedLayoutId ? (
-                <span className="text-xs text-[var(--muted)]">
-                  Active layout: <strong>{appliedLayoutId}</strong>
-                </span>
-              ) : null}
-            </div>
           </div>
-        </form>
-      </section>
-    </div>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <fieldset className="flex flex-col gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-4">
+              <legend className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                Layout details
+              </legend>
+              <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                Name
+                <input
+                  type="text"
+                  value={draftLayout?.name ?? ''}
+                  onChange={handleNameChange}
+                  placeholder="Layout name"
+                  className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                Description
+                <textarea
+                  value={draftLayout?.description ?? ''}
+                  onChange={handleDescriptionChange}
+                  rows={3}
+                  placeholder="Describe how this layout should be used"
+                  className="resize-none rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-3 text-xs text-[var(--muted)]">
+                <label className="flex flex-col gap-1">
+                  Canvas width (px)
+                  <input
+                    type="number"
+                    min={100}
+                    name="width"
+                    value={draftLayout?.canvas.width ?? 1080}
+                    onChange={handleCanvasDimensionChange}
+                    className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  Canvas height (px)
+                  <input
+                    type="number"
+                    min={100}
+                    name="height"
+                    value={draftLayout?.canvas.height ?? 1920}
+                    onChange={handleCanvasDimensionChange}
+                    className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  />
+                </label>
+              </div>
+            </fieldset>
+            <fieldset className="flex flex-col gap-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-4">
+              <legend className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                Background
+              </legend>
+              <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                Background type
+                <select
+                  value={draftLayout?.canvas.background.kind ?? 'blur'}
+                  onChange={handleBackgroundKindChange}
+                  className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                >
+                  <option value="blur">Blurred video</option>
+                  <option value="color">Solid colour</option>
+                  <option value="image">Image</option>
+                </select>
+              </label>
+              {draftLayout?.canvas.background.kind === 'blur' ? (
+                <div className="grid grid-cols-3 gap-3 text-xs text-[var(--muted)]">
+                  <label className="flex flex-col gap-1">
+                    Radius
+                    <input
+                      type="number"
+                      name="radius"
+                      value={draftLayout.canvas.background.radius ?? 45}
+                      onChange={handleBackgroundFieldChange}
+                      className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    Opacity
+                    <input
+                      type="number"
+                      name="opacity"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={draftLayout.canvas.background.opacity ?? 0.6}
+                      onChange={handleBackgroundFieldChange}
+                      className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    Brightness
+                    <input
+                      type="number"
+                      name="brightness"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={draftLayout.canvas.background.brightness ?? 0.55}
+                      onChange={handleBackgroundFieldChange}
+                      className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    />
+                  </label>
+                </div>
+              ) : null}
+              {draftLayout?.canvas.background.kind === 'color' ? (
+                <div className="grid grid-cols-2 gap-3 text-xs text-[var(--muted)]">
+                  <label className="flex flex-col gap-1">
+                    Colour
+                    <input
+                      type="text"
+                      name="color"
+                      value={draftLayout.canvas.background.color ?? '#000000'}
+                      onChange={handleBackgroundFieldChange}
+                      className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    Opacity
+                    <input
+                      type="number"
+                      name="opacity"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={draftLayout.canvas.background.opacity ?? 1}
+                      onChange={handleBackgroundFieldChange}
+                      className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    />
+                  </label>
+                </div>
+              ) : null}
+              {draftLayout?.canvas.background.kind === 'image' ? (
+                <div className="grid grid-cols-1 gap-3 text-xs text-[var(--muted)]">
+                  <label className="flex flex-col gap-1">
+                    Image path
+                    <input
+                      type="text"
+                      name="source"
+                      value={draftLayout.canvas.background.source ?? ''}
+                      onChange={handleBackgroundFieldChange}
+                      className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    Fit mode
+                    <select
+                      name="mode"
+                      value={draftLayout.canvas.background.mode ?? 'cover'}
+                      onChange={handleBackgroundFieldChange}
+                      className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-1.5 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    >
+                      <option value="cover">Cover</option>
+                      <option value="contain">Contain</option>
+                    </select>
+                  </label>
+                </div>
+              ) : null}
+            </fieldset>
+          </div>
+        )}
+      </form>
+      <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className="marble-button marble-button--solid px-3 py-2 text-sm"
+            onClick={handleRender}
+            disabled={!draftLayout || isRenderingLayout}
+          >
+            {isRenderingLayout ? 'Rendering…' : 'Render with this layout'}
+          </button>
+          <p className="text-xs text-[var(--muted)]">
+            Rebuild the clip using your latest layout adjustments.
+          </p>
+        </div>
+        {shouldShowRenderSteps ? (
+          <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_55%,transparent)] p-4 text-sm text-[var(--muted)]">
+            <h3 className="text-sm font-semibold text-[var(--fg)]">Rendering progress</h3>
+            <ol className="mt-3 space-y-3">
+              {renderSteps.map((step) => {
+                const isCompleted = step.status === 'completed'
+                const isRunning = step.status === 'running'
+                const isFailed = step.status === 'failed'
+                const indicatorClasses = isCompleted
+                  ? 'border-[color:color-mix(in_srgb,var(--success-strong)_45%,var(--edge))] bg-[color:var(--success-soft)] text-[color:color-mix(in_srgb,var(--success-strong)_85%,var(--accent-contrast))]'
+                  : isFailed
+                    ? 'border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]'
+                    : isRunning
+                      ? 'border-[var(--ring)] text-[var(--ring)]'
+                      : 'border-white/15 text-[var(--muted)]'
+                return (
+                  <li key={step.id} className="flex items-start gap-3">
+                    <span
+                      className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${indicatorClasses}`}
+                      aria-hidden
+                    >
+                      {isRunning ? (
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                      ) : isCompleted ? (
+                        '✓'
+                      ) : isFailed ? (
+                        '!'
+                      ) : (
+                        '•'
+                      )}
+                    </span>
+                    <div>
+                      <p className="font-medium text-[var(--fg)]">{step.label}</p>
+                      <p className="text-xs">{step.description}</p>
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+            {renderStatusMessage ? (
+              <p className="mt-3 text-xs text-[var(--fg)]">{renderStatusMessage}</p>
+            ) : null}
+            {renderErrorMessage ? (
+              <p className="mt-3 text-xs text-[color:color-mix(in_srgb,var(--error-strong)_80%,var(--accent-contrast))]">
+                {renderErrorMessage}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </section>
   )
 }
 
