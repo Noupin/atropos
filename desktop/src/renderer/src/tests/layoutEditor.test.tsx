@@ -195,14 +195,132 @@ describe('Layout editor interactions', () => {
     }
   ]
 
+  const sampleClip = {
+    id: 'clip-1',
+    title: 'Demo clip',
+    channel: 'Channel',
+    views: null,
+    createdAt: new Date().toISOString(),
+    durationSec: 120,
+    sourceDurationSeconds: 180,
+    thumbnail: null,
+    playbackUrl: 'playback.mp4',
+    previewUrl: 'preview.mp4',
+    description: '',
+    sourceUrl: 'source.mp4',
+    sourceTitle: '',
+    sourcePublishedAt: null,
+    videoId: 'video-1',
+    videoTitle: 'Video',
+    rating: null,
+    quote: null,
+    reason: null,
+    timestampUrl: null,
+    timestampSeconds: null,
+    accountId: null,
+    startSeconds: 0,
+    endSeconds: 60,
+    originalStartSeconds: 0,
+    originalEndSeconds: 60,
+    hasAdjustments: false,
+    layoutId: null
+  } as const
+
+  const pointerDown = (element: Element, init: Partial<PointerEventInit> = {}) =>
+    fireEvent.pointerDown(element, {
+      pointerId: init.pointerId ?? 1,
+      button: init.button ?? 0,
+      clientX: init.clientX ?? 0,
+      clientY: init.clientY ?? 0,
+      pointerType: init.pointerType ?? 'mouse',
+      ...init
+    })
+
+  const pointerMove = (element: Element, init: Partial<PointerEventInit> = {}) =>
+    fireEvent.pointerMove(element, {
+      pointerId: init.pointerId ?? 1,
+      clientX: init.clientX ?? 0,
+      clientY: init.clientY ?? 0,
+      pointerType: init.pointerType ?? 'mouse',
+      ...init
+    })
+
+  const pointerUp = (element: Element, init: Partial<PointerEventInit> = {}) =>
+    fireEvent.pointerUp(element, {
+      pointerId: init.pointerId ?? 1,
+      button: init.button ?? 0,
+      clientX: init.clientX ?? 0,
+      clientY: init.clientY ?? 0,
+      pointerType: init.pointerType ?? 'mouse',
+      ...init
+    })
+
+  type SelectOptions = Partial<PointerEventInit> & { release?: boolean }
+
+  const selectItemByName = async (
+    canvas: HTMLElement,
+    name: string | RegExp,
+    init: SelectOptions = {}
+  ): Promise<HTMLElement> => {
+    const target = within(canvas).getByRole('group', { name })
+    const style = target.getAttribute('style') ?? ''
+    const extractPercent = (property: string): number => {
+      const match = new RegExp(`${property}:\\s*([0-9.]+)%`).exec(style)
+      return match ? parseFloat(match[1]) / 100 : 0
+    }
+    const left = extractPercent('left')
+    const top = extractPercent('top')
+    const width = extractPercent('width')
+    const height = extractPercent('height')
+    const rect = canvas.getBoundingClientRect()
+    const clientX = (init.clientX ?? rect.width * (left + width / 2)) + rect.left
+    const clientY = (init.clientY ?? rect.height * (top + height / 2)) + rect.top
+    await act(async () => {
+      pointerDown(canvas, {
+        pointerId: init.pointerId,
+        clientX,
+        clientY,
+        pointerType: init.pointerType
+      })
+    })
+    if (init.release !== false) {
+      await act(async () => {
+        pointerUp(canvas, {
+          pointerId: init.pointerId,
+          clientX,
+          clientY,
+          pointerType: init.pointerType
+        })
+      })
+    }
+    await waitFor(() => {
+      const selected = within(canvas).getByRole('group', { name })
+      expect(selected.className).toMatch(/ring-(?!0)/)
+    })
+    return within(canvas).getByRole('group', { name })
+  }
+
+  const findInteractiveCanvas = (canvases: HTMLElement[]): HTMLElement => {
+    const reversed = [...canvases].reverse()
+    const withVideo = reversed.find((element) =>
+      within(element).queryByLabelText('Source video preview')
+    )
+    if (withVideo) {
+      return withVideo
+    }
+    const withItem = reversed.find((element) =>
+      within(element).queryByRole('group', { name: /primary/i })
+    )
+    return withItem ?? canvases[canvases.length - 1]
+  }
+
   it('selects and moves an item on the canvas', async () => {
     const onTransform = vi.fn()
-    const onSelectionChange = vi.fn<(selection: Selection) => void>()
     render(
       <LayoutCanvas
         layout={baseLayout}
-        selectedItemId={null}
-        onSelectionChange={onSelectionChange}
+        selectedItemId="video-1"
+        onSelectionChange={vi.fn()}
         onTransform={onTransform}
         onRequestBringForward={vi.fn()}
         onRequestSendBackward={vi.fn()}
@@ -216,12 +334,14 @@ describe('Layout editor interactions', () => {
     )
 
     const canvas = screen.getByRole('presentation')
-    const item = screen.getByRole('group', { name: /primary/i })
 
-    fireEvent.pointerDown(item, { clientX: 20, clientY: 20, pointerId: 1 })
-    expect(onSelectionChange).toHaveBeenCalledWith('video-1')
+    await act(async () => {
+      pointerDown(canvas, { clientX: 60, clientY: 80, pointerId: 1 })
+    })
 
-    fireEvent.pointerMove(canvas, { clientX: 60, clientY: 120, pointerId: 1 })
+    await act(async () => {
+      pointerMove(canvas, { clientX: 90, clientY: 140, pointerId: 1 })
+    })
     await waitFor(() => {
       expect(onTransform).toHaveBeenCalledWith(
         [
@@ -235,7 +355,9 @@ describe('Layout editor interactions', () => {
       )
     })
 
-    fireEvent.pointerUp(canvas, { clientX: 60, clientY: 120, pointerId: 1 })
+    await act(async () => {
+      pointerUp(canvas, { clientX: 90, clientY: 140, pointerId: 1 })
+    })
     await waitFor(() => {
       expect(onTransform).toHaveBeenCalledWith(
         expect.arrayContaining([
@@ -248,41 +370,10 @@ describe('Layout editor interactions', () => {
   })
 
   it('mirrors selection across both previews', async () => {
-    const clip = {
-      id: 'clip-1',
-      title: 'Demo clip',
-      channel: 'Channel',
-      views: null,
-      createdAt: new Date().toISOString(),
-      durationSec: 120,
-      sourceDurationSeconds: 180,
-      thumbnail: null,
-      playbackUrl: 'playback.mp4',
-      previewUrl: 'preview.mp4',
-      description: '',
-      sourceUrl: 'source.mp4',
-      sourceTitle: '',
-      sourcePublishedAt: null,
-      videoId: 'video-1',
-      videoTitle: 'Video',
-      rating: null,
-      quote: null,
-      reason: null,
-      timestampUrl: null,
-      timestampSeconds: null,
-      accountId: null,
-      startSeconds: 0,
-      endSeconds: 60,
-      originalStartSeconds: 0,
-      originalEndSeconds: 60,
-      hasAdjustments: false,
-      layoutId: null
-    }
-
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
-        clip={clip}
+        clip={{ ...sampleClip, id: 'clip-mirror' }}
         layoutCollection={null}
         isCollectionLoading={false}
         selectedLayout={baseLayout}
@@ -310,12 +401,12 @@ describe('Layout editor interactions', () => {
 
     const sourceCanvas = await screen.findByLabelText('Source preview canvas')
     const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
-    const layoutCanvas = layoutCanvases[layoutCanvases.length - 1]
+    const layoutCanvas = findInteractiveCanvas(layoutCanvases)
     if (!layoutCanvas) {
       throw new Error('Layout preview canvas not found')
     }
-    const sourceItem = within(sourceCanvas).getByRole('group', { name: /Primary/i })
-    fireEvent.pointerDown(sourceItem, { pointerId: 1, clientX: 20, clientY: 20 })
+    await within(sourceCanvas).findByLabelText('Source video preview')
+    await selectItemByName(sourceCanvas, /Primary/i, { pointerId: 1 })
 
     await waitFor(() => {
       expect(within(sourceCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
@@ -324,9 +415,13 @@ describe('Layout editor interactions', () => {
 
     const layoutItem = within(layoutCanvas).getByRole('group', { name: /Primary/i })
     const resizeHandle = within(layoutItem).getByLabelText('Resize south-east')
-    fireEvent.pointerDown(resizeHandle, { pointerId: 2, clientX: 120, clientY: 220 })
-    fireEvent.pointerMove(layoutCanvas, { pointerId: 2, clientX: 150, clientY: 250 })
-    fireEvent.pointerUp(layoutCanvas, { pointerId: 2, clientX: 150, clientY: 250 })
+    await act(async () => {
+      pointerDown(resizeHandle, { pointerId: 2, clientX: 120, clientY: 220 })
+      pointerMove(layoutCanvas, { pointerId: 2, clientX: 150, clientY: 250 })
+    })
+    await act(async () => {
+      pointerUp(layoutCanvas, { pointerId: 2, clientX: 150, clientY: 250 })
+    })
 
     await waitFor(() => {
       expect(within(layoutCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
@@ -338,7 +433,7 @@ describe('Layout editor interactions', () => {
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
-        clip={null}
+        clip={sampleClip}
         layoutCollection={null}
         isCollectionLoading={false}
         selectedLayout={baseLayout}
@@ -365,22 +460,22 @@ describe('Layout editor interactions', () => {
     )
 
     const sourceCanvasElements = await screen.findAllByLabelText('Source preview canvas')
-    const sourceCanvas = sourceCanvasElements[sourceCanvasElements.length - 1]
+    const sourceCanvas = findInteractiveCanvas(sourceCanvasElements)
     const layoutCanvasElements = await screen.findAllByLabelText('Layout preview canvas')
-    const layoutCanvas = layoutCanvasElements[layoutCanvasElements.length - 1]
-    const sourceItem = within(sourceCanvas).getByRole('group', { name: /Primary/i })
-
-    fireEvent.pointerDown(sourceItem, { pointerId: 11, clientX: 32, clientY: 48 })
+    const layoutCanvas = findInteractiveCanvas(layoutCanvasElements)
+    await selectItemByName(sourceCanvas, /Primary/i, { pointerId: 11 })
 
     await waitFor(() => {
       expect(within(sourceCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
       expect(within(layoutCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
     })
 
-    fireEvent.pointerUp(sourceCanvas, { pointerId: 11, clientX: 32, clientY: 48 })
-
-    fireEvent.pointerDown(sourceCanvas, { pointerId: 12, clientX: 4, clientY: 4 })
-    fireEvent.pointerUp(sourceCanvas, { pointerId: 12, clientX: 4, clientY: 4 })
+    await act(async () => {
+      pointerDown(sourceCanvas, { pointerId: 12, clientX: 4, clientY: 4 })
+    })
+    await act(async () => {
+      pointerUp(sourceCanvas, { pointerId: 12, clientX: 4, clientY: 4 })
+    })
 
     await waitFor(() => {
       expect(within(sourceCanvas).getByRole('group', { name: /Primary/i }).className).not.toContain('ring-2')
@@ -392,7 +487,7 @@ describe('Layout editor interactions', () => {
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
-        clip={null}
+        clip={sampleClip}
         layoutCollection={null}
         isCollectionLoading={false}
         selectedLayout={baseLayout}
@@ -466,7 +561,7 @@ describe('Layout editor interactions', () => {
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
-        clip={null}
+        clip={sampleClip}
         layoutCollection={null}
         isCollectionLoading={false}
         selectedLayout={baseLayout}
@@ -495,7 +590,7 @@ describe('Layout editor interactions', () => {
     const sourceCanvases = await screen.findAllByLabelText('Source preview canvas')
     const sourceCanvas = sourceCanvases[sourceCanvases.length - 1]
     const sourceItemInitial = within(sourceCanvas).getByRole('group', { name: /Primary/i })
-    fireEvent.pointerDown(sourceItemInitial, { pointerId: 7, clientX: 24, clientY: 32 })
+    await selectItemByName(sourceCanvas, /Primary/i, { pointerId: 7 })
 
     await waitFor(() => {
       expect(within(sourceCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
@@ -503,9 +598,13 @@ describe('Layout editor interactions', () => {
 
     const sourceItem = within(sourceCanvas).getByRole('group', { name: /Primary/i })
     const handle = within(sourceItem).getByLabelText('Resize south-east')
-    fireEvent.pointerDown(handle, { pointerId: 8, clientX: 120, clientY: 260 })
-    fireEvent.pointerMove(sourceCanvas, { pointerId: 8, clientX: 150, clientY: 300 })
-    fireEvent.pointerUp(sourceCanvas, { pointerId: 8, clientX: 150, clientY: 300 })
+    await act(async () => {
+      pointerDown(handle, { pointerId: 8, clientX: 120, clientY: 260 })
+      pointerMove(sourceCanvas, { pointerId: 8, clientX: 150, clientY: 300 })
+    })
+    await act(async () => {
+      pointerUp(sourceCanvas, { pointerId: 8, clientX: 150, clientY: 300 })
+    })
 
     await waitFor(() => {
       expect(onLayoutChange).toHaveBeenCalled()
@@ -564,11 +663,12 @@ describe('Layout editor interactions', () => {
     )
 
     const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
-    const layoutCanvas = layoutCanvases[layoutCanvases.length - 1]
-    const videoItem = within(layoutCanvas).getByRole('group', { name: /primary/i })
-    fireEvent.pointerDown(videoItem, { pointerId: 1, clientX: 10, clientY: 10 })
+    const layoutCanvas = findInteractiveCanvas(layoutCanvases)
+    await selectItemByName(layoutCanvas, /primary/i, { pointerId: 1 })
 
-    const unlockButtons = within(layoutCanvas).getAllByRole('button', { name: 'Unlock frame aspect' })
+    const unlockButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Unlock frame aspect'
+    })
     const unlockButton = unlockButtons[unlockButtons.length - 1]
 
     await act(async () => {
@@ -581,7 +681,7 @@ describe('Layout editor interactions', () => {
       expect(updatedVideo?.lockAspectRatio).toBe(false)
     })
 
-    const lockButtons = within(layoutCanvas).getAllByRole('button', { name: 'Lock frame aspect' })
+    const lockButtons = await within(layoutCanvas).findAllByRole('button', { name: 'Lock frame aspect' })
     const lockButton = lockButtons[lockButtons.length - 1]
 
     await act(async () => {
@@ -630,11 +730,15 @@ describe('Layout editor interactions', () => {
     )
 
     const sourceCanvases = await screen.findAllByLabelText('Source preview canvas')
-    const sourceCanvas = sourceCanvases[sourceCanvases.length - 1]
-    const videoItem = within(sourceCanvas).getByRole('group', { name: /primary/i })
-    fireEvent.pointerDown(videoItem, { pointerId: 4, clientX: 16, clientY: 16 })
+    const sourceCanvas = findInteractiveCanvas(sourceCanvases)
+    if (!sourceCanvas) {
+      throw new Error('Source preview canvas not found')
+    }
+    await selectItemByName(sourceCanvas, /primary/i, { pointerId: 4 })
 
-    const unlockButtons = within(sourceCanvas).getAllByRole('button', { name: 'Unlock crop aspect' })
+    const unlockButtons = await within(sourceCanvas).findAllByRole('button', {
+      name: 'Unlock crop aspect'
+    })
     const unlockButton = unlockButtons[unlockButtons.length - 1]
 
     await act(async () => {
@@ -647,7 +751,9 @@ describe('Layout editor interactions', () => {
       expect(updatedVideo?.lockAspectRatio).not.toBe(false)
     })
 
-    const lockButtons = within(sourceCanvas).getAllByRole('button', { name: 'Lock crop aspect' })
+    const lockButtons = await within(sourceCanvas).findAllByRole('button', {
+      name: 'Lock crop aspect'
+    })
     const lockButton = lockButtons[lockButtons.length - 1]
 
     await act(async () => {
@@ -696,11 +802,16 @@ describe('Layout editor interactions', () => {
     )
 
     const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
-    const layoutCanvas = layoutCanvases[layoutCanvases.length - 1]
-    const videoItem = within(layoutCanvas).getByRole('group', { name: /primary/i })
-    fireEvent.pointerDown(videoItem, { pointerId: 22, clientX: 12, clientY: 12 })
+    const layoutCanvas = findInteractiveCanvas(layoutCanvases)
+    const videoItem = await selectItemByName(layoutCanvas, /primary/i, {
+      pointerId: 22,
+      clientX: 60,
+      clientY: 80
+    })
 
-    const unlockButtons = within(layoutCanvas).getAllByRole('button', { name: 'Unlock frame aspect' })
+    const unlockButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Unlock frame aspect'
+    })
     const unlockButton = unlockButtons[unlockButtons.length - 1]
 
     await act(async () => {
@@ -713,9 +824,13 @@ describe('Layout editor interactions', () => {
     })
 
     const eastHandle = within(videoItem).getByLabelText('Resize east')
-    fireEvent.pointerDown(eastHandle, { pointerId: 23, clientX: 220, clientY: 140 })
-    fireEvent.pointerMove(layoutCanvas, { pointerId: 23, clientX: 160, clientY: 140 })
-    fireEvent.pointerUp(layoutCanvas, { pointerId: 23, clientX: 160, clientY: 140 })
+    await act(async () => {
+      pointerDown(eastHandle, { pointerId: 23, clientX: 220, clientY: 140 })
+      pointerMove(layoutCanvas, { pointerId: 23, clientX: 160, clientY: 140 })
+    })
+    await act(async () => {
+      pointerUp(layoutCanvas, { pointerId: 23, clientX: 160, clientY: 140 })
+    })
 
     await waitFor(() => {
       expect(onLayoutChange).toHaveBeenCalled()
@@ -733,7 +848,9 @@ describe('Layout editor interactions', () => {
       expect(distortedRatio).toBeLessThan(16 / 9)
     }
 
-    const snapButtons = within(layoutCanvas).getAllByRole('button', { name: 'Snap frame to video' })
+    const snapButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Snap frame to video'
+    })
     const snapButton = snapButtons[snapButtons.length - 1]
 
     await act(async () => {
@@ -787,10 +904,10 @@ describe('Layout editor interactions', () => {
     )
 
     const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
-    const layoutCanvas = layoutCanvases[layoutCanvases.length - 1]
+    const layoutCanvas = findInteractiveCanvas(layoutCanvases)
     const videoItem = within(layoutCanvas).getByRole('group', { name: /primary/i })
 
-    fireEvent.pointerDown(videoItem, { pointerId: 51, clientX: 20, clientY: 24 })
+    await selectItemByName(layoutCanvas, /primary/i, { pointerId: 51 })
 
     await waitFor(() => {
       expect(within(layoutCanvas).getByRole('group', { name: /primary/i }).className).toContain('ring-2')
@@ -798,9 +915,6 @@ describe('Layout editor interactions', () => {
 
     const toggleButtons = within(layoutCanvas).getAllByRole('button', { name: /frame aspect/i })
     const toggleButton = toggleButtons[toggleButtons.length - 1]
-
-    fireEvent.pointerDown(toggleButton, { pointerId: 52, clientX: 32, clientY: 8 })
-    fireEvent.pointerUp(toggleButton, { pointerId: 52, clientX: 32, clientY: 8 })
 
     await act(async () => {
       fireEvent.click(toggleButton)
@@ -811,9 +925,6 @@ describe('Layout editor interactions', () => {
     })
 
     const bringForwardButton = within(layoutCanvas).getByRole('button', { name: 'Bring forward' })
-    fireEvent.pointerDown(bringForwardButton, { pointerId: 53, clientX: 48, clientY: 8 })
-    fireEvent.pointerUp(bringForwardButton, { pointerId: 53, clientX: 48, clientY: 8 })
-
     await act(async () => {
       fireEvent.click(bringForwardButton)
     })
@@ -856,10 +967,10 @@ describe('Layout editor interactions', () => {
     const sourceCanvases = await screen.findAllByLabelText('Source preview canvas')
     const sourceCanvas = sourceCanvases[sourceCanvases.length - 1]
     const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
-    const layoutCanvas = layoutCanvases[layoutCanvases.length - 1]
+    const layoutCanvas = findInteractiveCanvas(layoutCanvases)
 
     const sourceVideo = within(sourceCanvas).getByRole('group', { name: /primary/i })
-    fireEvent.pointerDown(sourceVideo, { pointerId: 61, clientX: 48, clientY: 48 })
+    await selectItemByName(sourceCanvas, /primary/i, { pointerId: 61 })
 
     await waitFor(() => {
       const layoutVideo = within(layoutCanvas).getByRole('group', { name: /primary/i })
@@ -868,8 +979,12 @@ describe('Layout editor interactions', () => {
     })
 
     const eastHandle = within(layoutCanvas).getByLabelText('Resize east')
-    fireEvent.pointerDown(eastHandle, { pointerId: 62, clientX: 196, clientY: 112 })
-    fireEvent.pointerUp(layoutCanvas, { pointerId: 62, clientX: 196, clientY: 112 })
+    await act(async () => {
+      pointerDown(eastHandle, { pointerId: 62, clientX: 196, clientY: 112 })
+    })
+    await act(async () => {
+      pointerUp(layoutCanvas, { pointerId: 62, clientX: 196, clientY: 112 })
+    })
 
     await waitFor(() => {
       const layoutVideo = within(layoutCanvas).getByRole('group', { name: /primary/i })
@@ -914,12 +1029,19 @@ describe('Layout editor interactions', () => {
     render(<LayoutHarness />)
 
     const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
-    const layoutCanvas = layoutCanvases[layoutCanvases.length - 1]
+    const layoutCanvas = findInteractiveCanvas(layoutCanvases)
     const videoItem = within(layoutCanvas).getByRole('group', { name: /primary/i })
 
-    fireEvent.pointerDown(videoItem, { pointerId: 101, clientX: 24, clientY: 36 })
-    fireEvent.pointerMove(layoutCanvas, { pointerId: 101, clientX: 84, clientY: 136 })
-    fireEvent.pointerUp(layoutCanvas, { pointerId: 101, clientX: 84, clientY: 136 })
+    await selectItemByName(layoutCanvas, /primary/i, {
+      pointerId: 101,
+      release: false
+    })
+    await act(async () => {
+      pointerMove(layoutCanvas, { pointerId: 101, clientX: 84, clientY: 136 })
+    })
+    await act(async () => {
+      pointerUp(layoutCanvas, { pointerId: 101, clientX: 84, clientY: 136 })
+    })
 
     await waitFor(() => {
       const layoutVideo = within(layoutCanvas).getByRole('group', { name: /primary/i })
@@ -1221,22 +1343,17 @@ describe('Layout editor interactions', () => {
     const originalLayoutStyle = layoutItem.getAttribute('style') ?? ''
     const originalSourceStyle = sourceItem.getAttribute('style') ?? ''
 
-    await act(async () => {
-      layoutItem.dispatchEvent(
-        new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: 20, clientY: 20, buttons: 1 })
-      )
+    const selectedItem = await selectItemByName(layoutCanvas, /primary/i, {
+      pointerId: 1,
+      release: false
     })
 
     await act(async () => {
-      layoutCanvas.dispatchEvent(
-        new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientX: 70, clientY: 120, buttons: 1 })
-      )
+      pointerMove(layoutCanvas, { pointerId: 1, clientX: 70, clientY: 120 })
     })
 
     await act(async () => {
-      layoutCanvas.dispatchEvent(
-        new PointerEvent('pointerup', { bubbles: true, pointerId: 1, clientX: 70, clientY: 120 })
-      )
+      pointerUp(layoutCanvas, { pointerId: 1, clientX: 70, clientY: 120 })
     })
 
     await waitFor(() => {
