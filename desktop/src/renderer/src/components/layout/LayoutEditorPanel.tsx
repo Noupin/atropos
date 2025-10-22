@@ -460,7 +460,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   renderErrorMessage
 }) => {
   const [draftLayout, setDraftLayout] = useState<LayoutDefinition | null>(null)
-  const [selectedItemIds, setSelectedItemIds] = useLayoutSelection()
+  const [selectedItemId, setSelectedItemId] = useLayoutSelection()
   const [history, setHistory] = useState<LayoutDefinition[]>([])
   const [future, setFuture] = useState<LayoutDefinition[]>([])
   const [clipboard, setClipboard] = useState<LayoutItem[] | null>(null)
@@ -534,7 +534,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   useEffect(() => {
     if (!selectedLayout) {
       setDraftLayout(null)
-      setSelectedItemIds([])
+      setSelectedItemId(null)
       setHistory([])
       setFuture([])
       lastLoadedLayoutIdRef.current = null
@@ -549,18 +549,18 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     setDraftLayout(cloneLayout(selectedLayout))
 
     if (!skipSelectionResetRef.current) {
-      setSelectedItemIds([])
+      setSelectedItemId(null)
       setHistory([])
       setFuture([])
     } else if (isDifferentLayout) {
-      setSelectedItemIds([])
+      setSelectedItemId(null)
       setHistory([])
       setFuture([])
     }
 
     skipSelectionResetRef.current = false
     lastLoadedLayoutIdRef.current = layoutId
-  }, [selectedLayout, setSelectedItemIds])
+  }, [selectedLayout, setSelectedItemId])
 
   useEffect(() => {
     setIsPlaying(false)
@@ -629,12 +629,12 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
 
   useEffect(() => {
     if (!draftLayout) {
-      setSelectedItemIds([])
+      setSelectedItemId(null)
       return
     }
     const validIds = new Set(draftLayout.items.map((item) => item.id))
-    setSelectedItemIds((current) => current.filter((id) => validIds.has(id)))
-  }, [draftLayout, setSelectedItemIds])
+    setSelectedItemId((current) => (current && validIds.has(current) ? current : null))
+  }, [draftLayout, setSelectedItemId])
 
   const updateLayout = useCallback(
     (updater: (layout: LayoutDefinition) => LayoutDefinition, options?: UpdateOptions) => {
@@ -729,15 +729,14 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
 
   const handleToggleAspectLock = useCallback(
     (target: 'frame' | 'crop') => {
-      if (!selectedItemIds.length) {
+      if (!selectedItemId) {
         return
       }
-      const selected = new Set(selectedItemIds)
       updateLayout(
         (layout) => ({
           ...layout,
           items: layout.items.map((item) => {
-            if (item.kind !== 'video' || !selected.has(item.id)) {
+            if (item.kind !== 'video' || item.id !== selectedItemId) {
               return item
             }
             if (target === 'crop') {
@@ -773,21 +772,20 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         { trackHistory: true }
       )
     },
-    [selectedItemIds, updateLayout]
+    [selectedItemId, updateLayout]
   )
 
   const handleSnapAspectRatio = useCallback(
     (target: 'frame' | 'crop') => {
-      if (!selectedItemIds.length) {
+      if (!selectedItemId) {
         return
       }
-      const selected = new Set(selectedItemIds)
       const baseAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
       updateLayout(
         (layout) => ({
           ...layout,
           items: layout.items.map((item) => {
-            if (item.kind !== 'video' || !selected.has(item.id)) {
+            if (item.kind !== 'video' || item.id !== selectedItemId) {
               return item
             }
             if (target === 'crop') {
@@ -823,7 +821,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         { trackHistory: true }
       )
     },
-    [layoutAspectRatio, selectedItemIds, sourceAspectRatio, updateLayout]
+    [layoutAspectRatio, selectedItemId, sourceAspectRatio, updateLayout]
   )
 
   const handleAddItem = useCallback(
@@ -883,25 +881,25 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         }),
         { trackHistory: true }
       )
-      setSelectedItemIds([newItem.id])
+      setSelectedItemId(newItem.id)
       setIsAddMenuOpen(false)
     },
-    [draftLayout, updateLayout]
+    [draftLayout, setSelectedItemId, updateLayout]
   )
 
   const handleRemoveSelected = useCallback(() => {
-    if (!draftLayout || selectedItemIds.length === 0) {
+    if (!draftLayout || !selectedItemId) {
       return
     }
     updateLayout(
       (layout) => ({
         ...layout,
-        items: layout.items.filter((item) => !selectedItemIds.includes(item.id))
+        items: layout.items.filter((item) => item.id !== selectedItemId)
       }),
       { trackHistory: true }
     )
-    setSelectedItemIds([])
-  }, [draftLayout, selectedItemIds, updateLayout])
+    setSelectedItemId(null)
+  }, [draftLayout, selectedItemId, setSelectedItemId, updateLayout])
 
   const handleChangeItemFrameValue = useCallback(
     (itemId: string, field: keyof LayoutFrame, value: number) => {
@@ -1065,13 +1063,13 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   )
 
   const bringSelectionForward = useCallback(() => {
-    if (!draftLayout || selectedItemIds.length === 0) {
+    if (!draftLayout || !selectedItemId) {
       return
     }
     updateLayout(
       (layout) => {
         const updatedItems = layout.items.map((item) => {
-          if (!selectedItemIds.includes(item.id)) {
+          if (item.id !== selectedItemId) {
             return item
           }
           const z = 'zIndex' in item && typeof item.zIndex === 'number' ? item.zIndex : 0
@@ -1084,16 +1082,16 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
       },
       { trackHistory: true }
     )
-  }, [draftLayout, selectedItemIds, updateLayout])
+  }, [draftLayout, selectedItemId, updateLayout])
 
   const sendSelectionBackward = useCallback(() => {
-    if (!draftLayout || selectedItemIds.length === 0) {
+    if (!draftLayout || !selectedItemId) {
       return
     }
     updateLayout(
       (layout) => {
         const updatedItems = layout.items.map((item) => {
-          if (!selectedItemIds.includes(item.id)) {
+          if (item.id !== selectedItemId) {
             return item
           }
           const z = 'zIndex' in item && typeof item.zIndex === 'number' ? item.zIndex : 0
@@ -1106,51 +1104,52 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
       },
       { trackHistory: true }
     )
-  }, [draftLayout, selectedItemIds, updateLayout])
+  }, [draftLayout, selectedItemId, updateLayout])
 
   const duplicateSelection = useCallback(() => {
-    if (!draftLayout || selectedItemIds.length === 0) {
+    if (!draftLayout || !selectedItemId) {
       return
     }
-    const duplicates: LayoutItem[] = draftLayout.items
-      .filter((item) => selectedItemIds.includes(item.id))
-      .map((item) => {
-        const cloned = cloneLayoutItem(item)
-        const shiftedFrame = clampFrame({
-          x: clamp(cloned.frame.x + 0.03),
-          y: clamp(cloned.frame.y + 0.03),
-          width: cloned.frame.width,
-          height: cloned.frame.height
-        })
-        return {
-          ...cloned,
-          id: createItemId(item.kind),
-          frame: shiftedFrame,
-          ...(cloned.kind === 'video'
-            ? { crop: clampCropFrame((cloned as LayoutVideoItem).crop ?? createDefaultCrop()) }
-            : {}),
-          zIndex: draftLayout.items.length + 1
-        }
-      })
+    const original = draftLayout.items.find((item) => item.id === selectedItemId)
+    if (!original) {
+      return
+    }
+    const cloned = cloneLayoutItem(original)
+    const shiftedFrame = clampFrame({
+      x: clamp(cloned.frame.x + 0.03),
+      y: clamp(cloned.frame.y + 0.03),
+      width: cloned.frame.width,
+      height: cloned.frame.height
+    })
+    const duplicate: LayoutItem = {
+      ...cloned,
+      id: createItemId(original.kind),
+      frame: shiftedFrame,
+      ...(cloned.kind === 'video'
+        ? { crop: clampCropFrame((cloned as LayoutVideoItem).crop ?? createDefaultCrop()) }
+        : {}),
+      zIndex: draftLayout.items.length + 1
+    }
     updateLayout(
       (layout) => ({
         ...layout,
-        items: [...layout.items, ...duplicates]
+        items: [...layout.items, duplicate]
       }),
       { trackHistory: true }
     )
-    setSelectedItemIds(duplicates.map((item) => item.id))
-  }, [draftLayout, selectedItemIds, updateLayout])
+    setSelectedItemId(duplicate.id)
+  }, [draftLayout, selectedItemId, setSelectedItemId, updateLayout])
 
   const handleCopySelection = useCallback(() => {
-    if (!draftLayout || selectedItemIds.length === 0) {
+    if (!draftLayout || !selectedItemId) {
       return
     }
-    const items = draftLayout.items
-      .filter((item) => selectedItemIds.includes(item.id))
-      .map((item) => cloneLayoutItem(item))
-    setClipboard(items)
-  }, [draftLayout, selectedItemIds])
+    const item = draftLayout.items.find((candidate) => candidate.id === selectedItemId)
+    if (!item) {
+      return
+    }
+    setClipboard([cloneLayoutItem(item)])
+  }, [draftLayout, selectedItemId])
 
   const handlePaste = useCallback(() => {
     if (!clipboard || !draftLayout) {
@@ -1174,15 +1173,16 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         zIndex: draftLayout.items.length + 1
       }
     })
-    updateLayout(
-      (layout) => ({
-        ...layout,
-        items: [...layout.items, ...clones]
-      }),
-      { trackHistory: true }
-    )
-    setSelectedItemIds(clones.map((item) => item.id))
-  }, [clipboard, draftLayout, updateLayout])
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: [...layout.items, ...clones]
+        }),
+        { trackHistory: true }
+      )
+    const lastClone = clones[clones.length - 1]
+    setSelectedItemId(lastClone ? lastClone.id : null)
+  }, [clipboard, draftLayout, setSelectedItemId, updateLayout])
 
   const undo = useCallback(() => {
     setHistory((current) => {
@@ -1218,7 +1218,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
       const isMac = navigator.platform.toLowerCase().includes('mac')
       const primaryMod = isMac ? event.metaKey : event.ctrlKey
       if (event.key === 'Escape') {
-        setSelectedItemIds([])
+        setSelectedItemId(null)
         return
       }
       if (primaryMod && event.key.toLowerCase() === 'z') {
@@ -1252,6 +1252,9 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
       }
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
         event.preventDefault()
+        if (!selectedItemId) {
+          return
+        }
         const delta = event.shiftKey ? 0.02 : 0.005
         const dx = event.key === 'ArrowRight' ? delta : event.key === 'ArrowLeft' ? -delta : 0
         const dy = event.key === 'ArrowDown' ? delta : event.key === 'ArrowUp' ? -delta : 0
@@ -1262,7 +1265,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           (layout) => ({
             ...layout,
             items: layout.items.map((item) =>
-              selectedItemIds.includes(item.id)
+              item.id === selectedItemId
                 ? {
                     ...item,
                     frame: clampFrame({
@@ -1283,7 +1286,18 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [draftLayout, duplicateSelection, handleCopySelection, handlePaste, handleRemoveSelected, redo, selectedItemIds, undo, updateLayout])
+  }, [
+    draftLayout,
+    duplicateSelection,
+    handleCopySelection,
+    handlePaste,
+    handleRemoveSelected,
+    redo,
+    selectedItemId,
+    setSelectedItemId,
+    undo,
+    updateLayout
+  ])
 
   const handleSave = useCallback(
     async (event?: FormEvent) => {
@@ -1328,14 +1342,14 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   }, [draftLayout, onRenderLayout])
 
   const bringSelectionIntoView = useCallback(() => {
-    if (!draftLayout || selectedItemIds.length === 0) {
+    if (!draftLayout || !selectedItemId) {
       return
     }
     updateLayout(
       (layout) => ({
         ...layout,
         items: layout.items.map((item) => {
-          if (!selectedItemIds.includes(item.id)) {
+          if (item.id !== selectedItemId) {
             return item
           }
           if (item.kind === 'video') {
@@ -1353,47 +1367,44 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
       }),
       { trackHistory: true }
     )
-  }, [draftLayout, selectedItemIds, updateLayout])
+  }, [draftLayout, selectedItemId, updateLayout])
 
-  const selectedItems = useMemo(
-    () => draftLayout?.items.filter((item) => selectedItemIds.includes(item.id)) ?? [],
-    [draftLayout, selectedItemIds]
-  )
-
-  const selectedItem = selectedItems.length === 1 ? selectedItems[0] : null
+  const selectedItem = useMemo(() => {
+    if (!draftLayout || !selectedItemId) {
+      return null
+    }
+    return draftLayout.items.find((item) => item.id === selectedItemId) ?? null
+  }, [draftLayout, selectedItemId])
 
   const selectionOffCanvas = useMemo(() => {
-    if (selectedItems.length === 0) {
+    if (!selectedItem) {
       return false
     }
-    return selectedItems.some((item) => {
-      const frame = item.frame
-      if (frame.x < 0 || frame.y < 0 || frame.x + frame.width > 1 || frame.y + frame.height > 1) {
+    const frame = selectedItem.frame
+    if (frame.x < 0 || frame.y < 0 || frame.x + frame.width > 1 || frame.y + frame.height > 1) {
+      return true
+    }
+    if (selectedItem.kind === 'video') {
+      const crop = normaliseVideoCrop((selectedItem as LayoutVideoItem).crop)
+      if (crop.x < 0 || crop.y < 0 || crop.x + crop.width > 1 || crop.y + crop.height > 1) {
         return true
       }
-      if (item.kind === 'video') {
-        const crop = normaliseVideoCrop((item as LayoutVideoItem).crop)
-        if (crop.x < 0 || crop.y < 0 || crop.x + crop.width > 1 || crop.y + crop.height > 1) {
-          return true
-        }
-      }
-      return false
-    })
-  }, [selectedItems])
+    }
+    return false
+  }, [selectedItem])
 
   const selectionLabel = useMemo(() => {
-    if (selectedItems.length === 0) {
+    if (!selectedItem) {
       return 'Canvas settings'
     }
-    if (selectedItems.length === 1) {
-      return selectedItem?.kind === 'video'
-        ? 'Video window'
-        : selectedItem?.kind === 'text'
-        ? 'Text overlay'
-        : 'Background layer'
+    if (selectedItem.kind === 'video') {
+      return 'Video window'
     }
-    return `${selectedItems.length} items selected`
-  }, [selectedItems, selectedItem])
+    if (selectedItem.kind === 'text') {
+      return 'Text overlay'
+    }
+    return 'Background layer'
+  }, [selectedItem])
 
   const layoutSections = useMemo(() => {
     if (!layoutCollection) {
@@ -1714,7 +1725,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
             onClick={() => {
               const fresh = createDefaultLayout()
               setDraftLayout(fresh)
-              setSelectedItemIds([])
+              setSelectedItemId(null)
               onCreateBlankLayout()
               onLayoutChange(fresh)
             }}
@@ -1767,7 +1778,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
             type="button"
             className="marble-button marble-button--ghost px-3 py-2 text-sm"
             onClick={handleRemoveSelected}
-            disabled={selectedItemIds.length === 0}
+            disabled={!selectedItemId}
           >
             Remove selected
           </button>
@@ -1895,8 +1906,8 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           >
             <LayoutCanvas
               layout={draftLayout}
-              selectedItemIds={selectedItemIds}
-              onSelectionChange={setSelectedItemIds}
+              selectedItemId={selectedItemId}
+              onSelectionChange={setSelectedItemId}
               onTransform={handleTransform}
               onRequestBringForward={bringSelectionForward}
               onRequestSendBackward={sendSelectionBackward}
@@ -1948,8 +1959,8 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           >
             <LayoutCanvas
               layout={draftLayout}
-              selectedItemIds={selectedItemIds}
-              onSelectionChange={setSelectedItemIds}
+              selectedItemId={selectedItemId}
+              onSelectionChange={setSelectedItemId}
               onTransform={handleTransform}
               onRequestBringForward={bringSelectionForward}
               onRequestSendBackward={sendSelectionBackward}

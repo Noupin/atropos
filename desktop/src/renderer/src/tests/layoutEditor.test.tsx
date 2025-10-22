@@ -17,7 +17,7 @@ vi.mock('../services/preview/adjustedPreview', () => ({
   }))
 }))
 
-type Selection = Parameters<typeof LayoutCanvas>[0]['selectedItemIds']
+type Selection = Parameters<typeof LayoutCanvas>[0]['selectedItemId']
 
 describe('Layout editor interactions', () => {
   beforeAll(() => {
@@ -201,7 +201,7 @@ describe('Layout editor interactions', () => {
     render(
       <LayoutCanvas
         layout={baseLayout}
-        selectedItemIds={[]}
+        selectedItemId={null}
         onSelectionChange={onSelectionChange}
         onTransform={onTransform}
         onRequestBringForward={vi.fn()}
@@ -219,7 +219,7 @@ describe('Layout editor interactions', () => {
     const item = screen.getByRole('group', { name: /primary/i })
 
     fireEvent.pointerDown(item, { clientX: 20, clientY: 20, pointerId: 1 })
-    expect(onSelectionChange).toHaveBeenCalledWith(['video-1'])
+    expect(onSelectionChange).toHaveBeenCalledWith('video-1')
 
     fireEvent.pointerMove(canvas, { clientX: 60, clientY: 120, pointerId: 1 })
     await waitFor(() => {

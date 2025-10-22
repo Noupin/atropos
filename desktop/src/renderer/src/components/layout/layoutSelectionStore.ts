@@ -4,23 +4,8 @@ import type { LayoutCanvasSelection } from './LayoutCanvas'
 
 type Listener = () => void
 
-let selection: LayoutCanvasSelection = []
+let selection: LayoutCanvasSelection = null
 const listeners = new Set<Listener>()
-
-const arraysEqual = (a: LayoutCanvasSelection, b: LayoutCanvasSelection): boolean => {
-  if (a === b) {
-    return true
-  }
-  if (a.length !== b.length) {
-    return false
-  }
-  for (let index = 0; index < a.length; index += 1) {
-    if (a[index] !== b[index]) {
-      return false
-    }
-  }
-  return true
-}
 
 const getSnapshot = (): LayoutCanvasSelection => selection
 
@@ -31,17 +16,20 @@ const emit = (): void => {
 }
 
 const setInternalSelection = (next: LayoutCanvasSelection): void => {
-  if (arraysEqual(selection, next)) {
+  if (selection === next) {
     return
   }
-  selection = [...next]
+  selection = next
   emit()
 }
 
 const updateInternalSelection = (
   updater: LayoutCanvasSelection | ((current: LayoutCanvasSelection) => LayoutCanvasSelection)
 ): void => {
-  const next = typeof updater === 'function' ? (updater as (current: LayoutCanvasSelection) => LayoutCanvasSelection)(selection) : updater
+  const next =
+    typeof updater === 'function'
+      ? (updater as (current: LayoutCanvasSelection) => LayoutCanvasSelection)(selection)
+      : updater
   setInternalSelection(next)
 }
 
@@ -52,7 +40,14 @@ const subscribe = (listener: Listener): (() => void) => {
   }
 }
 
-export const useLayoutSelection = (): [LayoutCanvasSelection, (selection: LayoutCanvasSelection | ((current: LayoutCanvasSelection) => LayoutCanvasSelection)) => void] => {
+export const useLayoutSelection = (): [
+  LayoutCanvasSelection,
+  (
+    selection:
+      | LayoutCanvasSelection
+      | ((current: LayoutCanvasSelection) => LayoutCanvasSelection)
+  ) => void
+] => {
   const value = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
   const setSelection = useCallback(
     (
@@ -66,6 +61,6 @@ export const useLayoutSelection = (): [LayoutCanvasSelection, (selection: Layout
 }
 
 export const resetLayoutSelection = (): void => {
-  setInternalSelection([])
+  setInternalSelection(null)
 }
 

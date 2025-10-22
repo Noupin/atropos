@@ -14,7 +14,7 @@ import type {
   LayoutVideoItem
 } from '../../../../types/layouts'
 
-export type LayoutCanvasSelection = string[]
+export type LayoutCanvasSelection = string | null
 
 type ColorScheme = 'dark' | 'light'
 
@@ -52,7 +52,7 @@ type DragState = {
 
 type LayoutCanvasProps = {
   layout: LayoutDefinition | null
-  selectedItemIds: LayoutCanvasSelection
+  selectedItemId: LayoutCanvasSelection
   onSelectionChange: (selection: LayoutCanvasSelection) => void
   onTransform: (
     transforms: LayoutCanvasTransform[],
@@ -415,7 +415,7 @@ const useGuideFade = (guidesRef: MutableRefObject<Guide[]>, setGuides: (guides: 
 
 const LayoutCanvas: FC<LayoutCanvasProps> = ({
   layout,
-  selectedItemIds,
+  selectedItemId,
   onSelectionChange,
   onTransform,
   onRequestBringForward,
@@ -449,15 +449,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const [toolbarAnchorId, setToolbarAnchorId] = useState<string | null>(null)
 
   useGuideFade(guidesRef, setActiveGuides)
-
-  useEffect(() => {
-    if (selectedItemIds.length === 0) {
-      setToolbarAnchorId((current) => (current === null ? current : null))
-      return
-    }
-    const nextId = selectedItemIds[selectedItemIds.length - 1] ?? null
-    setToolbarAnchorId((current) => (current === nextId ? current : nextId))
-  }, [selectedItemIds])
 
   const getDisplayFrame = useCallback(
     (item: LayoutItem): LayoutFrame => {
@@ -585,26 +576,17 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         return
       }
       event.stopPropagation()
-      const maintainAspect = event.shiftKey
       const snapEnabled = event.altKey || event.metaKey
-      const selection = event.shiftKey
-        ? selectedItemIds.includes(item.id)
-          ? selectedItemIds.filter((id) => id !== item.id)
-          : [...selectedItemIds, item.id]
-        : [item.id]
-      onSelectionChange(selection)
-      setToolbarAnchorId(selection.length ? selection[selection.length - 1] ?? null : null)
+      onSelectionChange(item.id)
+      setToolbarAnchorId(item.id)
       if (!itemIsEditable(item)) {
         return
       }
       const originalFrames = new Map<string, LayoutFrame>()
-      const targetIds = selection.length ? selection : [item.id]
-      targetIds.forEach((id) => {
-        const match = layout?.items.find((candidate) => candidate.id === id)
-        if (match && itemIsEditable(match)) {
-          originalFrames.set(id, getDisplayFrame(match))
-        }
-      })
+      const targetItem = layout?.items.find((candidate) => candidate.id === item.id)
+      if (targetItem && itemIsEditable(targetItem)) {
+        originalFrames.set(item.id, getDisplayFrame(targetItem))
+      }
       if (originalFrames.size === 0) {
         return
       }
@@ -613,7 +595,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
-        maintainAspect,
+        maintainAspect: false,
         snapEnabled,
         originalFrames,
         target: transformTarget
@@ -621,14 +603,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       ;(event.target as HTMLElement).setPointerCapture(event.pointerId)
       event.preventDefault()
     },
-    [
-      getDisplayFrame,
-      itemIsEditable,
-      layout?.items,
-      onSelectionChange,
-      selectedItemIds,
-      setToolbarAnchorId
-    ]
+    [getDisplayFrame, itemIsEditable, layout?.items, onSelectionChange, setToolbarAnchorId, transformTarget]
   )
 
   const handleResizePointerDown = useCallback(
@@ -642,7 +617,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       }
       const maintainAspect = itemHasAspectLock(item, transformTarget) || event.shiftKey
       const snapEnabled = event.altKey || event.metaKey
-      onSelectionChange([item.id])
+      onSelectionChange(item.id)
       setToolbarAnchorId(item.id)
       const originalFrame = getDisplayFrame(item)
       let aspectRatioValue: number | undefined
@@ -786,58 +761,34 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     []
   )
 
-  const activeSelection = useMemo(
-    () =>
-      layout
-        ? layout.items.filter((item) => selectedItemIds.includes(item.id)).sort((a, b) => a.id.localeCompare(b.id))
-        : [],
-    [layout, selectedItemIds]
-  )
-
-  const primarySelectionId = useMemo(
-    () => (selectedItemIds.length ? selectedItemIds[selectedItemIds.length - 1] : null),
-    [selectedItemIds]
-  )
+  const activeSelection = useMemo(() => {
+    if (!layout || !selectedItemId) {
+      return null
+    }
+    return layout.items.find((item) => item.id === selectedItemId) ?? null
+  }, [layout, selectedItemId])
 
   useEffect(() => {
-    if (selectedItemIds.length === 0) {
+    if (!selectedItemId) {
       setToolbarAnchorId(null)
       return
     }
-    const nextAnchor = selectedItemIds[selectedItemIds.length - 1]
-    setToolbarAnchorId((current) => (current === nextAnchor ? current : nextAnchor))
-  }, [selectedItemIds])
-
-  const primarySelection = useMemo(() => {
-    if (!activeSelection.length) {
-      return null
-    }
-    if (!primarySelectionId) {
-      return activeSelection[0] ?? null
-    }
-    return activeSelection.find((item) => item.id === primarySelectionId) ?? activeSelection[0] ?? null
-  }, [activeSelection, primarySelectionId])
+    setToolbarAnchorId((current) => (current === selectedItemId ? current : selectedItemId))
+  }, [selectedItemId])
 
   const selectionBounds = useMemo(() => {
-    if (!activeSelection.length) {
+    if (!activeSelection) {
       return null
     }
-    const frames = activeSelection.map((item) => getDisplayFrame(item))
-    const minX = Math.min(...frames.map((frame) => frame.x))
-    const minY = Math.min(...frames.map((frame) => frame.y))
-    const maxX = Math.max(...frames.map((frame) => frame.x + frame.width))
-    const maxY = Math.max(...frames.map((frame) => frame.y + frame.height))
-    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+    const frame = getDisplayFrame(activeSelection)
+    return { x: frame.x, y: frame.y, width: frame.width, height: frame.height }
   }, [activeSelection, getDisplayFrame])
 
   const selectionLabel = useMemo(() => {
-    if (!activeSelection.length) {
+    if (!activeSelection) {
       return null
     }
-    if (activeSelection.length === 1) {
-      return getItemLabel(activeSelection[0])
-    }
-    return `${activeSelection.length} items`
+    return getItemLabel(activeSelection)
   }, [activeSelection])
 
   const ringColor = useMemo(
@@ -864,18 +815,18 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     }
   }, [ringColor, selectionBounds])
 
-  const primaryIsVideo = Boolean(primarySelection && (primarySelection as LayoutVideoItem).kind === 'video')
+  const primaryIsVideo = Boolean(activeSelection && (activeSelection as LayoutVideoItem).kind === 'video')
   const primaryAspectLocked = Boolean(
-    primarySelection && primaryIsVideo && itemHasAspectLock(primarySelection, transformTarget)
+    activeSelection && primaryIsVideo && itemHasAspectLock(activeSelection, transformTarget)
   )
 
-  const showToolbar = Boolean(primarySelection && activeSelection.length === 1 && toolbarAnchorId === primarySelection.id)
+  const showToolbar = Boolean(activeSelection && toolbarAnchorId === activeSelection.id)
 
   const handleCanvasPointerDown = useCallback(() => {
     if (dragStateRef.current) {
       return
     }
-    onSelectionChange([])
+    onSelectionChange(null)
     setToolbarAnchorId(null)
   }, [onSelectionChange, setToolbarAnchorId])
 
@@ -964,10 +915,10 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const top = fractionToPercent(frame.y)
         const width = fractionToPercent(frame.width)
         const height = fractionToPercent(frame.height)
-        const isSelected = selectedItemIds.includes(item.id)
-        const isPrimarySelection = primarySelection?.id === item.id
+        const isSelected = selectedItemId === item.id
+        const isPrimarySelection = activeSelection?.id === item.id
         const label = getItemLabel(item)
-          const palette = getItemAppearance(item, colorScheme)
+        const palette = getItemAppearance(item, colorScheme)
         const classes = getItemClasses ? getItemClasses(item, isSelected) : ''
         const shouldShowLabel = labelVisibility === 'always' || (labelVisibility === 'selected' && isSelected)
         const editable = itemIsEditable(item)
