@@ -401,6 +401,8 @@ describe('Layout editor interactions', () => {
 
     await waitFor(() => {
       expect(within(canvas).getByRole('group', { name: /primary/i }).className).toContain('ring-2')
+      const outline = within(canvas).getByTestId('selection-outline')
+      expect(outline).toBeTruthy()
     })
 
     await act(async () => {
@@ -411,6 +413,8 @@ describe('Layout editor interactions', () => {
 
     await waitFor(() => {
       expect(within(canvas).getByRole('group', { name: /primary/i }).className).toContain('ring-2')
+      const outline = within(canvas).getByTestId('selection-outline')
+      expect(outline).toBeTruthy()
     })
 
     await act(async () => {
@@ -420,6 +424,84 @@ describe('Layout editor interactions', () => {
 
     await waitFor(() => {
       expect(within(canvas).getByRole('group', { name: /primary/i }).className).not.toContain('ring-2')
+      expect(within(canvas).queryByTestId('selection-outline')).toBeNull()
+    })
+  })
+
+  it('cycles through overlapping frames when clicking the same location repeatedly', async () => {
+    const overlappingLayout: LayoutDefinition = {
+      ...baseLayout,
+      items: [
+        {
+          ...(baseLayout.items[0] as LayoutVideoItem),
+          id: 'bottom-frame',
+          name: 'Bottom frame',
+          frame: { x: 0.25, y: 0.2, width: 0.5, height: 0.5 },
+          zIndex: 1
+        },
+        {
+          ...(baseLayout.items[0] as LayoutVideoItem),
+          id: 'top-frame',
+          name: 'Top frame',
+          frame: { x: 0.3, y: 0.25, width: 0.5, height: 0.5 },
+          zIndex: 5
+        }
+      ]
+    }
+
+    const Harness = () => {
+      const [selection, setSelection] = useState<Selection>(null)
+      return (
+        <LayoutCanvas
+          layout={overlappingLayout}
+          selectedItemId={selection}
+          onSelectionChange={setSelection}
+          onTransform={vi.fn()}
+          onRequestBringForward={vi.fn()}
+          onRequestSendBackward={vi.fn()}
+          onRequestDuplicate={vi.fn()}
+          onRequestDelete={vi.fn()}
+          showGrid={false}
+          showSafeMargins={false}
+          previewContent={<div>preview</div>}
+          transformTarget="frame"
+        />
+      )
+    }
+
+    render(<Harness />)
+
+    const canvas = screen.getByRole('presentation')
+
+    await act(async () => {
+      pointerDown(canvas, { clientX: 120, clientY: 160, pointerId: 21 })
+      pointerUp(canvas, { clientX: 120, clientY: 160, pointerId: 21 })
+    })
+
+    await waitFor(() => {
+      expect(within(canvas).getByRole('group', { name: /Top frame/i }).className).toContain('ring-2')
+      expect(within(canvas).getByRole('group', { name: /Top frame/i }).className).toContain('rounded-none')
+      expect(within(canvas).getByTestId('selection-outline').className).toContain('border-[3px]')
+    })
+
+    await act(async () => {
+      pointerDown(canvas, { clientX: 120, clientY: 160, pointerId: 22 })
+      pointerUp(canvas, { clientX: 120, clientY: 160, pointerId: 22 })
+    })
+
+    await waitFor(() => {
+      expect(within(canvas).getByRole('group', { name: /Bottom frame/i }).className).toContain('ring-2')
+      expect(within(canvas).getByTestId('selection-outline').className).toContain('border-[3px]')
+    })
+
+    await act(async () => {
+      pointerDown(canvas, { clientX: 120, clientY: 160, pointerId: 23 })
+      pointerUp(canvas, { clientX: 120, clientY: 160, pointerId: 23 })
+    })
+
+    await waitFor(() => {
+      expect(within(canvas).getByRole('group', { name: /Top frame/i }).className).toContain('ring-2')
+      expect(within(canvas).getByTestId('selection-outline').className).toContain('border-[3px]')
     })
   })
 
@@ -465,6 +547,10 @@ describe('Layout editor interactions', () => {
     await waitFor(() => {
       expect(within(sourceCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
       expect(within(layoutCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
+      const sourceOutline = within(sourceCanvas).getByTestId('selection-outline')
+      const layoutOutline = within(layoutCanvas).getByTestId('selection-outline')
+      expect(sourceOutline).toBeTruthy()
+      expect(layoutOutline).toBeTruthy()
     })
 
     const layoutItem = within(layoutCanvas).getByRole('group', { name: /Primary/i })
@@ -480,6 +566,10 @@ describe('Layout editor interactions', () => {
     await waitFor(() => {
       expect(within(layoutCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
       expect(within(sourceCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
+      const layoutOutline = within(layoutCanvas).getByTestId('selection-outline')
+      const sourceOutline = within(sourceCanvas).getByTestId('selection-outline')
+      expect(layoutOutline).toBeTruthy()
+      expect(sourceOutline).toBeTruthy()
     })
   })
 

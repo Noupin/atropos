@@ -72,6 +72,13 @@ type DragState = {
   target: 'frame' | 'crop'
 }
 
+type HitRecord = {
+  x: number
+  y: number
+  stack: string[]
+  index: number
+}
+
 type LayoutCanvasProps = {
   layout: LayoutDefinition | null
   selectedItemId: LayoutCanvasSelection
@@ -141,6 +148,8 @@ const SNAP_POINTS = [0, 0.25, 0.5, 0.75, 1]
 const SNAP_THRESHOLD = 0.02
 
 const GUIDE_FADE_DELAY = 200
+
+const HIT_CYCLE_TOLERANCE = 0.01
 
 const detectColorScheme = (): ColorScheme => {
   if (typeof document === 'undefined') {
@@ -491,7 +500,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const dragStateRef = useRef<DragState | null>(null)
   const rafRef = useRef<number | null>(null)
   const guidesRef = useRef<Guide[]>([])
-  const lastPointerHitRef = useRef<{ x: number; y: number; candidates: string[] } | null>(null)
+  const lastHitRef = useRef<HitRecord | null>(null)
   const [activeGuides, setActiveGuides] = useState<Guide[]>([])
   const [floatingLabel, setFloatingLabel] = useState<string | null>(null)
   const [floatingPosition, setFloatingPosition] = useState<{ x: number; y: number } | null>(null)
@@ -654,6 +663,29 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     [getDisplayFrame, layout, sortedItems]
   )
 
+  const resolveSelectionFromStack = useCallback(
+    (stack: string[], pointer: { x: number; y: number }): string | null => {
+      if (!stack.length) {
+        lastHitRef.current = null
+        return null
+      }
+      const last = lastHitRef.current
+      if (
+        last &&
+        Math.hypot(last.x - pointer.x, last.y - pointer.y) <= HIT_CYCLE_TOLERANCE &&
+        isSameCandidateOrder(last.stack, stack)
+      ) {
+        const nextIndex = (last.index + 1) % stack.length
+        lastHitRef.current = { x: pointer.x, y: pointer.y, stack, index: nextIndex }
+        return stack[nextIndex]
+      }
+      const index = stack.length - 1
+      lastHitRef.current = { x: pointer.x, y: pointer.y, stack, index }
+      return stack[index]
+    },
+    []
+  )
+
   const updateHoverFromEvent = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (dragStateRef.current) {
@@ -702,38 +734,43 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       }
 
       const pointer = getPointerPosition(event)
+      const dataset = (event.target as HTMLElement | null)?.dataset ?? {}
+      const handle = (dataset.handle as ResizeHandle | undefined) ?? undefined
+      const datasetItemId = (dataset.itemId as string | undefined) ?? null
+
       if (!pointer) {
         onSelectionChange(null)
         setToolbarAnchorId(null)
+        lastHitRef.current = null
         clearDragState()
+        setHoverState((current) => (current.itemId || current.handle ? { itemId: null, handle: null } : current))
+        setCursor('default')
         return
       }
 
-      const dataset = (event.target as HTMLElement | null)?.dataset ?? {}
-      const handle = (dataset.handle as ResizeHandle | undefined) ?? undefined
-      const targetItemId = (dataset.itemId as string | undefined) ?? null
-
-      const candidates = getCandidatesAtPoint(pointer.x, pointer.y)
+      const stack = getCandidatesAtPoint(pointer.x, pointer.y)
       let nextSelection: string | null = null
 
-      if (handle && targetItemId) {
-        nextSelection = targetItemId
-      } else if (candidates.length) {
-        const lastHit = lastPointerHitRef.current
-        const sameSpot =
-          lastHit &&
-          Math.hypot(lastHit.x - pointer.x, lastHit.y - pointer.y) <= 0.01 &&
-          isSameCandidateOrder(lastHit.candidates, candidates)
-        if (sameSpot && selectedItemId && candidates.includes(selectedItemId)) {
-          const currentIndex = candidates.indexOf(selectedItemId)
-          const nextIndex = (currentIndex + 1) % candidates.length
-          nextSelection = candidates[nextIndex]
+      if (handle && datasetItemId) {
+        nextSelection = datasetItemId
+        if (!stack.length) {
+          lastHitRef.current = {
+            x: pointer.x,
+            y: pointer.y,
+            stack: [datasetItemId],
+            index: 0
+          }
         } else {
-          nextSelection = candidates[candidates.length - 1]
+          const index = stack.indexOf(datasetItemId)
+          lastHitRef.current = {
+            x: pointer.x,
+            y: pointer.y,
+            stack,
+            index: index >= 0 ? index : stack.length - 1
+          }
         }
-        lastPointerHitRef.current = { x: pointer.x, y: pointer.y, candidates }
-      } else {
-        lastPointerHitRef.current = null
+      } else if (stack.length) {
+        nextSelection = resolveSelectionFromStack(stack, pointer)
       }
 
       if (!nextSelection) {
@@ -741,6 +778,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           onSelectionChange(null)
           setToolbarAnchorId(null)
         }
+        lastHitRef.current = null
         clearDragState()
         setHoverState((current) => (current.itemId || current.handle ? { itemId: null, handle: null } : current))
         setCursor('default')
@@ -802,6 +840,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       itemIsEditable,
       layout,
       onSelectionChange,
+      resolveSelectionFromStack,
       selectedItemId,
       setToolbarAnchorId,
       transformTarget,
@@ -963,6 +1002,16 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     }
     setToolbarAnchorId((current) => (current === selectedItemId ? current : selectedItemId))
   }, [selectedItemId])
+
+  useEffect(() => {
+    if (!selectedItemId) {
+      lastHitRef.current = null
+    }
+  }, [selectedItemId])
+
+  useEffect(() => {
+    lastHitRef.current = null
+  }, [layout])
 
   const selectionBounds = useMemo(() => {
     if (!activeSelection) {
@@ -1193,6 +1242,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       {selectionBounds ? (
         <div
           className="pointer-events-none absolute border-[3px]"
+          data-testid="selection-outline"
           style={{
             left: fractionToPercent(selectionBounds.x),
             top: fractionToPercent(selectionBounds.y),
