@@ -542,7 +542,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const selectItem = useCallback(
     (itemId: string | null) => {
       setSelectedItemId((current) => (current === itemId ? current : itemId))
-      setToolbarAnchorId(itemId)
+      setToolbarAnchorId((current) => (current === itemId ? current : itemId))
     },
     [setSelectedItemId]
   )
@@ -888,8 +888,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           target: transformTarget,
           snapEnabled
         }
-        // Treat move interactions as a potential pure click until the pointer actually moves
-        justSelectedRef.current = !handle
         containerRef.current?.setPointerCapture(event.pointerId)
         setCursor(handle ? cursorForHandle(handle) : 'grabbing')
         event.preventDefault()
@@ -934,14 +932,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       const deltaY = pointer.y - state.startY
       let nextFrame: LayoutFrame | null = null
 
-      if (
-        state.mode === 'move' &&
-        justSelectedRef.current &&
-        (Math.abs(deltaX) > 0.0005 || Math.abs(deltaY) > 0.0005)
-      ) {
-        justSelectedRef.current = false
-      }
-
       if (state.mode === 'move') {
         nextFrame = clampFrameToCanvas({
           x: state.originFrame.x + deltaX,
@@ -980,32 +970,13 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     [applyGuides, getPointerPosition, scheduleTransform, updateHoverFromEvent]
   )
 
-  const handlePointerUp = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      const state = interactionRef.current
-
-      if (justSelectedRef.current) {
-        const selectedId = state?.itemId ?? selectedItemId ?? null
-        if (state && state.pointerId === event.pointerId) {
-          clearInteraction({ preserveAnimation: true })
-        }
-        if (selectedId) {
-          selectItem(selectedId)
-          commitHover({ itemId: selectedId, handle: null }, 'grab')
-        }
-        event.preventDefault()
-        event.stopPropagation()
-        return
-      }
-
-      // If there was no active interaction (simple hover or unrelated pointer), keep selection and exit.
-      if (!state || state.pointerId !== event.pointerId) {
-        return
-      }
-
+  const finalizeInteraction = useCallback(
+    (
+      event: ReactPointerEvent<HTMLDivElement>,
+      state: ActiveInteraction
+    ): void => {
       const pointer = getPointerPosition(event)
 
-      // If we somehow lost layout or pointer info, end interaction but keep selection.
       if (!layout || !pointer) {
         clearInteraction({ preserveAnimation: true })
         selectItem(state.itemId)
@@ -1029,7 +1000,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           })
         }
       } else if (state.handle) {
-        // Resize always commits if any change happened
         frame = state.aspectLocked
           ? maintainAspectResize(state.originFrame, state.handle, deltaX, deltaY, state.aspectRatio)
           : resizeFrame(state.originFrame, state.handle, deltaX, deltaY)
@@ -1047,18 +1017,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         }
       }
 
-      const changed =
-        state.mode === 'move'
-          ? moved
-          : !!snapped && !framesAreEqual(snapped, state.originFrame)
-
-      if (changed) {
-        suppressNextClickRef.current = true
-      }
-
       selectItem(state.itemId)
-      event.preventDefault()
-      event.stopPropagation()
       clearInteraction({ preserveAnimation: true })
       commitHover({ itemId: state.itemId, handle: null }, 'grab')
     },
@@ -1069,9 +1028,47 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       getPointerPosition,
       layout,
       scheduleTransform,
-      selectItem,
-      selectedItemId
+      selectItem
     ]
+  )
+
+  const handlePointerUpCapture = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const state = interactionRef.current
+      if (state && state.pointerId === event.pointerId) {
+        finalizeInteraction(event, state)
+        suppressNextClickRef.current = true
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
+
+      if (suppressNextClickRef.current) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+    },
+    [finalizeInteraction]
+  )
+
+  const handlePointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const state = interactionRef.current
+
+      if (justSelectedRef.current) {
+        const selectedId = state?.itemId ?? selectedItemId ?? null
+        if (state && state.pointerId === event.pointerId) {
+          clearInteraction({ preserveAnimation: true })
+        }
+        if (selectedId) {
+          selectItem(selectedId)
+          commitHover({ itemId: selectedId, handle: null }, 'grab')
+        }
+        event.preventDefault()
+        event.stopPropagation()
+      }
+    },
+    [clearInteraction, commitHover, selectItem, selectedItemId]
   )
 
   const handlePointerLeave = useCallback(() => {
@@ -1263,6 +1260,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       style={canvasStyle}
       onPointerDownCapture={handlePointerDownCapture}
       onPointerMove={handlePointerMove}
+      onPointerUpCapture={handlePointerUpCapture}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
       onPointerCancel={handlePointerCancel}
