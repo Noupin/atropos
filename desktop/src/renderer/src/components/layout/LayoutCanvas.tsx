@@ -474,6 +474,10 @@ const useGuideFade = (guidesRef: MutableRefObject<Guide[]>, setGuides: (guides: 
   }, [guidesRef, setGuides])
 }
 
+type ClearInteractionOptions = {
+  preserveAnimation?: boolean
+}
+
 const LayoutCanvas: FC<LayoutCanvasProps> = ({
   layout,
   onTransform,
@@ -550,8 +554,16 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     })
   }, [layout])
 
-  const clearInteraction = useCallback(() => {
-    if (rafRef.current) {
+  const clearInteraction = useCallback((options: ClearInteractionOptions = {}) => {
+    const active = interactionRef.current
+    if (active) {
+      try {
+        containerRef.current?.releasePointerCapture(active.pointerId)
+      } catch {
+        // Ignore pointer capture release errors triggered after unmount
+      }
+    }
+    if (rafRef.current && !options.preserveAnimation) {
       cancelAnimationFrame(rafRef.current)
       rafRef.current = null
     }
@@ -633,6 +645,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       }
       rafRef.current = requestAnimationFrame(() => {
         onTransform(transforms, options, transformTarget)
+        rafRef.current = null
       })
     },
     [onTransform, transformTarget]
@@ -904,20 +917,10 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         return
       }
 
-      interactionRef.current = null
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current)
-        rafRef.current = null
-      }
-      containerRef.current?.releasePointerCapture(event.pointerId)
-
       const pointer = getPointerPosition(event)
       if (!layout || !pointer) {
-        setFloatingLabel(null)
-        setFloatingPosition(null)
+        clearInteraction({ preserveAnimation: true })
         commitHover({ itemId: state.itemId, handle: null }, 'grab')
-        setActiveGuides([])
-        guidesRef.current = []
         return
       }
 
@@ -943,13 +946,10 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         scheduleTransform([{ itemId: state.itemId, frame: snapped }], { commit: true })
       }
 
-      setFloatingLabel(null)
-      setFloatingPosition(null)
+      clearInteraction({ preserveAnimation: true })
       commitHover({ itemId: state.itemId, handle: null }, 'grab')
-      setActiveGuides([])
-      guidesRef.current = []
     },
-    [applyGuides, commitHover, getPointerPosition, layout, scheduleTransform]
+    [applyGuides, clearInteraction, commitHover, getPointerPosition, layout, scheduleTransform]
   )
 
   const handlePointerLeave = useCallback(() => {
@@ -960,8 +960,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   }, [clearHover])
 
   const handlePointerCancel = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      containerRef.current?.releasePointerCapture(event.pointerId)
+    (_event: ReactPointerEvent<HTMLDivElement>) => {
       clearInteraction()
       clearHover()
     },
@@ -1006,6 +1005,24 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   useEffect(() => {
     cycleRef.current = null
   }, [layout])
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+      const active = interactionRef.current
+      if (active) {
+        try {
+          containerRef.current?.releasePointerCapture(active.pointerId)
+        } catch {
+          // Ignore release errors triggered by teardown
+        }
+      }
+      interactionRef.current = null
+    }
+  }, [])
 
   const selectionBounds = useMemo(() => {
     if (!activeSelection) {
@@ -1235,7 +1252,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       })}
       {selectionBounds ? (
         <div
-          className="pointer-events-none absolute border-[4px]"
+          className="pointer-events-none absolute z-30 rounded-none border-[4px]"
           data-testid="selection-outline"
           style={{
             left: fractionToPercent(selectionBounds.x),

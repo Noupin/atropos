@@ -417,6 +417,51 @@ describe('Layout editor interactions', () => {
     })
   })
 
+  it('keeps the frame selected after resizing from a handle', async () => {
+    render(
+      <LayoutCanvas
+        layout={baseLayout}
+        onTransform={vi.fn()}
+        onRequestBringForward={vi.fn()}
+        onRequestSendBackward={vi.fn()}
+        onRequestDuplicate={vi.fn()}
+        onRequestDelete={vi.fn()}
+        showGrid
+        showSafeMargins={false}
+        previewContent={<div>preview</div>}
+        transformTarget="frame"
+      />
+    )
+
+    const canvas = screen.getByRole('presentation')
+    await selectItemByName(canvas, /Primary/i, { pointerId: 30 })
+
+    const item = within(canvas).getByRole('group', { name: /Primary/i })
+    const handle = within(item).getByLabelText('Resize south-east')
+
+    await act(async () => {
+      pointerDown(handle, { pointerId: 31, clientX: 160, clientY: 320 })
+      pointerMove(canvas, { pointerId: 31, clientX: 190, clientY: 360 })
+    })
+
+    await act(async () => {
+      pointerUp(canvas, { pointerId: 31, clientX: 190, clientY: 360 })
+    })
+
+    await waitFor(() => {
+      const updated = within(canvas).getByRole('group', { name: /Primary/i })
+      expect(updated.className).toContain('ring-2')
+      const outline = within(canvas).getByTestId('selection-outline')
+      expect(outline.className).toContain('border-[4px]')
+      expect(outline.className).toContain('rounded-none')
+      const handles = within(updated).getAllByRole('button', { name: /Resize/i })
+      handles.forEach((button) => {
+        expect(button.className).toContain('opacity-100')
+        expect(button.className).toContain('rounded-none')
+      })
+    })
+  })
+
   it('cycles through overlapping frames when clicking the same location repeatedly', async () => {
     const overlappingLayout: LayoutDefinition = {
       ...baseLayout,
