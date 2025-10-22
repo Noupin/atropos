@@ -530,6 +530,14 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const [hoverTarget, setHoverTarget] = useState<HoverTarget>({ itemId: null, handle: null })
   const [cursor, setCursor] = useState<string>('default')
 
+  const selectItem = useCallback(
+    (itemId: string | null) => {
+      setSelectedItemId((current) => (current === itemId ? current : itemId))
+      setToolbarAnchorId(itemId)
+    },
+    [setSelectedItemId]
+  )
+
   useGuideFade(guidesRef, setActiveGuides)
 
   const getDisplayFrame = useCallback(
@@ -769,6 +777,8 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       if (!layout) {
         return
       }
+      justSelectedRef.current = false
+      suppressNextClickRef.current = false
       // Only handle primary button
       if (event.button !== 0) {
         justSelectedRef.current = false
@@ -804,10 +814,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
       if (!nextSelection) {
         // Clicked empty canvas – clear selection and interaction
-        if (selectedItemId) {
-          setSelectedItemId(null)
-          setToolbarAnchorId(null)
-        }
+        selectItem(null)
         cycleRef.current = null
         clearInteraction()
         clearHover()
@@ -815,10 +822,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       }
 
       // Select the item and show its toolbar/hover state
-      if (selectedItemId !== nextSelection) {
-        setSelectedItemId(nextSelection)
-      }
-      setToolbarAnchorId(nextSelection)
+      selectItem(nextSelection)
       commitHover(
         { itemId: nextSelection, handle: handle ?? null },
         handle ? cursorForHandle(handle) : 'grab'
@@ -895,9 +899,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       itemIsEditable,
       layout,
       resolveSelectionFromStack,
-      selectedItemId,
-      setSelectedItemId,
-      setToolbarAnchorId,
+      selectItem,
       transformTarget,
       updateHoverFromEvent
     ]
@@ -962,7 +964,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (justSelectedRef.current) {
         // We only clicked to select; keep selection, suppress parent onClick handlers
-        justSelectedRef.current = false
+        suppressNextClickRef.current = true
         event.preventDefault()
         event.stopPropagation()
         commitHover({ itemId: selectedItemId ?? null, handle: null }, 'grab')
@@ -982,6 +984,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       // If we somehow lost layout or pointer info, end interaction but keep selection.
       if (!layout || !pointer) {
         clearInteraction({ preserveAnimation: true })
+        selectItem(state.itemId)
         commitHover({ itemId: state.itemId, handle: null }, 'grab')
         return
       }
@@ -1018,8 +1021,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       suppressNextClickRef.current = true
 
       // Always keep selection after pointer up, regardless of movement size
-      setSelectedItemId(state.itemId)
-      setToolbarAnchorId(state.itemId)
+      selectItem(state.itemId)
       // Prevent the pointerup from bubbling to any parent click handlers
       // Do NOT set justSelectedRef.current here, so that selection persists after drag/move/resize
       event.preventDefault()
@@ -1036,6 +1038,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       getPointerPosition,
       layout,
       scheduleTransform,
+      selectItem,
       selectedItemId
     ]
   )
@@ -1356,6 +1359,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                     className={`absolute h-4 w-4 rounded-none border-2 text-transparent transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${handle.className} ${handleOpacityClass} ${handlePointerClass}`}
                     onPointerDown={(event) => {
                       event.preventDefault()
+                      event.stopPropagation()
                     }}
                     style={
                       {
