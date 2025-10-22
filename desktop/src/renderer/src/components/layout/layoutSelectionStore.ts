@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react'
 
-import type { LayoutCanvasSelection } from './LayoutCanvas'
+export type LayoutCanvasSelection = string | null
 
 type Listener = () => void
 
