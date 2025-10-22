@@ -1906,8 +1906,6 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           >
             <LayoutCanvas
               layout={draftLayout}
-              selectedItemId={selectedItemId}
-              onSelectionChange={setSelectedItemId}
               onTransform={handleTransform}
               onRequestBringForward={bringSelectionForward}
               onRequestSendBackward={sendSelectionBackward}
@@ -1959,8 +1957,6 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           >
             <LayoutCanvas
               layout={draftLayout}
-              selectedItemId={selectedItemId}
-              onSelectionChange={setSelectedItemId}
               onTransform={handleTransform}
               onRequestBringForward={bringSelectionForward}
               onRequestSendBackward={sendSelectionBackward}

@@ -17,8 +17,6 @@ vi.mock('../services/preview/adjustedPreview', () => ({
   }))
 }))
 
-type Selection = Parameters<typeof LayoutCanvas>[0]['selectedItemId']
-
 describe('Layout editor interactions', () => {
   beforeAll(() => {
     if (typeof window.PointerEvent === 'undefined') {
@@ -319,8 +317,6 @@ describe('Layout editor interactions', () => {
     render(
       <LayoutCanvas
         layout={baseLayout}
-        selectedItemId="video-1"
-        onSelectionChange={vi.fn()}
         onTransform={onTransform}
         onRequestBringForward={vi.fn()}
         onRequestSendBackward={vi.fn()}
@@ -370,27 +366,20 @@ describe('Layout editor interactions', () => {
   })
 
   it('keeps the selection active after releasing and dragging until the background is clicked', async () => {
-    const Harness = () => {
-      const [selection, setSelection] = useState<Selection>(null)
-      return (
-        <LayoutCanvas
-          layout={baseLayout}
-          selectedItemId={selection}
-          onSelectionChange={setSelection}
-          onTransform={vi.fn()}
-          onRequestBringForward={vi.fn()}
-          onRequestSendBackward={vi.fn()}
-          onRequestDuplicate={vi.fn()}
-          onRequestDelete={vi.fn()}
-          showGrid
-          showSafeMargins={false}
-          previewContent={<div>preview</div>}
-          transformTarget="frame"
-        />
-      )
-    }
-
-    render(<Harness />)
+    render(
+      <LayoutCanvas
+        layout={baseLayout}
+        onTransform={vi.fn()}
+        onRequestBringForward={vi.fn()}
+        onRequestSendBackward={vi.fn()}
+        onRequestDuplicate={vi.fn()}
+        onRequestDelete={vi.fn()}
+        showGrid
+        showSafeMargins={false}
+        previewContent={<div>preview</div>}
+        transformTarget="frame"
+      />
+    )
 
     const canvas = screen.getByRole('presentation')
 
@@ -449,27 +438,20 @@ describe('Layout editor interactions', () => {
       ]
     }
 
-    const Harness = () => {
-      const [selection, setSelection] = useState<Selection>(null)
-      return (
-        <LayoutCanvas
-          layout={overlappingLayout}
-          selectedItemId={selection}
-          onSelectionChange={setSelection}
-          onTransform={vi.fn()}
-          onRequestBringForward={vi.fn()}
-          onRequestSendBackward={vi.fn()}
-          onRequestDuplicate={vi.fn()}
-          onRequestDelete={vi.fn()}
-          showGrid={false}
-          showSafeMargins={false}
-          previewContent={<div>preview</div>}
-          transformTarget="frame"
-        />
-      )
-    }
-
-    render(<Harness />)
+    render(
+      <LayoutCanvas
+        layout={overlappingLayout}
+        onTransform={vi.fn()}
+        onRequestBringForward={vi.fn()}
+        onRequestSendBackward={vi.fn()}
+        onRequestDuplicate={vi.fn()}
+        onRequestDelete={vi.fn()}
+        showGrid={false}
+        showSafeMargins={false}
+        previewContent={<div>preview</div>}
+        transformTarget="frame"
+      />
+    )
 
     const canvas = screen.getByRole('presentation')
 

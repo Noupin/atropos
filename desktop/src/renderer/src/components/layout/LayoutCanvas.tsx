@@ -13,8 +13,9 @@ import type {
   LayoutTextItem,
   LayoutVideoItem
 } from '../../../../types/layouts'
+import { useLayoutSelection } from './layoutSelectionStore'
 
-export type LayoutCanvasSelection = string | null
+export type { LayoutCanvasSelection } from './layoutSelectionStore'
 
 type ColorScheme = 'dark' | 'light'
 
@@ -25,8 +26,6 @@ type LayoutCanvasTransform = {
   frame: LayoutFrame
 }
 
-type DragMode = 'move' | 'resize'
-
 type ResizeHandle =
   | 'n'
   | 's'
@@ -36,6 +35,8 @@ type ResizeHandle =
   | 'nw'
   | 'se'
   | 'sw'
+
+type InteractionMode = 'move' | 'resize'
 
 const cursorForHandle = (handle: ResizeHandle): string => {
   switch (handle) {
@@ -56,23 +57,28 @@ const cursorForHandle = (handle: ResizeHandle): string => {
   }
 }
 
-type DragState = {
-  mode: DragMode
+type ActiveInteraction = {
+  mode: InteractionMode
   pointerId: number
   itemId: string
   handle?: ResizeHandle
+  startClientX: number
+  startClientY: number
   startX: number
   startY: number
-  startNormalizedX: number
-  startNormalizedY: number
-  maintainAspect: boolean
-  snapEnabled: boolean
-  originalFrames: Map<string, LayoutFrame>
+  originFrame: LayoutFrame
+  aspectLocked: boolean
   aspectRatio?: number
   target: 'frame' | 'crop'
+  snapEnabled: boolean
 }
 
-type HitRecord = {
+type HoverTarget = {
+  itemId: string | null
+  handle: ResizeHandle | null
+}
+
+type SelectionCycle = {
   x: number
   y: number
   stack: string[]
@@ -81,8 +87,6 @@ type HitRecord = {
 
 type LayoutCanvasProps = {
   layout: LayoutDefinition | null
-  selectedItemId: LayoutCanvasSelection
-  onSelectionChange: (selection: LayoutCanvasSelection) => void
   onTransform: (
     transforms: LayoutCanvasTransform[],
     options: { commit: boolean },
@@ -472,8 +476,6 @@ const useGuideFade = (guidesRef: MutableRefObject<Guide[]>, setGuides: (guides: 
 
 const LayoutCanvas: FC<LayoutCanvasProps> = ({
   layout,
-  selectedItemId,
-  onSelectionChange,
   onTransform,
   onRequestBringForward,
   onRequestSendBackward,
@@ -496,18 +498,17 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   getAspectRatioForItem
 }) => {
   const colorScheme = useColorScheme()
+  const [selectedItemId, setSelectedItemId] = useLayoutSelection()
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const dragStateRef = useRef<DragState | null>(null)
+  const interactionRef = useRef<ActiveInteraction | null>(null)
+  const cycleRef = useRef<SelectionCycle | null>(null)
   const rafRef = useRef<number | null>(null)
   const guidesRef = useRef<Guide[]>([])
-  const lastHitRef = useRef<HitRecord | null>(null)
   const [activeGuides, setActiveGuides] = useState<Guide[]>([])
   const [floatingLabel, setFloatingLabel] = useState<string | null>(null)
   const [floatingPosition, setFloatingPosition] = useState<{ x: number; y: number } | null>(null)
   const [toolbarAnchorId, setToolbarAnchorId] = useState<string | null>(null)
-  const [hoverState, setHoverState] = useState<{ itemId: string | null; handle: ResizeHandle | null }>(
-    () => ({ itemId: null, handle: null })
-  )
+  const [hoverTarget, setHoverTarget] = useState<HoverTarget>({ itemId: null, handle: null })
   const [cursor, setCursor] = useState<string>('default')
 
   useGuideFade(guidesRef, setActiveGuides)
@@ -549,26 +550,28 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     })
   }, [layout])
 
-  const clearDragState = useCallback(() => {
+  const clearInteraction = useCallback(() => {
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current)
       rafRef.current = null
     }
-    dragStateRef.current = null
+    interactionRef.current = null
     setFloatingLabel(null)
     setFloatingPosition(null)
+    setActiveGuides([])
+    guidesRef.current = []
     setCursor('default')
   }, [])
 
-  const applyGuides = useCallback((frame: LayoutFrame) => {
-    if (!layout) {
-      return frame
-    }
-    if (!dragStateRef.current?.snapEnabled) {
-      guidesRef.current = []
-      setActiveGuides([])
-      return frame
-    }
+  const applyGuides = useCallback(
+    (frame: LayoutFrame, snapEnabled: boolean): LayoutFrame => {
+      if (!layout || !snapEnabled) {
+        if (!snapEnabled) {
+          guidesRef.current = []
+          setActiveGuides([])
+        }
+        return frame
+      }
     const updated: LayoutFrame = { ...frame }
     const guides: Guide[] = []
 
@@ -619,7 +622,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     guidesRef.current = guides
     setActiveGuides(guides)
     return updated
-  }, [layout])
+    },
+    [layout]
+  )
 
   const scheduleTransform = useCallback(
     (transforms: LayoutCanvasTransform[], options: { commit: boolean }) => {
@@ -641,12 +646,12 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       }
       const x = clamp((event.clientX - rect.left) / rect.width)
       const y = clamp((event.clientY - rect.top) / rect.height)
-      return { x, y, rect }
+      return { x, y }
     },
     []
   )
 
-  const getCandidatesAtPoint = useCallback(
+  const hitTestAtPoint = useCallback(
     (x: number, y: number): string[] => {
       if (!layout) {
         return []
@@ -664,63 +669,72 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   )
 
   const resolveSelectionFromStack = useCallback(
-    (stack: string[], pointer: { x: number; y: number }): string | null => {
+    (stack: string[], point: { x: number; y: number }): string | null => {
       if (!stack.length) {
-        lastHitRef.current = null
+        cycleRef.current = null
         return null
       }
-      const last = lastHitRef.current
+      const last = cycleRef.current
       if (
         last &&
-        Math.hypot(last.x - pointer.x, last.y - pointer.y) <= HIT_CYCLE_TOLERANCE &&
+        Math.hypot(last.x - point.x, last.y - point.y) <= HIT_CYCLE_TOLERANCE &&
         isSameCandidateOrder(last.stack, stack)
       ) {
         const nextIndex = (last.index + 1) % stack.length
-        lastHitRef.current = { x: pointer.x, y: pointer.y, stack, index: nextIndex }
+        cycleRef.current = { x: point.x, y: point.y, stack, index: nextIndex }
         return stack[nextIndex]
       }
       const index = stack.length - 1
-      lastHitRef.current = { x: pointer.x, y: pointer.y, stack, index }
+      cycleRef.current = { x: point.x, y: point.y, stack, index }
       return stack[index]
     },
     []
   )
 
+  const commitHover = useCallback(
+    (next: HoverTarget, cursorStyle: string) => {
+      setHoverTarget((current) => {
+        if (current.itemId === next.itemId && current.handle === next.handle) {
+          return current
+        }
+        return next
+      })
+      setCursor(cursorStyle)
+    },
+    []
+  )
+
+  const clearHover = useCallback(() => {
+    setHoverTarget((current) => (current.itemId || current.handle ? { itemId: null, handle: null } : current))
+    setCursor('default')
+  }, [])
+
   const updateHoverFromEvent = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (dragStateRef.current) {
+      if (interactionRef.current) {
         return
       }
-      const dataset = (event.target as HTMLElement | null)?.dataset
-      if (dataset?.handle && dataset?.itemId) {
-        const handle = dataset.handle as ResizeHandle
-        const itemId = dataset.itemId
-        setHoverState((current) => {
-          if (current.itemId === itemId && current.handle === handle) {
-            return current
-          }
-          return { itemId, handle }
-        })
-        setCursor(cursorForHandle(handle))
+      const dataset = (event.target as HTMLElement | null)?.dataset ?? {}
+      const datasetHandle = dataset.handle as ResizeHandle | undefined
+      const datasetItemId = dataset.itemId as string | undefined
+      if (datasetHandle && datasetItemId) {
+        commitHover({ itemId: datasetItemId, handle: datasetHandle }, cursorForHandle(datasetHandle))
         return
       }
       const pointer = getPointerPosition(event)
       if (!pointer) {
-        setHoverState((current) => (current.itemId || current.handle ? { itemId: null, handle: null } : current))
-        setCursor('default')
+        clearHover()
         return
       }
-      const candidates = getCandidatesAtPoint(pointer.x, pointer.y)
-      const hoveredId = candidates.length ? candidates[candidates.length - 1] : null
-      setHoverState((current) => {
-        if (current.itemId === hoveredId && current.handle === null) {
-          return current
-        }
-        return { itemId: hoveredId, handle: null }
-      })
-      setCursor(hoveredId ? 'grab' : 'default')
+      const stack = hitTestAtPoint(pointer.x, pointer.y)
+      const hoveredId = stack.length ? stack[stack.length - 1] : null
+      if (hoveredId) {
+        commitHover({ itemId: hoveredId, handle: null }, 'grab')
+      } else {
+        clearHover()
+      }
     },
-    [getCandidatesAtPoint, getPointerPosition]
+    [clearHover, commitHover, getPointerPosition, hitTestAtPoint]
   )
 
   const handlePointerDownCapture = useCallback(
@@ -733,73 +747,59 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         return
       }
 
-      const pointer = getPointerPosition(event)
       const dataset = (event.target as HTMLElement | null)?.dataset ?? {}
-      const handle = (dataset.handle as ResizeHandle | undefined) ?? undefined
-      const datasetItemId = (dataset.itemId as string | undefined) ?? null
+      const handle = dataset.handle as ResizeHandle | undefined
+      const datasetItemId = dataset.itemId as string | undefined
+      const pointer = getPointerPosition(event)
+      const stack = pointer ? hitTestAtPoint(pointer.x, pointer.y) : []
 
-      if (!pointer) {
-        onSelectionChange(null)
-        setToolbarAnchorId(null)
-        lastHitRef.current = null
-        clearDragState()
-        setHoverState((current) => (current.itemId || current.handle ? { itemId: null, handle: null } : current))
-        setCursor('default')
-        return
-      }
-
-      const stack = getCandidatesAtPoint(pointer.x, pointer.y)
       let nextSelection: string | null = null
-
       if (handle && datasetItemId) {
         nextSelection = datasetItemId
-        if (!stack.length) {
-          lastHitRef.current = {
-            x: pointer.x,
-            y: pointer.y,
-            stack: [datasetItemId],
-            index: 0
-          }
-        } else {
+        if (pointer) {
           const index = stack.indexOf(datasetItemId)
-          lastHitRef.current = {
+          const updatedStack = index >= 0 ? stack : [...stack, datasetItemId]
+          cycleRef.current = {
             x: pointer.x,
             y: pointer.y,
-            stack,
-            index: index >= 0 ? index : stack.length - 1
+            stack: updatedStack,
+            index: index >= 0 ? index : updatedStack.length - 1
           }
         }
-      } else if (stack.length) {
+      } else if (pointer) {
         nextSelection = resolveSelectionFromStack(stack, pointer)
       }
 
       if (!nextSelection) {
-        if (selectedItemId !== null) {
-          onSelectionChange(null)
+        if (selectedItemId) {
+          setSelectedItemId(null)
           setToolbarAnchorId(null)
         }
-        lastHitRef.current = null
-        clearDragState()
-        setHoverState((current) => (current.itemId || current.handle ? { itemId: null, handle: null } : current))
-        setCursor('default')
+        cycleRef.current = null
+        clearInteraction()
+        clearHover()
         return
       }
 
-      if (nextSelection !== selectedItemId) {
-        onSelectionChange(nextSelection)
+      if (selectedItemId !== nextSelection) {
+        setSelectedItemId(nextSelection)
       }
       setToolbarAnchorId(nextSelection)
-      setHoverState({ itemId: nextSelection, handle: handle ?? null })
+      commitHover({ itemId: nextSelection, handle: handle ?? null }, handle ? cursorForHandle(handle) : 'grab')
+
+      if (!pointer) {
+        return
+      }
 
       const item = layout.items.find((candidate) => candidate.id === nextSelection)
       if (!item || !itemIsEditable(item)) {
-        clearDragState()
+        clearInteraction()
         return
       }
 
-      const originalFrame = getDisplayFrame(item)
+      const originFrame = getDisplayFrame(item)
       const snapEnabled = event.altKey || event.metaKey
-      const maintainAspect = handle ? itemHasAspectLock(item, transformTarget) || event.shiftKey : false
+      const aspectLocked = Boolean(handle && (itemHasAspectLock(item, transformTarget) || event.shiftKey))
       let aspectRatioValue: number | undefined
       if (typeof getAspectRatioForItem === 'function') {
         const ratio = getAspectRatioForItem(item, transformTarget)
@@ -807,41 +807,43 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           aspectRatioValue = ratio
         }
       }
-      if (!aspectRatioValue && originalFrame.width > 0 && originalFrame.height > 0) {
-        aspectRatioValue = originalFrame.width / Math.max(originalFrame.height, 0.0001)
+      if (!aspectRatioValue && originFrame.width > 0 && originFrame.height > 0) {
+        aspectRatioValue = originFrame.width / Math.max(originFrame.height, 0.0001)
       }
 
-      dragStateRef.current = {
+      interactionRef.current = {
         mode: handle ? 'resize' : 'move',
         pointerId: event.pointerId,
         itemId: item.id,
         handle,
-        startX: event.clientX,
-        startY: event.clientY,
-        startNormalizedX: pointer.x,
-        startNormalizedY: pointer.y,
-        maintainAspect,
-        snapEnabled,
-        originalFrames: new Map([[item.id, originalFrame]]),
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startX: pointer.x,
+        startY: pointer.y,
+        originFrame,
+        aspectLocked,
         aspectRatio: aspectRatioValue,
-        target: transformTarget
+        target: transformTarget,
+        snapEnabled
       }
 
-      setCursor(handle ? cursorForHandle(handle) : 'grabbing')
       containerRef.current?.setPointerCapture(event.pointerId)
+      setCursor(handle ? cursorForHandle(handle) : 'grabbing')
       event.preventDefault()
     },
     [
-      clearDragState,
+      clearHover,
+      clearInteraction,
+      commitHover,
       getAspectRatioForItem,
-      getCandidatesAtPoint,
       getDisplayFrame,
       getPointerPosition,
+      hitTestAtPoint,
       itemIsEditable,
       layout,
-      onSelectionChange,
       resolveSelectionFromStack,
       selectedItemId,
+      setSelectedItemId,
       setToolbarAnchorId,
       transformTarget,
       updateHoverFromEvent
@@ -850,8 +852,8 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   const handlePointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      const state = dragStateRef.current
-      if (!state || !layout || state.pointerId !== event.pointerId) {
+      const state = interactionRef.current
+      if (!state || state.pointerId !== event.pointerId) {
         updateHoverFromEvent(event)
         return
       }
@@ -861,117 +863,109 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         return
       }
 
-      const deltaX = pointer.x - state.startNormalizedX
-      const deltaY = pointer.y - state.startNormalizedY
-      const transforms: LayoutCanvasTransform[] = []
+      const deltaX = pointer.x - state.startX
+      const deltaY = pointer.y - state.startY
+      let nextFrame: LayoutFrame | null = null
 
       if (state.mode === 'move') {
-        state.originalFrames.forEach((original, id) => {
-          const nextFrame = clampFrameToCanvas({
-            x: original.x + deltaX,
-            y: original.y + deltaY,
-            width: original.width,
-            height: original.height
-          })
-          const snapped = applyGuides(nextFrame)
-          transforms.push({ itemId: id, frame: snapped })
-          setFloatingLabel(`${(snapped.width * 100).toFixed(1)} × ${(snapped.height * 100).toFixed(1)}%`)
-          setFloatingPosition({ x: event.clientX, y: event.clientY })
+        nextFrame = clampFrameToCanvas({
+          x: state.originFrame.x + deltaX,
+          y: state.originFrame.y + deltaY,
+          width: state.originFrame.width,
+          height: state.originFrame.height
         })
-      } else if (state.mode === 'resize' && state.handle) {
-        state.originalFrames.forEach((original, id) => {
-          let nextFrame: LayoutFrame
-          if (state.maintainAspect) {
-            nextFrame = maintainAspectResize(original, state.handle!, deltaX, deltaY, state.aspectRatio)
-          } else {
-            nextFrame = resizeFrame(original, state.handle!, deltaX, deltaY)
-          }
-          nextFrame = clampFrameToCanvas(nextFrame)
-          nextFrame = applyGuides(nextFrame)
-          transforms.push({ itemId: id, frame: nextFrame })
-          setFloatingLabel(`${(nextFrame.width * 100).toFixed(1)} × ${(nextFrame.height * 100).toFixed(1)}%`)
-          setFloatingPosition({ x: event.clientX, y: event.clientY })
-        })
+        setCursor('grabbing')
+      } else if (state.handle) {
+        if (state.aspectLocked) {
+          nextFrame = maintainAspectResize(state.originFrame, state.handle, deltaX, deltaY, state.aspectRatio)
+        } else {
+          nextFrame = resizeFrame(state.originFrame, state.handle, deltaX, deltaY)
+        }
+        nextFrame = clampFrameToCanvas(nextFrame)
+        setCursor(cursorForHandle(state.handle))
       }
 
-      if (transforms.length) {
-        scheduleTransform(transforms, { commit: false })
+      if (!nextFrame) {
+        return
       }
+
+      const snapped = applyGuides(nextFrame, state.snapEnabled)
+      scheduleTransform([{ itemId: state.itemId, frame: snapped }], { commit: false })
+      setFloatingLabel(`${(snapped.width * 100).toFixed(1)} × ${(snapped.height * 100).toFixed(1)}%`)
+      setFloatingPosition({ x: event.clientX, y: event.clientY })
     },
-    [applyGuides, getPointerPosition, layout, scheduleTransform, updateHoverFromEvent]
+    [applyGuides, getPointerPosition, scheduleTransform, updateHoverFromEvent]
   )
 
   const handlePointerUp = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      const state = dragStateRef.current
+      const state = interactionRef.current
       if (!state || state.pointerId !== event.pointerId) {
         return
       }
-      const pointer = getPointerPosition(event)
-      const original = state.originalFrames.get(state.itemId)
-      clearDragState()
+
+      interactionRef.current = null
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
       containerRef.current?.releasePointerCapture(event.pointerId)
-      if (!layout || !pointer || !original) {
+
+      const pointer = getPointerPosition(event)
+      if (!layout || !pointer) {
+        setFloatingLabel(null)
+        setFloatingPosition(null)
+        commitHover({ itemId: state.itemId, handle: null }, 'grab')
+        setActiveGuides([])
+        guidesRef.current = []
         return
       }
-      const deltaX = pointer.x - state.startNormalizedX
-      const deltaY = pointer.y - state.startNormalizedY
-      const transforms: LayoutCanvasTransform[] = []
 
+      const deltaX = pointer.x - state.startX
+      const deltaY = pointer.y - state.startY
+      let frame: LayoutFrame | null = null
       if (state.mode === 'move') {
-        const frame = clampFrameToCanvas({
-          x: original.x + deltaX,
-          y: original.y + deltaY,
-          width: original.width,
-          height: original.height
+        frame = clampFrameToCanvas({
+          x: state.originFrame.x + deltaX,
+          y: state.originFrame.y + deltaY,
+          width: state.originFrame.width,
+          height: state.originFrame.height
         })
-        transforms.push({ itemId: state.itemId, frame: applyGuides(frame) })
-      } else if (state.mode === 'resize' && state.handle) {
-        let frame: LayoutFrame
-        if (state.maintainAspect) {
-          frame = maintainAspectResize(original, state.handle, deltaX, deltaY, state.aspectRatio)
-        } else {
-          frame = resizeFrame(original, state.handle, deltaX, deltaY)
-        }
+      } else if (state.handle) {
+        frame = state.aspectLocked
+          ? maintainAspectResize(state.originFrame, state.handle, deltaX, deltaY, state.aspectRatio)
+          : resizeFrame(state.originFrame, state.handle, deltaX, deltaY)
         frame = clampFrameToCanvas(frame)
-        transforms.push({ itemId: state.itemId, frame: applyGuides(frame) })
       }
 
-      if (transforms.length) {
-        scheduleTransform(transforms, { commit: true })
+      if (frame) {
+        const snapped = applyGuides(frame, state.snapEnabled)
+        scheduleTransform([{ itemId: state.itemId, frame: snapped }], { commit: true })
       }
-      if (state.itemId) {
-        onSelectionChange(state.itemId)
-        setToolbarAnchorId(state.itemId)
-      }
-      updateHoverFromEvent(event)
+
+      setFloatingLabel(null)
+      setFloatingPosition(null)
+      commitHover({ itemId: state.itemId, handle: null }, 'grab')
+      setActiveGuides([])
+      guidesRef.current = []
     },
-    [
-      applyGuides,
-      clearDragState,
-      getPointerPosition,
-      layout,
-      onSelectionChange,
-      scheduleTransform,
-      setToolbarAnchorId,
-      updateHoverFromEvent
-    ]
+    [applyGuides, commitHover, getPointerPosition, layout, scheduleTransform]
   )
 
   const handlePointerLeave = useCallback(() => {
-    if (dragStateRef.current) {
+    if (interactionRef.current) {
       return
     }
-    setHoverState((current) => (current.itemId || current.handle ? { itemId: null, handle: null } : current))
-    setCursor('default')
-  }, [])
+    clearHover()
+  }, [clearHover])
 
   const handlePointerCancel = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       containerRef.current?.releasePointerCapture(event.pointerId)
-      clearDragState()
+      clearInteraction()
+      clearHover()
     },
-    [clearDragState]
+    [clearHover, clearInteraction]
   )
 
   const handles: Array<{ id: ResizeHandle; className: string; label: string }> = useMemo(
@@ -1005,12 +999,12 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   useEffect(() => {
     if (!selectedItemId) {
-      lastHitRef.current = null
+      cycleRef.current = null
     }
   }, [selectedItemId])
 
   useEffect(() => {
-    lastHitRef.current = null
+    cycleRef.current = null
   }, [layout])
 
   const selectionBounds = useMemo(() => {
@@ -1147,7 +1141,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const height = fractionToPercent(frame.height)
         const isSelected = selectedItemId === item.id
         const isPrimarySelection = activeSelection?.id === item.id
-        const isHovered = hoverState.itemId === item.id
+        const isHovered = hoverTarget.itemId === item.id
         const showHandles = isSelected || isHovered
         const label = getItemLabel(item)
         const palette = getItemAppearance(item, colorScheme)
@@ -1159,7 +1153,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           : isHovered
             ? mixHexColors(palette.borderColor, colorScheme === 'dark' ? '#ffffff' : '#000000', 0.35)
             : 'transparent'
-        const handleIsActive = hoverState.itemId === item.id && Boolean(hoverState.handle)
+        const handleIsActive = hoverTarget.itemId === item.id && Boolean(hoverTarget.handle)
         const handleOpacityClass = isSelected
           ? 'opacity-100'
           : handleIsActive
