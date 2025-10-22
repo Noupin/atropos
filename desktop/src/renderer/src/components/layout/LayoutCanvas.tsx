@@ -901,9 +901,22 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       if (transforms.length) {
         scheduleTransform(transforms, { commit: true })
       }
+      if (state.itemId) {
+        onSelectionChange(state.itemId)
+        setToolbarAnchorId(state.itemId)
+      }
       updateHoverFromEvent(event)
     },
-    [applyGuides, clearDragState, getPointerPosition, layout, scheduleTransform, updateHoverFromEvent]
+    [
+      applyGuides,
+      clearDragState,
+      getPointerPosition,
+      layout,
+      onSelectionChange,
+      scheduleTransform,
+      setToolbarAnchorId,
+      updateHoverFromEvent
+    ]
   )
 
   const handlePointerLeave = useCallback(() => {

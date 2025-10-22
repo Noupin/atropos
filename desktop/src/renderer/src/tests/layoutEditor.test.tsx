@@ -369,6 +369,60 @@ describe('Layout editor interactions', () => {
     })
   })
 
+  it('keeps the selection active after releasing and dragging until the background is clicked', async () => {
+    const Harness = () => {
+      const [selection, setSelection] = useState<Selection>(null)
+      return (
+        <LayoutCanvas
+          layout={baseLayout}
+          selectedItemId={selection}
+          onSelectionChange={setSelection}
+          onTransform={vi.fn()}
+          onRequestBringForward={vi.fn()}
+          onRequestSendBackward={vi.fn()}
+          onRequestDuplicate={vi.fn()}
+          onRequestDelete={vi.fn()}
+          showGrid
+          showSafeMargins={false}
+          previewContent={<div>preview</div>}
+          transformTarget="frame"
+        />
+      )
+    }
+
+    render(<Harness />)
+
+    const canvas = screen.getByRole('presentation')
+
+    await act(async () => {
+      pointerDown(canvas, { clientX: 60, clientY: 100, pointerId: 11 })
+      pointerUp(canvas, { clientX: 60, clientY: 100, pointerId: 11 })
+    })
+
+    await waitFor(() => {
+      expect(within(canvas).getByRole('group', { name: /primary/i }).className).toContain('ring-2')
+    })
+
+    await act(async () => {
+      pointerDown(canvas, { clientX: 60, clientY: 100, pointerId: 12 })
+      pointerMove(canvas, { clientX: 90, clientY: 140, pointerId: 12 })
+      pointerUp(canvas, { clientX: 90, clientY: 140, pointerId: 12 })
+    })
+
+    await waitFor(() => {
+      expect(within(canvas).getByRole('group', { name: /primary/i }).className).toContain('ring-2')
+    })
+
+    await act(async () => {
+      pointerDown(canvas, { clientX: 10, clientY: 10, pointerId: 13 })
+      pointerUp(canvas, { clientX: 10, clientY: 10, pointerId: 13 })
+    })
+
+    await waitFor(() => {
+      expect(within(canvas).getByRole('group', { name: /primary/i }).className).not.toContain('ring-2')
+    })
+  })
+
   it('mirrors selection across both previews', async () => {
     render(
       <LayoutEditorPanel
