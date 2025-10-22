@@ -112,6 +112,15 @@ type Guide = {
 
 const clamp = (value: number, min = 0, max = 1): number => Math.min(Math.max(value, min), max)
 
+const framesAreEqual = (a: LayoutFrame, b: LayoutFrame): boolean => {
+  return (
+    Math.abs(a.x - b.x) <= 0.0001 &&
+    Math.abs(a.y - b.y) <= 0.0001 &&
+    Math.abs(a.width - b.width) <= 0.0001 &&
+    Math.abs(a.height - b.height) <= 0.0001
+  )
+}
+
 const clampFrameToCanvas = (frame: LayoutFrame): LayoutFrame => {
   const width = clamp(frame.width, 0, 1)
   const height = clamp(frame.height, 0, 1)
@@ -837,6 +846,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       const item = layout.items.find((candidate) => candidate.id === nextSelection)
       if (!item || !itemIsEditable(item)) {
         clearInteraction()
+        justSelectedRef.current = true
+        event.preventDefault()
+        setCursor('grab')
         return
       }
 
@@ -876,8 +888,8 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           target: transformTarget,
           snapEnabled
         }
-        // We are starting a drag; do not treat this as a pure click
-        justSelectedRef.current = false
+        // Treat move interactions as a potential pure click until the pointer actually moves
+        justSelectedRef.current = !handle
         containerRef.current?.setPointerCapture(event.pointerId)
         setCursor(handle ? cursorForHandle(handle) : 'grabbing')
         event.preventDefault()
@@ -922,6 +934,14 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       const deltaY = pointer.y - state.startY
       let nextFrame: LayoutFrame | null = null
 
+      if (
+        state.mode === 'move' &&
+        justSelectedRef.current &&
+        (Math.abs(deltaX) > 0.0005 || Math.abs(deltaY) > 0.0005)
+      ) {
+        justSelectedRef.current = false
+      }
+
       if (state.mode === 'move') {
         nextFrame = clampFrameToCanvas({
           x: state.originFrame.x + deltaX,
@@ -962,20 +982,24 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   const handlePointerUp = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
+      const state = interactionRef.current
+
       if (justSelectedRef.current) {
-        // We only clicked to select; keep selection, suppress parent onClick handlers
-        suppressNextClickRef.current = true
+        const selectedId = state?.itemId ?? selectedItemId ?? null
+        if (state && state.pointerId === event.pointerId) {
+          clearInteraction({ preserveAnimation: true })
+        }
+        if (selectedId) {
+          selectItem(selectedId)
+          commitHover({ itemId: selectedId, handle: null }, 'grab')
+        }
         event.preventDefault()
         event.stopPropagation()
-        commitHover({ itemId: selectedItemId ?? null, handle: null }, 'grab')
         return
       }
 
-      const state = interactionRef.current
-
-      // If there was no active interaction (simple click-to-select), keep selection and do nothing.
+      // If there was no active interaction (simple hover or unrelated pointer), keep selection and exit.
       if (!state || state.pointerId !== event.pointerId) {
-        // Do not clear selection or hover; just return.
         return
       }
 
@@ -1012,22 +1036,29 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         frame = clampFrameToCanvas(frame)
       }
 
+      let snapped: LayoutFrame | null = null
       if (frame) {
-        const snapped = applyGuides(frame, state.snapEnabled)
-        scheduleTransform([{ itemId: state.itemId, frame: snapped }], { commit: true })
+        snapped = applyGuides(frame, state.snapEnabled)
+        if (
+          (state.mode === 'move' && moved) ||
+          (state.mode === 'resize' && snapped && !framesAreEqual(snapped, state.originFrame))
+        ) {
+          scheduleTransform([{ itemId: state.itemId, frame: snapped }], { commit: true })
+        }
       }
 
-      // Ensure the post-pointerup synthetic 'click' doesn't bubble and clear selection
-      suppressNextClickRef.current = true
+      const changed =
+        state.mode === 'move'
+          ? moved
+          : !!snapped && !framesAreEqual(snapped, state.originFrame)
 
-      // Always keep selection after pointer up, regardless of movement size
+      if (changed) {
+        suppressNextClickRef.current = true
+      }
+
       selectItem(state.itemId)
-      // Prevent the pointerup from bubbling to any parent click handlers
-      // Do NOT set justSelectedRef.current here, so that selection persists after drag/move/resize
       event.preventDefault()
       event.stopPropagation()
-
-      // Always end interaction but KEEP selection active.
       clearInteraction({ preserveAnimation: true })
       commitHover({ itemId: state.itemId, handle: null }, 'grab')
     },
