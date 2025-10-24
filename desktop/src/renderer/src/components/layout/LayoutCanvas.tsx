@@ -3,7 +3,8 @@ import type {
   PointerEvent as ReactPointerEvent,
   MutableRefObject,
   ReactNode,
-  CSSProperties
+  CSSProperties,
+  MouseEvent as ReactMouseEvent
 } from 'react'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
@@ -523,6 +524,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const justSelectedRef = useRef(false)
   // Suppress the synthetic click that fires after a drag/resize to avoid parent deselection
   const suppressNextClickRef = useRef(false)
+  const dragEndedRef = useRef(false)
   const [activeGuides, setActiveGuides] = useState<Guide[]>([])
   const [floatingLabel, setFloatingLabel] = useState<string | null>(null)
   const [floatingPosition, setFloatingPosition] = useState<{ x: number; y: number } | null>(null)
@@ -773,9 +775,14 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       if (event.button !== 0) {
         justSelectedRef.current = false
         suppressNextClickRef.current = false
+        dragEndedRef.current = false
         updateHoverFromEvent(event)
         return
       }
+
+      justSelectedRef.current = false
+      suppressNextClickRef.current = false
+      dragEndedRef.current = false
 
       const dataset = (event.target as HTMLElement | null)?.dataset ?? {}
       const handle = dataset.handle as ResizeHandle | undefined
@@ -813,6 +820,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         clearInteraction()
         clearHover()
         suppressNextClickRef.current = false
+        dragEndedRef.current = false
         return
       }
 
@@ -982,35 +990,35 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       }
 
       const pointer = getPointerPosition(event)
-
-      // If we somehow lost layout or pointer info, end interaction but keep selection.
-      if (!layout || !pointer) {
-        clearInteraction({ preserveAnimation: true })
-        commitHover({ itemId: state.itemId, handle: null }, 'grab')
-        return
-      }
-
-      const deltaX = pointer.x - state.startX
-      const deltaY = pointer.y - state.startY
-      const moved = Math.abs(deltaX) > 0.001 || Math.abs(deltaY) > 0.001
-
       let frame: LayoutFrame | null = null
 
-      if (state.mode === 'move') {
-        if (moved) {
-          frame = clampFrameToCanvas({
-            x: state.originFrame.x + deltaX,
-            y: state.originFrame.y + deltaY,
-            width: state.originFrame.width,
-            height: state.originFrame.height
-          })
+      if (layout && pointer) {
+        const deltaX = pointer.x - state.startX
+        const deltaY = pointer.y - state.startY
+        const moved = Math.abs(deltaX) > 0.001 || Math.abs(deltaY) > 0.001
+
+        if (state.mode === 'move') {
+          if (moved) {
+            frame = clampFrameToCanvas({
+              x: state.originFrame.x + deltaX,
+              y: state.originFrame.y + deltaY,
+              width: state.originFrame.width,
+              height: state.originFrame.height
+            })
+          }
+        } else if (state.handle) {
+          // Resize always commits if any change happened
+          frame = state.aspectLocked
+            ? maintainAspectResize(
+                state.originFrame,
+                state.handle,
+                deltaX,
+                deltaY,
+                state.aspectRatio
+              )
+            : resizeFrame(state.originFrame, state.handle, deltaX, deltaY)
+          frame = clampFrameToCanvas(frame)
         }
-      } else if (state.handle) {
-        // Resize always commits if any change happened
-        frame = state.aspectLocked
-          ? maintainAspectResize(state.originFrame, state.handle, deltaX, deltaY, state.aspectRatio)
-          : resizeFrame(state.originFrame, state.handle, deltaX, deltaY)
-        frame = clampFrameToCanvas(frame)
       }
 
       if (frame) {
@@ -1018,12 +1026,27 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         scheduleTransform([{ itemId: state.itemId, frame: snapped }], { commit: true })
       }
 
+      const reassertSelection = () => {
+        setSelectedItemId(state.itemId)
+        setToolbarAnchorId(state.itemId)
+      }
+
       // Ensure the post-pointerup synthetic 'click' doesn't bubble and clear selection
       suppressNextClickRef.current = true
+      dragEndedRef.current = true
 
       // Always keep selection after pointer up, regardless of movement size
-      setSelectedItemId(state.itemId)
-      setToolbarAnchorId(state.itemId)
+      reassertSelection()
+      if (typeof queueMicrotask === 'function') {
+        queueMicrotask(reassertSelection)
+      }
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+          reassertSelection()
+        })
+      }
+      setTimeout(reassertSelection, 0)
+
       // Prevent the pointerup from bubbling to any parent click handlers
       // Do NOT set justSelectedRef.current here, so that selection persists after drag/move/resize
       event.preventDefault()
@@ -1216,15 +1239,36 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     return base
   }, [aspectRatio, cursor, style])
 
-  // Handler to suppress parent click handlers after pure click-to-select or after drag/resize
-  const handleClickCapture = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (justSelectedRef.current || suppressNextClickRef.current) {
-      justSelectedRef.current = false
-      suppressNextClickRef.current = false
-      e.preventDefault()
-      e.stopPropagation()
-    }
-  }, [])
+  const handleSuppressedClick = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (suppressNextClickRef.current || justSelectedRef.current || dragEndedRef.current) {
+        event.preventDefault()
+        event.stopPropagation()
+        justSelectedRef.current = false
+        suppressNextClickRef.current = false
+        if (dragEndedRef.current) {
+          setTimeout(() => {
+            dragEndedRef.current = false
+          }, 0)
+        }
+      }
+    },
+    []
+  )
+
+  const handleClickCapture = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      handleSuppressedClick(event)
+    },
+    [handleSuppressedClick]
+  )
+
+  const handleClick = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      handleSuppressedClick(event)
+    },
+    [handleSuppressedClick]
+  )
 
   return (
     <div
@@ -1237,6 +1281,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       onPointerLeave={handlePointerLeave}
       onPointerCancel={handlePointerCancel}
       onClickCapture={handleClickCapture}
+      onClick={handleClick}
       role="presentation"
       aria-label={ariaLabel}
     >
