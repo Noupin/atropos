@@ -772,6 +772,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       // Only handle primary button
       if (event.button !== 0) {
         justSelectedRef.current = false
+        suppressNextClickRef.current = false
         updateHoverFromEvent(event)
         return
       }
@@ -811,6 +812,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         cycleRef.current = null
         clearInteraction()
         clearHover()
+        suppressNextClickRef.current = false
         return
       }
 
@@ -880,6 +882,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       } else {
         // Pure select – no interaction started
         justSelectedRef.current = true
+        suppressNextClickRef.current = true
         event.preventDefault()
         setCursor('grab')
       }
@@ -963,6 +966,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       if (justSelectedRef.current) {
         // We only clicked to select; keep selection, suppress parent onClick handlers
         justSelectedRef.current = false
+        suppressNextClickRef.current = true
         event.preventDefault()
         event.stopPropagation()
         commitHover({ itemId: selectedItemId ?? null, handle: null }, 'grab')
@@ -1176,7 +1180,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   const showToolbar = Boolean(activeSelection && toolbarAnchorId === activeSelection.id)
 
-  const stopToolbarPointerPropagation = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+  const stopPointerPropagation = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     event.stopPropagation()
   }, [])
 
@@ -1325,6 +1329,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
             role="group"
             aria-label={label}
             data-item-id={item.id}
+            onPointerDown={stopPointerPropagation}
           >
             {renderItemContent ? (
               <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
@@ -1356,6 +1361,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                     className={`absolute h-4 w-4 rounded-none border-2 text-transparent transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${handle.className} ${handleOpacityClass} ${handlePointerClass}`}
                     onPointerDown={(event) => {
                       event.preventDefault()
+                      event.stopPropagation()
                     }}
                     style={
                       {
@@ -1412,7 +1418,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                   <button
                     type="button"
                     className={toolbarButtonClass}
-                    onPointerDown={stopToolbarPointerPropagation}
+                    onPointerDown={stopPointerPropagation}
                     onClick={() => onRequestToggleAspectLock(transformTarget)}
                   >
                     {lockLabel}
@@ -1429,7 +1435,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                   <button
                     type="button"
                     className={toolbarButtonClass}
-                    onPointerDown={stopToolbarPointerPropagation}
+                    onPointerDown={stopPointerPropagation}
                     onClick={() => onRequestSnapAspectRatio(transformTarget)}
                   >
                     {snapLabel}
@@ -1444,7 +1450,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                   <button
                     type="button"
                     className={toolbarButtonClass}
-                    onPointerDown={stopToolbarPointerPropagation}
+                    onPointerDown={stopPointerPropagation}
                     onClick={onRequestBringForward}
                   >
                     Bring forward
@@ -1457,7 +1463,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                   <button
                     type="button"
                     className={toolbarButtonClass}
-                    onPointerDown={stopToolbarPointerPropagation}
+                    onPointerDown={stopPointerPropagation}
                     onClick={onRequestSendBackward}
                   >
                     Send backward
@@ -1470,7 +1476,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                   <button
                     type="button"
                     className={toolbarButtonClass}
-                    onPointerDown={stopToolbarPointerPropagation}
+                    onPointerDown={stopPointerPropagation}
                     onClick={onRequestDuplicate}
                   >
                     Duplicate
@@ -1483,7 +1489,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                   <button
                     type="button"
                     className={toolbarButtonClass}
-                    onPointerDown={stopToolbarPointerPropagation}
+                    onPointerDown={stopPointerPropagation}
                     onClick={onRequestDelete}
                   >
                     Remove
@@ -1495,7 +1501,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
               <div className="pointer-events-none absolute z-20" style={toolbarStyle}>
                 <div
                   className="pointer-events-auto inline-flex items-center gap-1 rounded-full border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_92%,transparent)] px-3 py-1 text-[11px] text-[var(--fg)] shadow-[0_12px_28px_rgba(15,23,42,0.4)]"
-                  onPointerDown={stopToolbarPointerPropagation}
+                  onPointerDown={stopPointerPropagation}
                 >
                   {buttons.map((entry, index) => (
                     <Fragment key={entry.key}>
