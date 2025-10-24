@@ -1050,13 +1050,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         }
       }
 
-      const reassertSelection = () => {
-        setSelectedItemId(state.itemId)
-        setToolbarAnchorId(state.itemId)
-      }
-
       // Immediately lock in the current selection so toolbar/handles never flicker.
-      reassertSelection()
+      setSelectedItemId(state.itemId)
+      setToolbarAnchorId(state.itemId)
 
       if (frame) {
         const snapped = applyGuides(frame, state.snapEnabled)
@@ -1076,23 +1072,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         }
         persistSelectionTimerRef.current = null
       }, 200)
-
-      // Always keep selection after pointer up, regardless of movement size
-      if (typeof queueMicrotask === 'function') {
-        queueMicrotask(reassertSelection)
-      }
-      if (typeof requestAnimationFrame === 'function') {
-        requestAnimationFrame(() => {
-          reassertSelection()
-          if (typeof requestAnimationFrame === 'function') {
-            requestAnimationFrame(() => {
-              reassertSelection()
-            })
-          }
-        })
-      }
-      setTimeout(reassertSelection, 0)
-      setTimeout(reassertSelection, 32)
 
       // Prevent the pointerup from bubbling to any parent click handlers
       // Do NOT set justSelectedRef.current here, so that selection persists after drag/move/resize
@@ -1325,19 +1304,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       if (dragEndedRef.current) {
         event.preventDefault()
         event.stopPropagation()
+        dragEndedRef.current = false
         justSelectedRef.current = false
         suppressNextClickRef.current = false
-        const suppressedId = persistSelectionIdRef.current
-        setTimeout(() => {
-          dragEndedRef.current = false
-          if (persistSelectionTimerRef.current) {
-            window.clearTimeout(persistSelectionTimerRef.current)
-            persistSelectionTimerRef.current = null
-          }
-          if (!dragEndedRef.current && suppressedId && persistSelectionIdRef.current === suppressedId) {
-            persistSelectionIdRef.current = null
-          }
-        }, 0)
         return
       }
       handleSuppressedClick(event)
