@@ -6,7 +6,7 @@ import type {
   CSSProperties,
   MouseEvent as ReactMouseEvent
 } from 'react'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   LayoutDefinition,
   LayoutFrame,
@@ -14,6 +14,16 @@ import type {
   LayoutTextItem,
   LayoutVideoItem
 } from '../../../../types/layouts'
+import LayoutItemToolbar, {
+  type LayoutItemToolbarAction,
+  BringForwardIcon,
+  DuplicateIcon,
+  LockIcon,
+  MagnetIcon,
+  RemoveIcon,
+  SendBackwardIcon,
+  UnlockIcon
+} from './LayoutItemToolbar'
 import { useLayoutSelection } from './layoutSelectionStore'
 
 export type { LayoutCanvasSelection } from './layoutSelectionStore'
@@ -774,6 +784,15 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       if (!layout) {
         return
       }
+
+      const targetElement = event.target as HTMLElement | null
+      if (targetElement?.closest('[data-layout-item-toolbar="true"]')) {
+        justSelectedRef.current = false
+        suppressNextClickRef.current = false
+        dragEndedRef.current = false
+        lastPointerDownSelectionRef.current = null
+        return
+      }
       // Only handle primary button
       if (event.button !== 0) {
         justSelectedRef.current = false
@@ -1206,20 +1225,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     [colorScheme]
   )
 
-  const toolbarStyle = useMemo<CSSWithVars | undefined>(() => {
-    if (!selectionBounds) {
-      return undefined
-    }
-    const centerX = selectionBounds.x + selectionBounds.width / 2
-    const top = Math.max(selectionBounds.y, 0)
-    return {
-      left: fractionToPercent(centerX),
-      top: fractionToPercent(top),
-      transform: 'translate(-50%, -100%) translateY(-18px)',
-      '--ring': ringColor
-    }
-  }, [ringColor, selectionBounds])
-
   const primaryIsVideo = Boolean(
     activeSelection && (activeSelection as LayoutVideoItem).kind === 'video'
   )
@@ -1228,6 +1233,70 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   )
 
   const showToolbar = Boolean(activeSelection && toolbarAnchorId === activeSelection.id)
+
+  const toolbarActions = useMemo<LayoutItemToolbarAction[]>(() => {
+    const aspectContext = transformTarget === 'crop' ? 'crop' : 'frame'
+    const actions: LayoutItemToolbarAction[] = [
+      {
+        key: 'toggle-aspect',
+        label: primaryAspectLocked
+          ? `Unlock ${aspectContext} aspect`
+          : `Lock ${aspectContext} aspect`,
+        icon: primaryAspectLocked ? <UnlockIcon /> : <LockIcon />,
+        onSelect:
+          primaryIsVideo && onRequestToggleAspectLock
+            ? () => onRequestToggleAspectLock(transformTarget)
+            : undefined,
+        disabled: !primaryIsVideo || !onRequestToggleAspectLock
+      },
+      {
+        key: 'snap-aspect',
+        label:
+          transformTarget === 'crop' ? 'Snap crop to frame' : 'Snap frame to video',
+        icon: <MagnetIcon />, 
+        onSelect:
+          primaryIsVideo && onRequestSnapAspectRatio
+            ? () => onRequestSnapAspectRatio(transformTarget)
+            : undefined,
+        disabled: !primaryIsVideo || !onRequestSnapAspectRatio
+      },
+      {
+        key: 'bring-forward',
+        label: 'Bring forward',
+        icon: <BringForwardIcon />, 
+        onSelect: onRequestBringForward
+      },
+      {
+        key: 'send-backward',
+        label: 'Send backward',
+        icon: <SendBackwardIcon />, 
+        onSelect: onRequestSendBackward
+      },
+      {
+        key: 'duplicate',
+        label: 'Duplicate',
+        icon: <DuplicateIcon />, 
+        onSelect: onRequestDuplicate
+      },
+      {
+        key: 'remove',
+        label: 'Remove',
+        icon: <RemoveIcon />, 
+        onSelect: onRequestDelete
+      }
+    ]
+    return actions
+  }, [
+    onRequestBringForward,
+    onRequestDelete,
+    onRequestDuplicate,
+    onRequestSendBackward,
+    onRequestSnapAspectRatio,
+    onRequestToggleAspectLock,
+    primaryAspectLocked,
+    primaryIsVideo,
+    transformTarget
+  ])
 
   const stopPointerPropagation = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     event.stopPropagation()
@@ -1301,6 +1370,13 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   const handleClickCapture = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
+      const targetElement = event.target as HTMLElement | null
+      if (targetElement?.closest('[data-layout-item-toolbar="true"]')) {
+        justSelectedRef.current = false
+        suppressNextClickRef.current = false
+        dragEndedRef.current = false
+        return
+      }
       if (dragEndedRef.current) {
         event.preventDefault()
         event.stopPropagation()
@@ -1316,6 +1392,13 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   const handleClick = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
+      const targetElement = event.target as HTMLElement | null
+      if (targetElement?.closest('[data-layout-item-toolbar="true"]')) {
+        justSelectedRef.current = false
+        suppressNextClickRef.current = false
+        dragEndedRef.current = false
+        return
+      }
       handleSuppressedClick(event)
     },
     [handleSuppressedClick]
@@ -1471,6 +1554,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                   </button>
                 ))
               : null}
+            {isPrimarySelection && showToolbar ? (
+              <LayoutItemToolbar actions={toolbarActions} ringColor={ringColor} />
+            ) : null}
           </div>
         )
       })}
@@ -1498,125 +1584,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           {floatingLabel}
         </div>
       ) : null}
-      {showToolbar && toolbarStyle
-        ? (() => {
-            const buttons: Array<{ key: string; node: ReactNode }> = []
-            const toolbarButtonClass =
-              'rounded-full px-2 py-1 text-xs text-[var(--fg)] transition hover:bg-[color:color-mix(in_srgb,var(--panel)_65%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]'
-            if (primaryIsVideo && onRequestToggleAspectLock) {
-              const aspectContext = transformTarget === 'crop' ? 'crop' : 'frame'
-              const lockLabel = primaryAspectLocked
-                ? `Unlock ${aspectContext} aspect`
-                : `Lock ${aspectContext} aspect`
-              buttons.push({
-                key: 'toggle-aspect',
-                node: (
-                  <button
-                    type="button"
-                    className={toolbarButtonClass}
-                    onPointerDown={stopPointerPropagation}
-                    onClick={() => onRequestToggleAspectLock(transformTarget)}
-                  >
-                    {lockLabel}
-                  </button>
-                )
-              })
-            }
-            if (primaryIsVideo && onRequestSnapAspectRatio) {
-              const snapLabel =
-                transformTarget === 'crop' ? 'Snap crop to frame' : 'Snap frame to video'
-              buttons.push({
-                key: 'snap-aspect',
-                node: (
-                  <button
-                    type="button"
-                    className={toolbarButtonClass}
-                    onPointerDown={stopPointerPropagation}
-                    onClick={() => onRequestSnapAspectRatio(transformTarget)}
-                  >
-                    {snapLabel}
-                  </button>
-                )
-              })
-            }
-            buttons.push(
-              {
-                key: 'bring-forward',
-                node: (
-                  <button
-                    type="button"
-                    className={toolbarButtonClass}
-                    onPointerDown={stopPointerPropagation}
-                    onClick={onRequestBringForward}
-                  >
-                    Bring forward
-                  </button>
-                )
-              },
-              {
-                key: 'send-backward',
-                node: (
-                  <button
-                    type="button"
-                    className={toolbarButtonClass}
-                    onPointerDown={stopPointerPropagation}
-                    onClick={onRequestSendBackward}
-                  >
-                    Send backward
-                  </button>
-                )
-              },
-              {
-                key: 'duplicate',
-                node: (
-                  <button
-                    type="button"
-                    className={toolbarButtonClass}
-                    onPointerDown={stopPointerPropagation}
-                    onClick={onRequestDuplicate}
-                  >
-                    Duplicate
-                  </button>
-                )
-              },
-              {
-                key: 'remove',
-                node: (
-                  <button
-                    type="button"
-                    className={toolbarButtonClass}
-                    onPointerDown={stopPointerPropagation}
-                    onClick={onRequestDelete}
-                  >
-                    Remove
-                  </button>
-                )
-              }
-            )
-            return (
-              <div className="pointer-events-none absolute z-20" style={toolbarStyle}>
-                <div
-                  className="pointer-events-auto inline-flex items-center gap-1 rounded-full border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_92%,transparent)] px-3 py-1 text-[11px] text-[var(--fg)] shadow-[0_12px_28px_rgba(15,23,42,0.4)]"
-                  onPointerDown={stopPointerPropagation}
-                >
-                  {buttons.map((entry, index) => (
-                    <Fragment key={entry.key}>
-                      {entry.node}
-                      {index < buttons.length - 1 ? (
-                        <span
-                          aria-hidden="true"
-                          className="text-[color:color-mix(in_srgb,var(--fg)_45%,transparent)]"
-                        >
-                          ·
-                        </span>
-                      ) : null}
-                    </Fragment>
-                  ))}
-                </div>
-              </div>
-            )
-          })()
-        : null}
     </div>
   )
 }
