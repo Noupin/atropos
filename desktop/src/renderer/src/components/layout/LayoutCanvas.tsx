@@ -1046,6 +1046,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           clearInteraction({ preserveAnimation: true })
           commitHover({ itemId: state.itemId, handle: null }, 'grab')
           activePressRef.current = null
+          justSelectedRef.current = false
           event.preventDefault()
           event.stopPropagation()
           return
@@ -1086,6 +1087,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         clearInteraction({ preserveAnimation: true })
         commitHover({ itemId: state.itemId, handle: null }, 'grab')
         activePressRef.current = null
+        justSelectedRef.current = false
         return
       }
 
@@ -1471,6 +1473,10 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                     data-item-id={item.id}
                     className={`absolute h-4 w-4 rounded-none border-2 text-transparent transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${handle.className} ${handleOpacityClass} ${handlePointerClass}`}
                     onPointerDown={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                    }}
+                    onPointerUp={(event) => {
                       event.preventDefault()
                       event.stopPropagation()
                     }}
