@@ -9,6 +9,8 @@ import {
   SETTINGS_DEFAULTS,
   type SettingMetadata
 } from './settingsMetadata'
+import { fetchLayoutCollection as fetchLayoutCollectionApi } from '../services/layouts'
+import type { LayoutCollection } from '../../../types/api'
 import { formatConfigValue, formatNumberForStep } from '../utils/configFormatting'
 import { TONE_LABELS } from '../constants/tone'
 import {
@@ -482,6 +484,9 @@ const Settings: FC<SettingsProps> = ({ accounts, onRegisterHeaderAction }) => {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [layoutCollection, setLayoutCollection] = useState<LayoutCollection | null>(null)
+  const [isLayoutLoading, setIsLayoutLoading] = useState(false)
+  const [layoutError, setLayoutError] = useState<string | null>(null)
   const [pageSizeInput, setPageSizeInput] = useState<string>(() => libraryState.pageSize.toString())
   const [pageSizeError, setPageSizeError] = useState<string | null>(null)
   const [pageSizeDirty, setPageSizeDirty] = useState(false)
@@ -603,9 +608,27 @@ const Settings: FC<SettingsProps> = ({ accounts, onRegisterHeaderAction }) => {
     }
   }, [initialiseFromEntries])
 
+  const refreshLayouts = useCallback(async () => {
+    setIsLayoutLoading(true)
+    setLayoutError(null)
+    try {
+      const collection = await fetchLayoutCollectionApi()
+      setLayoutCollection(collection)
+    } catch (loadError) {
+      const message = loadError instanceof Error ? loadError.message : 'Failed to load layout presets.'
+      setLayoutError(message)
+    } finally {
+      setIsLayoutLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     void loadConfig()
   }, [loadConfig])
+
+  useEffect(() => {
+    void refreshLayouts()
+  }, [refreshLayouts])
 
   const handleValueChange = useCallback(
     (name: string, raw: string) => {
@@ -840,6 +863,51 @@ const Settings: FC<SettingsProps> = ({ accounts, onRegisterHeaderAction }) => {
         }
         return 'text'
       })()
+
+      if (entry.name === 'RENDER_LAYOUT') {
+        if (layoutError) {
+          return (
+            <p className="text-xs font-semibold text-[color:var(--error-strong)]">{layoutError}</p>
+          )
+        }
+        if (isLayoutLoading && !layoutCollection) {
+          return <p className="text-xs text-[var(--muted)]">Loading layouts…</p>
+        }
+        if (!layoutCollection || (layoutCollection.builtin.length === 0 && layoutCollection.custom.length === 0)) {
+          return (
+            <p className="text-xs text-[var(--muted)]">
+              No layouts found. Open a video and create a layout from the Layout tab to get started.
+            </p>
+          )
+        }
+        return (
+          <select
+            value={value}
+            onChange={(event) => handleValueChange(entry.name, event.target.value)}
+            disabled={isLayoutLoading}
+            className="w-full rounded-md border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          >
+            {layoutCollection.builtin.length > 0 ? (
+              <optgroup label="Built-in layouts">
+                {layoutCollection.builtin.map((layout) => (
+                  <option key={`builtin-${layout.id}`} value={layout.id}>
+                    {layout.name}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+            {layoutCollection.custom.length > 0 ? (
+              <optgroup label="Custom layouts">
+                {layoutCollection.custom.map((layout) => (
+                  <option key={`custom-${layout.id}`} value={layout.id}>
+                    {layout.name}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+          </select>
+        )
+      }
 
       if (control === 'checkbox') {
         const isChecked = normaliseBooleanString(value)

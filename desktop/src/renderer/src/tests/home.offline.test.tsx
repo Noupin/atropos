@@ -27,7 +27,8 @@ const AVAILABLE_ACCOUNT: AccountSummary = {
   ],
   active: true,
   tone: null,
-  effectiveTone: 'funny'
+  effectiveTone: 'funny',
+  defaultLayoutId: null
 }
 
 const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePipelineState => ({

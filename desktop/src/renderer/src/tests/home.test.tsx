@@ -88,7 +88,8 @@ const AVAILABLE_ACCOUNT: AccountSummary = {
   platforms: [createPlatform()],
   active: true,
   tone: null,
-  effectiveTone: 'funny'
+  effectiveTone: 'funny',
+  defaultLayoutId: null
 }
 
 const INACTIVE_ACCOUNT: AccountSummary = {
@@ -99,7 +100,8 @@ const INACTIVE_ACCOUNT: AccountSummary = {
   platforms: [createPlatform()],
   active: false,
   tone: null,
-  effectiveTone: 'funny'
+  effectiveTone: 'funny',
+  defaultLayoutId: null
 }
 
 const ACCOUNT_WITHOUT_PLATFORMS: AccountSummary = {
@@ -110,7 +112,8 @@ const ACCOUNT_WITHOUT_PLATFORMS: AccountSummary = {
   platforms: [],
   active: true,
   tone: null,
-  effectiveTone: 'funny'
+  effectiveTone: 'funny',
+  defaultLayoutId: null
 }
 
 const ACCOUNT_WITH_DISABLED_PLATFORM: AccountSummary = {
@@ -121,14 +124,16 @@ const ACCOUNT_WITH_DISABLED_PLATFORM: AccountSummary = {
   platforms: [createPlatform({ active: false })],
   active: true,
   tone: null,
-  effectiveTone: 'funny'
+  effectiveTone: 'funny',
+  defaultLayoutId: null
 }
 
 const SECONDARY_AVAILABLE_ACCOUNT: AccountSummary = {
   ...AVAILABLE_ACCOUNT,
   id: 'account-secondary',
   displayName: 'Second Creator Hub',
-  platforms: [createPlatform()]
+  platforms: [createPlatform()],
+  defaultLayoutId: null
 }
 
 const createInitialState = (overrides: Partial<HomePipelineState> = {}): HomePipelineState => ({

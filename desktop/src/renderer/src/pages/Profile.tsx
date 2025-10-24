@@ -22,6 +22,8 @@ import {
   createSubscriptionCheckout
 } from '../services/licensing'
 import SubscriptionTransferPanel from '../components/SubscriptionTransferPanel'
+import { fetchLayoutCollection as fetchLayoutCollectionApi } from '../services/layouts'
+import type { LayoutCollection } from '../../../types/api'
 
 const PLATFORM_TOKEN_FILES: Record<SupportedPlatform, string> = {
   tiktok: 'tiktok.json',
@@ -61,7 +63,7 @@ type ProfileProps = {
   ) => Promise<AccountSummary>
   onUpdateAccount: (
     accountId: string,
-    payload: { active?: boolean; tone?: string | null }
+    payload: { active?: boolean; tone?: string | null; defaultLayoutId?: string | null }
   ) => Promise<AccountSummary>
   onDeleteAccount: (accountId: string) => Promise<void>
   onUpdatePlatform: (
@@ -80,6 +82,9 @@ type AccountCardProps = {
   onDeleteAccount: ProfileProps['onDeleteAccount']
   onUpdatePlatform: ProfileProps['onUpdatePlatform']
   onDeletePlatform: ProfileProps['onDeletePlatform']
+  layoutCollection: LayoutCollection | null
+  isLayoutLoading: boolean
+  layoutError: string | null
 }
 
 const authStatusVariants: Record<string, BadgeVariant> = {
@@ -112,7 +117,10 @@ const AccountCard: FC<AccountCardProps> = ({
   onUpdateAccount,
   onDeleteAccount,
   onUpdatePlatform,
-  onDeletePlatform
+  onDeletePlatform,
+  layoutCollection,
+  isLayoutLoading,
+  layoutError
 }) => {
   const [selectedPlatform, setSelectedPlatform] = useState<SupportedPlatform | ''>('')
   const [label, setLabel] = useState('')
@@ -126,6 +134,7 @@ const AccountCard: FC<AccountCardProps> = ({
   const [isTogglingAccount, setIsTogglingAccount] = useState(false)
   const [isDeletingAccount, setIsDeletingAccount] = useState(false)
   const [isUpdatingTone, setIsUpdatingTone] = useState(false)
+  const [isUpdatingLayout, setIsUpdatingLayout] = useState(false)
   const [updatingPlatform, setUpdatingPlatform] = useState<SupportedPlatform | null>(null)
   const [removingPlatform, setRemovingPlatform] = useState<SupportedPlatform | null>(null)
   const [isCollapsed, setIsCollapsed] = useState(true)
@@ -156,6 +165,78 @@ const AccountCard: FC<AccountCardProps> = ({
   const toneBadgeTitle = account.tone
     ? 'Account-specific tone override'
     : 'Using the global clip tone'
+
+  const layoutSelectOptions = useMemo(() => {
+    const options: Array<{ value: string; label: string }> = [
+      { value: '', label: 'Use default layout' }
+    ]
+    if (layoutCollection) {
+      layoutCollection.builtin.forEach((layout) => {
+        options.push({ value: layout.id, label: `${layout.name} · Built-in` })
+      })
+      layoutCollection.custom.forEach((layout) => {
+        options.push({ value: layout.id, label: `${layout.name} · Custom` })
+      })
+    }
+    return options
+  }, [layoutCollection])
+
+  const layoutSelectValue = account.defaultLayoutId ?? ''
+  const overrideLayoutLabel = useMemo(() => {
+    if (!account.defaultLayoutId) {
+      return null
+    }
+    const match = layoutCollection
+      ? [...layoutCollection.builtin, ...layoutCollection.custom].find(
+          (layout) => layout.id === account.defaultLayoutId
+        )
+    : null
+    return match?.name ?? account.defaultLayoutId
+  }, [account.defaultLayoutId, layoutCollection])
+
+  const handleLayoutSelection = useCallback(
+    async (nextValue: string) => {
+      const normalised = nextValue === '' ? null : nextValue
+      const current = account.defaultLayoutId ?? null
+      if (normalised === current) {
+        return
+      }
+
+      setError(null)
+      setSuccess(null)
+      setIsUpdatingLayout(true)
+      try {
+        const updated = await onUpdateAccount(account.id, { defaultLayoutId: normalised })
+        if (isMounted.current) {
+          if (normalised) {
+            const match = layoutCollection
+              ? [...layoutCollection.builtin, ...layoutCollection.custom].find(
+                  (layout) => layout.id === normalised
+                )
+              : null
+            const label = match?.name ?? normalised
+            setSuccess(`Layout set to ${label}.`)
+          } else {
+            setSuccess('Layout override cleared. Using the default setting.')
+          }
+        }
+        return updated
+      } catch (layoutUpdateError) {
+        const message =
+          layoutUpdateError instanceof Error
+            ? layoutUpdateError.message
+            : 'Unable to update the default layout. Please try again.'
+        if (isMounted.current) {
+          setError(message)
+        }
+      } finally {
+        if (isMounted.current) {
+          setIsUpdatingLayout(false)
+        }
+      }
+    },
+    [account.defaultLayoutId, account.id, layoutCollection, onUpdateAccount]
+  )
 
   const availablePlatforms = useMemo(
     () =>
@@ -553,6 +634,35 @@ const AccountCard: FC<AccountCardProps> = ({
     </div>
   )
 
+  const renderLayoutControls = () => (
+    <div className="flex flex-col gap-2 rounded-xl border border-white/10 bg-black/20 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-sm font-semibold text-[var(--fg)]">Default layout</h4>
+        <span className="text-xs text-[var(--muted)]">
+          {overrideLayoutLabel ? `Override: ${overrideLayoutLabel}` : 'Using default layout'}
+        </span>
+      </div>
+      {layoutError ? (
+        <p className="text-xs font-semibold text-[color:var(--error-strong)]">{layoutError}</p>
+      ) : null}
+      <label className="flex flex-col gap-1 text-xs font-medium text-[var(--muted)]">
+        Layout
+        <MarbleSelect
+          id={`layout-${account.id}`}
+          name="layout"
+          value={layoutSelectValue}
+          options={layoutSelectOptions}
+          onChange={handleLayoutSelection}
+          disabled={isUpdatingLayout || isLayoutLoading || layoutSelectOptions.length <= 1}
+          placeholder={isLayoutLoading ? 'Loading layouts…' : 'Select a layout'}
+        />
+      </label>
+      <p className="text-xs text-[var(--muted)]">
+        Pick a default layout for clips published through this account. Leave blank to inherit the Settings value.
+      </p>
+    </div>
+  )
+
   const feedbackMessage = success || error ? (
     <div className="flex flex-col gap-2">
       {success ? (
@@ -621,6 +731,7 @@ const AccountCard: FC<AccountCardProps> = ({
             </p>
           ) : null}
           {renderToneControls()}
+          {renderLayoutControls()}
           {account.platforms.length > 0 ? (
             <ul className="flex flex-wrap gap-2">
               {account.platforms.map((platform) => (
@@ -647,6 +758,7 @@ const AccountCard: FC<AccountCardProps> = ({
       ) : (
         <div id={detailsId} className="flex flex-col gap-4">
           {renderToneControls()}
+          {renderLayoutControls()}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -839,6 +951,28 @@ const Profile: FC<ProfileProps> = ({
   const [isRefreshingAccess, setIsRefreshingAccess] = useState(false)
   const [isProcessingSubscription, setIsProcessingSubscription] = useState(false)
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null)
+  const [layoutCollection, setLayoutCollection] = useState<LayoutCollection | null>(null)
+  const [isLayoutLoading, setIsLayoutLoading] = useState(false)
+  const [layoutError, setLayoutError] = useState<string | null>(null)
+
+  const refreshLayouts = useCallback(async () => {
+    setIsLayoutLoading(true)
+    setLayoutError(null)
+    try {
+      const collection = await fetchLayoutCollectionApi()
+      setLayoutCollection(collection)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to load available layouts. Please try again.'
+      setLayoutError(message)
+    } finally {
+      setIsLayoutLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshLayouts()
+  }, [refreshLayouts])
 
   const handleRefreshAccessStatus = useCallback(async () => {
     setIsRefreshingAccess(true)
@@ -1203,6 +1337,9 @@ const Profile: FC<ProfileProps> = ({
                 onDeleteAccount={onDeleteAccount}
                 onUpdatePlatform={onUpdatePlatform}
                 onDeletePlatform={onDeletePlatform}
+                layoutCollection={layoutCollection}
+                isLayoutLoading={isLayoutLoading}
+                layoutError={layoutError}
               />
             ))}
           </div>

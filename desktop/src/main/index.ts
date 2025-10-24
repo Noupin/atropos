@@ -17,6 +17,15 @@ import {
   removeTrimmedPreview,
   sanitizeTrimWindow
 } from './trimmedPreview'
+import {
+  initialiseLayoutStorage,
+  listLayouts as listStoredLayouts,
+  loadLayoutDefinition,
+  saveCustomLayout,
+  importLayoutFromDialog,
+  exportLayoutToDialog
+} from './layouts'
+import type { LayoutDefinition } from '../types/layouts'
 
 type NavigationCommand = 'back' | 'forward'
 
@@ -299,6 +308,11 @@ const registerIpcHandlers = (): void => {
   ipcMain.removeHandler('open-video-file')
   ipcMain.removeHandler('clips:build-trimmed-preview')
   ipcMain.removeHandler('clips:release-media-token')
+  ipcMain.removeHandler('layouts:list')
+  ipcMain.removeHandler('layouts:load')
+  ipcMain.removeHandler('layouts:save')
+  ipcMain.removeHandler('layouts:import')
+  ipcMain.removeHandler('layouts:export')
 
   ipcMain.on('ping', () => console.log('pong'))
   ipcMain.on('navigation:state', (_event, state: NavigationState) => {
@@ -414,6 +428,70 @@ const registerIpcHandlers = (): void => {
       console.error('[adjusted-preview] failed to release media token', { token }, error)
     }
   })
+
+  ipcMain.handle('layouts:list', async () => {
+    try {
+      return await listStoredLayouts()
+    } catch (error) {
+      console.error('[layouts] failed to list layouts', error)
+      return { builtin: [], custom: [] }
+    }
+  })
+
+  ipcMain.handle(
+    'layouts:load',
+    async (_event, request: { id: string; category?: string | null }) => {
+      try {
+        return await loadLayoutDefinition(request.id, request.category as 'builtin' | 'custom' | null | undefined)
+      } catch (error) {
+        console.error('[layouts] failed to load layout', request, error)
+        throw error
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'layouts:save',
+    async (
+      _event,
+      request: {
+        layout: LayoutDefinition
+        originalId?: string | null
+        originalCategory?: string | null
+      }
+    ) => {
+      try {
+        return await saveCustomLayout(request.layout, {
+          originalId: request.originalId ?? null,
+          originalCategory: (request.originalCategory as 'builtin' | 'custom' | null | undefined) ?? null
+        })
+      } catch (error) {
+        console.error('[layouts] failed to save layout', request.layout?.id, error)
+        throw error
+      }
+    }
+  )
+
+  ipcMain.handle('layouts:import', async () => {
+    try {
+      return await importLayoutFromDialog()
+    } catch (error) {
+      console.error('[layouts] failed to import layout', error)
+      throw error
+    }
+  })
+
+  ipcMain.handle(
+    'layouts:export',
+    async (_event, request: { id: string; category: string }) => {
+      try {
+        return await exportLayoutToDialog(request.id, request.category as 'builtin' | 'custom')
+      } catch (error) {
+        console.error('[layouts] failed to export layout', request, error)
+        throw error
+      }
+    }
+  )
 }
 
 registerIpcHandlers()
@@ -538,6 +616,8 @@ app.whenReady().then(() => {
       app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME)
     }
   }
+
+  void initialiseLayoutStorage()
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
