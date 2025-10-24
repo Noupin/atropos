@@ -1050,14 +1050,17 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         }
       }
 
-      if (frame) {
-        const snapped = applyGuides(frame, state.snapEnabled)
-        scheduleTransform([{ itemId: state.itemId, frame: snapped }], { commit: true })
-      }
-
       const reassertSelection = () => {
         setSelectedItemId(state.itemId)
         setToolbarAnchorId(state.itemId)
+      }
+
+      // Immediately lock in the current selection so toolbar/handles never flicker.
+      reassertSelection()
+
+      if (frame) {
+        const snapped = applyGuides(frame, state.snapEnabled)
+        scheduleTransform([{ itemId: state.itemId, frame: snapped }], { commit: true })
       }
 
       // Ensure the post-pointerup synthetic 'click' doesn't bubble and clear selection
@@ -1075,7 +1078,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       }, 200)
 
       // Always keep selection after pointer up, regardless of movement size
-      reassertSelection()
       if (typeof queueMicrotask === 'function') {
         queueMicrotask(reassertSelection)
       }
@@ -1284,30 +1286,14 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     return base
   }, [aspectRatio, cursor, style])
 
-  const handleSuppressedClick = useCallback(
-    (event: ReactMouseEvent<HTMLDivElement>) => {
-      if (suppressNextClickRef.current || justSelectedRef.current || dragEndedRef.current) {
-        event.preventDefault()
-        event.stopPropagation()
-        justSelectedRef.current = false
-        suppressNextClickRef.current = false
-        const suppressedId = persistSelectionIdRef.current
-        if (dragEndedRef.current) {
-          setTimeout(() => {
-            dragEndedRef.current = false
-            if (persistSelectionTimerRef.current) {
-              window.clearTimeout(persistSelectionTimerRef.current)
-              persistSelectionTimerRef.current = null
-            }
-            if (!dragEndedRef.current && suppressedId && persistSelectionIdRef.current === suppressedId) {
-              persistSelectionIdRef.current = null
-            }
-          }, 0)
-        }
-      }
-    },
-    []
-  )
+  const handleSuppressedClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    if (suppressNextClickRef.current || justSelectedRef.current) {
+      event.preventDefault()
+      event.stopPropagation()
+      justSelectedRef.current = false
+      suppressNextClickRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -1336,6 +1322,24 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   const handleClickCapture = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (dragEndedRef.current) {
+        event.preventDefault()
+        event.stopPropagation()
+        justSelectedRef.current = false
+        suppressNextClickRef.current = false
+        const suppressedId = persistSelectionIdRef.current
+        setTimeout(() => {
+          dragEndedRef.current = false
+          if (persistSelectionTimerRef.current) {
+            window.clearTimeout(persistSelectionTimerRef.current)
+            persistSelectionTimerRef.current = null
+          }
+          if (!dragEndedRef.current && suppressedId && persistSelectionIdRef.current === suppressedId) {
+            persistSelectionIdRef.current = null
+          }
+        }, 0)
+        return
+      }
       handleSuppressedClick(event)
     },
     [handleSuppressedClick]
