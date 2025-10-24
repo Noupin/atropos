@@ -417,6 +417,44 @@ describe('Layout editor interactions', () => {
     })
   })
 
+  it('prevents parent pointer handlers from clearing selection after a drag release', async () => {
+    const Wrapper = () => (
+      <div onPointerUp={() => resetLayoutSelection()} onClick={() => resetLayoutSelection()}>
+        <LayoutCanvas
+          layout={baseLayout}
+          onTransform={vi.fn()}
+          onRequestBringForward={vi.fn()}
+          onRequestSendBackward={vi.fn()}
+          onRequestDuplicate={vi.fn()}
+          onRequestDelete={vi.fn()}
+          showGrid
+          showSafeMargins={false}
+          previewContent={<div>preview</div>}
+          transformTarget="frame"
+        />
+      </div>
+    )
+
+    render(<Wrapper />)
+
+    const canvas = screen.getByRole('presentation')
+
+    await act(async () => {
+      pointerDown(canvas, { clientX: 60, clientY: 100, pointerId: 41 })
+      pointerMove(canvas, { clientX: 90, clientY: 140, pointerId: 41 })
+    })
+
+    await act(async () => {
+      pointerUp(canvas, { clientX: 90, clientY: 140, pointerId: 41 })
+    })
+
+    await waitFor(() => {
+      const selected = within(canvas).getByRole('group', { name: /primary/i })
+      expect(selected.className).toContain('ring-2')
+      expect(within(canvas).getByTestId('selection-outline')).toBeTruthy()
+    })
+  })
+
   it('keeps the frame selected after resizing from a handle', async () => {
     render(
       <LayoutCanvas
