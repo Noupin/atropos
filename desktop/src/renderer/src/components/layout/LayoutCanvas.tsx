@@ -134,6 +134,7 @@ type LayoutCanvasProps = {
   onRequestResetAspect?: (target: 'frame' | 'crop') => void
   onRequestChangeTransformTarget?: (target: 'frame' | 'crop') => void
   getAspectRatioForItem?: (item: LayoutItem, target: 'frame' | 'crop') => number | null
+  cropContext?: 'source' | 'layout'
 }
 
 type Guide = {
@@ -373,12 +374,13 @@ const getItemAppearance = (item: LayoutItem, scheme: ColorScheme): ItemAppearanc
 
 const defaultCrop = { x: 0, y: 0, width: 1, height: 1 }
 
-const normaliseCropFrame = (item: LayoutItem): LayoutFrame => {
+const normaliseCropFrame = (item: LayoutItem, context: 'source' | 'layout'): LayoutFrame => {
   if ((item as LayoutVideoItem).kind !== 'video') {
     return cloneFrame(item.frame)
   }
   const video = item as LayoutVideoItem
-  const crop = video.crop ?? defaultCrop
+  const cropSource = context === 'source' ? video.sourceCrop ?? video.crop : video.crop ?? video.sourceCrop
+  const crop = cropSource ?? defaultCrop
   return {
     x: clamp(crop.x),
     y: clamp(crop.y),
@@ -630,7 +632,8 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   onRequestToggleAspectLock,
   onRequestResetAspect,
   onRequestChangeTransformTarget,
-  getAspectRatioForItem
+  getAspectRatioForItem,
+  cropContext = 'layout'
 }) => {
   const colorScheme = useColorScheme()
   const [selectedItemId, setSelectedItemId] = useLayoutSelection()
@@ -659,11 +662,11 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const getDisplayFrame = useCallback(
     (item: LayoutItem): LayoutFrame => {
       if (transformTarget === 'crop') {
-        return normaliseCropFrame(item)
+        return normaliseCropFrame(item, cropContext)
       }
       return cloneFrame(item.frame)
     },
-    [transformTarget]
+    [cropContext, transformTarget]
   )
 
   const itemIsEditable = useCallback(
@@ -1408,9 +1411,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     actions.push({
       key: 'toggle-aspect',
       label: primaryAspectLocked
-        ? `${aspectContext === 'crop' ? 'Crop' : 'Frame'} aspect locked`
-        : `${aspectContext === 'crop' ? 'Crop' : 'Frame'} aspect unlocked`,
-      icon: primaryAspectLocked ? <LockIcon /> : <UnlockIcon />,
+        ? `Unlock ${aspectContext === 'crop' ? 'crop' : 'frame'} aspect (freeform)`
+        : `Lock ${aspectContext === 'crop' ? 'crop' : 'frame'} aspect (preserve ratio)`,
+      icon: primaryAspectLocked ? <UnlockIcon /> : <LockIcon />,
       onSelect:
         primaryIsVideo && onRequestToggleAspectLock
           ? () => onRequestToggleAspectLock(transformTarget)

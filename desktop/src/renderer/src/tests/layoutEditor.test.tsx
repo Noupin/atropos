@@ -866,7 +866,7 @@ describe('Layout editor interactions', () => {
     await selectItemByName(layoutCanvas, /primary/i, { pointerId: 1 })
 
     const lockedButtons = await within(layoutCanvas).findAllByRole('button', {
-      name: 'Frame aspect locked'
+      name: 'Unlock frame aspect (freeform)'
     })
     const lockedButton = lockedButtons[lockedButtons.length - 1]
 
@@ -881,7 +881,7 @@ describe('Layout editor interactions', () => {
     })
 
     const unlockedButtons = await within(layoutCanvas).findAllByRole('button', {
-      name: 'Frame aspect unlocked'
+      name: 'Lock frame aspect (preserve ratio)'
     })
     const unlockedButton = unlockedButtons[unlockedButtons.length - 1]
 
@@ -938,7 +938,7 @@ describe('Layout editor interactions', () => {
     await selectItemByName(sourceCanvas, /primary/i, { pointerId: 4 })
 
     const cropLockedButtons = await within(sourceCanvas).findAllByRole('button', {
-      name: 'Crop aspect locked'
+      name: 'Unlock crop aspect (freeform)'
     })
     const cropLockedButton = cropLockedButtons[cropLockedButtons.length - 1]
 
@@ -953,7 +953,7 @@ describe('Layout editor interactions', () => {
     })
 
     const cropUnlockedButtons = await within(sourceCanvas).findAllByRole('button', {
-      name: 'Crop aspect unlocked'
+      name: 'Lock crop aspect (preserve ratio)'
     })
     const cropUnlockedButton = cropUnlockedButtons[cropUnlockedButtons.length - 1]
 
@@ -1011,7 +1011,7 @@ describe('Layout editor interactions', () => {
     })
 
     const frameLockedButtons = await within(layoutCanvas).findAllByRole('button', {
-      name: 'Frame aspect locked'
+      name: 'Unlock frame aspect (freeform)'
     })
     const frameLockedButton = frameLockedButtons[frameLockedButtons.length - 1]
 
@@ -1129,7 +1129,9 @@ describe('Layout editor interactions', () => {
     })
 
     await waitFor(() => {
-      expect(within(layoutCanvas).getByRole('button', { name: 'Crop aspect locked' })).toBeInTheDocument()
+      expect(
+        within(layoutCanvas).getByRole('button', { name: 'Unlock crop aspect (freeform)' })
+      ).toBeInTheDocument()
     })
 
     expect(within(videoItem).getByText('Crop')).toBeInTheDocument()
@@ -1146,7 +1148,9 @@ describe('Layout editor interactions', () => {
     })
 
     await waitFor(() => {
-      expect(within(layoutCanvas).getByRole('button', { name: 'Frame aspect locked' })).toBeInTheDocument()
+      expect(
+        within(layoutCanvas).getByRole('button', { name: 'Unlock frame aspect (freeform)' })
+      ).toBeInTheDocument()
     })
 
     expect(within(videoItem).queryByText('Crop')).toBeNull()
