@@ -194,7 +194,7 @@ const clampCropToBounds = (crop: LayoutCrop, bounds: LayoutCrop): LayoutCrop => 
 }
 
 const normaliseSourceCrop = (video: LayoutVideoItem): LayoutCrop => {
-  const base = video.sourceCrop ?? video.crop ?? createDefaultCrop()
+  const base = video.sourceCrop ?? createDefaultCrop()
   return normaliseVideoCrop(base)
 }
 
@@ -996,24 +996,26 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               return item
             }
             if (context === 'source') {
-              const resetAspect = baseAspect > 0 ? baseAspect : 1
+              const sourceBounds = normaliseSourceCrop(item)
               const sourceTarget = clampCropToBounds(
-                snapCropToAspect(createDefaultCrop(), resetAspect),
+                snapCropToAspect(sourceBounds, 1),
                 createDefaultCrop()
               )
               const boundedCrop = clampCropToBounds(normaliseVideoCrop(item.crop), sourceTarget)
               const resolvedAspect =
                 item.lockCropAspectRatio === false
                   ? item.cropAspectRatio ?? null
-                  : resetAspect && Number.isFinite(resetAspect) && resetAspect > 0
-                    ? resetAspect
-                    : boundedCrop.width > 0 && boundedCrop.height > 0
-                      ? boundedCrop.width / Math.max(boundedCrop.height, 0.0001)
-                      : item.cropAspectRatio ?? null
+                  : sourceTarget.width > 0 && sourceTarget.height > 0
+                    ? sourceTarget.width / Math.max(sourceTarget.height, 0.0001)
+                    : item.cropAspectRatio ?? null
+              const nextCrop =
+                item.lockCropAspectRatio === false || !resolvedAspect || !Number.isFinite(resolvedAspect)
+                  ? boundedCrop
+                  : clampCropToBounds(snapCropToAspect(boundedCrop, resolvedAspect), sourceTarget)
               return {
                 ...item,
                 sourceCrop: sourceTarget,
-                crop: boundedCrop,
+                crop: nextCrop,
                 cropAspectRatio: resolvedAspect
               }
             }
