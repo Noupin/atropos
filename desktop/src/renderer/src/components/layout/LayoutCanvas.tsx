@@ -131,7 +131,7 @@ type LayoutCanvasProps = {
   style?: CSSProperties
   ariaLabel?: string
   onRequestToggleAspectLock?: (target: 'frame' | 'crop') => void
-  onRequestResetAspect?: (target: 'frame' | 'crop') => void
+  onRequestResetAspect?: (target: 'frame' | 'crop', context: 'source' | 'layout') => void
   onRequestChangeTransformTarget?: (target: 'frame' | 'crop') => void
   getAspectRatioForItem?: (item: LayoutItem, target: 'frame' | 'crop') => number | null
   cropContext?: 'source' | 'layout'
@@ -1413,7 +1413,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       label: primaryAspectLocked
         ? `Unlock ${aspectContext === 'crop' ? 'crop' : 'frame'} aspect (freeform)`
         : `Lock ${aspectContext === 'crop' ? 'crop' : 'frame'} aspect (preserve ratio)`,
-      icon: primaryAspectLocked ? <UnlockIcon /> : <LockIcon />,
+      icon: primaryAspectLocked ? <LockIcon /> : <UnlockIcon />,
       onSelect:
         primaryIsVideo && onRequestToggleAspectLock
           ? () => onRequestToggleAspectLock(transformTarget)
@@ -1423,11 +1423,11 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
     actions.push({
       key: 'reset-aspect',
-      label: 'Reset to video aspect',
+      label: cropContext === 'source' ? 'Reset to video aspect' : 'Match source frame aspect',
       icon: <AspectResetIcon />,
       onSelect:
         primaryIsVideo && onRequestResetAspect
-          ? () => onRequestResetAspect(transformTarget)
+          ? () => onRequestResetAspect(transformTarget, cropContext)
           : undefined,
       disabled: !primaryIsVideo || !onRequestResetAspect
     })
@@ -1461,6 +1461,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
     return actions
   }, [
+    cropContext,
     onRequestBringForward,
     onRequestChangeTransformTarget,
     onRequestDelete,

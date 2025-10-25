@@ -1050,7 +1050,7 @@ describe('Layout editor interactions', () => {
     }
 
     const resetButtons = await within(layoutCanvas).findAllByRole('button', {
-      name: 'Reset to video aspect'
+      name: 'Match source frame aspect'
     })
     const resetButton = resetButtons[resetButtons.length - 1]
 
