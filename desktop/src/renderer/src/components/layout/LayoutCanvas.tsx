@@ -19,10 +19,12 @@ import LayoutItemToolbar, {
   BringForwardIcon,
   DuplicateIcon,
   LockIcon,
-  MagnetIcon,
+  AspectResetIcon,
   RemoveIcon,
   SendBackwardIcon,
-  UnlockIcon
+  UnlockIcon,
+  CropModeIcon,
+  FrameModeIcon
 } from './LayoutItemToolbar'
 import { useLayoutSelection } from './layoutSelectionStore'
 
@@ -41,7 +43,24 @@ type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
 type InteractionMode = 'move' | 'resize'
 
-const cursorForHandle = (handle: ResizeHandle): string => {
+const cursorForHandle = (handle: ResizeHandle, aspectLocked = false): string => {
+  if (aspectLocked) {
+    switch (handle) {
+      case 'ne':
+      case 'sw':
+        return 'nesw-resize'
+      case 'nw':
+      case 'se':
+      case 'n':
+      case 's':
+        return 'nwse-resize'
+      case 'e':
+      case 'w':
+        return 'nesw-resize'
+      default:
+        return 'nwse-resize'
+    }
+  }
   switch (handle) {
     case 'n':
     case 's':
@@ -112,7 +131,8 @@ type LayoutCanvasProps = {
   style?: CSSProperties
   ariaLabel?: string
   onRequestToggleAspectLock?: (target: 'frame' | 'crop') => void
-  onRequestSnapAspectRatio?: (target: 'frame' | 'crop') => void
+  onRequestResetAspect?: (target: 'frame' | 'crop') => void
+  onRequestChangeTransformTarget?: (target: 'frame' | 'crop') => void
   getAspectRatioForItem?: (item: LayoutItem, target: 'frame' | 'crop') => number | null
 }
 
@@ -120,6 +140,8 @@ type Guide = {
   orientation: 'horizontal' | 'vertical'
   position: number
 }
+
+type SnappedEdges = Partial<Record<'left' | 'right' | 'top' | 'bottom', boolean>>
 
 const clamp = (value: number, min = 0, max = 1): number => Math.min(Math.max(value, min), max)
 
@@ -434,6 +456,92 @@ const maintainAspectResize = (
   }
 }
 
+const enforceAspectRatio = (
+  frame: LayoutFrame,
+  aspectRatio: number,
+  handle?: ResizeHandle,
+  edges: SnappedEdges = {}
+): LayoutFrame => {
+  if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) {
+    return frame
+  }
+  let { x, y, width, height } = frame
+  if (width <= 0 || height <= 0) {
+    return frame
+  }
+
+  const widthFromHeight = height * aspectRatio
+  const heightFromWidth = width / aspectRatio
+
+  const horizontalPreference = Boolean(
+    edges.left || edges.right || (handle ? handle.includes('e') || handle.includes('w') : false)
+  )
+  const verticalPreference = Boolean(
+    edges.top || edges.bottom || (handle ? handle.includes('n') || handle.includes('s') : false)
+  )
+
+  if (horizontalPreference && !verticalPreference) {
+    height = heightFromWidth
+  } else if (verticalPreference && !horizontalPreference) {
+    width = widthFromHeight
+  } else {
+    if (Math.abs(heightFromWidth - height) < Math.abs(widthFromHeight - width)) {
+      height = heightFromWidth
+    } else {
+      width = widthFromHeight
+    }
+  }
+
+  width = clamp(width)
+  height = clamp(height)
+
+  const horizontalAnchor = edges.left && !edges.right
+    ? 'left'
+    : edges.right && !edges.left
+      ? 'right'
+      : handle
+        ? handle.includes('w')
+          ? 'right'
+          : handle.includes('e')
+            ? 'left'
+            : 'center'
+        : 'center'
+
+  const verticalAnchor = edges.top && !edges.bottom
+    ? 'top'
+    : edges.bottom && !edges.top
+      ? 'bottom'
+      : handle
+        ? handle.includes('n')
+          ? 'bottom'
+          : handle.includes('s')
+            ? 'top'
+            : 'center'
+        : 'center'
+
+  if (horizontalAnchor === 'right') {
+    const right = clamp(frame.x + frame.width)
+    x = clamp(right - width, 0, 1 - width)
+  } else if (horizontalAnchor === 'center') {
+    const centerX = clamp(frame.x + frame.width / 2)
+    x = clamp(centerX - width / 2, 0, 1 - width)
+  } else {
+    x = clamp(frame.x, 0, 1 - width)
+  }
+
+  if (verticalAnchor === 'bottom') {
+    const bottom = clamp(frame.y + frame.height)
+    y = clamp(bottom - height, 0, 1 - height)
+  } else if (verticalAnchor === 'center') {
+    const centerY = clamp(frame.y + frame.height / 2)
+    y = clamp(centerY - height / 2, 0, 1 - height)
+  } else {
+    y = clamp(frame.y, 0, 1 - height)
+  }
+
+  return { x, y, width, height }
+}
+
 const itemHasAspectLock = (item: LayoutItem, target: 'frame' | 'crop'): boolean => {
   if ((item as LayoutVideoItem).kind !== 'video') {
     return false
@@ -520,7 +628,8 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   aspectRatioOverride,
   ariaLabel,
   onRequestToggleAspectLock,
-  onRequestSnapAspectRatio,
+  onRequestResetAspect,
+  onRequestChangeTransformTarget,
   getAspectRatioForItem
 }) => {
   const colorScheme = useColorScheme()
@@ -570,6 +679,20 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     [isItemEditable, transformTarget]
   )
 
+  const itemIsAspectLocked = useCallback(
+    (itemId: string | null): boolean => {
+      if (!itemId || !layout) {
+        return false
+      }
+      const item = layout.items.find((candidate) => candidate.id === itemId)
+      if (!item) {
+        return false
+      }
+      return itemHasAspectLock(item, transformTarget)
+    },
+    [layout, transformTarget]
+  )
+
   const sortedItems = useMemo(() => {
     if (!layout) {
       return []
@@ -606,7 +729,16 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   }, [])
 
   const applyGuides = useCallback(
-    (frame: LayoutFrame, snapEnabled: boolean): LayoutFrame => {
+    (
+      frame: LayoutFrame,
+      options: {
+        snapEnabled: boolean
+        aspectLocked?: boolean
+        aspectRatio?: number
+        handle?: ResizeHandle
+      }
+    ): LayoutFrame => {
+      const { snapEnabled, aspectLocked = false, aspectRatio, handle } = options
       if (!layout || !snapEnabled) {
         if (!snapEnabled) {
           guidesRef.current = []
@@ -616,6 +748,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       }
       const updated: LayoutFrame = { ...frame }
       const guides: Guide[] = []
+      const edges: SnappedEdges = {}
 
       const snap = (value: number): number => {
         for (const point of SNAP_POINTS) {
@@ -630,21 +763,25 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       if (snappedX !== frame.x) {
         updated.x = snappedX
         guides.push({ orientation: 'vertical', position: snappedX })
+        edges.left = true
       }
       const snappedY = snap(frame.y)
       if (snappedY !== frame.y) {
         updated.y = snappedY
         guides.push({ orientation: 'horizontal', position: snappedY })
+        edges.top = true
       }
       const snappedRight = snap(frame.x + frame.width)
       if (snappedRight !== frame.x + frame.width) {
         updated.width = clamp(snappedRight - updated.x)
         guides.push({ orientation: 'vertical', position: snappedRight })
+        edges.right = true
       }
       const snappedBottom = snap(frame.y + frame.height)
       if (snappedBottom !== frame.y + frame.height) {
         updated.height = clamp(snappedBottom - updated.y)
         guides.push({ orientation: 'horizontal', position: snappedBottom })
+        edges.bottom = true
       }
       const centerX = frame.x + frame.width / 2
       const snappedCenterX = snap(centerX)
@@ -659,6 +796,14 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const delta = snappedCenterY - centerY
         updated.y = clamp(updated.y + delta)
         guides.push({ orientation: 'horizontal', position: snappedCenterY })
+      }
+
+      if (aspectLocked && aspectRatio && Number.isFinite(aspectRatio) && aspectRatio > 0) {
+        const adjusted = enforceAspectRatio(updated, aspectRatio, handle, edges)
+        updated.x = adjusted.x
+        updated.y = adjusted.y
+        updated.width = adjusted.width
+        updated.height = adjusted.height
       }
 
       guidesRef.current = guides
@@ -757,9 +902,10 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       const datasetHandle = dataset.handle as ResizeHandle | undefined
       const datasetItemId = dataset.itemId as string | undefined
       if (datasetHandle && datasetItemId) {
+        const locked = itemIsAspectLocked(datasetItemId)
         commitHover(
           { itemId: datasetItemId, handle: datasetHandle },
-          cursorForHandle(datasetHandle)
+          cursorForHandle(datasetHandle, locked)
         )
         return
       }
@@ -776,7 +922,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         clearHover()
       }
     },
-    [clearHover, commitHover, getPointerPosition, hitTestAtPoint]
+    [clearHover, commitHover, getPointerPosition, hitTestAtPoint, itemIsAspectLocked]
   )
 
   const handlePointerDownCapture = useCallback(
@@ -864,9 +1010,12 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         setSelectedItemId(nextSelection)
       }
       setToolbarAnchorId(nextSelection)
+      const pointerAspectLocked = Boolean(
+        handle && (itemIsAspectLocked(nextSelection) || event.shiftKey)
+      )
       commitHover(
         { itemId: nextSelection, handle: handle ?? null },
-        handle ? cursorForHandle(handle) : 'grab'
+        handle ? cursorForHandle(handle, pointerAspectLocked) : 'grab'
       )
 
       if (!pointer) {
@@ -883,9 +1032,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
       const originFrame = getDisplayFrame(item)
       const snapEnabled = event.altKey || event.metaKey
-      const aspectLocked = Boolean(
-        handle && (itemHasAspectLock(item, transformTarget) || event.shiftKey)
-      )
+      const aspectLocked = pointerAspectLocked
       let aspectRatioValue: number | undefined
       if (typeof getAspectRatioForItem === 'function') {
         const ratio = getAspectRatioForItem(item, transformTarget)
@@ -920,7 +1067,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         // We are starting a drag; do not treat this as a pure click
         justSelectedRef.current = false
         containerRef.current?.setPointerCapture(event.pointerId)
-        setCursor(handle ? cursorForHandle(handle) : 'grabbing')
+        setCursor(handle ? cursorForHandle(handle, aspectLocked) : 'grabbing')
         event.preventDefault()
       } else {
         // Pure select – no interaction started
@@ -987,14 +1134,19 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           nextFrame = resizeFrame(state.originFrame, state.handle, deltaX, deltaY)
         }
         nextFrame = clampFrameToCanvas(nextFrame)
-        setCursor(cursorForHandle(state.handle))
+        setCursor(cursorForHandle(state.handle, state.aspectLocked))
       }
 
       if (!nextFrame) {
         return
       }
 
-      const snapped = applyGuides(nextFrame, state.snapEnabled)
+      const snapped = applyGuides(nextFrame, {
+        snapEnabled: state.snapEnabled,
+        aspectLocked: state.aspectLocked,
+        aspectRatio: state.aspectRatio,
+        handle: state.handle
+      })
       scheduleTransform([{ itemId: state.itemId, frame: snapped }], { commit: false })
       setFloatingLabel(
         `${(snapped.width * 100).toFixed(1)} × ${(snapped.height * 100).toFixed(1)}%`
@@ -1074,7 +1226,12 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       setToolbarAnchorId(state.itemId)
 
       if (frame) {
-        const snapped = applyGuides(frame, state.snapEnabled)
+        const snapped = applyGuides(frame, {
+          snapEnabled: state.snapEnabled,
+          aspectLocked: state.aspectLocked,
+          aspectRatio: state.aspectRatio,
+          handle: state.handle
+        })
         scheduleTransform([{ itemId: state.itemId, frame: snapped }], { commit: true })
       }
 
@@ -1127,30 +1284,30 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     [clearHover, clearInteraction]
   )
 
-  const handles: Array<{ id: ResizeHandle; className: string; label: string }> = useMemo(
+  const handles: Array<{ id: ResizeHandle; positionClass: string; label: string }> = useMemo(
     () => [
-      { id: 'nw', className: '-left-2 -top-2 cursor-nwse-resize', label: 'Resize north-west' },
-      { id: 'ne', className: '-right-2 -top-2 cursor-nesw-resize', label: 'Resize north-east' },
-      { id: 'sw', className: '-left-2 -bottom-2 cursor-nesw-resize', label: 'Resize south-west' },
-      { id: 'se', className: '-right-2 -bottom-2 cursor-nwse-resize', label: 'Resize south-east' },
+      { id: 'nw', positionClass: '-left-2 -top-2', label: 'Resize north-west' },
+      { id: 'ne', positionClass: '-right-2 -top-2', label: 'Resize north-east' },
+      { id: 'sw', positionClass: '-left-2 -bottom-2', label: 'Resize south-west' },
+      { id: 'se', positionClass: '-right-2 -bottom-2', label: 'Resize south-east' },
       {
         id: 'n',
-        className: 'left-1/2 -top-2 -translate-x-1/2 cursor-ns-resize',
+        positionClass: 'left-1/2 -top-2 -translate-x-1/2',
         label: 'Resize north'
       },
       {
         id: 's',
-        className: 'left-1/2 -bottom-2 -translate-x-1/2 cursor-ns-resize',
+        positionClass: 'left-1/2 -bottom-2 -translate-x-1/2',
         label: 'Resize south'
       },
       {
         id: 'e',
-        className: '-right-2 top-1/2 -translate-y-1/2 cursor-ew-resize',
+        positionClass: '-right-2 top-1/2 -translate-y-1/2',
         label: 'Resize east'
       },
       {
         id: 'w',
-        className: '-left-2 top-1/2 -translate-y-1/2 cursor-ew-resize',
+        positionClass: '-left-2 top-1/2 -translate-y-1/2',
         label: 'Resize west'
       }
     ],
@@ -1236,62 +1393,77 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   const toolbarActions = useMemo<LayoutItemToolbarAction[]>(() => {
     const aspectContext = transformTarget === 'crop' ? 'crop' : 'frame'
-    const actions: LayoutItemToolbarAction[] = [
-      {
-        key: 'toggle-aspect',
-        label: primaryAspectLocked
-          ? `Unlock ${aspectContext} aspect`
-          : `Lock ${aspectContext} aspect`,
-        icon: primaryAspectLocked ? <UnlockIcon /> : <LockIcon />,
-        onSelect:
-          primaryIsVideo && onRequestToggleAspectLock
-            ? () => onRequestToggleAspectLock(transformTarget)
-            : undefined,
-        disabled: !primaryIsVideo || !onRequestToggleAspectLock
-      },
-      {
-        key: 'snap-aspect',
-        label:
-          transformTarget === 'crop' ? 'Snap crop to frame' : 'Snap frame to video',
-        icon: <MagnetIcon />, 
-        onSelect:
-          primaryIsVideo && onRequestSnapAspectRatio
-            ? () => onRequestSnapAspectRatio(transformTarget)
-            : undefined,
-        disabled: !primaryIsVideo || !onRequestSnapAspectRatio
-      },
+    const actions: LayoutItemToolbarAction[] = []
+
+    if (primaryIsVideo && onRequestChangeTransformTarget) {
+      const nextTarget = transformTarget === 'crop' ? 'frame' : 'crop'
+      actions.push({
+        key: 'toggle-mode',
+        label: nextTarget === 'crop' ? 'Edit crop' : 'Edit frame',
+        icon: nextTarget === 'crop' ? <CropModeIcon /> : <FrameModeIcon />,
+        onSelect: () => onRequestChangeTransformTarget(nextTarget)
+      })
+    }
+
+    actions.push({
+      key: 'toggle-aspect',
+      label: primaryAspectLocked
+        ? `Unlock ${aspectContext} aspect`
+        : `Lock ${aspectContext} aspect`,
+      icon: primaryAspectLocked ? <UnlockIcon /> : <LockIcon />,
+      onSelect:
+        primaryIsVideo && onRequestToggleAspectLock
+          ? () => onRequestToggleAspectLock(transformTarget)
+          : undefined,
+      disabled: !primaryIsVideo || !onRequestToggleAspectLock
+    })
+
+    actions.push({
+      key: 'reset-aspect',
+      label: 'Reset to video aspect',
+      icon: <AspectResetIcon />,
+      onSelect:
+        primaryIsVideo && onRequestResetAspect
+          ? () => onRequestResetAspect(transformTarget)
+          : undefined,
+      disabled: !primaryIsVideo || !onRequestResetAspect
+    })
+
+    actions.push(
       {
         key: 'bring-forward',
         label: 'Bring forward',
-        icon: <BringForwardIcon />, 
+        icon: <BringForwardIcon />,
         onSelect: onRequestBringForward
       },
       {
         key: 'send-backward',
         label: 'Send backward',
-        icon: <SendBackwardIcon />, 
+        icon: <SendBackwardIcon />,
         onSelect: onRequestSendBackward
       },
       {
         key: 'duplicate',
         label: 'Duplicate',
-        icon: <DuplicateIcon />, 
+        icon: <DuplicateIcon />,
         onSelect: onRequestDuplicate
       },
       {
         key: 'remove',
         label: 'Remove',
-        icon: <RemoveIcon />, 
+        icon: <RemoveIcon />,
         onSelect: onRequestDelete
       }
-    ]
+    )
+
     return actions
   }, [
     onRequestBringForward,
+    onRequestChangeTransformTarget,
     onRequestDelete,
     onRequestDuplicate,
+    onRequestResetAspect,
     onRequestSendBackward,
-    onRequestSnapAspectRatio,
     onRequestToggleAspectLock,
     primaryAspectLocked,
     primaryIsVideo,
@@ -1462,6 +1634,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const showHandles = isSelected || isHovered
         const label = getItemLabel(item)
         const palette = getItemAppearance(item, colorScheme)
+        const itemAspectLocked = itemIsAspectLocked(item.id)
         const classes = getItemClasses ? getItemClasses(item, isSelected) : ''
         const shouldShowLabel =
           labelVisibility === 'always' || (labelVisibility === 'selected' && isSelected)
@@ -1501,6 +1674,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                 backgroundColor: palette.backgroundColor,
                 borderColor,
                 borderWidth: isSelected ? '3px' : '1px',
+                borderStyle: isPrimarySelection && transformTarget === 'crop' ? 'dashed' : 'solid',
                 opacity: isSelected || isHovered ? 1 : 0.9,
                 '--ring': ringColor
               } as CSSWithVars
@@ -1528,31 +1702,43 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                 {selectionLabel}
               </div>
             ) : null}
+            {isPrimarySelection ? (
+              <div className="pointer-events-none absolute left-2 top-2 rounded-full bg-[color:color-mix(in_srgb,var(--panel)_85%,transparent)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[var(--fg)] shadow-[0_2px_8px_rgba(15,23,42,0.25)]">
+                {transformTarget === 'crop' ? 'Crop' : 'Frame'}
+              </div>
+            ) : null}
             {editable
-              ? handles.map((handle) => (
-                  <button
-                    key={handle.id}
-                    type="button"
-                    tabIndex={-1}
-                    aria-label={handle.label}
-                    data-handle={handle.id}
-                    data-item-id={item.id}
-                    className={`absolute h-4 w-4 rounded-none border-2 text-transparent transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${handle.className} ${handleOpacityClass} ${handlePointerClass}`}
-                    onPointerDown={(event) => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                    }}
-                    style={
-                      {
-                        backgroundColor: palette.handleBackgroundColor,
-                        borderColor: palette.handleBorderColor,
-                        '--ring': ringColor
-                      } as CSSWithVars
-                    }
-                  >
-                    •
-                  </button>
-                ))
+              ? handles.map((handle) => {
+                  const cursorName = cursorForHandle(handle.id, itemAspectLocked)
+                  const cursorClass =
+                    cursorName === 'default' ? 'cursor-default' : `cursor-${cursorName}`
+                  const sizeClass = transformTarget === 'crop' ? 'h-3 w-3 rotate-45' : 'h-4 w-4'
+                  const borderStyleClass = transformTarget === 'crop' ? 'border-dashed' : 'border-solid'
+                  return (
+                    <button
+                      key={handle.id}
+                      type="button"
+                      tabIndex={-1}
+                      aria-label={handle.label}
+                      data-handle={handle.id}
+                      data-item-id={item.id}
+                      className={`absolute ${sizeClass} rounded-none border-2 ${borderStyleClass} text-transparent transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] hover:bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] ${handle.positionClass} ${cursorClass} ${handleOpacityClass} ${handlePointerClass}`}
+                      onPointerDown={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                      }}
+                      style={
+                        {
+                          backgroundColor: palette.handleBackgroundColor,
+                          borderColor: palette.handleBorderColor,
+                          '--ring': ringColor
+                        } as CSSWithVars
+                      }
+                    >
+                      •
+                    </button>
+                  )
+                })
               : null}
             {isPrimarySelection && showToolbar ? (
               <LayoutItemToolbar actions={toolbarActions} ringColor={ringColor} />
@@ -1569,7 +1755,8 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
             top: fractionToPercent(selectionBounds.y),
             width: fractionToPercent(selectionBounds.width),
             height: fractionToPercent(selectionBounds.height),
-            borderColor: selectionOutlineColor
+            borderColor: selectionOutlineColor,
+            borderStyle: transformTarget === 'crop' ? 'dashed' : 'solid'
           }}
         />
       ) : null}

@@ -312,17 +312,46 @@ const cloneLayoutItem = (item: LayoutItem): LayoutItem => {
     const normalisedCrop = normaliseVideoCrop(video.crop)
     const lockAspectRatio = video.lockAspectRatio ?? true
     const lockCropAspectRatio = video.lockCropAspectRatio ?? true
+    const frameWidth = clamp(video.frame.width)
+    const frameHeight = clamp(video.frame.height)
+    const derivedFrameAspect =
+      frameWidth > 0 && frameHeight > 0 ? frameWidth / Math.max(frameHeight, 0.0001) : null
+    const cropWidth = clamp(normalisedCrop.width)
+    const cropHeight = clamp(normalisedCrop.height)
+    const derivedCropAspect =
+      cropWidth > 0 && cropHeight > 0 ? cropWidth / Math.max(cropHeight, 0.0001) : null
     const base: LayoutVideoItem = {
       ...video,
       frame: { ...video.frame },
       crop: normalisedCrop,
       lockAspectRatio,
-      lockCropAspectRatio
+      lockCropAspectRatio,
+      frameAspectRatio:
+        video.frameAspectRatio != null && Number.isFinite(video.frameAspectRatio)
+          ? video.frameAspectRatio
+          : lockAspectRatio
+            ? derivedFrameAspect
+            : null,
+      cropAspectRatio:
+        video.cropAspectRatio != null && Number.isFinite(video.cropAspectRatio)
+          ? video.cropAspectRatio
+          : lockCropAspectRatio
+            ? derivedCropAspect ?? 1
+            : null
     }
     if (lockAspectRatio || lockCropAspectRatio) {
+      const alignedCrop = alignCropToFrame({ ...base, crop: normalisedCrop })
+      const alignedAspect =
+        alignedCrop.width > 0 && alignedCrop.height > 0
+          ? alignedCrop.width / Math.max(alignedCrop.height, 0.0001)
+          : null
       return {
         ...base,
-        crop: alignCropToFrame({ ...base, crop: normalisedCrop })
+        crop: alignedCrop,
+        cropAspectRatio:
+          base.lockCropAspectRatio === false
+            ? base.cropAspectRatio ?? null
+            : alignedAspect ?? base.cropAspectRatio ?? (derivedCropAspect ?? 1)
       }
     }
     return base
@@ -466,6 +495,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   const [clipboard, setClipboard] = useState<LayoutItem[] | null>(null)
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
   const [showGrid, setShowGrid] = useState(true)
+  const [layoutTransformTarget, setLayoutTransformTarget] = useState<'frame' | 'crop'>('frame')
   const [showSafeMargins, setShowSafeMargins] = useState(false)
   const [collapsedSections, setCollapsedSections] = useState<Record<LayoutCategory, boolean>>({
     builtin: false,
@@ -672,6 +702,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
       options: { commit: boolean },
       target: 'frame' | 'crop'
     ) => {
+      const baseAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
       updateLayout(
         (layout) => ({
           ...layout,
@@ -689,17 +720,31 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                   crop: nextCrop
                 }
               }
-              const frameWidth = clamp(video.frame.width)
-              const frameHeight = clamp(video.frame.height)
-              if (frameWidth > 0 && frameHeight > 0) {
-                return {
-                  ...video,
-                  crop: snapCropToAspect(nextCrop, frameWidth / Math.max(frameHeight, 0.0001))
-                }
-              }
+              const desiredAspect =
+                video.cropAspectRatio && Number.isFinite(video.cropAspectRatio) && video.cropAspectRatio > 0
+                  ? video.cropAspectRatio
+                  : (() => {
+                      const frameWidth = clamp(video.frame.width)
+                      const frameHeight = clamp(video.frame.height)
+                      if (frameWidth > 0 && frameHeight > 0) {
+                        return frameWidth / Math.max(frameHeight, 0.0001)
+                      }
+                      return 1
+                    })()
+              const snappedCrop =
+                desiredAspect && Number.isFinite(desiredAspect) && desiredAspect > 0
+                  ? snapCropToAspect(nextCrop, desiredAspect)
+                  : nextCrop
+              const resolvedAspect =
+                desiredAspect && Number.isFinite(desiredAspect) && desiredAspect > 0
+                  ? desiredAspect
+                  : snappedCrop.width > 0 && snappedCrop.height > 0
+                    ? snappedCrop.width / Math.max(snappedCrop.height, 0.0001)
+                    : video.cropAspectRatio ?? null
               return {
                 ...video,
-                crop: nextCrop
+                crop: snappedCrop,
+                cropAspectRatio: resolvedAspect
               }
             }
             if (item.kind === 'video') {
@@ -708,9 +753,37 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                 frame: clampFrame(match.frame)
               }
               if (updated.lockAspectRatio !== false) {
+                const crop = normaliseVideoCrop(updated.crop)
+                const cropWidth = clamp(crop.width)
+                const cropHeight = clamp(crop.height)
+                const desiredAspect =
+                  updated.frameAspectRatio && Number.isFinite(updated.frameAspectRatio) && updated.frameAspectRatio > 0
+                    ? updated.frameAspectRatio
+                    : cropWidth > 0 && cropHeight > 0
+                      ? (baseAspect * cropWidth) / Math.max(cropHeight, 0.0001)
+                      : baseAspect
+                const snappedFrame =
+                  desiredAspect && Number.isFinite(desiredAspect) && desiredAspect > 0
+                    ? snapFrameToAspect(updated.frame, desiredAspect)
+                    : clampFrame(updated.frame)
+                const alignedCrop =
+                  updated.lockCropAspectRatio === false
+                    ? crop
+                    : alignCropToFrame({ ...updated, frame: snappedFrame, crop })
                 return {
                   ...updated,
-                  crop: alignCropToFrame(updated)
+                  frame: snappedFrame,
+                  crop: alignedCrop,
+                  frameAspectRatio:
+                    desiredAspect && Number.isFinite(desiredAspect) && desiredAspect > 0
+                      ? desiredAspect
+                      : updated.frameAspectRatio ?? null,
+                  cropAspectRatio:
+                    updated.lockCropAspectRatio === false
+                      ? updated.cropAspectRatio ?? null
+                      : alignedCrop.width > 0 && alignedCrop.height > 0
+                        ? alignedCrop.width / Math.max(alignedCrop.height, 0.0001)
+                        : updated.cropAspectRatio ?? null
                 }
               }
               return updated
@@ -724,8 +797,12 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         { transient: !options.commit, trackHistory: options.commit }
       )
     },
-    [updateLayout]
+    [layoutAspectRatio, sourceAspectRatio, updateLayout]
   )
+
+  const handleTransformTargetChange = useCallback((target: 'frame' | 'crop') => {
+    setLayoutTransformTarget((current) => (current === target ? current : target))
+  }, [])
 
   const handleToggleAspectLock = useCallback(
     (target: 'frame' | 'crop') => {
@@ -742,40 +819,83 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
             if (target === 'crop') {
               const currentlyLocked = item.lockCropAspectRatio !== false
               const nextLocked = !currentlyLocked
-              const updated: LayoutVideoItem = {
-                ...item,
-                lockCropAspectRatio: nextLocked
-              }
-              if (nextLocked) {
+              if (!nextLocked) {
                 return {
-                  ...updated,
-                  crop: alignCropToFrame(updated)
+                  ...item,
+                  lockCropAspectRatio: false,
+                  cropAspectRatio: null
                 }
               }
-              return updated
+              const normalised = normaliseVideoCrop(item.crop)
+              const alignedCrop = alignCropToFrame({ ...item, crop: normalised })
+              const cropWidth = clamp(alignedCrop.width)
+              const cropHeight = clamp(alignedCrop.height)
+              const aspect =
+                cropWidth > 0 && cropHeight > 0
+                  ? cropWidth / Math.max(cropHeight, 0.0001)
+                  : 1
+              return {
+                ...item,
+                crop: alignedCrop,
+                lockCropAspectRatio: true,
+                cropAspectRatio: aspect
+              }
             }
             const currentlyLocked = item.lockAspectRatio !== false
             const nextLocked = !currentlyLocked
-            const updated: LayoutVideoItem = {
-              ...item,
-              lockAspectRatio: nextLocked
-            }
-            if (nextLocked) {
+            if (!nextLocked) {
               return {
-                ...updated,
-                crop: alignCropToFrame(updated)
+                ...item,
+                lockAspectRatio: false,
+                frameAspectRatio: null
               }
             }
-            return updated
+            const frame = clampFrame(item.frame)
+            const frameAspect =
+              frame.width > 0 && frame.height > 0
+                ? frame.width / Math.max(frame.height, 0.0001)
+                : (() => {
+                    const crop = normaliseVideoCrop(item.crop)
+                    const cropWidth = clamp(crop.width)
+                    const cropHeight = clamp(crop.height)
+                    const baseAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
+                    if (cropWidth > 0 && cropHeight > 0) {
+                      return (baseAspect * cropWidth) / Math.max(cropHeight, 0.0001)
+                    }
+                    return baseAspect
+                  })()
+            const updated: LayoutVideoItem = {
+              ...item,
+              frame,
+              lockAspectRatio: true,
+              frameAspectRatio: frameAspect
+            }
+            const crop = normaliseVideoCrop(updated.crop)
+            const alignedCrop =
+              updated.lockCropAspectRatio === false
+                ? crop
+                : alignCropToFrame({ ...updated, crop })
+            const alignedAspect =
+              alignedCrop.width > 0 && alignedCrop.height > 0
+                ? alignedCrop.width / Math.max(alignedCrop.height, 0.0001)
+                : updated.cropAspectRatio ?? null
+            return {
+              ...updated,
+              crop: alignedCrop,
+              cropAspectRatio:
+                updated.lockCropAspectRatio === false
+                  ? updated.cropAspectRatio ?? null
+                  : alignedAspect
+            }
           })
         }),
         { trackHistory: true }
       )
     },
-    [selectedItemId, updateLayout]
+    [layoutAspectRatio, selectedItemId, sourceAspectRatio, updateLayout]
   )
 
-  const handleSnapAspectRatio = useCallback(
+  const handleResetToSourceAspect = useCallback(
     (target: 'frame' | 'crop') => {
       if (!selectedItemId) {
         return
@@ -789,32 +909,47 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               return item
             }
             if (target === 'crop') {
-              const frameWidth = clamp(item.frame.width)
-              const frameHeight = clamp(item.frame.height)
-              if (frameWidth > 0 && frameHeight > 0) {
-                return {
-                  ...item,
-                  crop: snapCropToAspect(normaliseVideoCrop(item.crop), frameWidth / Math.max(frameHeight, 0.0001))
-                }
+              const crop = normaliseVideoCrop(item.crop)
+              const resetAspect = baseAspect > 0 ? baseAspect : 1
+              const resetCrop = snapCropToAspect(crop, resetAspect)
+              const resolvedAspect =
+                item.lockCropAspectRatio === false
+                  ? item.cropAspectRatio ?? null
+                  : resetAspect && Number.isFinite(resetAspect) && resetAspect > 0
+                    ? resetAspect
+                    : resetCrop.width > 0 && resetCrop.height > 0
+                      ? resetCrop.width / Math.max(resetCrop.height, 0.0001)
+                      : item.cropAspectRatio ?? null
+              return {
+                ...item,
+                crop: resetCrop,
+                cropAspectRatio: resolvedAspect
               }
-              return item
             }
-            const crop = normaliseVideoCrop(item.crop)
-            const cropWidth = clamp(crop.width)
-            const cropHeight = clamp(crop.height)
-            const contentAspect =
-              cropWidth > 0 && cropHeight > 0
-                ? (baseAspect * cropWidth) / Math.max(cropHeight, 0.0001)
-                : baseAspect
-            const snappedFrame = snapFrameToAspect(item.frame, contentAspect)
+            const snappedFrame = snapFrameToAspect(item.frame, baseAspect)
             const nextVideo: LayoutVideoItem = {
               ...item,
-              frame: snappedFrame
+              frame: snappedFrame,
+              frameAspectRatio:
+                item.lockAspectRatio === false
+                  ? item.frameAspectRatio ?? null
+                  : baseAspect
             }
-            const nextCrop = item.lockCropAspectRatio === false ? crop : alignCropToFrame({ ...nextVideo, crop })
+            const crop = normaliseVideoCrop(item.crop)
+            const nextCrop =
+              nextVideo.lockCropAspectRatio === false
+                ? crop
+                : alignCropToFrame({ ...nextVideo, crop })
+            const alignedAspect =
+              nextVideo.lockCropAspectRatio === false
+                ? nextVideo.cropAspectRatio ?? null
+                : nextCrop.width > 0 && nextCrop.height > 0
+                  ? nextCrop.width / Math.max(nextCrop.height, 0.0001)
+                  : nextVideo.cropAspectRatio ?? null
             return {
               ...nextVideo,
-              crop: nextCrop
+              crop: nextCrop,
+              cropAspectRatio: alignedAspect
             }
           })
         }),
@@ -831,12 +966,13 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
       }
       let newItem: LayoutItem
       if (kind === 'video') {
+        const initialFrame: LayoutFrame = { x: 0.1, y: 0.1, width: 0.8, height: 0.6 }
         newItem = {
           id: createItemId('video'),
           kind: 'video',
           source: 'primary',
           name: 'Primary video',
-          frame: { x: 0.1, y: 0.1, width: 0.8, height: 0.6 },
+          frame: initialFrame,
           crop: createDefaultCrop(),
           scaleMode: 'cover',
           rotation: null,
@@ -844,6 +980,8 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           mirror: false,
           lockAspectRatio: true,
           lockCropAspectRatio: true,
+          frameAspectRatio: initialFrame.width / Math.max(initialFrame.height, 0.0001),
+          cropAspectRatio: 1,
           zIndex: draftLayout.items.length
         }
       } else if (kind === 'text') {
@@ -1376,6 +1514,12 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     return draftLayout.items.find((item) => item.id === selectedItemId) ?? null
   }, [draftLayout, selectedItemId])
 
+  useEffect(() => {
+    if (!selectedItem || selectedItem.kind !== 'video') {
+      setLayoutTransformTarget('frame')
+    }
+  }, [selectedItem])
+
   const selectionOffCanvas = useMemo(() => {
     if (!selectedItem) {
       return false
@@ -1437,15 +1581,26 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         if (video.lockCropAspectRatio === false) {
           return null
         }
-        const frameWidth = clamp(video.frame.width)
-        const frameHeight = clamp(video.frame.height)
-        if (frameWidth > 0 && frameHeight > 0) {
-          return frameWidth / Math.max(frameHeight, 0.0001)
+        if (video.cropAspectRatio && Number.isFinite(video.cropAspectRatio) && video.cropAspectRatio > 0) {
+          return video.cropAspectRatio
         }
-        return null
+        const crop = normaliseVideoCrop(video.crop)
+        const cropWidth = clamp(crop.width)
+        const cropHeight = clamp(crop.height)
+        if (cropWidth > 0 && cropHeight > 0) {
+          return cropWidth / Math.max(cropHeight, 0.0001)
+        }
+        return 1
       }
       if (video.lockAspectRatio === false) {
         return null
+      }
+      if (video.frameAspectRatio && Number.isFinite(video.frameAspectRatio) && video.frameAspectRatio > 0) {
+        return video.frameAspectRatio
+      }
+      const frame = clampFrame(video.frame)
+      if (frame.width > 0 && frame.height > 0) {
+        return frame.width / Math.max(frame.height, 0.0001)
       }
       const baseAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
       const crop = normaliseVideoCrop(video.crop)
@@ -1936,7 +2091,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               transformTarget="crop"
               aspectRatioOverride={sourceAspectRatio}
               onRequestToggleAspectLock={handleToggleAspectLock}
-              onRequestSnapAspectRatio={handleSnapAspectRatio}
+              onRequestResetAspect={handleResetToSourceAspect}
               getAspectRatioForItem={getAspectRatioForItem}
               style={sourceCanvasStyle}
               ariaLabel="Source preview canvas"
@@ -1984,11 +2139,12 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                   <span className="text-xs text-white/60">No preview source available.</span>
                 )
               }
-              transformTarget="frame"
+              transformTarget={layoutTransformTarget}
               labelVisibility="selected"
               aspectRatioOverride={layoutAspectRatio}
               onRequestToggleAspectLock={handleToggleAspectLock}
-              onRequestSnapAspectRatio={handleSnapAspectRatio}
+              onRequestResetAspect={handleResetToSourceAspect}
+              onRequestChangeTransformTarget={handleTransformTargetChange}
               getAspectRatioForItem={getAspectRatioForItem}
               style={layoutCanvasStyle}
               ariaLabel="Layout preview canvas"

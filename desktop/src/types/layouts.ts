@@ -61,6 +61,8 @@ export type LayoutVideoItem = {
   mirror?: boolean
   lockAspectRatio?: boolean | null
   lockCropAspectRatio?: boolean | null
+  frameAspectRatio?: number | null
+  cropAspectRatio?: number | null
   zIndex?: number
 }
 

@@ -1,3 +1,4 @@
+import '@testing-library/jest-dom/vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, beforeAll, afterEach, vi, it, expect } from 'vitest'
@@ -1046,13 +1047,13 @@ describe('Layout editor interactions', () => {
       expect(distortedRatio).toBeLessThan(16 / 9)
     }
 
-    const snapButtons = await within(layoutCanvas).findAllByRole('button', {
-      name: 'Snap frame to video'
+    const resetButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Reset to video aspect'
     })
-    const snapButton = snapButtons[snapButtons.length - 1]
+    const resetButton = resetButtons[resetButtons.length - 1]
 
     await act(async () => {
-      fireEvent.click(snapButton)
+      fireEvent.click(resetButton)
     })
 
     await waitFor(() => {
@@ -1069,6 +1070,87 @@ describe('Layout editor interactions', () => {
         expect(cropRatio).toBeCloseTo(snappedRatio, 3)
       }
     }
+  })
+
+  it('switches the layout canvas between frame and crop editing modes', async () => {
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={sampleClip}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={vi.fn()}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = findInteractiveCanvas(layoutCanvases)
+    const videoItem = await selectItemByName(layoutCanvas, /primary/i, {
+      pointerId: 31,
+      clientX: 60,
+      clientY: 80
+    })
+
+    const editCropButton = await within(layoutCanvas).findByRole('button', {
+      name: 'Edit crop'
+    })
+
+    await act(async () => {
+      fireEvent.click(editCropButton)
+    })
+
+    await waitFor(() => {
+      expect(
+        within(layoutCanvas).getByRole('button', {
+          name: 'Edit frame'
+        })
+      ).toBeInTheDocument()
+    })
+
+    await waitFor(() => {
+      expect(within(layoutCanvas).getByRole('button', { name: 'Unlock crop aspect' })).toBeInTheDocument()
+    })
+
+    expect(within(videoItem).getByText('Crop')).toBeInTheDocument()
+
+    const cropHandle = within(videoItem).getByLabelText('Resize north')
+    expect(cropHandle.className).toContain('rotate-45')
+
+    const editFrameButton = await within(layoutCanvas).findByRole('button', {
+      name: 'Edit frame'
+    })
+
+    await act(async () => {
+      fireEvent.click(editFrameButton)
+    })
+
+    await waitFor(() => {
+      expect(within(layoutCanvas).getByRole('button', { name: 'Unlock frame aspect' })).toBeInTheDocument()
+    })
+
+    expect(within(videoItem).queryByText('Crop')).toBeNull()
+
+    const frameHandle = within(videoItem).getByLabelText('Resize north')
+    expect(frameHandle.className).not.toContain('rotate-45')
   })
 
   it('keeps the selection active while interacting with toolbar actions', async () => {
