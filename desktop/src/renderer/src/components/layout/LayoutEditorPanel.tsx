@@ -926,16 +926,24 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                 cropAspectRatio: resolvedAspect
               }
             }
-            const snappedFrame = snapFrameToAspect(item.frame, baseAspect)
+            const crop = normaliseVideoCrop(item.crop)
+            const cropWidth = clamp(crop.width)
+            const cropHeight = clamp(crop.height)
+            const sourceFrameAspect =
+              cropWidth > 0 && cropHeight > 0
+                ? (baseAspect * cropWidth) / Math.max(cropHeight, 0.0001)
+                : baseAspect
+            const snappedFrame = snapFrameToAspect(item.frame, sourceFrameAspect)
             const nextVideo: LayoutVideoItem = {
               ...item,
               frame: snappedFrame,
               frameAspectRatio:
                 item.lockAspectRatio === false
                   ? item.frameAspectRatio ?? null
-                  : baseAspect
+                  : sourceFrameAspect && Number.isFinite(sourceFrameAspect) && sourceFrameAspect > 0
+                    ? sourceFrameAspect
+                    : item.frameAspectRatio ?? null
             }
-            const crop = normaliseVideoCrop(item.crop)
             const nextCrop =
               nextVideo.lockCropAspectRatio === false
                 ? crop

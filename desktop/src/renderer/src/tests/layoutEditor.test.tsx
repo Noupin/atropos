@@ -865,13 +865,13 @@ describe('Layout editor interactions', () => {
     const layoutCanvas = findInteractiveCanvas(layoutCanvases)
     await selectItemByName(layoutCanvas, /primary/i, { pointerId: 1 })
 
-    const unlockButtons = await within(layoutCanvas).findAllByRole('button', {
-      name: 'Unlock frame aspect'
+    const lockedButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Frame aspect locked'
     })
-    const unlockButton = unlockButtons[unlockButtons.length - 1]
+    const lockedButton = lockedButtons[lockedButtons.length - 1]
 
     await act(async () => {
-      fireEvent.click(unlockButton)
+      fireEvent.click(lockedButton)
     })
 
     await waitFor(() => {
@@ -880,11 +880,13 @@ describe('Layout editor interactions', () => {
       expect(updatedVideo?.lockAspectRatio).toBe(false)
     })
 
-    const lockButtons = await within(layoutCanvas).findAllByRole('button', { name: 'Lock frame aspect' })
-    const lockButton = lockButtons[lockButtons.length - 1]
+    const unlockedButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Frame aspect unlocked'
+    })
+    const unlockedButton = unlockedButtons[unlockedButtons.length - 1]
 
     await act(async () => {
-      fireEvent.click(lockButton)
+      fireEvent.click(unlockedButton)
     })
 
     await waitFor(() => {
@@ -935,13 +937,13 @@ describe('Layout editor interactions', () => {
     }
     await selectItemByName(sourceCanvas, /primary/i, { pointerId: 4 })
 
-    const unlockButtons = await within(sourceCanvas).findAllByRole('button', {
-      name: 'Unlock crop aspect'
+    const cropLockedButtons = await within(sourceCanvas).findAllByRole('button', {
+      name: 'Crop aspect locked'
     })
-    const unlockButton = unlockButtons[unlockButtons.length - 1]
+    const cropLockedButton = cropLockedButtons[cropLockedButtons.length - 1]
 
     await act(async () => {
-      fireEvent.click(unlockButton)
+      fireEvent.click(cropLockedButton)
     })
 
     await waitFor(() => {
@@ -950,13 +952,13 @@ describe('Layout editor interactions', () => {
       expect(updatedVideo?.lockAspectRatio).not.toBe(false)
     })
 
-    const lockButtons = await within(sourceCanvas).findAllByRole('button', {
-      name: 'Lock crop aspect'
+    const cropUnlockedButtons = await within(sourceCanvas).findAllByRole('button', {
+      name: 'Crop aspect unlocked'
     })
-    const lockButton = lockButtons[lockButtons.length - 1]
+    const cropUnlockedButton = cropUnlockedButtons[cropUnlockedButtons.length - 1]
 
     await act(async () => {
-      fireEvent.click(lockButton)
+      fireEvent.click(cropUnlockedButton)
     })
 
     await waitFor(() => {
@@ -1008,13 +1010,13 @@ describe('Layout editor interactions', () => {
       clientY: 80
     })
 
-    const unlockButtons = await within(layoutCanvas).findAllByRole('button', {
-      name: 'Unlock frame aspect'
+    const frameLockedButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Frame aspect locked'
     })
-    const unlockButton = unlockButtons[unlockButtons.length - 1]
+    const frameLockedButton = frameLockedButtons[frameLockedButtons.length - 1]
 
     await act(async () => {
-      fireEvent.click(unlockButton)
+      fireEvent.click(frameLockedButton)
     })
 
     await waitFor(() => {
@@ -1127,7 +1129,7 @@ describe('Layout editor interactions', () => {
     })
 
     await waitFor(() => {
-      expect(within(layoutCanvas).getByRole('button', { name: 'Unlock crop aspect' })).toBeInTheDocument()
+      expect(within(layoutCanvas).getByRole('button', { name: 'Crop aspect locked' })).toBeInTheDocument()
     })
 
     expect(within(videoItem).getByText('Crop')).toBeInTheDocument()
@@ -1144,7 +1146,7 @@ describe('Layout editor interactions', () => {
     })
 
     await waitFor(() => {
-      expect(within(layoutCanvas).getByRole('button', { name: 'Unlock frame aspect' })).toBeInTheDocument()
+      expect(within(layoutCanvas).getByRole('button', { name: 'Frame aspect locked' })).toBeInTheDocument()
     })
 
     expect(within(videoItem).queryByText('Crop')).toBeNull()

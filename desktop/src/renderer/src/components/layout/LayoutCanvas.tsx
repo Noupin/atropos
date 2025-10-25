@@ -1408,9 +1408,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     actions.push({
       key: 'toggle-aspect',
       label: primaryAspectLocked
-        ? `Unlock ${aspectContext} aspect`
-        : `Lock ${aspectContext} aspect`,
-      icon: primaryAspectLocked ? <UnlockIcon /> : <LockIcon />,
+        ? `${aspectContext === 'crop' ? 'Crop' : 'Frame'} aspect locked`
+        : `${aspectContext === 'crop' ? 'Crop' : 'Frame'} aspect unlocked`,
+      icon: primaryAspectLocked ? <LockIcon /> : <UnlockIcon />,
       onSelect:
         primaryIsVideo && onRequestToggleAspectLock
           ? () => onRequestToggleAspectLock(transformTarget)
