@@ -1218,6 +1218,11 @@ describe('Layout editor interactions', () => {
   })
 
   it('switches the layout canvas between frame and crop editing modes', async () => {
+    let latestLayout: LayoutDefinition | null = baseLayout
+    const onLayoutChange = vi.fn((next: LayoutDefinition) => {
+      latestLayout = next
+    })
+
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
@@ -1234,7 +1239,7 @@ describe('Layout editor interactions', () => {
         errorMessage={null}
         onSelectLayout={vi.fn()}
         onCreateBlankLayout={vi.fn()}
-        onLayoutChange={vi.fn()}
+        onLayoutChange={onLayoutChange}
         onSaveLayout={vi.fn(async () => baseLayout)}
         onImportLayout={vi.fn(async () => undefined)}
         onExportLayout={vi.fn(async () => undefined)}
@@ -1273,8 +1278,32 @@ describe('Layout editor interactions', () => {
 
     expect(within(videoItem).getByText('Crop')).toBeInTheDocument()
 
-    const cropHandle = within(videoItem).getByLabelText('Resize north')
+    const cropHandle = within(videoItem).getByLabelText('Resize east')
     expect(cropHandle.className).toContain('rotate-45')
+
+    const callsBeforeDrag = onLayoutChange.mock.calls.length
+    const initialVideo = (latestLayout?.items.find((item) => item.id === 'video-1') ?? null) as
+      | LayoutVideoItem
+      | null
+    const initialCrop = initialVideo?.crop ?? { x: 0, y: 0, width: 1, height: 1 }
+
+    await act(async () => {
+      pointerDown(cropHandle, { pointerId: 201, clientX: 160, clientY: 160 })
+      pointerMove(layoutCanvas, { pointerId: 201, clientX: 120, clientY: 160 })
+    })
+    await act(async () => {
+      pointerUp(layoutCanvas, { pointerId: 201, clientX: 120, clientY: 160 })
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(onLayoutChange).toHaveBeenCalledTimes(callsBeforeDrag)
+    const pendingVideo = (latestLayout?.items.find((item) => item.id === 'video-1') ?? null) as
+      | LayoutVideoItem
+      | null
+    expect(pendingVideo?.crop).toMatchObject(initialCrop)
 
     const finishCropButton = await within(layoutCanvas).findByRole('button', {
       name: 'Finish crop'
@@ -1294,6 +1323,11 @@ describe('Layout editor interactions', () => {
 
     const frameHandle = within(videoItem).getByLabelText('Resize north')
     expect(frameHandle.className).not.toContain('rotate-45')
+
+    const committedVideo = (latestLayout?.items.find((item) => item.id === 'video-1') ?? null) as
+      | LayoutVideoItem
+      | null
+    expect(committedVideo?.crop?.width).not.toBeCloseTo(initialCrop.width)
   })
 
   it('keeps the selection active while interacting with toolbar actions', async () => {

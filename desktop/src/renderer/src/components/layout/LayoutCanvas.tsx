@@ -137,6 +137,8 @@ type LayoutCanvasProps = {
   cropContext?: 'source' | 'layout'
   enableScaleModeMenu?: boolean
   onRequestChangeScaleMode?: (itemId: string, mode: LayoutVideoItem['scaleMode']) => void
+  getPendingCrop?: (itemId: string, context: 'source' | 'layout') => LayoutFrame | null
+  onRequestFinishCrop?: () => void
 }
 
 type Guide = {
@@ -149,6 +151,14 @@ type SnappedEdges = Partial<Record<'left' | 'right' | 'top' | 'bottom', boolean>
 type ContextMenuState = { x: number; y: number; itemId: string } | null
 
 const clamp = (value: number, min = 0, max = 1): number => Math.min(Math.max(value, min), max)
+
+const clampCropFrame = (frame: LayoutFrame): LayoutCrop => ({
+  x: clamp(frame.x),
+  y: clamp(frame.y),
+  width: clamp(frame.width),
+  height: clamp(frame.height),
+  units: 'fraction'
+})
 
 const clampFrameToCanvas = (frame: LayoutFrame): LayoutFrame => {
   const width = clamp(frame.width, 0, 1)
@@ -480,14 +490,17 @@ type CropOverlayRect = { left: number; top: number; width: number; height: numbe
 
 const getCropOverlayRect = (
   video: LayoutVideoItem,
-  context: 'source' | 'layout'
+  context: 'source' | 'layout',
+  pending?: LayoutCrop | null
 ): CropOverlayRect | null => {
   const base =
     context === 'source'
       ? normaliseVideoCropBounds(video.sourceCrop ?? video.crop ?? defaultCrop)
       : getVideoSourceBounds(video)
-  const target =
-    context === 'source'
+  const override = pending ? clampCropToBounds(pending, base) : null
+  const target = override
+    ? override
+    : context === 'source'
       ? clampCropToBounds(normaliseVideoCropBounds(video.sourceCrop ?? video.crop ?? defaultCrop), base)
       : clampCropToBounds(normaliseVideoCropBounds(video.crop ?? video.sourceCrop ?? defaultCrop), base)
 
@@ -763,7 +776,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   getAspectRatioForItem,
   cropContext = 'layout',
   enableScaleModeMenu = false,
-  onRequestChangeScaleMode
+  onRequestChangeScaleMode,
+  getPendingCrop,
+  onRequestFinishCrop
 }) => {
   const colorScheme = useColorScheme()
   const [selectedItemId, setSelectedItemId] = useLayoutSelection()
@@ -796,11 +811,22 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         if (cropContext === 'layout' && (item as LayoutVideoItem).kind === 'video') {
           return cloneFrame(item.frame)
         }
+        if ((item as LayoutVideoItem).kind === 'video') {
+          const pendingCrop = getPendingCrop?.(item.id, cropContext)
+          if (pendingCrop) {
+            return {
+              x: clamp(pendingCrop.x),
+              y: clamp(pendingCrop.y),
+              width: clamp(pendingCrop.width),
+              height: clamp(pendingCrop.height)
+            }
+          }
+        }
         return normaliseCropFrame(item, cropContext)
       }
       return cloneFrame(item.frame)
     },
-    [cropContext, transformTarget]
+    [cropContext, getPendingCrop, transformTarget]
   )
 
   const itemIsEditable = useCallback(
@@ -1162,7 +1188,10 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const video = item as LayoutVideoItem
         frameBounds = clampFrameToCanvas(cloneFrame(video.frame))
         sourceBounds = getVideoSourceBounds(video)
-        const currentCrop = normaliseVideoCropBounds(video.crop ?? sourceBounds)
+        const pendingCrop = getPendingCrop?.(video.id, cropContext)
+        const currentCrop = pendingCrop
+          ? clampCropToBounds(clampCropFrame(pendingCrop), sourceBounds)
+          : normaliseVideoCropBounds(video.crop ?? sourceBounds)
         originFrame = cropToOverlayFrame(frameBounds, sourceBounds, currentCrop)
       }
       const snapEnabled = event.altKey || event.metaKey
@@ -1393,7 +1422,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
             width: bounded.width,
             height: bounded.height
           }
-          scheduleTransform([{ itemId: state.itemId, frame: cropFrame }], { commit: true })
+          scheduleTransform([{ itemId: state.itemId, frame: cropFrame }], { commit: false })
         } else {
           const snapped = applyGuides(frame, {
             snapEnabled: state.target === 'frame' && state.snapEnabled,
@@ -1640,7 +1669,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           key: 'finish-crop',
           label: 'Finish crop',
           icon: <CropConfirmIcon />,
-          onSelect: () => onRequestChangeTransformTarget('frame')
+          onSelect: () => {
+            onRequestFinishCrop?.()
+          }
         })
       } else {
         actions.push({
@@ -1879,9 +1910,14 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           labelVisibility === 'always' || (labelVisibility === 'selected' && isSelected)
         const editable = itemIsEditable(item)
         const videoItem = (item as LayoutVideoItem).kind === 'video' ? (item as LayoutVideoItem) : null
+        const pendingCrop = videoItem ? getPendingCrop?.(videoItem.id, cropContext) : null
         const cropOverlayRect =
           isPrimarySelection && transformTarget === 'crop' && videoItem
-            ? getCropOverlayRect(videoItem, cropContext)
+            ? getCropOverlayRect(
+                videoItem,
+                cropContext,
+                pendingCrop ? clampCropFrame(pendingCrop) : null
+              )
             : null
         const overlayLeftPercent = cropOverlayRect ? fractionToPercent(Math.max(0, cropOverlayRect.left)) : null
         const overlayTopPercent = cropOverlayRect ? fractionToPercent(Math.max(0, cropOverlayRect.top)) : null

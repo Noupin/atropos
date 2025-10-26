@@ -709,12 +709,21 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     url: null,
     message: null
   })
+  const [pendingCrops, setPendingCrops] = useState<{
+    source: Record<string, LayoutFrame>
+    layout: Record<string, LayoutFrame>
+  }>({ source: {}, layout: {} })
   const [viewportHeight, setViewportHeight] = useState<number>(() =>
     typeof window !== 'undefined' && Number.isFinite(window.innerHeight) ? window.innerHeight : 900
   )
   const [sourceContainer, setSourceContainer] = useState<HTMLDivElement | null>(null)
   const [layoutContainer, setLayoutContainer] = useState<HTMLDivElement | null>(null)
   const [sourceVideoDimensions, setSourceVideoDimensions] = useState<{ width: number; height: number } | null>(null)
+  const pendingCropsRef = useRef(pendingCrops)
+
+  useEffect(() => {
+    pendingCropsRef.current = pendingCrops
+  }, [pendingCrops])
 
   const layoutAspectRatio = useMemo(() => {
     if (draftLayout && draftLayout.canvas.height > 0) {
@@ -898,6 +907,20 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
       target: 'frame' | 'crop',
       origin: PreviewKind
     ) => {
+      if (target === 'crop' && !options.commit) {
+        setPendingCrops((current) => {
+          const next = {
+            source: { ...current.source },
+            layout: { ...current.layout }
+          }
+          const store = origin === 'source' ? next.source : next.layout
+          transforms.forEach((transform) => {
+            store[transform.itemId] = transform.frame
+          })
+          return next
+        })
+        return
+      }
       const baseAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
       updateLayout(
         (layout) => ({
@@ -986,8 +1009,43 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         }),
         { transient: !options.commit, trackHistory: options.commit }
       )
+      if (target === 'crop' && options.commit) {
+        setPendingCrops((current) => {
+          const next = {
+            source: { ...current.source },
+            layout: { ...current.layout }
+          }
+          const store = origin === 'source' ? next.source : next.layout
+          transforms.forEach((transform) => {
+            if (store[transform.itemId]) {
+              delete store[transform.itemId]
+            }
+          })
+          return next
+        })
+      }
     },
     [layoutAspectRatio, sourceAspectRatio, updateLayout]
+  )
+
+  const commitPendingCrop = useCallback(
+    (context: 'source' | 'layout', itemId?: string | null) => {
+      const store = pendingCropsRef.current[context]
+      if (!store) {
+        return false
+      }
+      const ids = itemId ? [itemId] : Object.keys(store)
+      const transforms = ids
+        .map((id) => ({ id, frame: store[id] }))
+        .filter((entry): entry is { id: string; frame: LayoutFrame } => Boolean(entry.frame))
+        .map((entry) => ({ itemId: entry.id, frame: entry.frame }))
+      if (!transforms.length) {
+        return false
+      }
+      handleTransform(transforms, { commit: true }, 'crop', context)
+      return true
+    },
+    [handleTransform]
   )
 
   const handleSourceTransform = useCallback(
@@ -1078,6 +1136,25 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         }),
         { trackHistory: true }
       )
+      setPendingCrops((current) => {
+        const next = {
+          source: { ...current.source },
+          layout: { ...current.layout }
+        }
+        if (context === 'source') {
+          if (next.source[selectedItemId]) {
+            delete next.source[selectedItemId]
+          }
+          if (next.layout[selectedItemId]) {
+            delete next.layout[selectedItemId]
+          }
+        } else {
+          if (next.layout[selectedItemId]) {
+            delete next.layout[selectedItemId]
+          }
+        }
+        return next
+      })
     },
     [layoutAspectRatio, selectedItemId, sourceAspectRatio, updateLayout]
   )
@@ -1127,6 +1204,17 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         }),
         { trackHistory: true }
       )
+      setPendingCrops((current) => {
+        if (!current.layout[itemId]) {
+          return current
+        }
+        const nextLayout = { ...current.layout }
+        delete nextLayout[itemId]
+        return {
+          source: { ...current.source },
+          layout: nextLayout
+        }
+      })
     },
     [layoutAspectRatio, sourceAspectRatio, updateLayout]
   )
@@ -1758,6 +1846,62 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     []
   )
 
+  const layoutPreviewDisplayLayout = useMemo(() => {
+    if (!draftLayout) {
+      return draftLayout
+    }
+    if (layoutTransformTarget !== 'crop' || !selectedItemId) {
+      return draftLayout
+    }
+    const selected = draftLayout.items.find((item) => item.id === selectedItemId)
+    if (!selected || selected.kind !== 'video') {
+      return draftLayout
+    }
+    const clone = cloneLayout(draftLayout)
+    const index = clone.items.findIndex((item) => item.id === selectedItemId)
+    if (index < 0) {
+      return draftLayout
+    }
+    const video = clone.items[index] as LayoutVideoItem
+    video.crop = createDefaultCrop()
+    return clone
+  }, [draftLayout, layoutTransformTarget, selectedItemId])
+
+  const getPendingCropFrame = useCallback(
+    (itemId: string, context: 'source' | 'layout'): LayoutFrame | null => {
+      const store = pendingCrops[context]
+      return store?.[itemId] ?? null
+    },
+    [pendingCrops]
+  )
+
+  useEffect(() => {
+    if (layoutTransformTarget !== 'crop') {
+      commitPendingCrop('layout')
+    }
+  }, [commitPendingCrop, layoutTransformTarget])
+
+  useEffect(() => {
+    if (layoutTransformTarget === 'crop' && !selectedItemId) {
+      commitPendingCrop('layout')
+    }
+  }, [commitPendingCrop, layoutTransformTarget, selectedItemId])
+
+  const handleFinishCrop = useCallback(() => {
+    commitPendingCrop('layout')
+    setLayoutTransformTarget('frame')
+  }, [commitPendingCrop])
+
+  const previousSelectionRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const previous = previousSelectionRef.current
+    if (layoutTransformTarget === 'crop' && previous && previous !== selectedItemId) {
+      commitPendingCrop('layout', previous)
+    }
+    previousSelectionRef.current = selectedItemId ?? null
+  }, [commitPendingCrop, layoutTransformTarget, selectedItemId])
+
   const handleVideoLoadedMetadata = useCallback(
     (origin: PreviewKind) => {
       const { source } = getVideoPair(origin)
@@ -2204,6 +2348,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               aspectRatioOverride={sourceAspectRatio}
               onRequestResetAspect={handleResetToSourceAspect}
               cropContext="source"
+              getPendingCrop={getPendingCropFrame}
               style={sourceCanvasStyle}
               ariaLabel="Source preview canvas"
             />
@@ -2233,7 +2378,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               previewContent={
                 layoutPreviewSource ? (
                   <LayoutCompositionSurface
-                    layout={draftLayout}
+                    layout={layoutPreviewDisplayLayout}
                     videoRef={layoutVideoRef}
                     source={layoutPreviewSource}
                     isPlaying={isPlaying}
@@ -2256,6 +2401,8 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               onRequestResetAspect={handleResetToSourceAspect}
               onRequestChangeTransformTarget={handleTransformTargetChange}
               cropContext="layout"
+              getPendingCrop={getPendingCropFrame}
+              onRequestFinishCrop={handleFinishCrop}
               enableScaleModeMenu
               onRequestChangeScaleMode={handleChangeVideoScaleMode}
               style={layoutCanvasStyle}
