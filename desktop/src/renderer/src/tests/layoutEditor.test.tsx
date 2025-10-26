@@ -1228,6 +1228,33 @@ describe('Layout editor interactions', () => {
         expect(resetVideo.cropAspectRatio).toBeCloseTo(1, 3)
       }
     }
+
+    const interactionsBeforeFollowUp = onLayoutChange.mock.calls.length
+    const resetSourceGroup = within(sourceCanvas).getByRole('group', { name: /primary/i })
+    const resetHandle = within(resetSourceGroup).getByLabelText('Resize east')
+    await act(async () => {
+      pointerDown(resetHandle, { pointerId: 44, clientX: 200, clientY: 200 })
+      pointerMove(sourceCanvas, { pointerId: 44, clientX: 150, clientY: 200 })
+    })
+    await act(async () => {
+      pointerUp(sourceCanvas, { pointerId: 44, clientX: 150, clientY: 200 })
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange.mock.calls.length).toBeGreaterThan(interactionsBeforeFollowUp)
+    })
+
+    const afterFollowUp = latestLayout?.items.find((item) => item.id === 'video-1') as
+      | LayoutVideoItem
+      | undefined
+    expect(afterFollowUp).toBeTruthy()
+    if (afterFollowUp) {
+      const sourceCrop = afterFollowUp.sourceCrop ?? { x: 0, y: 0, width: 1, height: 1 }
+      const cropRatio = sourceCrop.width / Math.max(sourceCrop.height, 0.0001)
+      expect(cropRatio).toBeCloseTo(1, 3)
+      const frameRatio = afterFollowUp.frame.width / Math.max(afterFollowUp.frame.height, 0.0001)
+      expect(frameRatio).toBeCloseTo(16 / 9, 3)
+    }
   })
 
   it('switches the layout canvas between frame and crop editing modes', async () => {

@@ -770,13 +770,36 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               const baseCrop = normaliseSourceCrop(video)
               if (origin === 'source') {
                 const unlocked = video.lockCropAspectRatio === false
-                const desiredAspect =
+                const storedAspect =
                   !unlocked &&
                   video.cropAspectRatio &&
                   Number.isFinite(video.cropAspectRatio) &&
                   video.cropAspectRatio > 0
                     ? video.cropAspectRatio
                     : null
+                const sourceRatio = (() => {
+                  const sourceWidth = clamp(baseCrop.width)
+                  const sourceHeight = clamp(baseCrop.height)
+                  if (sourceWidth > 0 && sourceHeight > 0) {
+                    return sourceWidth / Math.max(sourceHeight, 0.0001)
+                  }
+                  return null
+                })()
+                const desiredAspect = (() => {
+                  if (unlocked) {
+                    return null
+                  }
+                  if (
+                    storedAspect &&
+                    Number.isFinite(baseAspect) &&
+                    baseAspect > 0 &&
+                    Math.abs(storedAspect - baseAspect) < 0.0001 &&
+                    sourceRatio
+                  ) {
+                    return sourceRatio
+                  }
+                  return storedAspect ?? sourceRatio
+                })()
                 const targetCrop =
                   desiredAspect && Number.isFinite(desiredAspect) && desiredAspect > 0
                     ? clampCropToBounds(snapCropToAspect(nextCrop, desiredAspect), createDefaultCrop())
