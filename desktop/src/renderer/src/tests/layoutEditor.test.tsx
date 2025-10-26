@@ -1067,9 +1067,137 @@ describe('Layout editor interactions', () => {
     if (snappedVideo) {
       const snappedRatio = snappedVideo.frame.width / Math.max(snappedVideo.frame.height, 0.0001)
       expect(snappedRatio).not.toBeCloseTo(distortedRatio ?? snappedRatio, 3)
-      if (snappedVideo.crop) {
-        const cropRatio = snappedVideo.crop.width / Math.max(snappedVideo.crop.height, 0.0001)
-        expect(cropRatio).toBeCloseTo(snappedRatio, 3)
+      const crop = snappedVideo.crop
+      expect(crop).toBeTruthy()
+      if (crop) {
+        expect(crop).toMatchObject({ x: 0, y: 0, width: 1, height: 1 })
+        const cropRatio = crop.width / Math.max(crop.height, 0.0001)
+        const expectedFrameRatio = (16 / 9) * cropRatio
+        expect(snappedRatio).toBeCloseTo(expectedFrameRatio, 3)
+        if (snappedVideo.cropAspectRatio != null) {
+          expect(snappedVideo.cropAspectRatio).toBeCloseTo(cropRatio, 3)
+        }
+      }
+    }
+  })
+
+  it('resets the source preview to the native aspect and full-frame crop', async () => {
+    let latestLayout: LayoutDefinition | null = null
+    const onLayoutChange = vi.fn((next: LayoutDefinition) => {
+      latestLayout = next
+    })
+
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={null}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={onLayoutChange}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = findInteractiveCanvas(layoutCanvases)
+    const layoutItem = await selectItemByName(layoutCanvas, /primary/i, {
+      pointerId: 40,
+      clientX: 60,
+      clientY: 80
+    })
+
+    const unlockButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Unlock frame aspect (freeform)'
+    })
+    await act(async () => {
+      fireEvent.click(unlockButtons[unlockButtons.length - 1])
+    })
+
+    const eastHandle = within(layoutItem).getByLabelText('Resize east')
+    await act(async () => {
+      pointerDown(eastHandle, { pointerId: 41, clientX: 220, clientY: 140 })
+      pointerMove(layoutCanvas, { pointerId: 41, clientX: 160, clientY: 140 })
+    })
+    await act(async () => {
+      pointerUp(layoutCanvas, { pointerId: 41, clientX: 160, clientY: 140 })
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange).toHaveBeenCalled()
+    })
+
+    const sourceCanvases = await screen.findAllByLabelText('Source preview canvas')
+    const sourceCanvas = sourceCanvases[sourceCanvases.length - 1]
+    const initialChangeCount = onLayoutChange.mock.calls.length
+    await selectItemByName(sourceCanvas, /primary/i, { pointerId: 42 })
+    expect(onLayoutChange).toHaveBeenCalledTimes(initialChangeCount)
+
+    const sourceGroup = within(sourceCanvas).getByRole('group', { name: /primary/i })
+    const cropHandle = within(sourceGroup).getByLabelText('Resize east')
+    await act(async () => {
+      pointerDown(cropHandle, { pointerId: 43, clientX: 200, clientY: 180 })
+      pointerMove(sourceCanvas, { pointerId: 43, clientX: 150, clientY: 200 })
+    })
+    await act(async () => {
+      pointerUp(sourceCanvas, { pointerId: 43, clientX: 150, clientY: 200 })
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange.mock.calls.length).toBeGreaterThan(initialChangeCount)
+    })
+
+    const changeCountBeforeReset = onLayoutChange.mock.calls.length
+    const distortedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as
+      | LayoutVideoItem
+      | undefined
+    expect(distortedVideo).toBeTruthy()
+    if (distortedVideo) {
+      expect(distortedVideo.sourceCrop).toBeTruthy()
+      const cropWidth = distortedVideo.sourceCrop?.width ?? 0
+      expect(cropWidth).toBeLessThan(1)
+    }
+
+    const resetButtons = await within(sourceCanvas).findAllByRole('button', {
+      name: 'Reset to video aspect'
+    })
+    await act(async () => {
+      fireEvent.click(resetButtons[resetButtons.length - 1])
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange.mock.calls.length).toBeGreaterThan(changeCountBeforeReset)
+    })
+
+    const resetVideo = latestLayout?.items.find((item) => item.id === 'video-1') as
+      | LayoutVideoItem
+      | undefined
+    expect(resetVideo).toBeTruthy()
+    if (resetVideo) {
+      const frameRatio = resetVideo.frame.width / Math.max(resetVideo.frame.height, 0.0001)
+      expect(frameRatio).toBeCloseTo(16 / 9, 3)
+      const expectedCrop = { x: 0, y: 0, width: 1, height: 1 }
+      expect(resetVideo.sourceCrop ?? expectedCrop).toMatchObject(expectedCrop)
+      expect(resetVideo.crop).toMatchObject(expectedCrop)
+      if (resetVideo.cropAspectRatio != null) {
+        expect(resetVideo.cropAspectRatio).toBeCloseTo(1, 3)
       }
     }
   })

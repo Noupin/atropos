@@ -1145,7 +1145,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       }
 
       const snapped = applyGuides(nextFrame, {
-        snapEnabled: state.snapEnabled,
+        snapEnabled: state.target === 'frame' && state.snapEnabled,
         aspectLocked: state.aspectLocked,
         aspectRatio: state.aspectRatio,
         handle: state.handle
@@ -1230,7 +1230,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
       if (frame) {
         const snapped = applyGuides(frame, {
-          snapEnabled: state.snapEnabled,
+          snapEnabled: state.target === 'frame' && state.snapEnabled,
           aspectLocked: state.aspectLocked,
           aspectRatio: state.aspectRatio,
           handle: state.handle

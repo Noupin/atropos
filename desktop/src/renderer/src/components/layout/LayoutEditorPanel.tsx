@@ -338,6 +338,24 @@ const snapCropToAspect = (crop: LayoutCrop, aspect: number): LayoutCrop => {
   }
 }
 
+const getFrameAspectRatio = (frame: LayoutFrame): number | null => {
+  const width = clamp(frame.width)
+  const height = clamp(frame.height)
+  if (width <= 0 || height <= 0) {
+    return null
+  }
+  return width / Math.max(height, 0.0001)
+}
+
+const getCropAspectRatio = (crop: LayoutCrop): number | null => {
+  const width = clamp(crop.width)
+  const height = clamp(crop.height)
+  if (width <= 0 || height <= 0) {
+    return null
+  }
+  return width / Math.max(height, 0.0001)
+}
+
 const cloneLayoutItem = (item: LayoutItem): LayoutItem => {
   if ((item as LayoutVideoItem).kind === 'video') {
     const video = item as LayoutVideoItem
@@ -983,11 +1001,11 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   )
 
   const handleResetToSourceAspect = useCallback(
-    (target: 'frame' | 'crop', context: 'source' | 'layout') => {
+    (_target: 'frame' | 'crop', context: 'source' | 'layout') => {
       if (!selectedItemId) {
         return
       }
-      const baseAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
+      const nativeAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
       updateLayout(
         (layout) => ({
           ...layout,
@@ -995,89 +1013,71 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
             if (item.kind !== 'video' || item.id !== selectedItemId) {
               return item
             }
+
+            const currentFrame = clampFrame(item.frame)
+
             if (context === 'source') {
-              const sourceBounds = normaliseSourceCrop(item)
-              const sourceTarget = clampCropToBounds(
-                snapCropToAspect(sourceBounds, 1),
-                createDefaultCrop()
-              )
-              const boundedCrop = clampCropToBounds(normaliseVideoCrop(item.crop), sourceTarget)
-              const resolvedAspect =
-                item.lockCropAspectRatio === false
-                  ? item.cropAspectRatio ?? null
-                  : sourceTarget.width > 0 && sourceTarget.height > 0
-                    ? sourceTarget.width / Math.max(sourceTarget.height, 0.0001)
-                    : item.cropAspectRatio ?? null
-              const nextCrop =
-                item.lockCropAspectRatio === false || !resolvedAspect || !Number.isFinite(resolvedAspect)
-                  ? boundedCrop
-                  : clampCropToBounds(snapCropToAspect(boundedCrop, resolvedAspect), sourceTarget)
-              return {
+              const desiredFrameAspect =
+                Number.isFinite(nativeAspect) && nativeAspect > 0
+                  ? nativeAspect
+                  : getFrameAspectRatio(currentFrame)
+              const snappedFrame =
+                desiredFrameAspect && Number.isFinite(desiredFrameAspect) && desiredFrameAspect > 0
+                  ? snapFrameToAspect(currentFrame, desiredFrameAspect)
+                  : currentFrame
+              const defaultCrop = createDefaultCrop()
+              const cropAspect = getCropAspectRatio(defaultCrop)
+
+              const nextVideo: LayoutVideoItem = {
                 ...item,
-                sourceCrop: sourceTarget,
-                crop: nextCrop,
-                cropAspectRatio: resolvedAspect
-              }
-            }
-            if (target === 'crop') {
-              const sourceBounds = normaliseSourceCrop(item)
-              const cropWidth = clamp(sourceBounds.width)
-              const cropHeight = clamp(sourceBounds.height)
-              const resetAspect =
-                cropWidth > 0 && cropHeight > 0
-                  ? cropWidth / Math.max(cropHeight, 0.0001)
-                  : item.cropAspectRatio ?? null
-              if (!resetAspect || !Number.isFinite(resetAspect) || resetAspect <= 0) {
-                return {
-                  ...item,
-                  crop: clampCropToBounds(normaliseVideoCrop(item.crop), sourceBounds)
-                }
-              }
-              const resetCrop = clampCropToBounds(
-                snapCropToAspect(normaliseVideoCrop(item.crop), resetAspect),
-                sourceBounds
-              )
-              return {
-                ...item,
-                crop: resetCrop,
+                frame: clampFrame(snappedFrame),
+                sourceCrop: defaultCrop,
+                crop: defaultCrop,
                 cropAspectRatio:
-                  item.lockCropAspectRatio === false ? item.cropAspectRatio ?? null : resetAspect
+                  item.lockCropAspectRatio === false ? item.cropAspectRatio ?? null : cropAspect ?? null
               }
+
+              if (item.lockAspectRatio !== false) {
+                nextVideo.frameAspectRatio =
+                  desiredFrameAspect && Number.isFinite(desiredFrameAspect) && desiredFrameAspect > 0
+                    ? desiredFrameAspect
+                    : getFrameAspectRatio(nextVideo.frame)
+              }
+
+              return nextVideo
             }
+
             const sourceBounds = normaliseSourceCrop(item)
-            const sourceWidth = clamp(sourceBounds.width)
-            const sourceHeight = clamp(sourceBounds.height)
+            const boundedSource = clampCropToBounds(sourceBounds, sourceBounds)
+            const sourceWidth = clamp(boundedSource.width)
+            const sourceHeight = clamp(boundedSource.height)
             const sourceFrameAspect =
-              sourceWidth > 0 && sourceHeight > 0
-                ? (baseAspect * sourceWidth) / Math.max(sourceHeight, 0.0001)
-                : baseAspect
-            const snappedFrame = snapFrameToAspect(item.frame, sourceFrameAspect)
+              sourceWidth > 0 && sourceHeight > 0 && Number.isFinite(nativeAspect) && nativeAspect > 0
+                ? (nativeAspect * sourceWidth) / Math.max(sourceHeight, 0.0001)
+                : getFrameAspectRatio(currentFrame) ?? nativeAspect
+            const snappedFrame =
+              sourceFrameAspect && Number.isFinite(sourceFrameAspect) && sourceFrameAspect > 0
+                ? snapFrameToAspect(currentFrame, sourceFrameAspect)
+                : currentFrame
+            const cropCopy = normaliseVideoCrop(boundedSource)
+            const cropAspect = getCropAspectRatio(cropCopy)
+
             const nextVideo: LayoutVideoItem = {
               ...item,
-              frame: snappedFrame,
-              frameAspectRatio:
-                item.lockAspectRatio === false
-                  ? item.frameAspectRatio ?? null
-                  : sourceFrameAspect && Number.isFinite(sourceFrameAspect) && sourceFrameAspect > 0
-                    ? sourceFrameAspect
-                    : item.frameAspectRatio ?? null
+              frame: clampFrame(snappedFrame),
+              crop: cropCopy,
+              cropAspectRatio:
+                item.lockCropAspectRatio === false ? item.cropAspectRatio ?? null : cropAspect ?? null
             }
-            const boundedCrop = clampCropToBounds(normaliseVideoCrop(item.crop), sourceBounds)
-            const nextCrop =
-              nextVideo.lockCropAspectRatio === false
-                ? boundedCrop
-                : alignCropToFrame({ ...nextVideo, crop: boundedCrop })
-            const alignedAspect =
-              nextVideo.lockCropAspectRatio === false
-                ? nextVideo.cropAspectRatio ?? null
-                : nextCrop.width > 0 && nextCrop.height > 0
-                  ? nextCrop.width / Math.max(nextCrop.height, 0.0001)
-                  : nextVideo.cropAspectRatio ?? null
-            return {
-              ...nextVideo,
-              crop: nextCrop,
-              cropAspectRatio: alignedAspect
+
+            if (item.lockAspectRatio !== false) {
+              nextVideo.frameAspectRatio =
+                sourceFrameAspect && Number.isFinite(sourceFrameAspect) && sourceFrameAspect > 0
+                  ? sourceFrameAspect
+                  : getFrameAspectRatio(nextVideo.frame)
             }
+
+            return nextVideo
           })
         }),
         { trackHistory: true }
