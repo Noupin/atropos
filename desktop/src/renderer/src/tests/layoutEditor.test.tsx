@@ -1077,6 +1077,8 @@ describe('Layout editor interactions', () => {
       expect(distortedRatio).toBeLessThan(16 / 9)
     }
 
+    const distortedWidth = distortedVideo?.frame.width ?? 0
+
     const resetButtons = await within(layoutCanvas).findAllByRole('button', {
       name: 'Match source frame aspect'
     })
@@ -1093,6 +1095,7 @@ describe('Layout editor interactions', () => {
     const snappedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
     expect(snappedVideo).toBeTruthy()
     if (snappedVideo) {
+      expect(snappedVideo.frame.width).toBeCloseTo(distortedWidth, 3)
       const snappedRatio = snappedVideo.frame.width / Math.max(snappedVideo.frame.height, 0.0001)
       expect(snappedRatio).not.toBeCloseTo(distortedRatio ?? snappedRatio, 3)
       const crop = snappedVideo.crop
@@ -1203,6 +1206,8 @@ describe('Layout editor interactions', () => {
       expect(cropWidth).toBeLessThan(1)
     }
 
+    const distortedWidth = distortedVideo?.frame.width ?? 0
+
     const resetButtons = await within(sourceCanvas).findAllByRole('button', {
       name: 'Reset to video aspect'
     })
@@ -1219,6 +1224,7 @@ describe('Layout editor interactions', () => {
       | undefined
     expect(resetVideo).toBeTruthy()
     if (resetVideo) {
+      expect(resetVideo.frame.width).toBeCloseTo(distortedWidth, 3)
       const frameRatio = resetVideo.frame.width / Math.max(resetVideo.frame.height, 0.0001)
       expect(frameRatio).toBeCloseTo(16 / 9, 3)
       const expectedCrop = { x: 0, y: 0, width: 1, height: 1 }

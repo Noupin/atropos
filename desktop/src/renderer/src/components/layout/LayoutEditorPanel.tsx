@@ -256,36 +256,57 @@ const snapFrameToAspect = (frame: LayoutFrame, aspect: number): LayoutFrame => {
   if (!Number.isFinite(aspect) || aspect <= 0) {
     return clampFrame(frame)
   }
+
   const width = clamp(frame.width)
   const height = clamp(frame.height)
   if (width <= 0 || height <= 0) {
     return clampFrame(frame)
   }
+
   const currentAspect = width / Math.max(height, 0.0001)
   if (Math.abs(currentAspect - aspect) < 0.0001) {
     return clampFrame(frame)
   }
+
   let nextWidth = width
-  let nextHeight = height
-  if (currentAspect > aspect) {
-    nextWidth = Math.min(width, height * aspect)
-    nextHeight = nextWidth / aspect
-  } else {
-    nextHeight = Math.min(height, width / aspect)
-    nextWidth = nextHeight * aspect
+  let nextHeight = width / aspect
+
+  if (!Number.isFinite(nextHeight) || nextHeight <= 0) {
+    return clampFrame(frame)
   }
-  nextWidth = clamp(nextWidth)
-  nextHeight = clamp(nextHeight)
+
+  if (nextHeight > 1) {
+    const scale = 1 / nextHeight
+    nextHeight = 1
+    nextWidth = clamp(width * scale)
+  } else if (nextHeight <= 1) {
+    nextHeight = clamp(nextHeight)
+  }
+
+  if (nextWidth > 1) {
+    const scale = 1 / nextWidth
+    nextWidth = 1
+    nextHeight = clamp(nextHeight * scale)
+  }
+
   const centerX = clamp(frame.x + width / 2)
   const centerY = clamp(frame.y + height / 2)
   let nextX = clamp(centerX - nextWidth / 2)
   let nextY = clamp(centerY - nextHeight / 2)
+
+  if (nextX < 0) {
+    nextX = 0
+  }
+  if (nextY < 0) {
+    nextY = 0
+  }
   if (nextX + nextWidth > 1) {
     nextX = clamp(1 - nextWidth)
   }
   if (nextY + nextHeight > 1) {
     nextY = clamp(1 - nextHeight)
   }
+
   return {
     x: clamp(nextX),
     y: clamp(nextY),
