@@ -1885,4 +1885,88 @@ describe('Layout editor interactions', () => {
     })
     await waitFor(() => expect(onApplyLayout).toHaveBeenCalledTimes(1))
   })
+
+  it('toggles between auto crop and stretch using the layout context menu', async () => {
+    let latestLayout: LayoutDefinition | null = null
+    const onLayoutChange = vi.fn((next: LayoutDefinition) => {
+      latestLayout = next
+    })
+
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={null}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={onLayoutChange}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = findInteractiveCanvas(layoutCanvases)
+    const videoItem = await selectItemByName(layoutCanvas, /primary/i, {
+      pointerId: 71,
+      clientX: 80,
+      clientY: 100
+    })
+
+    await act(async () => {
+      fireEvent.contextMenu(videoItem)
+    })
+
+    const stretchOption = await screen.findByRole('button', { name: /stretch to frame/i })
+
+    await act(async () => {
+      fireEvent.click(stretchOption)
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange).toHaveBeenCalled()
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.scaleMode).toBe('fill')
+      expect(updatedVideo?.crop).toMatchObject({ width: 1, height: 1 })
+    })
+
+    const refreshedItem = await selectItemByName(layoutCanvas, /primary/i, {
+      pointerId: 72,
+      clientX: 90,
+      clientY: 120
+    })
+
+    await act(async () => {
+      fireEvent.contextMenu(refreshedItem)
+    })
+
+    const autoOption = await screen.findByRole('button', { name: /auto crop to fill/i })
+
+    await act(async () => {
+      fireEvent.click(autoOption)
+    })
+
+    await waitFor(() => {
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.scaleMode).toBe('cover')
+      expect(updatedVideo?.crop?.width ?? 1).toBeLessThan(0.9)
+      expect(updatedVideo?.crop?.height ?? 0).toBeGreaterThan(0.9)
+    })
+  })
 })

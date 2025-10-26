@@ -8,6 +8,7 @@ import type {
 } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
+  LayoutCrop,
   LayoutDefinition,
   LayoutFrame,
   LayoutItem,
@@ -132,6 +133,8 @@ type LayoutCanvasProps = {
   onRequestChangeTransformTarget?: (target: 'frame' | 'crop') => void
   getAspectRatioForItem?: (item: LayoutItem, target: 'frame' | 'crop') => number | null
   cropContext?: 'source' | 'layout'
+  enableScaleModeMenu?: boolean
+  onRequestChangeScaleMode?: (itemId: string, mode: LayoutVideoItem['scaleMode']) => void
 }
 
 type Guide = {
@@ -140,6 +143,8 @@ type Guide = {
 }
 
 type SnappedEdges = Partial<Record<'left' | 'right' | 'top' | 'bottom', boolean>>
+
+type ContextMenuState = { x: number; y: number; itemId: string } | null
 
 const clamp = (value: number, min = 0, max = 1): number => Math.min(Math.max(value, min), max)
 
@@ -370,6 +375,82 @@ const getItemAppearance = (item: LayoutItem, scheme: ColorScheme): ItemAppearanc
 }
 
 const defaultCrop = { x: 0, y: 0, width: 1, height: 1 }
+
+const normaliseVideoCropBounds = (crop: LayoutCrop | null | undefined): LayoutCrop => ({
+  x: clamp(crop?.x ?? 0),
+  y: clamp(crop?.y ?? 0),
+  width: clamp(crop?.width ?? 1),
+  height: clamp(crop?.height ?? 1),
+  units: 'fraction'
+})
+
+const clampCropToBounds = (crop: LayoutCrop, bounds: LayoutCrop): LayoutCrop => {
+  const base = normaliseVideoCropBounds(bounds)
+  const next = normaliseVideoCropBounds(crop)
+  const maxX = clamp(base.x + base.width)
+  const maxY = clamp(base.y + base.height)
+  let width = clamp(Math.min(next.width, maxX - base.x))
+  let height = clamp(Math.min(next.height, maxY - base.y))
+  let x = clamp(next.x)
+  let y = clamp(next.y)
+  if (x < base.x) {
+    x = base.x
+  }
+  if (y < base.y) {
+    y = base.y
+  }
+  if (x + width > maxX) {
+    x = clamp(maxX - width)
+  }
+  if (y + height > maxY) {
+    y = clamp(maxY - height)
+  }
+  width = clamp(Math.min(width, maxX - x))
+  height = clamp(Math.min(height, maxY - y))
+  return { x, y, width, height, units: 'fraction' }
+}
+
+const getVideoSourceBounds = (video: LayoutVideoItem): LayoutCrop => {
+  return normaliseVideoCropBounds(video.sourceCrop ?? video.crop ?? defaultCrop)
+}
+
+type CropOverlayRect = { left: number; top: number; width: number; height: number }
+
+const getCropOverlayRect = (
+  video: LayoutVideoItem,
+  context: 'source' | 'layout'
+): CropOverlayRect | null => {
+  const base =
+    context === 'source'
+      ? normaliseVideoCropBounds(video.sourceCrop ?? video.crop ?? defaultCrop)
+      : getVideoSourceBounds(video)
+  const target =
+    context === 'source'
+      ? clampCropToBounds(normaliseVideoCropBounds(video.sourceCrop ?? video.crop ?? defaultCrop), base)
+      : clampCropToBounds(normaliseVideoCropBounds(video.crop ?? video.sourceCrop ?? defaultCrop), base)
+
+  const baseWidth = clamp(base.width)
+  const baseHeight = clamp(base.height)
+  if (baseWidth <= 0 || baseHeight <= 0) {
+    return null
+  }
+
+  const left = clamp((target.x - base.x) / Math.max(baseWidth, 0.0001))
+  const top = clamp((target.y - base.y) / Math.max(baseHeight, 0.0001))
+  const width = clamp(target.width / Math.max(baseWidth, 0.0001))
+  const height = clamp(target.height / Math.max(baseHeight, 0.0001))
+
+  if (width <= 0 || height <= 0) {
+    return null
+  }
+
+  return {
+    left,
+    top,
+    width: width > 1 ? 1 : width,
+    height: height > 1 ? 1 : height
+  }
+}
 
 const normaliseCropFrame = (item: LayoutItem, context: 'source' | 'layout'): LayoutFrame => {
   if ((item as LayoutVideoItem).kind !== 'video') {
@@ -618,7 +699,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   onRequestResetAspect,
   onRequestChangeTransformTarget,
   getAspectRatioForItem,
-  cropContext = 'layout'
+  cropContext = 'layout',
+  enableScaleModeMenu = false,
+  onRequestChangeScaleMode
 }) => {
   const colorScheme = useColorScheme()
   const [selectedItemId, setSelectedItemId] = useLayoutSelection()
@@ -641,6 +724,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const [toolbarAnchorId, setToolbarAnchorId] = useState<string | null>(null)
   const [hoverTarget, setHoverTarget] = useState<HoverTarget>({ itemId: null, handle: null })
   const [cursor, setCursor] = useState<string>('default')
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
 
   useGuideFade(guidesRef, setActiveGuides)
 
@@ -900,6 +984,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   const handlePointerDownCapture = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
+      setContextMenu((current) => (current ? null : current))
       if (!layout) {
         return
       }
@@ -1255,6 +1340,33 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     [clearHover, clearInteraction]
   )
 
+  const handleItemContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>, item: LayoutItem) => {
+      if (!enableScaleModeMenu || !onRequestChangeScaleMode) {
+        return
+      }
+      if ((item as LayoutVideoItem).kind !== 'video') {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      const video = item as LayoutVideoItem
+      if (selectedItemId !== video.id) {
+        setSelectedItemId(video.id)
+      }
+      const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 0
+      const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 0
+      const menuWidth = 220
+      const menuHeight = 120
+      const safeX = viewportWidth ? Math.min(event.clientX, Math.max(0, viewportWidth - menuWidth)) : event.clientX
+      const safeY = viewportHeight
+        ? Math.min(event.clientY, Math.max(0, viewportHeight - menuHeight))
+        : event.clientY
+      setContextMenu({ x: safeX, y: safeY, itemId: video.id })
+    },
+    [enableScaleModeMenu, onRequestChangeScaleMode, selectedItemId, setSelectedItemId]
+  )
+
   const handles: Array<{ id: ResizeHandle; positionClass: string; label: string }> = useMemo(
     () => [
       { id: 'nw', positionClass: '-left-2 -top-2', label: 'Resize north-west' },
@@ -1285,6 +1397,20 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     []
   )
 
+  const cropHandlePlacements: Record<ResizeHandle, { left: string; top: string; transform: string }> = useMemo(
+    () => ({
+      nw: { left: '0%', top: '0%', transform: 'translate(-50%, -50%)' },
+      ne: { left: '100%', top: '0%', transform: 'translate(-50%, -50%)' },
+      sw: { left: '0%', top: '100%', transform: 'translate(-50%, -50%)' },
+      se: { left: '100%', top: '100%', transform: 'translate(-50%, -50%)' },
+      n: { left: '50%', top: '0%', transform: 'translate(-50%, -50%)' },
+      s: { left: '50%', top: '100%', transform: 'translate(-50%, -50%)' },
+      e: { left: '100%', top: '50%', transform: 'translate(-50%, -50%)' },
+      w: { left: '0%', top: '50%', transform: 'translate(-50%, -50%)' }
+    }),
+    []
+  )
+
   const activeSelection = useMemo(() => {
     if (!layout || !selectedItemId) {
       return null
@@ -1299,6 +1425,15 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     }
     setToolbarAnchorId((current) => (current === selectedItemId ? current : selectedItemId))
   }, [selectedItemId])
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return
+    }
+    if (!selectedItemId || contextMenu.itemId !== selectedItemId) {
+      setContextMenu(null)
+    }
+  }, [contextMenu, selectedItemId])
 
   useEffect(() => {
     if (!selectedItemId) {
@@ -1327,6 +1462,30 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       interactionRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setContextMenu(null)
+      }
+    }
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('[data-layout-context-menu="true"]')) {
+        return
+      }
+      setContextMenu(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('pointerdown', handlePointerDown, true)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('pointerdown', handlePointerDown, true)
+    }
+  }, [contextMenu])
 
   const selectionBounds = useMemo(() => {
     if (!activeSelection) {
@@ -1545,6 +1704,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         onPointerCancel={handlePointerCancel}
         onClickCapture={handleClickCapture}
         onClick={handleClick}
+        onContextMenu={(event) => event.preventDefault()}
         role="presentation"
         aria-label={ariaLabel}
       >
@@ -1596,6 +1756,36 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const shouldShowLabel =
           labelVisibility === 'always' || (labelVisibility === 'selected' && isSelected)
         const editable = itemIsEditable(item)
+        const videoItem = (item as LayoutVideoItem).kind === 'video' ? (item as LayoutVideoItem) : null
+        const cropOverlayRect =
+          isPrimarySelection && transformTarget === 'crop' && videoItem
+            ? getCropOverlayRect(videoItem, cropContext)
+            : null
+        const overlayLeftPercent = cropOverlayRect ? fractionToPercent(Math.max(0, cropOverlayRect.left)) : null
+        const overlayTopPercent = cropOverlayRect ? fractionToPercent(Math.max(0, cropOverlayRect.top)) : null
+        const overlayWidthPercent = cropOverlayRect
+          ? fractionToPercent(Math.max(0, Math.min(1, cropOverlayRect.width)))
+          : null
+        const overlayHeightPercent = cropOverlayRect
+          ? fractionToPercent(Math.max(0, Math.min(1, cropOverlayRect.height)))
+          : null
+        const overlayRightPercent = cropOverlayRect
+          ? fractionToPercent(
+              Math.max(0, 1 - Math.max(0, cropOverlayRect.left) - Math.max(0, cropOverlayRect.width))
+            )
+          : null
+        const overlayBottomPercent = cropOverlayRect
+          ? fractionToPercent(
+              Math.max(0, 1 - Math.max(0, cropOverlayRect.top) - Math.max(0, cropOverlayRect.height))
+            )
+          : null
+        const overlayRightStartPercent = cropOverlayRect
+          ? fractionToPercent(Math.max(0, Math.min(1, cropOverlayRect.left + cropOverlayRect.width)))
+          : null
+        const overlayBottomStartPercent = cropOverlayRect
+          ? fractionToPercent(Math.max(0, Math.min(1, cropOverlayRect.top + cropOverlayRect.height)))
+          : null
+        const overlayShadeColor = 'rgba(15,23,42,0.45)'
         const borderColor = isSelected
           ? palette.borderColor
           : isHovered
@@ -1640,6 +1830,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
             aria-label={label}
             data-item-id={item.id}
             onPointerDown={stopPointerPropagation}
+            onContextMenu={(event) => handleItemContextMenu(event, item)}
           >
             {renderItemContent ? (
               <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
@@ -1664,7 +1855,93 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                 {transformTarget === 'crop' ? 'Crop' : 'Frame'}
               </div>
             ) : null}
-            {editable
+            {cropOverlayRect ? (
+              <div className="pointer-events-none absolute inset-0">
+                <div className="pointer-events-none absolute inset-0">
+                  <div
+                    className="absolute left-0 top-0 w-full"
+                    style={{ height: overlayTopPercent ?? '0%', backgroundColor: overlayShadeColor }}
+                  />
+                  <div
+                    className="absolute"
+                    style={{
+                      top: overlayTopPercent ?? '0%',
+                      left: '0%',
+                      width: overlayLeftPercent ?? '0%',
+                      height: overlayHeightPercent ?? '100%',
+                      backgroundColor: overlayShadeColor
+                    }}
+                  />
+                  <div
+                    className="absolute"
+                    style={{
+                      top: overlayTopPercent ?? '0%',
+                      left: overlayRightStartPercent ?? '100%',
+                      width: overlayRightPercent ?? '0%',
+                      height: overlayHeightPercent ?? '100%',
+                      backgroundColor: overlayShadeColor
+                    }}
+                  />
+                  <div
+                    className="absolute left-0 w-full"
+                    style={{
+                      top: overlayBottomStartPercent ?? '100%',
+                      height: overlayBottomPercent ?? '0%',
+                      backgroundColor: overlayShadeColor
+                    }}
+                  />
+                </div>
+                <div
+                  className="absolute"
+                  style={{
+                    left: overlayLeftPercent ?? '0%',
+                    top: overlayTopPercent ?? '0%',
+                    width: overlayWidthPercent ?? '100%',
+                    height: overlayHeightPercent ?? '100%'
+                  }}
+                >
+                  <div className="pointer-events-none absolute inset-0 rounded-none border-2 border-dashed border-[color:color-mix(in_srgb,var(--ring)_80%,transparent)]" />
+                  {editable
+                    ? handles.map((handle) => {
+                        const placement = cropHandlePlacements[handle.id]
+                        if (!placement) {
+                          return null
+                        }
+                        const cursorName = cursorForHandle(handle.id, false)
+                        const cursorClass = cursorName === 'default' ? 'cursor-default' : `cursor-${cursorName}`
+                        return (
+                          <button
+                            key={`crop-${handle.id}`}
+                            type="button"
+                            tabIndex={-1}
+                            aria-label={handle.label}
+                            data-handle={handle.id}
+                            data-item-id={item.id}
+                            className={`absolute h-3 w-3 rounded-none border-2 border-dashed text-transparent transition pointer-events-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${cursorClass}`}
+                            style={
+                              {
+                                left: placement.left,
+                                top: placement.top,
+                                transform: placement.transform,
+                                backgroundColor: palette.handleBackgroundColor,
+                                borderColor: palette.handleBorderColor,
+                                '--ring': ringColor
+                              } as CSSWithVars
+                            }
+                            onPointerDown={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
+                            }}
+                          >
+                            •
+                          </button>
+                        )
+                      })
+                    : null}
+                </div>
+              </div>
+            ) : null}
+            {editable && !cropOverlayRect
               ? handles.map((handle) => {
                   const cursorName = cursorForHandle(handle.id, itemAspectLocked)
                   const cursorClass =
@@ -1703,6 +1980,52 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           </div>
         )
       })}
+      {contextMenu && enableScaleModeMenu && activeSelection && (activeSelection as LayoutVideoItem).kind === 'video' ? (
+        <div
+          data-layout-context-menu="true"
+          className="fixed z-[1000] min-w-[220px] rounded-lg border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_94%,transparent)] p-1 shadow-[0_12px_28px_rgba(15,23,42,0.4)]"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+        >
+          <div className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+            Display mode
+          </div>
+          {(
+            [
+              { mode: 'cover' as LayoutVideoItem['scaleMode'], label: 'Auto crop to fill', description: 'Crop video to match the frame' },
+              { mode: 'fill' as LayoutVideoItem['scaleMode'], label: 'Stretch to frame', description: 'Stretch without cropping' }
+            ] as const
+          ).map((option) => {
+            const video = activeSelection as LayoutVideoItem
+            const currentMode = video.scaleMode ?? 'cover'
+            const isActive = currentMode === option.mode || (option.mode === 'cover' && currentMode == null)
+            return (
+              <button
+                key={option.mode}
+                type="button"
+                className={`flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                  isActive
+                    ? 'bg-[color:color-mix(in_srgb,var(--accent-soft)_85%,transparent)] text-[var(--fg)]'
+                    : 'text-[color:color-mix(in_srgb,var(--muted)_90%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--panel)_88%,transparent)]'
+                }`}
+                onClick={() => {
+                  onRequestChangeScaleMode?.(video.id, option.mode)
+                  setContextMenu(null)
+                }}
+              >
+                <span className="flex w-full items-center justify-between">
+                  <span>{option.label}</span>
+                  {isActive ? (
+                    <span className="text-xs font-medium text-[color:var(--ring)]">Active</span>
+                  ) : null}
+                </span>
+                <span className="text-[11px] text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
+                  {option.description}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
       {selectionBounds ? (
         <div
           className="pointer-events-none absolute z-30 rounded-none border-[4px]"
