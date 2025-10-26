@@ -463,6 +463,34 @@ describe('Layout editor interactions', () => {
     })
   })
 
+  it('renders the previews with square edges and a handle gutter', () => {
+    render(
+      <LayoutCanvas
+        layout={baseLayout}
+        onTransform={vi.fn()}
+        onRequestBringForward={vi.fn()}
+        onRequestSendBackward={vi.fn()}
+        onRequestDuplicate={vi.fn()}
+        onRequestDelete={vi.fn()}
+        showGrid={false}
+        showSafeMargins={false}
+        previewContent={<div>preview</div>}
+        transformTarget="frame"
+      />
+    )
+
+    const canvas = screen.getByRole('presentation')
+    const wrapper = canvas.parentElement as HTMLElement | null
+    expect(wrapper).not.toBeNull()
+    if (!wrapper) {
+      throw new Error('Canvas wrapper missing')
+    }
+    expect(wrapper.className).toContain('rounded-none')
+    expect(wrapper.className).toContain('p-3')
+    expect(wrapper.className).toContain('overflow-visible')
+    expect(wrapper.className).not.toContain('rounded-2xl')
+  })
+
   it('cycles through overlapping frames when clicking the same location repeatedly', async () => {
     const overlappingLayout: LayoutDefinition = {
       ...baseLayout,

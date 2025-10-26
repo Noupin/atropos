@@ -1491,7 +1491,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const canvasClassName = useMemo(
     () =>
       [
-        'relative flex max-w-full select-none items-center justify-center overflow-hidden rounded-2xl border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_68%,transparent)] text-[var(--fg)] touch-none',
+        'relative max-w-full overflow-visible rounded-none border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_68%,transparent)] p-3',
         className
       ]
         .filter(Boolean)
@@ -1499,16 +1499,20 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     [className]
   )
 
-  const canvasStyle: CSSProperties = useMemo(() => {
+  const interactionClassName =
+    'relative h-full w-full select-none text-[var(--fg)] touch-none'
+
+  const outerStyle: CSSProperties = useMemo(() => {
     const base: CSSProperties = { ...(style ?? {}) }
     const hasExplicitWidth = base.width != null
     const hasExplicitHeight = base.height != null
     if (!hasExplicitWidth || !hasExplicitHeight) {
       base.aspectRatio = aspectRatio > 0 ? `${aspectRatio}` : '9 / 16'
     }
-    base.cursor = cursor
     return base
-  }, [aspectRatio, cursor, style])
+  }, [aspectRatio, style])
+
+  const interactionStyle = useMemo<CSSProperties>(() => ({ cursor }), [cursor])
 
   const handleSuppressedClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (suppressNextClickRef.current || justSelectedRef.current) {
@@ -1581,25 +1585,26 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   )
 
   return (
-    <div
-      ref={containerRef}
-      className={canvasClassName}
-      style={canvasStyle}
-      onPointerDownCapture={handlePointerDownCapture}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerLeave}
-      onPointerCancel={handlePointerCancel}
-      onClickCapture={handleClickCapture}
-      onClick={handleClick}
-      role="presentation"
-      aria-label={ariaLabel}
-    >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="flex h-full w-full items-center justify-center text-xs text-[var(--muted)]">
-          {previewContent}
+    <div className={canvasClassName} style={outerStyle}>
+      <div
+        ref={containerRef}
+        className={interactionClassName}
+        style={interactionStyle}
+        onPointerDownCapture={handlePointerDownCapture}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
+        onPointerCancel={handlePointerCancel}
+        onClickCapture={handleClickCapture}
+        onClick={handleClick}
+        role="presentation"
+        aria-label={ariaLabel}
+      >
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <div className="flex h-full w-full items-center justify-center text-xs text-[var(--muted)]">
+            {previewContent}
+          </div>
         </div>
-      </div>
       {showGrid ? (
         <div className="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-40">
           {Array.from({ length: 9 }).map((_, index) => (
@@ -1610,9 +1615,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           ))}
         </div>
       ) : null}
-      {showSafeMargins ? (
-        <div className="pointer-events-none absolute inset-[8%] rounded-2xl border-2 border-dashed border-[color:color-mix(in_srgb,var(--accent)_55%,transparent)]" />
-      ) : null}
+        {showSafeMargins ? (
+          <div className="pointer-events-none absolute inset-[8%] rounded-none border-2 border-dashed border-[color:color-mix(in_srgb,var(--accent)_55%,transparent)]" />
+        ) : null}
       {activeGuides.map((guide) => (
         <div
           key={`${guide.orientation}-${guide.position}`}
@@ -1775,6 +1780,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           {floatingLabel}
         </div>
       ) : null}
+      </div>
     </div>
   )
 }
