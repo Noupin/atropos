@@ -23,7 +23,7 @@ import LayoutItemToolbar, {
   RemoveIcon,
   SendBackwardIcon,
   CropModeIcon,
-  FrameModeIcon
+  CropConfirmIcon
 } from './LayoutItemToolbar'
 import { useLayoutSelection } from './layoutSelectionStore'
 
@@ -92,6 +92,8 @@ type ActiveInteraction = {
   aspectRatio?: number
   target: 'frame' | 'crop'
   snapEnabled: boolean
+  frameBounds?: LayoutFrame
+  sourceBounds?: LayoutCrop
 }
 
 type HoverTarget = {
@@ -414,6 +416,66 @@ const getVideoSourceBounds = (video: LayoutVideoItem): LayoutCrop => {
   return normaliseVideoCropBounds(video.sourceCrop ?? video.crop ?? defaultCrop)
 }
 
+const clampFrameToBounds = (frame: LayoutFrame, bounds: LayoutFrame): LayoutFrame => {
+  const bounded = { ...bounds }
+  const boundRight = clamp(bounded.x + bounded.width)
+  const boundBottom = clamp(bounded.y + bounded.height)
+  const width = clamp(frame.width, 0, bounded.width)
+  const height = clamp(frame.height, 0, bounded.height)
+  const maxX = Math.max(bounded.x, boundRight - width)
+  const maxY = Math.max(bounded.y, boundBottom - height)
+  const x = clamp(Math.min(Math.max(frame.x, bounded.x), maxX))
+  const y = clamp(Math.min(Math.max(frame.y, bounded.y), maxY))
+  return { x, y, width, height }
+}
+
+const cropToOverlayFrame = (
+  frameBounds: LayoutFrame,
+  sourceBounds: LayoutCrop,
+  crop: LayoutCrop
+): LayoutFrame => {
+  const frame = { ...frameBounds }
+  const base = normaliseVideoCropBounds(sourceBounds)
+  const target = clampCropToBounds(crop, base)
+  const baseWidth = Math.max(base.width, 0.0001)
+  const baseHeight = Math.max(base.height, 0.0001)
+  const left = clamp((target.x - base.x) / baseWidth)
+  const top = clamp((target.y - base.y) / baseHeight)
+  const width = clamp(target.width / baseWidth)
+  const height = clamp(target.height / baseHeight)
+  return {
+    x: frame.x + frame.width * left,
+    y: frame.y + frame.height * top,
+    width: frame.width * width,
+    height: frame.height * height
+  }
+}
+
+const overlayFrameToCrop = (
+  frameBounds: LayoutFrame,
+  overlay: LayoutFrame,
+  sourceBounds: LayoutCrop
+): LayoutCrop => {
+  const frame = { ...frameBounds }
+  const boundedOverlay = clampFrameToBounds(overlay, frame)
+  const base = normaliseVideoCropBounds(sourceBounds)
+  const frameWidth = Math.max(frame.width, 0.0001)
+  const frameHeight = Math.max(frame.height, 0.0001)
+  const baseWidth = Math.max(base.width, 0.0001)
+  const baseHeight = Math.max(base.height, 0.0001)
+  const offsetX = clamp((boundedOverlay.x - frame.x) / frameWidth)
+  const offsetY = clamp((boundedOverlay.y - frame.y) / frameHeight)
+  const width = clamp(boundedOverlay.width / frameWidth)
+  const height = clamp(boundedOverlay.height / frameHeight)
+  return {
+    x: clamp(base.x + baseWidth * offsetX),
+    y: clamp(base.y + baseHeight * offsetY),
+    width: clamp(baseWidth * width),
+    height: clamp(baseHeight * height),
+    units: 'fraction'
+  }
+}
+
 type CropOverlayRect = { left: number; top: number; width: number; height: number }
 
 const getCropOverlayRect = (
@@ -731,6 +793,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const getDisplayFrame = useCallback(
     (item: LayoutItem): LayoutFrame => {
       if (transformTarget === 'crop') {
+        if (cropContext === 'layout' && (item as LayoutVideoItem).kind === 'video') {
+          return cloneFrame(item.frame)
+        }
         return normaliseCropFrame(item, cropContext)
       }
       return cloneFrame(item.frame)
@@ -1086,7 +1151,20 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         return
       }
 
-      const originFrame = getDisplayFrame(item)
+      let originFrame = getDisplayFrame(item)
+      let frameBounds: LayoutFrame | undefined
+      let sourceBounds: LayoutCrop | undefined
+      if (
+        transformTarget === 'crop' &&
+        cropContext === 'layout' &&
+        (item as LayoutVideoItem).kind === 'video'
+      ) {
+        const video = item as LayoutVideoItem
+        frameBounds = clampFrameToCanvas(cloneFrame(video.frame))
+        sourceBounds = getVideoSourceBounds(video)
+        const currentCrop = normaliseVideoCropBounds(video.crop ?? sourceBounds)
+        originFrame = cropToOverlayFrame(frameBounds, sourceBounds, currentCrop)
+      }
       const snapEnabled = event.altKey || event.metaKey
       const aspectLocked = pointerAspectLocked
       let aspectRatioValue: number | undefined
@@ -1118,7 +1196,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           aspectLocked,
           aspectRatio: aspectRatioValue,
           target: transformTarget,
-          snapEnabled
+          snapEnabled,
+          frameBounds,
+          sourceBounds
         }
         // We are starting a drag; do not treat this as a pure click
         justSelectedRef.current = false
@@ -1178,6 +1258,23 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         })
         setCursor('grabbing')
       } else if (state.handle) {
+        if (state.target === 'crop' && state.frameBounds && state.sourceBounds) {
+          let resized = resizeFrame(state.originFrame, state.handle, deltaX, deltaY)
+          resized = clampFrameToBounds(resized, state.frameBounds)
+          const crop = overlayFrameToCrop(state.frameBounds, resized, state.sourceBounds)
+          const bounded = clampCropToBounds(crop, state.sourceBounds)
+          const cropFrame: LayoutFrame = {
+            x: bounded.x,
+            y: bounded.y,
+            width: bounded.width,
+            height: bounded.height
+          }
+          scheduleTransform([{ itemId: state.itemId, frame: cropFrame }], { commit: false })
+          setFloatingLabel(`${(bounded.width * 100).toFixed(1)} × ${(bounded.height * 100).toFixed(1)}%`)
+          setFloatingPosition({ x: event.clientX, y: event.clientY })
+          setCursor(cursorForHandle(state.handle, false))
+          return
+        }
         if (state.aspectLocked) {
           nextFrame = maintainAspectResize(
             state.originFrame,
@@ -1264,16 +1361,21 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           }
         } else if (state.handle) {
           // Resize always commits if any change happened
-          frame = state.aspectLocked
-            ? maintainAspectResize(
-                state.originFrame,
-                state.handle,
-                deltaX,
-                deltaY,
-                state.aspectRatio
-              )
-            : resizeFrame(state.originFrame, state.handle, deltaX, deltaY)
-          frame = clampFrameToCanvas(frame)
+          if (state.target === 'crop' && state.frameBounds && state.sourceBounds) {
+            const resized = resizeFrame(state.originFrame, state.handle, deltaX, deltaY)
+            frame = clampFrameToBounds(resized, state.frameBounds)
+          } else {
+            frame = state.aspectLocked
+              ? maintainAspectResize(
+                  state.originFrame,
+                  state.handle,
+                  deltaX,
+                  deltaY,
+                  state.aspectRatio
+                )
+              : resizeFrame(state.originFrame, state.handle, deltaX, deltaY)
+            frame = clampFrameToCanvas(frame)
+          }
         }
       }
 
@@ -1282,13 +1384,25 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       setToolbarAnchorId(state.itemId)
 
       if (frame) {
-        const snapped = applyGuides(frame, {
-          snapEnabled: state.target === 'frame' && state.snapEnabled,
-          aspectLocked: state.aspectLocked,
-          aspectRatio: state.aspectRatio,
-          handle: state.handle
-        })
-        scheduleTransform([{ itemId: state.itemId, frame: snapped }], { commit: true })
+        if (state.target === 'crop' && state.frameBounds && state.sourceBounds) {
+          const crop = overlayFrameToCrop(state.frameBounds, frame, state.sourceBounds)
+          const bounded = clampCropToBounds(crop, state.sourceBounds)
+          const cropFrame: LayoutFrame = {
+            x: bounded.x,
+            y: bounded.y,
+            width: bounded.width,
+            height: bounded.height
+          }
+          scheduleTransform([{ itemId: state.itemId, frame: cropFrame }], { commit: true })
+        } else {
+          const snapped = applyGuides(frame, {
+            snapEnabled: state.target === 'frame' && state.snapEnabled,
+            aspectLocked: state.aspectLocked,
+            aspectRatio: state.aspectRatio,
+            handle: state.handle
+          })
+          scheduleTransform([{ itemId: state.itemId, frame: snapped }], { commit: true })
+        }
       }
 
       // Ensure the post-pointerup synthetic 'click' doesn't bubble and clear selection
@@ -1521,13 +1635,21 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     const actions: LayoutItemToolbarAction[] = []
 
     if (primaryIsVideo && onRequestChangeTransformTarget) {
-      const nextTarget = transformTarget === 'crop' ? 'frame' : 'crop'
-      actions.push({
-        key: 'toggle-mode',
-        label: nextTarget === 'crop' ? 'Edit crop' : 'Edit frame',
-        icon: nextTarget === 'crop' ? <CropModeIcon /> : <FrameModeIcon />,
-        onSelect: () => onRequestChangeTransformTarget(nextTarget)
-      })
+      if (transformTarget === 'crop') {
+        actions.push({
+          key: 'finish-crop',
+          label: 'Finish crop',
+          icon: <CropConfirmIcon />,
+          onSelect: () => onRequestChangeTransformTarget('frame')
+        })
+      } else {
+        actions.push({
+          key: 'toggle-crop',
+          label: 'Crop video',
+          icon: <CropModeIcon />,
+          onSelect: () => onRequestChangeTransformTarget('crop')
+        })
+      }
     }
 
     actions.push({

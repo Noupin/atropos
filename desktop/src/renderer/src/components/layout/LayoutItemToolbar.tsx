@@ -210,6 +210,12 @@ export const CropModeIcon: FC = () => (
   </svg>
 )
 
+export const CropConfirmIcon: FC = () => (
+  <svg {...iconProps}>
+    <path d="M4 8.5 6.5 11l5.25-5.25" />
+  </svg>
+)
+
 export const BringForwardIcon: FC = () => (
   <svg {...iconProps}>
     <path d="M5 7.25h5.75a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8.25a1 1 0 0 1 1-1Z" />

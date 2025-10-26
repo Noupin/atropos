@@ -1255,25 +1255,19 @@ describe('Layout editor interactions', () => {
       clientY: 80
     })
 
-    const editCropButton = await within(layoutCanvas).findByRole('button', {
-      name: 'Edit crop'
+    const cropButton = await within(layoutCanvas).findByRole('button', {
+      name: 'Crop video'
     })
 
     await act(async () => {
-      fireEvent.click(editCropButton)
+      fireEvent.click(cropButton)
     })
 
     await waitFor(() => {
       expect(
         within(layoutCanvas).getByRole('button', {
-          name: 'Edit frame'
+          name: 'Finish crop'
         })
-      ).toBeInTheDocument()
-    })
-
-    await waitFor(() => {
-      expect(
-        within(layoutCanvas).getByRole('button', { name: 'Unlock crop aspect (freeform)' })
       ).toBeInTheDocument()
     })
 
@@ -1282,17 +1276,17 @@ describe('Layout editor interactions', () => {
     const cropHandle = within(videoItem).getByLabelText('Resize north')
     expect(cropHandle.className).toContain('rotate-45')
 
-    const editFrameButton = await within(layoutCanvas).findByRole('button', {
-      name: 'Edit frame'
+    const finishCropButton = await within(layoutCanvas).findByRole('button', {
+      name: 'Finish crop'
     })
 
     await act(async () => {
-      fireEvent.click(editFrameButton)
+      fireEvent.click(finishCropButton)
     })
 
     await waitFor(() => {
       expect(
-        within(layoutCanvas).getByRole('button', { name: 'Unlock frame aspect (freeform)' })
+        within(layoutCanvas).getByRole('button', { name: 'Crop video' })
       ).toBeInTheDocument()
     })
 
