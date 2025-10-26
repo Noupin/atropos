@@ -359,6 +359,36 @@ const snapCropToAspect = (crop: LayoutCrop, aspect: number): LayoutCrop => {
   }
 }
 
+const ASPECT_EPSILON = 0.0001
+
+const normaliseStoredCropAspectRatio = (
+  stored: number | null | undefined,
+  baseAspect: number,
+  reference: number | null
+): number | null => {
+  if (!stored || !Number.isFinite(stored) || stored <= 0) {
+    return null
+  }
+  if (reference != null && Number.isFinite(reference) && reference > 0) {
+    const storedDelta = Math.abs(stored - reference)
+    if (storedDelta < ASPECT_EPSILON) {
+      return stored
+    }
+    if (baseAspect > ASPECT_EPSILON && Number.isFinite(baseAspect)) {
+      const normalised = stored / baseAspect
+      const normalisedDelta = Math.abs(normalised - reference)
+      if (normalisedDelta + ASPECT_EPSILON < storedDelta || normalisedDelta < ASPECT_EPSILON) {
+        return normalised
+      }
+    }
+    return stored
+  }
+  if (baseAspect > ASPECT_EPSILON && Number.isFinite(baseAspect)) {
+    return stored / baseAspect
+  }
+  return stored
+}
+
 const getFrameAspectRatio = (frame: LayoutFrame): number | null => {
   const width = clamp(frame.width)
   const height = clamp(frame.height)
@@ -791,13 +821,6 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               const baseCrop = normaliseSourceCrop(video)
               if (origin === 'source') {
                 const unlocked = video.lockCropAspectRatio === false
-                const storedAspect =
-                  !unlocked &&
-                  video.cropAspectRatio &&
-                  Number.isFinite(video.cropAspectRatio) &&
-                  video.cropAspectRatio > 0
-                    ? video.cropAspectRatio
-                    : null
                 const sourceRatio = (() => {
                   const sourceWidth = clamp(baseCrop.width)
                   const sourceHeight = clamp(baseCrop.height)
@@ -806,21 +829,12 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                   }
                   return null
                 })()
-                const desiredAspect = (() => {
-                  if (unlocked) {
-                    return null
-                  }
-                  if (
-                    storedAspect &&
-                    Number.isFinite(baseAspect) &&
-                    baseAspect > 0 &&
-                    Math.abs(storedAspect - baseAspect) < 0.0001 &&
-                    sourceRatio
-                  ) {
-                    return sourceRatio
-                  }
-                  return storedAspect ?? sourceRatio
-                })()
+                const storedAspect = normaliseStoredCropAspectRatio(
+                  !unlocked ? video.cropAspectRatio : null,
+                  baseAspect,
+                  sourceRatio
+                )
+                const desiredAspect = unlocked ? null : storedAspect ?? sourceRatio
                 const targetCrop =
                   desiredAspect && Number.isFinite(desiredAspect) && desiredAspect > 0
                     ? clampCropToBounds(snapCropToAspect(nextCrop, desiredAspect), createDefaultCrop())
@@ -847,17 +861,29 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                   crop: bounded
                 }
               }
+              const baseSourceRatio = (() => {
+                const sourceWidth = clamp(baseCrop.width)
+                const sourceHeight = clamp(baseCrop.height)
+                if (sourceWidth > 0 && sourceHeight > 0) {
+                  return sourceWidth / Math.max(sourceHeight, 0.0001)
+                }
+                return null
+              })()
+              const storedAspect = normaliseStoredCropAspectRatio(
+                video.cropAspectRatio,
+                baseAspect,
+                baseSourceRatio
+              )
               const desiredAspect =
-                video.cropAspectRatio && Number.isFinite(video.cropAspectRatio) && video.cropAspectRatio > 0
-                  ? video.cropAspectRatio
-                  : (() => {
-                      const frameWidth = clamp(video.frame.width)
-                      const frameHeight = clamp(video.frame.height)
-                      if (frameWidth > 0 && frameHeight > 0) {
-                        return frameWidth / Math.max(frameHeight, 0.0001)
-                      }
-                      return 1
-                    })()
+                storedAspect ??
+                (() => {
+                  const frameWidth = clamp(video.frame.width)
+                  const frameHeight = clamp(video.frame.height)
+                  if (frameWidth > 0 && frameHeight > 0) {
+                    return frameWidth / Math.max(frameHeight, 0.0001)
+                  }
+                  return baseSourceRatio ?? 1
+                })()
               const snappedCrop =
                 desiredAspect && Number.isFinite(desiredAspect) && desiredAspect > 0
                   ? clampCropToBounds(snapCropToAspect(bounded, desiredAspect), baseCrop)
@@ -1752,14 +1778,17 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         if (video.lockCropAspectRatio === false) {
           return null
         }
-        if (video.cropAspectRatio && Number.isFinite(video.cropAspectRatio) && video.cropAspectRatio > 0) {
-          return video.cropAspectRatio
-        }
         const crop = normaliseVideoCrop(video.sourceCrop ?? video.crop)
         const cropWidth = clamp(crop.width)
         const cropHeight = clamp(crop.height)
-        if (cropWidth > 0 && cropHeight > 0) {
-          return cropWidth / Math.max(cropHeight, 0.0001)
+        const cropRatio = cropWidth > 0 && cropHeight > 0 ? cropWidth / Math.max(cropHeight, 0.0001) : null
+        const baseAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
+        const resolved = normaliseStoredCropAspectRatio(video.cropAspectRatio, baseAspect, cropRatio)
+        if (resolved && Number.isFinite(resolved) && resolved > 0) {
+          return resolved
+        }
+        if (cropRatio && Number.isFinite(cropRatio) && cropRatio > 0) {
+          return cropRatio
         }
         return 1
       }
