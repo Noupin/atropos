@@ -33,7 +33,7 @@ type NormalisedCrop = {
 const clamp = (value: number, min = 0, max = 1): number => Math.min(Math.max(value, min), max)
 
 const normaliseCrop = (item: LayoutVideoItem): NormalisedCrop => {
-  const crop = item.crop ?? { x: 0, y: 0, width: 1, height: 1 }
+  const crop = item.crop ?? item.sourceCrop ?? { x: 0, y: 0, width: 1, height: 1 }
   if (crop.units === 'pixels') {
     return {
       x: crop.x,

@@ -1,3 +1,4 @@
+import '@testing-library/jest-dom/vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, beforeAll, afterEach, vi, it, expect } from 'vitest'
@@ -462,6 +463,34 @@ describe('Layout editor interactions', () => {
     })
   })
 
+  it('renders the previews with square edges and a handle gutter', () => {
+    render(
+      <LayoutCanvas
+        layout={baseLayout}
+        onTransform={vi.fn()}
+        onRequestBringForward={vi.fn()}
+        onRequestSendBackward={vi.fn()}
+        onRequestDuplicate={vi.fn()}
+        onRequestDelete={vi.fn()}
+        showGrid={false}
+        showSafeMargins={false}
+        previewContent={<div>preview</div>}
+        transformTarget="frame"
+      />
+    )
+
+    const canvas = screen.getByRole('presentation')
+    const wrapper = canvas.parentElement as HTMLElement | null
+    expect(wrapper).not.toBeNull()
+    if (!wrapper) {
+      throw new Error('Canvas wrapper missing')
+    }
+    expect(wrapper.className).toContain('rounded-none')
+    expect(wrapper.className).toContain('p-3')
+    expect(wrapper.className).toContain('overflow-visible')
+    expect(wrapper.className).not.toContain('rounded-2xl')
+  })
+
   it('cycles through overlapping frames when clicking the same location repeatedly', async () => {
     const overlappingLayout: LayoutDefinition = {
       ...baseLayout,
@@ -825,12 +854,7 @@ describe('Layout editor interactions', () => {
     }
   })
 
-  it('lets editors toggle the aspect ratio lock on video items', async () => {
-    let latestLayout: LayoutDefinition | null = null
-    const onLayoutChange = vi.fn((next: LayoutDefinition) => {
-      latestLayout = next
-    })
-
+  it('does not render frame aspect lock controls on the layout canvas', async () => {
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
@@ -847,7 +871,7 @@ describe('Layout editor interactions', () => {
         errorMessage={null}
         onSelectLayout={vi.fn()}
         onCreateBlankLayout={vi.fn()}
-        onLayoutChange={onLayoutChange}
+        onLayoutChange={vi.fn()}
         onSaveLayout={vi.fn(async () => baseLayout)}
         onImportLayout={vi.fn(async () => undefined)}
         onExportLayout={vi.fn(async () => undefined)}
@@ -864,40 +888,19 @@ describe('Layout editor interactions', () => {
     const layoutCanvas = findInteractiveCanvas(layoutCanvases)
     await selectItemByName(layoutCanvas, /primary/i, { pointerId: 1 })
 
-    const unlockButtons = await within(layoutCanvas).findAllByRole('button', {
-      name: 'Unlock frame aspect'
-    })
-    const unlockButton = unlockButtons[unlockButtons.length - 1]
-
-    await act(async () => {
-      fireEvent.click(unlockButton)
-    })
-
-    await waitFor(() => {
-      expect(onLayoutChange).toHaveBeenCalled()
-      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
-      expect(updatedVideo?.lockAspectRatio).toBe(false)
-    })
-
-    const lockButtons = await within(layoutCanvas).findAllByRole('button', { name: 'Lock frame aspect' })
-    const lockButton = lockButtons[lockButtons.length - 1]
-
-    await act(async () => {
-      fireEvent.click(lockButton)
-    })
-
-    await waitFor(() => {
-      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
-      expect(updatedVideo?.lockAspectRatio).not.toBe(false)
-    })
+    expect(
+      within(layoutCanvas).queryByRole('button', {
+        name: 'Unlock frame aspect (freeform)'
+      })
+    ).toBeNull()
+    expect(
+      within(layoutCanvas).queryByRole('button', {
+        name: 'Lock frame aspect (preserve ratio)'
+      })
+    ).toBeNull()
   })
 
-  it('lets editors toggle the crop aspect lock from the source canvas', async () => {
-    let latestLayout: LayoutDefinition | null = null
-    const onLayoutChange = vi.fn((next: LayoutDefinition) => {
-      latestLayout = next
-    })
-
+  it('does not render crop aspect lock controls on the source canvas', async () => {
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
@@ -914,7 +917,7 @@ describe('Layout editor interactions', () => {
         errorMessage={null}
         onSelectLayout={vi.fn()}
         onCreateBlankLayout={vi.fn()}
-        onLayoutChange={onLayoutChange}
+        onLayoutChange={vi.fn()}
         onSaveLayout={vi.fn(async () => baseLayout)}
         onImportLayout={vi.fn(async () => undefined)}
         onExportLayout={vi.fn(async () => undefined)}
@@ -934,34 +937,16 @@ describe('Layout editor interactions', () => {
     }
     await selectItemByName(sourceCanvas, /primary/i, { pointerId: 4 })
 
-    const unlockButtons = await within(sourceCanvas).findAllByRole('button', {
-      name: 'Unlock crop aspect'
-    })
-    const unlockButton = unlockButtons[unlockButtons.length - 1]
-
-    await act(async () => {
-      fireEvent.click(unlockButton)
-    })
-
-    await waitFor(() => {
-      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
-      expect(updatedVideo?.lockCropAspectRatio).toBe(false)
-      expect(updatedVideo?.lockAspectRatio).not.toBe(false)
-    })
-
-    const lockButtons = await within(sourceCanvas).findAllByRole('button', {
-      name: 'Lock crop aspect'
-    })
-    const lockButton = lockButtons[lockButtons.length - 1]
-
-    await act(async () => {
-      fireEvent.click(lockButton)
-    })
-
-    await waitFor(() => {
-      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
-      expect(updatedVideo?.lockCropAspectRatio).not.toBe(false)
-    })
+    expect(
+      within(sourceCanvas).queryByRole('button', {
+        name: 'Unlock crop aspect (freeform)'
+      })
+    ).toBeNull()
+    expect(
+      within(sourceCanvas).queryByRole('button', {
+        name: 'Lock crop aspect (preserve ratio)'
+      })
+    ).toBeNull()
   })
 
   it('snaps frame bounds to the source aspect ratio on demand', async () => {
@@ -1007,13 +992,13 @@ describe('Layout editor interactions', () => {
       clientY: 80
     })
 
-    const unlockButtons = await within(layoutCanvas).findAllByRole('button', {
-      name: 'Unlock frame aspect'
+    const frameLockedButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Unlock frame aspect (freeform)'
     })
-    const unlockButton = unlockButtons[unlockButtons.length - 1]
+    const frameLockedButton = frameLockedButtons[frameLockedButtons.length - 1]
 
     await act(async () => {
-      fireEvent.click(unlockButton)
+      fireEvent.click(frameLockedButton)
     })
 
     await waitFor(() => {
@@ -1046,13 +1031,15 @@ describe('Layout editor interactions', () => {
       expect(distortedRatio).toBeLessThan(16 / 9)
     }
 
-    const snapButtons = await within(layoutCanvas).findAllByRole('button', {
-      name: 'Snap frame to video'
+    const distortedWidth = distortedVideo?.frame.width ?? 0
+
+    const resetButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Match source frame aspect'
     })
-    const snapButton = snapButtons[snapButtons.length - 1]
+    const resetButton = resetButtons[resetButtons.length - 1]
 
     await act(async () => {
-      fireEvent.click(snapButton)
+      fireEvent.click(resetButton)
     })
 
     await waitFor(() => {
@@ -1062,13 +1049,285 @@ describe('Layout editor interactions', () => {
     const snappedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
     expect(snappedVideo).toBeTruthy()
     if (snappedVideo) {
+      expect(snappedVideo.frame.width).toBeCloseTo(distortedWidth, 3)
       const snappedRatio = snappedVideo.frame.width / Math.max(snappedVideo.frame.height, 0.0001)
       expect(snappedRatio).not.toBeCloseTo(distortedRatio ?? snappedRatio, 3)
-      if (snappedVideo.crop) {
-        const cropRatio = snappedVideo.crop.width / Math.max(snappedVideo.crop.height, 0.0001)
-        expect(cropRatio).toBeCloseTo(snappedRatio, 3)
+      const crop = snappedVideo.crop
+      expect(crop).toBeTruthy()
+      if (crop) {
+        expect(crop).toMatchObject({ x: 0, y: 0, width: 1, height: 1 })
+        const cropRatio = crop.width / Math.max(crop.height, 0.0001)
+        const expectedFrameRatio = (16 / 9) * cropRatio
+        expect(snappedRatio).toBeCloseTo(expectedFrameRatio, 3)
+        if (snappedVideo.cropAspectRatio != null) {
+          expect(snappedVideo.cropAspectRatio).toBeCloseTo(cropRatio, 3)
+        }
       }
     }
+  })
+
+  it('resets the source preview to the native aspect and full-frame crop', async () => {
+    let latestLayout: LayoutDefinition | null = null
+    const onLayoutChange = vi.fn((next: LayoutDefinition) => {
+      latestLayout = next
+    })
+
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={null}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={onLayoutChange}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = findInteractiveCanvas(layoutCanvases)
+    const layoutItem = await selectItemByName(layoutCanvas, /primary/i, {
+      pointerId: 40,
+      clientX: 60,
+      clientY: 80
+    })
+
+    const unlockButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Unlock frame aspect (freeform)'
+    })
+    await act(async () => {
+      fireEvent.click(unlockButtons[unlockButtons.length - 1])
+    })
+
+    const eastHandle = within(layoutItem).getByLabelText('Resize east')
+    await act(async () => {
+      pointerDown(eastHandle, { pointerId: 41, clientX: 220, clientY: 140 })
+      pointerMove(layoutCanvas, { pointerId: 41, clientX: 160, clientY: 140 })
+    })
+    await act(async () => {
+      pointerUp(layoutCanvas, { pointerId: 41, clientX: 160, clientY: 140 })
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange).toHaveBeenCalled()
+    })
+
+    const sourceCanvases = await screen.findAllByLabelText('Source preview canvas')
+    const sourceCanvas = sourceCanvases[sourceCanvases.length - 1]
+    const initialChangeCount = onLayoutChange.mock.calls.length
+    await selectItemByName(sourceCanvas, /primary/i, { pointerId: 42 })
+    expect(onLayoutChange).toHaveBeenCalledTimes(initialChangeCount)
+
+    const sourceGroup = within(sourceCanvas).getByRole('group', { name: /primary/i })
+    const cropHandle = within(sourceGroup).getByLabelText('Resize east')
+    await act(async () => {
+      pointerDown(cropHandle, { pointerId: 43, clientX: 200, clientY: 180 })
+      pointerMove(sourceCanvas, { pointerId: 43, clientX: 150, clientY: 200 })
+    })
+    await act(async () => {
+      pointerUp(sourceCanvas, { pointerId: 43, clientX: 150, clientY: 200 })
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange.mock.calls.length).toBeGreaterThan(initialChangeCount)
+    })
+
+    const changeCountBeforeReset = onLayoutChange.mock.calls.length
+    const distortedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as
+      | LayoutVideoItem
+      | undefined
+    expect(distortedVideo).toBeTruthy()
+    if (distortedVideo) {
+      expect(distortedVideo.sourceCrop).toBeTruthy()
+      const cropWidth = distortedVideo.sourceCrop?.width ?? 0
+      expect(cropWidth).toBeLessThan(1)
+    }
+
+    const distortedWidth = distortedVideo?.frame.width ?? 0
+
+    const resetButtons = await within(sourceCanvas).findAllByRole('button', {
+      name: 'Reset to video aspect'
+    })
+    await act(async () => {
+      fireEvent.click(resetButtons[resetButtons.length - 1])
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange.mock.calls.length).toBeGreaterThan(changeCountBeforeReset)
+    })
+
+    const resetVideo = latestLayout?.items.find((item) => item.id === 'video-1') as
+      | LayoutVideoItem
+      | undefined
+    expect(resetVideo).toBeTruthy()
+    if (resetVideo) {
+      expect(resetVideo.frame.width).toBeCloseTo(distortedWidth, 3)
+      const frameRatio = resetVideo.frame.width / Math.max(resetVideo.frame.height, 0.0001)
+      expect(frameRatio).toBeCloseTo(16 / 9, 3)
+      const expectedCrop = { x: 0, y: 0, width: 1, height: 1 }
+      expect(resetVideo.sourceCrop ?? expectedCrop).toMatchObject(expectedCrop)
+      expect(resetVideo.crop).toMatchObject(expectedCrop)
+      if (resetVideo.cropAspectRatio != null) {
+        expect(resetVideo.cropAspectRatio).toBeCloseTo(1, 3)
+      }
+    }
+
+    const interactionsBeforeFollowUp = onLayoutChange.mock.calls.length
+    const resetSourceGroup = within(sourceCanvas).getByRole('group', { name: /primary/i })
+    const resetHandle = within(resetSourceGroup).getByLabelText('Resize east')
+    await act(async () => {
+      pointerDown(resetHandle, { pointerId: 44, clientX: 200, clientY: 200 })
+      pointerMove(sourceCanvas, { pointerId: 44, clientX: 150, clientY: 200 })
+    })
+    await act(async () => {
+      pointerUp(sourceCanvas, { pointerId: 44, clientX: 150, clientY: 200 })
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange.mock.calls.length).toBeGreaterThan(interactionsBeforeFollowUp)
+    })
+
+    const afterFollowUp = latestLayout?.items.find((item) => item.id === 'video-1') as
+      | LayoutVideoItem
+      | undefined
+    expect(afterFollowUp).toBeTruthy()
+    if (afterFollowUp) {
+      const sourceCrop = afterFollowUp.sourceCrop ?? { x: 0, y: 0, width: 1, height: 1 }
+      const cropRatio = sourceCrop.width / Math.max(sourceCrop.height, 0.0001)
+      expect(cropRatio).toBeCloseTo(1, 3)
+      const frameRatio = afterFollowUp.frame.width / Math.max(afterFollowUp.frame.height, 0.0001)
+      expect(frameRatio).toBeCloseTo(16 / 9, 3)
+    }
+  })
+
+  it('switches the layout canvas between frame and crop editing modes', async () => {
+    let latestLayout: LayoutDefinition | null = baseLayout
+    const onLayoutChange = vi.fn((next: LayoutDefinition) => {
+      latestLayout = next
+    })
+
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={sampleClip}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={onLayoutChange}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = findInteractiveCanvas(layoutCanvases)
+    const videoItem = await selectItemByName(layoutCanvas, /primary/i, {
+      pointerId: 31,
+      clientX: 60,
+      clientY: 80
+    })
+
+    const cropButton = await within(layoutCanvas).findByRole('button', {
+      name: 'Crop video'
+    })
+
+    await act(async () => {
+      fireEvent.click(cropButton)
+    })
+
+    await waitFor(() => {
+      expect(
+        within(layoutCanvas).getByRole('button', {
+          name: 'Finish crop'
+        })
+      ).toBeInTheDocument()
+    })
+
+    expect(within(videoItem).getByText('Crop')).toBeInTheDocument()
+
+    const cropHandle = within(videoItem).getByLabelText('Resize east')
+    expect(cropHandle.className).toContain('rotate-45')
+
+    const callsBeforeDrag = onLayoutChange.mock.calls.length
+    const initialVideo = (latestLayout?.items.find((item) => item.id === 'video-1') ?? null) as
+      | LayoutVideoItem
+      | null
+    const initialCrop = initialVideo?.crop ?? { x: 0, y: 0, width: 1, height: 1 }
+
+    await act(async () => {
+      pointerDown(cropHandle, { pointerId: 201, clientX: 160, clientY: 160 })
+      pointerMove(layoutCanvas, { pointerId: 201, clientX: 120, clientY: 160 })
+    })
+    await act(async () => {
+      pointerUp(layoutCanvas, { pointerId: 201, clientX: 120, clientY: 160 })
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(onLayoutChange).toHaveBeenCalledTimes(callsBeforeDrag)
+    const pendingVideo = (latestLayout?.items.find((item) => item.id === 'video-1') ?? null) as
+      | LayoutVideoItem
+      | null
+    expect(pendingVideo?.crop).toMatchObject(initialCrop)
+
+    const finishCropButton = await within(layoutCanvas).findByRole('button', {
+      name: 'Finish crop'
+    })
+
+    await act(async () => {
+      fireEvent.click(finishCropButton)
+    })
+
+    await waitFor(() => {
+      expect(
+        within(layoutCanvas).getByRole('button', { name: 'Crop video' })
+      ).toBeInTheDocument()
+    })
+
+    expect(within(videoItem).queryByText('Crop')).toBeNull()
+
+    const frameHandle = within(videoItem).getByLabelText('Resize north')
+    expect(frameHandle.className).not.toContain('rotate-45')
+
+    const committedVideo = (latestLayout?.items.find((item) => item.id === 'video-1') ?? null) as
+      | LayoutVideoItem
+      | null
+    expect(committedVideo?.crop?.width).not.toBeCloseTo(initialCrop.width)
   })
 
   it('keeps the selection active while interacting with toolbar actions', async () => {
@@ -1653,5 +1912,89 @@ describe('Layout editor interactions', () => {
       fireEvent.click(primaryApplyButton)
     })
     await waitFor(() => expect(onApplyLayout).toHaveBeenCalledTimes(1))
+  })
+
+  it('toggles between auto crop and stretch using the layout context menu', async () => {
+    let latestLayout: LayoutDefinition | null = null
+    const onLayoutChange = vi.fn((next: LayoutDefinition) => {
+      latestLayout = next
+    })
+
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={null}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={baseLayout}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={onLayoutChange}
+        onSaveLayout={vi.fn(async () => baseLayout)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = findInteractiveCanvas(layoutCanvases)
+    const videoItem = await selectItemByName(layoutCanvas, /primary/i, {
+      pointerId: 71,
+      clientX: 80,
+      clientY: 100
+    })
+
+    await act(async () => {
+      fireEvent.contextMenu(videoItem)
+    })
+
+    const stretchOption = await screen.findByRole('button', { name: /stretch to frame/i })
+
+    await act(async () => {
+      fireEvent.click(stretchOption)
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange).toHaveBeenCalled()
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.scaleMode).toBe('fill')
+      expect(updatedVideo?.crop).toMatchObject({ width: 1, height: 1 })
+    })
+
+    const refreshedItem = await selectItemByName(layoutCanvas, /primary/i, {
+      pointerId: 72,
+      clientX: 90,
+      clientY: 120
+    })
+
+    await act(async () => {
+      fireEvent.contextMenu(refreshedItem)
+    })
+
+    const autoOption = await screen.findByRole('button', { name: /auto crop to fill/i })
+
+    await act(async () => {
+      fireEvent.click(autoOption)
+    })
+
+    await waitFor(() => {
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.scaleMode).toBe('cover')
+      expect(updatedVideo?.crop?.width ?? 1).toBeLessThan(0.9)
+      expect(updatedVideo?.crop?.height ?? 0).toBeGreaterThan(0.9)
+    })
   })
 })

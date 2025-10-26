@@ -180,12 +180,39 @@ export const UnlockIcon: FC = () => (
   </svg>
 )
 
-export const MagnetIcon: FC = () => (
+export const AspectResetIcon: FC = () => (
   <svg {...iconProps}>
-    <path d="M4.25 8.75v-2.5a3.75 3.75 0 0 1 7.5 0v2.5" />
-    <path d="M4.25 8.75a3.75 3.75 0 1 0 7.5 0" />
-    <path d="M4.25 4.5h1.5" />
-    <path d="M10.25 4.5h1.5" />
+    <path d="M5.25 3.5h5.5a1 1 0 0 1 1 1v3" />
+    <path d="M10.75 12.5h-5.5a1 1 0 0 1-1-1v-3" />
+    <path d="M5.5 3.5 3.75 5.25" />
+    <path d="M10.5 12.5 12.25 10.75" />
+    <path d="M6.75 6.75h2.5" />
+    <path d="M6.75 9.25h2.5" />
+  </svg>
+)
+
+export const FrameModeIcon: FC = () => (
+  <svg {...iconProps}>
+    <rect x={3.5} y={4} width={9} height={8} rx={1.8} />
+  </svg>
+)
+
+export const CropModeIcon: FC = () => (
+  <svg {...iconProps}>
+    <path d="M4.25 3.75h3" />
+    <path d="M4.25 3.75v3" />
+    <path d="M11.75 12.25h-3" />
+    <path d="M11.75 12.25v-3" />
+    <path d="M4.25 12.25v-2.5" />
+    <path d="M4.25 12.25h2.5" />
+    <path d="M11.75 3.75h-2.5" />
+    <path d="M11.75 3.75v2.5" />
+  </svg>
+)
+
+export const CropConfirmIcon: FC = () => (
+  <svg {...iconProps}>
+    <path d="M4 8.5 6.5 11l5.25-5.25" />
   </svg>
 )
 

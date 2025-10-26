@@ -55,12 +55,15 @@ export type LayoutVideoItem = {
   name?: string | null
   frame: LayoutFrame
   crop?: LayoutCrop | null
+  sourceCrop?: LayoutCrop | null
   scaleMode?: 'cover' | 'contain' | 'fill'
   rotation?: number | null
   opacity?: number | null
   mirror?: boolean
   lockAspectRatio?: boolean | null
   lockCropAspectRatio?: boolean | null
+  frameAspectRatio?: number | null
+  cropAspectRatio?: number | null
   zIndex?: number
 }
 
