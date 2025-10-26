@@ -854,12 +854,7 @@ describe('Layout editor interactions', () => {
     }
   })
 
-  it('lets editors toggle the aspect ratio lock on video items', async () => {
-    let latestLayout: LayoutDefinition | null = null
-    const onLayoutChange = vi.fn((next: LayoutDefinition) => {
-      latestLayout = next
-    })
-
+  it('does not render frame aspect lock controls on the layout canvas', async () => {
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
@@ -876,7 +871,7 @@ describe('Layout editor interactions', () => {
         errorMessage={null}
         onSelectLayout={vi.fn()}
         onCreateBlankLayout={vi.fn()}
-        onLayoutChange={onLayoutChange}
+        onLayoutChange={vi.fn()}
         onSaveLayout={vi.fn(async () => baseLayout)}
         onImportLayout={vi.fn(async () => undefined)}
         onExportLayout={vi.fn(async () => undefined)}
@@ -893,42 +888,19 @@ describe('Layout editor interactions', () => {
     const layoutCanvas = findInteractiveCanvas(layoutCanvases)
     await selectItemByName(layoutCanvas, /primary/i, { pointerId: 1 })
 
-    const lockedButtons = await within(layoutCanvas).findAllByRole('button', {
-      name: 'Unlock frame aspect (freeform)'
-    })
-    const lockedButton = lockedButtons[lockedButtons.length - 1]
-
-    await act(async () => {
-      fireEvent.click(lockedButton)
-    })
-
-    await waitFor(() => {
-      expect(onLayoutChange).toHaveBeenCalled()
-      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
-      expect(updatedVideo?.lockAspectRatio).toBe(false)
-    })
-
-    const unlockedButtons = await within(layoutCanvas).findAllByRole('button', {
-      name: 'Lock frame aspect (preserve ratio)'
-    })
-    const unlockedButton = unlockedButtons[unlockedButtons.length - 1]
-
-    await act(async () => {
-      fireEvent.click(unlockedButton)
-    })
-
-    await waitFor(() => {
-      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
-      expect(updatedVideo?.lockAspectRatio).not.toBe(false)
-    })
+    expect(
+      within(layoutCanvas).queryByRole('button', {
+        name: 'Unlock frame aspect (freeform)'
+      })
+    ).toBeNull()
+    expect(
+      within(layoutCanvas).queryByRole('button', {
+        name: 'Lock frame aspect (preserve ratio)'
+      })
+    ).toBeNull()
   })
 
-  it('lets editors toggle the crop aspect lock from the source canvas', async () => {
-    let latestLayout: LayoutDefinition | null = null
-    const onLayoutChange = vi.fn((next: LayoutDefinition) => {
-      latestLayout = next
-    })
-
+  it('does not render crop aspect lock controls on the source canvas', async () => {
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
@@ -945,7 +917,7 @@ describe('Layout editor interactions', () => {
         errorMessage={null}
         onSelectLayout={vi.fn()}
         onCreateBlankLayout={vi.fn()}
-        onLayoutChange={onLayoutChange}
+        onLayoutChange={vi.fn()}
         onSaveLayout={vi.fn(async () => baseLayout)}
         onImportLayout={vi.fn(async () => undefined)}
         onExportLayout={vi.fn(async () => undefined)}
@@ -965,34 +937,16 @@ describe('Layout editor interactions', () => {
     }
     await selectItemByName(sourceCanvas, /primary/i, { pointerId: 4 })
 
-    const cropLockedButtons = await within(sourceCanvas).findAllByRole('button', {
-      name: 'Unlock crop aspect (freeform)'
-    })
-    const cropLockedButton = cropLockedButtons[cropLockedButtons.length - 1]
-
-    await act(async () => {
-      fireEvent.click(cropLockedButton)
-    })
-
-    await waitFor(() => {
-      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
-      expect(updatedVideo?.lockCropAspectRatio).toBe(false)
-      expect(updatedVideo?.lockAspectRatio).not.toBe(false)
-    })
-
-    const cropUnlockedButtons = await within(sourceCanvas).findAllByRole('button', {
-      name: 'Lock crop aspect (preserve ratio)'
-    })
-    const cropUnlockedButton = cropUnlockedButtons[cropUnlockedButtons.length - 1]
-
-    await act(async () => {
-      fireEvent.click(cropUnlockedButton)
-    })
-
-    await waitFor(() => {
-      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
-      expect(updatedVideo?.lockCropAspectRatio).not.toBe(false)
-    })
+    expect(
+      within(sourceCanvas).queryByRole('button', {
+        name: 'Unlock crop aspect (freeform)'
+      })
+    ).toBeNull()
+    expect(
+      within(sourceCanvas).queryByRole('button', {
+        name: 'Lock crop aspect (preserve ratio)'
+      })
+    ).toBeNull()
   })
 
   it('snaps frame bounds to the source aspect ratio on demand', async () => {

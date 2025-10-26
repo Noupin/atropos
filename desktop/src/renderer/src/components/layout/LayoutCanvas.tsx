@@ -18,11 +18,9 @@ import LayoutItemToolbar, {
   type LayoutItemToolbarAction,
   BringForwardIcon,
   DuplicateIcon,
-  LockIcon,
   AspectResetIcon,
   RemoveIcon,
   SendBackwardIcon,
-  UnlockIcon,
   CropModeIcon,
   FrameModeIcon
 } from './LayoutItemToolbar'
@@ -130,7 +128,6 @@ type LayoutCanvasProps = {
   className?: string
   style?: CSSProperties
   ariaLabel?: string
-  onRequestToggleAspectLock?: (target: 'frame' | 'crop') => void
   onRequestResetAspect?: (target: 'frame' | 'crop', context: 'source' | 'layout') => void
   onRequestChangeTransformTarget?: (target: 'frame' | 'crop') => void
   getAspectRatioForItem?: (item: LayoutItem, target: 'frame' | 'crop') => number | null
@@ -544,17 +541,6 @@ const enforceAspectRatio = (
   return { x, y, width, height }
 }
 
-const itemHasAspectLock = (item: LayoutItem, target: 'frame' | 'crop'): boolean => {
-  if ((item as LayoutVideoItem).kind !== 'video') {
-    return false
-  }
-  const video = item as LayoutVideoItem
-  if (target === 'crop') {
-    return video.lockCropAspectRatio !== false
-  }
-  return video.lockAspectRatio !== false
-}
-
 const resizeFrame = (
   frame: LayoutFrame,
   handle: ResizeHandle,
@@ -629,7 +615,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   style,
   aspectRatioOverride,
   ariaLabel,
-  onRequestToggleAspectLock,
   onRequestResetAspect,
   onRequestChangeTransformTarget,
   getAspectRatioForItem,
@@ -680,20 +665,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       return true
     },
     [isItemEditable, transformTarget]
-  )
-
-  const itemIsAspectLocked = useCallback(
-    (itemId: string | null): boolean => {
-      if (!itemId || !layout) {
-        return false
-      }
-      const item = layout.items.find((candidate) => candidate.id === itemId)
-      if (!item) {
-        return false
-      }
-      return itemHasAspectLock(item, transformTarget)
-    },
-    [layout, transformTarget]
   )
 
   const sortedItems = useMemo(() => {
@@ -905,10 +876,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       const datasetHandle = dataset.handle as ResizeHandle | undefined
       const datasetItemId = dataset.itemId as string | undefined
       if (datasetHandle && datasetItemId) {
-        const locked = itemIsAspectLocked(datasetItemId)
         commitHover(
           { itemId: datasetItemId, handle: datasetHandle },
-          cursorForHandle(datasetHandle, locked)
+          cursorForHandle(datasetHandle)
         )
         return
       }
@@ -925,7 +895,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         clearHover()
       }
     },
-    [clearHover, commitHover, getPointerPosition, hitTestAtPoint, itemIsAspectLocked]
+    [clearHover, commitHover, getPointerPosition, hitTestAtPoint]
   )
 
   const handlePointerDownCapture = useCallback(
@@ -1013,9 +983,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         setSelectedItemId(nextSelection)
       }
       setToolbarAnchorId(nextSelection)
-      const pointerAspectLocked = Boolean(
-        handle && (itemIsAspectLocked(nextSelection) || event.shiftKey)
-      )
+      const pointerAspectLocked = false
       commitHover(
         { itemId: nextSelection, handle: handle ?? null },
         handle ? cursorForHandle(handle, pointerAspectLocked) : 'grab'
@@ -1388,14 +1356,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const primaryIsVideo = Boolean(
     activeSelection && (activeSelection as LayoutVideoItem).kind === 'video'
   )
-  const primaryAspectLocked = Boolean(
-    activeSelection && primaryIsVideo && itemHasAspectLock(activeSelection, transformTarget)
-  )
-
   const showToolbar = Boolean(activeSelection && toolbarAnchorId === activeSelection.id)
 
   const toolbarActions = useMemo<LayoutItemToolbarAction[]>(() => {
-    const aspectContext = transformTarget === 'crop' ? 'crop' : 'frame'
     const actions: LayoutItemToolbarAction[] = []
 
     if (primaryIsVideo && onRequestChangeTransformTarget) {
@@ -1407,19 +1370,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         onSelect: () => onRequestChangeTransformTarget(nextTarget)
       })
     }
-
-    actions.push({
-      key: 'toggle-aspect',
-      label: primaryAspectLocked
-        ? `Unlock ${aspectContext === 'crop' ? 'crop' : 'frame'} aspect (freeform)`
-        : `Lock ${aspectContext === 'crop' ? 'crop' : 'frame'} aspect (preserve ratio)`,
-      icon: primaryAspectLocked ? <LockIcon /> : <UnlockIcon />,
-      onSelect:
-        primaryIsVideo && onRequestToggleAspectLock
-          ? () => onRequestToggleAspectLock(transformTarget)
-          : undefined,
-      disabled: !primaryIsVideo || !onRequestToggleAspectLock
-    })
 
     actions.push({
       key: 'reset-aspect',
@@ -1468,8 +1418,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     onRequestDuplicate,
     onRequestResetAspect,
     onRequestSendBackward,
-    onRequestToggleAspectLock,
-    primaryAspectLocked,
     primaryIsVideo,
     transformTarget
   ])
@@ -1643,7 +1591,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const showHandles = isSelected || isHovered
         const label = getItemLabel(item)
         const palette = getItemAppearance(item, colorScheme)
-        const itemAspectLocked = itemIsAspectLocked(item.id)
+        const itemAspectLocked = false
         const classes = getItemClasses ? getItemClasses(item, isSelected) : ''
         const shouldShowLabel =
           labelVisibility === 'always' || (labelVisibility === 'selected' && isSelected)
