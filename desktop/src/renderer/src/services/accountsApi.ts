@@ -75,7 +75,7 @@ export const addPlatformToAccount = async (
 
 export const updateAccount = async (
   accountId: string,
-  payload: { active?: boolean; tone?: string | null }
+  payload: { active?: boolean; tone?: string | null; defaultLayoutId?: string | null }
 ): Promise<AccountSummary> => {
   const body: Record<string, unknown> = {}
   if (payload.active !== undefined) {
@@ -83,6 +83,9 @@ export const updateAccount = async (
   }
   if (payload.tone !== undefined) {
     body.tone = payload.tone
+  }
+  if (payload.defaultLayoutId !== undefined) {
+    body.default_layout_id = payload.defaultLayoutId
   }
   const response = await requestWithFallback(() => buildAccountUrl(accountId), {
     method: 'PATCH',

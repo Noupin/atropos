@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, shell } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { ElectronAPIWithShell } from '../types/electron'
+import type { RendererApi } from '../types/api'
 import type {
   ResolveProjectSourceRequest,
   ResolveProjectSourceResponse,
@@ -12,7 +13,7 @@ import type {
 // Custom APIs for renderer
 type Clip = import('../renderer/src/types').Clip
 
-const api = {
+const api: RendererApi = {
   listAccountClips: (accountId: string | null): Promise<Clip[]> =>
     ipcRenderer.invoke('clips:list', accountId),
   openAccountClipsFolder: (accountId: string): Promise<boolean> =>
@@ -43,7 +44,12 @@ const api = {
   },
   updateNavigationState: (state: { canGoBack: boolean; canGoForward: boolean }): void => {
     ipcRenderer.send('navigation:state', state)
-  }
+  },
+  listLayouts: () => ipcRenderer.invoke('layouts:list'),
+  loadLayout: (request) => ipcRenderer.invoke('layouts:load', request),
+  saveLayout: (request) => ipcRenderer.invoke('layouts:save', request),
+  importLayout: () => ipcRenderer.invoke('layouts:import'),
+  exportLayout: (request) => ipcRenderer.invoke('layouts:export', request)
 }
 
 const extendedElectronAPI: ElectronAPIWithShell = {

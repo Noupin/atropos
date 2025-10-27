@@ -76,6 +76,7 @@ class AccountMetadata(BaseModel):
     platforms: List[PlatformRecord] = Field(default_factory=list)
     active: bool = True
     tone: Tone | None = None
+    default_layout_id: str | None = None
 
 
 class AccountPlatformStatus(BaseModel):
@@ -106,6 +107,7 @@ class AccountResponse(BaseModel):
     active: bool
     tone: Tone | None = None
     effective_tone: Tone | None = None
+    default_layout_id: str | None = None
 
 
 class AccountCreateRequest(BaseModel):
@@ -134,6 +136,7 @@ class AccountUpdateRequest(BaseModel):
 
     active: bool | None = None
     tone: Tone | None = None
+    default_layout_id: str | None = None
 
     @field_validator("tone", mode="before")
     @classmethod
@@ -485,6 +488,7 @@ class AccountStore:
             active=metadata.active,
             tone=metadata.tone,
             effective_tone=effective_tone,
+            default_layout_id=metadata.default_layout_id,
         )
 
     def _get_auth_handler(self, platform: SupportedPlatform) -> AuthHandler:
@@ -583,6 +587,14 @@ class AccountStore:
                 metadata.active = payload.active
             if "tone" in payload.model_fields_set:
                 metadata.tone = payload.tone
+            if "default_layout_id" in payload.model_fields_set:
+                raw_layout = payload.default_layout_id
+                layout_id = None
+                if isinstance(raw_layout, str):
+                    candidate = raw_layout.strip()
+                    if candidate:
+                        layout_id = candidate
+                metadata.default_layout_id = layout_id
             self._write_metadata(metadata)
         return self._render_account(metadata)
 

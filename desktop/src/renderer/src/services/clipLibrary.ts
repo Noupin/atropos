@@ -36,6 +36,7 @@ type RawClipPayload = {
   original_start_seconds?: unknown
   original_end_seconds?: unknown
   has_adjustments?: unknown
+  layout_id?: unknown
 }
 
 const isClipArray = (value: unknown): value is Clip[] => {
@@ -123,6 +124,7 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
       ? Math.max(originalStartSeconds, originalEndSecondsRaw)
       : endSeconds
   const hasAdjustments = hasAdjustmentsRaw === true
+  const layoutId = typeof payload.layout_id === 'string' ? payload.layout_id : null
 
   const sourceDurationSeconds =
     typeof sourceDurationSecondsRaw === 'number' && Number.isFinite(sourceDurationSecondsRaw)
@@ -161,7 +163,8 @@ export const normaliseClip = (payload: RawClipPayload): Clip | null => {
     endSeconds,
     originalStartSeconds,
     originalEndSeconds,
-    hasAdjustments
+    hasAdjustments,
+    layoutId
   }
 
   return clip
@@ -462,7 +465,8 @@ export const adjustLibraryClip = async (
     },
     body: JSON.stringify({
       start_seconds: adjustment.startSeconds,
-      end_seconds: adjustment.endSeconds
+      end_seconds: adjustment.endSeconds,
+      layout_id: adjustment.layoutId
     })
   })
 

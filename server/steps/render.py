@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import List, Tuple, Optional, Union
 
@@ -46,7 +47,14 @@ from config import (
     OUTPUT_FPS,
     VIDEO_ZOOM_RATIO,
 )
-from steps.render_layouts import RenderLayout, CenteredZoomLayout
+from layouts import (
+    LayoutCanvas,
+    LayoutDefinition,
+    LayoutNotFoundError,
+    PixelRect,
+    load_layout,
+    prepare_layout,
+)
 
 def _open_writer(path, fps, size):
     w, h = size
@@ -78,13 +86,10 @@ def render_vertical_with_captions(
     captions: Optional[Union[List[Tuple[float, float, str]], List[dict], str, Path]] = None,
     output_path: str | Path = None,
     *,
-    frame_width: int = 1080,
-    frame_height: int = 1920,
-    fg_height_ratio: float = VIDEO_ZOOM_RATIO,      # foreground (main) video height fraction
-    fg_vertical_bias: float = 0.04,
+    frame_width: int | None = None,
+    frame_height: int | None = None,
     bottom_safe_ratio: float = 0.14,
-    gap_below_fg: int = 28,
-    layout: RenderLayout | None = None,
+    layout: LayoutDefinition | str | None = None,
     font_scale: float = CAPTION_FONT_SCALE,  # baseline; may shrink to keep captions below FG
     thickness: int = 2,
     outline: int = 4,
@@ -116,7 +121,99 @@ def render_vertical_with_captions(
     outline_color = outline_bgr if use_caption_colors else (0, 0, 0)
 
     if layout is None:
-        layout = CenteredZoomLayout()
+        try:
+            layout_definition = load_layout(RENDER_LAYOUT)
+        except LayoutNotFoundError:
+            layout_definition = load_layout("centered")
+    elif isinstance(layout, str):
+        try:
+            layout_definition = load_layout(layout)
+        except LayoutNotFoundError:
+            layout_definition = load_layout(RENDER_LAYOUT)
+    else:
+        layout_definition = layout
+
+    prepared_layout = prepare_layout(layout_definition)
+
+    if frame_width is None:
+        frame_width = prepared_layout.width
+    if frame_height is None:
+        frame_height = prepared_layout.height
+
+    if frame_width != prepared_layout.width or frame_height != prepared_layout.height:
+        adjusted = replace(
+            layout_definition,
+            canvas=LayoutCanvas(
+                width=frame_width,
+                height=frame_height,
+                background=layout_definition.canvas.background,
+            ),
+        )
+        prepared_layout = prepare_layout(adjusted)
+        layout_definition = adjusted
+
+    frame_width = int(frame_width)
+    frame_height = int(frame_height)
+
+    caption_rect = prepared_layout.caption_rect
+    caption_align = prepared_layout.caption_align or "center"
+    caption_max_lines = prepared_layout.caption_max_lines or max_lines
+    if prepared_layout.caption_wrap_width is not None:
+        caption_wrap_pixels = int(prepared_layout.caption_wrap_width * frame_width)
+    elif caption_rect is not None:
+        caption_wrap_pixels = caption_rect.width
+    else:
+        caption_wrap_pixels = int(frame_width * wrap_width_px_ratio)
+
+    background_spec = layout_definition.canvas.background
+    background_image = None
+    background_mode = background_spec.mode or "cover"
+    if background_spec.kind == "image" and background_spec.source:
+        image_path = Path(background_spec.source)
+        if not image_path.is_absolute() and layout_definition.source_path:
+            image_path = (layout_definition.source_path.parent / background_spec.source).resolve()
+        if image_path.exists():
+            background_image = cv2.imread(str(image_path))
+
+    def _parse_color_hex(value: str | None, fallback: Tuple[int, int, int] = (0, 0, 0)) -> Tuple[int, int, int]:
+        if not value:
+            return fallback
+        value = value.strip().lstrip('#')
+        if len(value) == 3:
+            value = ''.join(ch * 2 for ch in value)
+        if len(value) != 6:
+            return fallback
+        try:
+            r = int(value[0:2], 16)
+            g = int(value[2:4], 16)
+            b = int(value[4:6], 16)
+        except ValueError:
+            return fallback
+        return (b, g, r)
+
+    def _resize_background_image(image: np.ndarray) -> np.ndarray:
+        src_h, src_w = image.shape[:2]
+        if src_h <= 0 or src_w <= 0:
+            return np.zeros((frame_height, frame_width, 3), dtype=np.uint8)
+        scale_w = frame_width / src_w
+        scale_h = frame_height / src_h
+        if background_mode == "contain":
+            scale = min(scale_w, scale_h)
+            new_w = max(1, int(src_w * scale))
+            new_h = max(1, int(src_h * scale))
+            resized = cv2.resize(image, (new_w, new_h))
+            canvas = np.zeros((frame_height, frame_width, 3), dtype=np.uint8)
+            offset_x = max(0, (frame_width - new_w) // 2)
+            offset_y = max(0, (frame_height - new_h) // 2)
+            canvas[offset_y:offset_y + new_h, offset_x:offset_x + new_w] = resized
+            return canvas
+        scale = max(scale_w, scale_h)
+        new_w = max(1, int(src_w * scale))
+        new_h = max(1, int(src_h * scale))
+        resized = cv2.resize(image, (new_w, new_h))
+        x0 = max(0, (new_w - frame_width) // 2)
+        y0 = max(0, (new_h - frame_height) // 2)
+        return resized[y0:y0 + frame_height, x0:x0 + frame_width]
 
     # --- HW accel probes ---
     if use_opencl:
@@ -272,7 +369,7 @@ def render_vertical_with_captions(
             or (scale != _last_scale)
             or (spacing != _last_spacing)
         ):
-            max_text_w = int(frame_width * wrap_width_px_ratio)
+            max_text_w = max(1, caption_wrap_pixels)
             words = text.replace("\n", " ").split()
             lines: List[str] = []
             cur = ""
@@ -316,7 +413,7 @@ def render_vertical_with_captions(
                 idx += seg_count
         return out
 
-    captions_norm = _split_long_captions(captions_norm, max_lines)
+    captions_norm = _split_long_captions(captions_norm, caption_max_lines)
     _last_text = _last_scale = _last_spacing = None
     _cached_lines = []
     _cached_sizes = []
@@ -330,108 +427,176 @@ def render_vertical_with_captions(
         t = (frame_idx + 0.5) * frame_duration
         current_text = _current_caption_text(t)
 
-        # --- Build blurred background (cover 9:16) and foreground ---
+        # --- Compose background and overlay layout items ---
         h, w = frame.shape[:2]
-        # Background cover scale
-        scale_bg = max(frame_width / w, frame_height / h)
         bg: np.ndarray
-        fg: np.ndarray
 
-        if use_cuda:
-            # Upload frame once
-            gpu_frame = cv2.cuda_GpuMat()
-            gpu_frame.upload(frame)
-
-            # Resize background to cover
-            sz_bg = (int(w * scale_bg), int(h * scale_bg))
-            gpu_bg = cv2.cuda.resize(gpu_frame, sz_bg)
-            # Center-crop to target
-            y0 = max(0, (sz_bg[1] - frame_height) // 2)
-            x0 = max(0, (sz_bg[0] - frame_width) // 2)
-            gpu_bg = gpu_bg.rowRange(y0, y0 + frame_height).colRange(x0, x0 + frame_width)
-            # Blur (GPU if filter available)
-            if gpu_gauss is not None:
-                gpu_bg = gpu_gauss.apply(gpu_bg)
-                bg = gpu_bg.download()
+        if background_spec.kind == "blur":
+            scale_bg = max(frame_width / w, frame_height / h)
+            dim_factor = background_spec.opacity if background_spec.opacity is not None else 0.55
+            dim_factor = min(max(dim_factor, 0.0), 1.0)
+            blur_kernel = background_spec.radius if background_spec.radius else blur_ksize
+            if blur_kernel % 2 == 0:
+                blur_kernel += 1
+            if use_cuda:
+                gpu_frame = cv2.cuda_GpuMat()
+                gpu_frame.upload(frame)
+                sz_bg = (int(w * scale_bg), int(h * scale_bg))
+                gpu_bg = cv2.cuda.resize(gpu_frame, sz_bg)
+                y0 = max(0, (sz_bg[1] - frame_height) // 2)
+                x0 = max(0, (sz_bg[0] - frame_width) // 2)
+                gpu_bg = gpu_bg.rowRange(y0, y0 + frame_height).colRange(x0, x0 + frame_width)
+                if gpu_gauss is not None:
+                    gpu_bg = gpu_gauss.apply(gpu_bg)
+                    bg = gpu_bg.download()
+                else:
+                    bg = cv2.GaussianBlur(gpu_bg.download(), (blur_kernel, blur_kernel), 0)
+                bg = cv2.addWeighted(bg, dim_factor, np.zeros_like(bg), 1 - dim_factor, 0)
             else:
-                bg = cv2.GaussianBlur(gpu_bg.download(), (blur_ksize if blur_ksize % 2==1 else blur_ksize+1,)*2, 0)
-            # Dim on CPU (simple and reliable)
-            bg = cv2.addWeighted(bg, 0.55, np.zeros_like(bg), 0.45, 0)
-
-            # Foreground scaled to a portion of the height
-            scale_fg = layout.scale_factor(w, h, frame_width, frame_height, fg_height_ratio)
-            sz_fg = (int(w * scale_fg), int(h * scale_fg))
-            gpu_fg = cv2.cuda.resize(gpu_frame, sz_fg)
-            fg = gpu_fg.download()
+                frame_u = cv2.UMat(frame)
+                sz_bg = (int(w * scale_bg), int(h * scale_bg))
+                bg_u = cv2.resize(frame_u, sz_bg)
+                y0 = max(0, (sz_bg[1] - frame_height) // 2)
+                x0 = max(0, (sz_bg[0] - frame_width) // 2)
+                bg_nd = bg_u.get()
+                bg_nd = bg_nd[y0:y0 + frame_height, x0:x0 + frame_width]
+                small_w = max(2, frame_width // 4)
+                small_h = max(2, frame_height // 4)
+                small = cv2.resize(bg_nd, (small_w, small_h))
+                small = cv2.GaussianBlur(small, (blur_kernel, blur_kernel), 0)
+                bg = cv2.resize(small, (frame_width, frame_height))
+                bg = cv2.addWeighted(bg, dim_factor, np.zeros_like(bg), 1 - dim_factor, 0)
+        elif background_spec.kind == "color":
+            color = _parse_color_hex(background_spec.color, (16, 16, 16))
+            bg = np.full((frame_height, frame_width, 3), color, dtype=np.uint8)
+        elif background_image is not None:
+            bg = _resize_background_image(background_image)
         else:
-            # CPU/UMat fallback (uses OpenCL if available)
-            frame_u = cv2.UMat(frame)
-
-            # Background: cover resize on UMat
-            sz_bg = (int(w * scale_bg), int(h * scale_bg))
-            bg_u = cv2.resize(frame_u, sz_bg)
-            y0 = max(0, (sz_bg[1] - frame_height) // 2)
-            x0 = max(0, (sz_bg[0] - frame_width) // 2)
-
-            # Convert to ndarray before ROI — UMat is not subscriptable
-            bg_nd = bg_u.get()
-            bg_nd = bg_nd[y0:y0 + frame_height, x0:x0 + frame_width]
-
-            # Pyramid blur (downsample -> blur small -> upsample) for speed
-            small_w = max(2, frame_width // 4)
-            small_h = max(2, frame_height // 4)
-            small = cv2.resize(bg_nd, (small_w, small_h))
-            k_small = 9 if blur_ksize >= 9 else (blur_ksize if blur_ksize % 2 == 1 else blur_ksize + 1)
-            small = cv2.GaussianBlur(small, (k_small, k_small), 0)
+            small = cv2.GaussianBlur(frame, (blur_ksize if blur_ksize % 2 == 1 else blur_ksize + 1, ) * 2, 0)
             bg = cv2.resize(small, (frame_width, frame_height))
 
-            # Dim
-            bg = cv2.addWeighted(bg, 0.55, np.zeros_like(bg), 0.45, 0)
-
-            # Foreground scaled to target height
-            scale_fg = layout.scale_factor(w, h, frame_width, frame_height, fg_height_ratio)
-            sz_fg = (int(w * scale_fg), int(h * scale_fg))
-            fg = cv2.resize(frame_u, sz_fg).get()
-
-        # Foreground placement
-        fg_h = fg.shape[0]
-        fg_w = fg.shape[1]
-        x_fg = layout.x_position(fg_w, frame_width)
-        center_y = int(frame_height * (0.5 - fg_vertical_bias))
-        y_fg = max(0, center_y - fg_h // 2)
-
         canvas = bg.copy()
-        # Safe paste FG with clipping
-        x1 = max(0, x_fg); y1 = max(0, y_fg)
-        x2 = min(frame_width, x_fg + fg_w); y2 = min(frame_height, y_fg + fg_h)
-        if x2 > x1 and y2 > y1:
-            src_x1 = max(0, -x_fg); src_y1 = max(0, -y_fg)
-            src_x2 = src_x1 + (x2 - x1); src_y2 = src_y1 + (y2 - y1)
-            canvas[y1:y2, x1:x2] = fg[src_y1:src_y2, src_x1:src_x2]
 
-        # Allow layout to augment the composed frame (e.g., corner crops)
-        canvas = layout.augment_canvas(canvas, frame)
+        # Shape overlays
+        for prepared_shape in prepared_layout.shapes:
+            rect = prepared_shape.target.clamp(frame_width, frame_height)
+            if rect.width <= 0 or rect.height <= 0:
+                continue
+            color = _parse_color_hex(prepared_shape.item.color, (0, 0, 0))
+            opacity = max(0.0, min(1.0, prepared_shape.item.opacity))
+            x0, y0 = rect.x, rect.y
+            x1, y1 = rect.x + rect.width, rect.y + rect.height
+            if opacity >= 1.0:
+                canvas[y0:y1, x0:x1] = color
+            else:
+                overlay = np.full((rect.height, rect.width, 3), color, dtype=np.uint8)
+                roi = canvas[y0:y1, x0:x1]
+                cv2.addWeighted(overlay, opacity, roi, 1 - opacity, 0, dst=roi)
 
-        # --- Captions under FG, wrapped, centered, with outline ---
-        if current_text:
-            fs = font_scale
-            spacing = line_spacing
-            lines, sizes, total_h = _measure_and_wrap(current_text, fs, spacing)
-            bottom_safe = int(frame_height * bottom_safe_ratio)
-            under_fg_y = y_fg + fg_h + gap_below_fg
-            available_h = frame_height - bottom_safe - under_fg_y
-            if total_h > available_h and available_h > 0:
-                fs = fs * (available_h / total_h)
-                spacing = max(1, int(line_spacing * fs / font_scale))
-                lines, sizes, total_h = _measure_and_wrap(current_text, fs, spacing)
-            max_y = frame_height - bottom_safe - total_h
-            y_text = max(0, min(under_fg_y, max_y))
+        # Video overlays
+        for prepared_video in prepared_layout.videos:
+            rect = prepared_video.target.clamp(frame_width, frame_height)
+            if rect.width <= 0 or rect.height <= 0:
+                continue
+            crop = prepared_video.crop
+            region = frame
+            if crop is not None:
+                if crop.units == "pixels":
+                    crop_x = int(max(0, crop.x))
+                    crop_y = int(max(0, crop.y))
+                    crop_w = int(max(1, crop.width))
+                    crop_h = int(max(1, crop.height))
+                else:
+                    crop_x = int(max(0, crop.x) * w)
+                    crop_y = int(max(0, crop.y) * h)
+                    crop_w = int(max(1, crop.width) * w)
+                    crop_h = int(max(1, crop.height) * h)
+                crop_x2 = min(w, crop_x + crop_w)
+                crop_y2 = min(h, crop_y + crop_h)
+                if crop_x2 > crop_x and crop_y2 > crop_y:
+                    region = frame[crop_y:crop_y2, crop_x:crop_x2]
+            if region.size == 0:
+                continue
+            if prepared_video.item.mirror:
+                region = cv2.flip(region, 1)
 
-            # draw each line centered with outline
+            target_w = max(1, rect.width)
+            target_h = max(1, rect.height)
+            mode = prepared_video.item.scale_mode
+            if mode == "fill":
+                resized = cv2.resize(region, (target_w, target_h))
+            else:
+                src_h, src_w = region.shape[:2]
+                scale_w = target_w / src_w
+                scale_h = target_h / src_h
+                if mode == "contain":
+                    scale = min(scale_w, scale_h)
+                    new_w = max(1, int(src_w * scale))
+                    new_h = max(1, int(src_h * scale))
+                    resized = cv2.resize(region, (new_w, new_h))
+                    video_canvas = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+                    offset_x = (target_w - new_w) // 2
+                    offset_y = (target_h - new_h) // 2
+                    video_canvas[offset_y:offset_y + new_h, offset_x:offset_x + new_w] = resized
+                    resized = video_canvas
+                else:  # cover
+                    scale = max(scale_w, scale_h)
+                    new_w = max(1, int(src_w * scale))
+                    new_h = max(1, int(src_h * scale))
+                    resized = cv2.resize(region, (new_w, new_h))
+                    offset_x = max(0, (new_w - target_w) // 2)
+                    offset_y = max(0, (new_h - target_h) // 2)
+                    resized = resized[offset_y:offset_y + target_h, offset_x:offset_x + target_w]
+
+            opacity = prepared_video.item.opacity if prepared_video.item.opacity is not None else 1.0
+            opacity = max(0.0, min(1.0, opacity))
+            dest = canvas[rect.y:rect.y + target_h, rect.x:rect.x + target_w]
+            if resized.shape[0] != target_h or resized.shape[1] != target_w:
+                tmp = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+                hh = min(target_h, resized.shape[0])
+                ww = min(target_w, resized.shape[1])
+                tmp[:hh, :ww] = resized[:hh, :ww]
+                resized = tmp
+            if opacity >= 1.0:
+                dest[:] = resized
+            else:
+                cv2.addWeighted(resized, opacity, dest, 1 - opacity, 0, dst=dest)
+
+        # Text overlays
+        for prepared_text in prepared_layout.texts:
+            content = prepared_text.item.content.strip()
+            if not content:
+                continue
+            rect = prepared_text.target.clamp(frame_width, frame_height)
+            if rect.width <= 0 or rect.height <= 0:
+                continue
+            lines = content.splitlines()
+            if not lines:
+                lines = [content]
+            text_scale = prepared_text.item.font_size
+            if text_scale is None:
+                text_scale = font_scale
+            else:
+                text_scale = max(0.3, float(text_scale) / 32.0 * font_scale)
+            text_spacing = prepared_text.item.line_height
+            if text_spacing is None:
+                text_spacing = int(18 * (text_scale / font_scale))
+            else:
+                text_spacing = int(text_spacing)
+            align_mode = prepared_text.item.align
+            text_color = _parse_color_hex(prepared_text.item.color, fill_color)
+            y_cursor = rect.y
             for ln in lines:
-                (tw, th), _ = cv2.getTextSize(ln, font, fs, thickness + outline)
-                x_text = (frame_width - tw) // 2
-                # outline
+                if prepared_text.item.uppercase:
+                    ln = ln.upper()
+                (tw, th), _ = cv2.getTextSize(ln, font, text_scale, thickness + outline)
+                if align_mode == "left":
+                    x_text = rect.x
+                elif align_mode == "right":
+                    x_text = rect.x + max(0, rect.width - tw)
+                else:
+                    x_text = rect.x + max(0, (rect.width - tw) // 2)
+                y_cursor += th
                 for dx in (-outline, 0, outline):
                     for dy in (-outline, 0, outline):
                         if dx == 0 and dy == 0:
@@ -439,25 +604,82 @@ def render_vertical_with_captions(
                         cv2.putText(
                             canvas,
                             ln,
-                            (x_text + dx, y_text + th + dy),
+                            (x_text + dx, y_cursor + dy),
+                            font,
+                            text_scale,
+                            outline_color,
+                            thickness + outline,
+                            line_type,
+                        )
+                cv2.putText(
+                    canvas,
+                    ln,
+                    (x_text, y_cursor),
+                    font,
+                    text_scale,
+                    text_color,
+                    thickness,
+                    line_type,
+                )
+                y_cursor += text_spacing
+
+        # --- Captions ---
+        effective_caption_rect = caption_rect or PixelRect(
+            int(frame_width * 0.08),
+            int(frame_height * 0.75),
+            int(frame_width * 0.84),
+            int(frame_height * 0.2),
+        ).clamp(frame_width, frame_height)
+
+        if current_text:
+            fs = font_scale
+            spacing = line_spacing
+            lines, sizes, total_h = _measure_and_wrap(current_text, fs, spacing)
+            available_h = max(0, effective_caption_rect.height)
+            if total_h > available_h and available_h > 0:
+                fs = fs * (available_h / max(total_h, 1))
+                spacing = max(1, int(line_spacing * fs / font_scale))
+                lines, sizes, total_h = _measure_and_wrap(current_text, fs, spacing)
+
+            bottom_safe = int(frame_height * bottom_safe_ratio)
+            max_y = frame_height - bottom_safe - total_h
+            y_text = max(0, min(effective_caption_rect.y, max_y))
+
+            y_cursor = y_text
+            for index, ln in enumerate(lines):
+                (tw, th), _ = cv2.getTextSize(ln, font, fs, thickness + outline)
+                if caption_align == "left":
+                    x_text = effective_caption_rect.x
+                elif caption_align == "right":
+                    x_text = effective_caption_rect.x + max(0, effective_caption_rect.width - tw)
+                else:
+                    x_text = effective_caption_rect.x + max(0, (effective_caption_rect.width - tw) // 2)
+                y_cursor += th
+                for dx in (-outline, 0, outline):
+                    for dy in (-outline, 0, outline):
+                        if dx == 0 and dy == 0:
+                            continue
+                        cv2.putText(
+                            canvas,
+                            ln,
+                            (x_text + dx, y_cursor + dy),
                             font,
                             fs,
                             outline_color,
                             thickness + outline,
                             line_type,
                         )
-                # fill
                 cv2.putText(
                     canvas,
                     ln,
-                    (x_text, y_text + th),
+                    (x_text, y_cursor),
                     font,
                     fs,
                     fill_color,
                     thickness,
                     line_type,
                 )
-                y_text += th + spacing
+                y_cursor += spacing
 
         writer.write(canvas)
         frame_idx += 1

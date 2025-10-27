@@ -36,7 +36,8 @@ from steps.segment import (
 from steps.cut import save_clip_from_candidate
 from steps.subtitle import build_srt_for_range
 from steps.render import render_vertical_with_captions
-from steps.render_layouts import get_layout
+from layouts import LayoutNotFoundError, load_layout
+from library import write_adjustment_metadata
 from steps.silence import (
     detect_silences,
     write_silences_json,
@@ -64,6 +65,7 @@ from config import (
     START_AT_STEP,
     RENDER_LAYOUT,
 )
+from auth.accounts import ensure_account_available
 
 import sys
 import time
@@ -153,6 +155,24 @@ def process_video(
     """
 
     overall_start = time.perf_counter()
+
+    try:
+        default_layout_definition = load_layout(RENDER_LAYOUT)
+    except LayoutNotFoundError:
+        default_layout_definition = load_layout("centered")
+
+    active_layout_definition = default_layout_definition
+    if account:
+        try:
+            account_details = ensure_account_available(account)
+            layout_id = getattr(account_details, "default_layout_id", None)
+            if isinstance(layout_id, str) and layout_id:
+                try:
+                    active_layout_definition = load_layout(layout_id)
+                except LayoutNotFoundError:
+                    active_layout_definition = default_layout_definition
+        except Exception:
+            active_layout_definition = default_layout_definition
     ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
     step_timers: dict[str, float] = {}
     is_local_source = source_kind == "local"
@@ -1131,7 +1151,7 @@ def process_video(
                 clip_path,
                 srt_path,
                 vertical_output,
-                layout=get_layout(RENDER_LAYOUT),
+                layout=active_layout_definition,
             )
 
         if should_run(8):
@@ -1144,6 +1164,15 @@ def process_video(
             emit_log(
                 f"{Fore.YELLOW}Skipping STEP 7.{idx}: assuming video exists at {vertical_output}{Style.RESET_ALL}",
                 level="warning",
+            )
+        if vertical_output.exists():
+            write_adjustment_metadata(
+                vertical_output,
+                start_seconds=float(candidate.start),
+                end_seconds=float(candidate.end),
+                original_start_seconds=float(candidate.start),
+                original_end_seconds=float(candidate.end),
+                layout_id=active_layout_definition.id,
             )
         if total_candidates:
             notify_progress(
@@ -1250,6 +1279,7 @@ def process_video(
                         "short_path": short_path_str,
                         "project_dir": str(project_dir),
                         "account": account,
+                        "layout_id": active_layout_definition.id,
                         "quote": candidate.quote,
                         "reason": candidate.reason,
                         "rating": candidate.rating,
