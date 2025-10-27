@@ -2344,7 +2344,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                   <span className="text-xs text-white/70">{sourcePreviewMessage}</span>
                 )
               }
-              transformTarget="crop"
+              transformTarget="frame"
               aspectRatioOverride={sourceAspectRatio}
               onRequestResetAspect={handleResetToSourceAspect}
               cropContext="source"
