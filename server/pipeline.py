@@ -1363,7 +1363,7 @@ if __name__ == "__main__":
     # # In Review Playlist (newest first)
     # # yt_url = "https://www.youtube.com/playlist?list=PLy3mMHt2i7RKE9ba8rfL7_qnFcpbUaA8_"
     # # KFAF Playlist(newest first)
-    # # start next one at [20:]
+    # # start next one at [30:]
     # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"
     # # Last Of Us
     # # start next one at [2:]
