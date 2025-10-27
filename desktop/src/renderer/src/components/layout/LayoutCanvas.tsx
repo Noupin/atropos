@@ -493,16 +493,15 @@ const getCropOverlayRect = (
   context: 'source' | 'layout',
   pending?: LayoutCrop | null
 ): CropOverlayRect | null => {
-  const base =
-    context === 'source'
-      ? normaliseVideoCropBounds(video.sourceCrop ?? video.crop ?? defaultCrop)
-      : getVideoSourceBounds(video)
+  if (context === 'source') {
+    return null
+  }
+
+  const base = getVideoSourceBounds(video)
   const override = pending ? clampCropToBounds(pending, base) : null
   const target = override
     ? override
-    : context === 'source'
-      ? clampCropToBounds(normaliseVideoCropBounds(video.sourceCrop ?? video.crop ?? defaultCrop), base)
-      : clampCropToBounds(normaliseVideoCropBounds(video.crop ?? video.sourceCrop ?? defaultCrop), base)
+    : clampCropToBounds(normaliseVideoCropBounds(video.crop ?? video.sourceCrop ?? defaultCrop), base)
 
   const baseWidth = clamp(base.width)
   const baseHeight = clamp(base.height)
@@ -516,6 +515,14 @@ const getCropOverlayRect = (
   const height = clamp(target.height / Math.max(baseHeight, 0.0001))
 
   if (width <= 0 || height <= 0) {
+    return null
+  }
+
+  const epsilon = 0.001
+  const isFullWidth = Math.abs(left) < epsilon && Math.abs(width - 1) < epsilon
+  const isFullHeight = Math.abs(top) < epsilon && Math.abs(height - 1) < epsilon
+
+  if (isFullWidth && isFullHeight) {
     return null
   }
 
