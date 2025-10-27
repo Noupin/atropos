@@ -315,6 +315,62 @@ const snapFrameToAspect = (frame: LayoutFrame, aspect: number): LayoutFrame => {
   }
 }
 
+const snapFrameToAspectPreservingHeight = (
+  frame: LayoutFrame,
+  aspect: number
+): LayoutFrame | null => {
+  if (!Number.isFinite(aspect) || aspect <= 0) {
+    return clampFrame(frame)
+  }
+
+  const width = clamp(frame.width)
+  const height = clamp(frame.height)
+  if (width <= 0 || height <= 0) {
+    return clampFrame(frame)
+  }
+
+  const currentAspect = width / Math.max(height, 0.0001)
+  if (Math.abs(currentAspect - aspect) < 0.0001) {
+    return clampFrame(frame)
+  }
+
+  const targetWidth = height * aspect
+  if (!Number.isFinite(targetWidth) || targetWidth <= 0) {
+    return clampFrame(frame)
+  }
+
+  if (targetWidth > 1) {
+    return null
+  }
+
+  const clampedWidth = clamp(targetWidth)
+  const clampedHeight = clamp(height)
+  const centerX = clamp(frame.x + width / 2)
+  const centerY = clamp(frame.y + height / 2)
+  let nextX = clamp(centerX - clampedWidth / 2)
+  let nextY = clamp(centerY - clampedHeight / 2)
+
+  if (nextX < 0) {
+    nextX = 0
+  }
+  if (nextX + clampedWidth > 1) {
+    nextX = clamp(1 - clampedWidth)
+  }
+  if (nextY < 0) {
+    nextY = 0
+  }
+  if (nextY + clampedHeight > 1) {
+    nextY = clamp(1 - clampedHeight)
+  }
+
+  return {
+    x: clamp(nextX),
+    y: clamp(nextY),
+    width: clampedWidth,
+    height: clampedHeight
+  }
+}
+
 const getFrameDisplayAspect = (frame: LayoutFrame, layoutAspect: number): number | null => {
   const width = clamp(frame.width)
   const height = clamp(frame.height)
@@ -1117,10 +1173,19 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               sourceWidth > 0 && sourceHeight > 0 && Number.isFinite(nativeAspect) && nativeAspect > 0
                 ? (nativeAspect * sourceWidth) / Math.max(sourceHeight, 0.0001)
                 : getFrameAspectRatio(currentFrame) ?? nativeAspect
-            const snappedFrame =
-              sourceFrameAspect && Number.isFinite(sourceFrameAspect) && sourceFrameAspect > 0
-                ? snapFrameToAspect(currentFrame, sourceFrameAspect)
-                : currentFrame
+            let snappedFrame = currentFrame
+            if (sourceFrameAspect && Number.isFinite(sourceFrameAspect) && sourceFrameAspect > 0) {
+              const horizontalHeadroom = Math.max(0, 1 - clamp(boundedSource.width))
+              const verticalHeadroom = Math.max(0, 1 - clamp(boundedSource.height))
+              const HEADROOM_EPSILON = 0.0001
+              const prefersPreservingHeight = horizontalHeadroom > verticalHeadroom + HEADROOM_EPSILON
+              if (prefersPreservingHeight) {
+                const stretchedFrame = snapFrameToAspectPreservingHeight(currentFrame, sourceFrameAspect)
+                snappedFrame = stretchedFrame ?? snapFrameToAspect(currentFrame, sourceFrameAspect)
+              } else {
+                snappedFrame = snapFrameToAspect(currentFrame, sourceFrameAspect)
+              }
+            }
             const cropCopy = normaliseVideoCrop(boundedSource)
 
             return {

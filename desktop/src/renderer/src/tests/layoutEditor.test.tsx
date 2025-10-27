@@ -745,9 +745,23 @@ describe('Layout editor interactions', () => {
     const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
     const layoutCanvas = layoutCanvases[layoutCanvases.length - 1] as HTMLDivElement
 
+    const readStyleValue = (element: HTMLDivElement | null | undefined, key: 'width' | 'height'): string => {
+      if (!element) {
+        return ''
+      }
+      const value = element.style[key as keyof CSSStyleDeclaration]
+      if (value && value !== '0') {
+        return value
+      }
+      if (element.parentElement) {
+        return readStyleValue(element.parentElement as HTMLDivElement, key)
+      }
+      return ''
+    }
+
     const readRatio = (element: HTMLDivElement): number => {
-      const width = Number.parseFloat(element.style.width || '0')
-      const height = Number.parseFloat(element.style.height || '0')
+      const width = Number.parseFloat(readStyleValue(element, 'width') || '0')
+      const height = Number.parseFloat(readStyleValue(element, 'height') || '0')
       if (width <= 0 || height <= 0) {
         return 0
       }
