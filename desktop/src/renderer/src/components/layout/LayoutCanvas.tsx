@@ -495,7 +495,7 @@ const getCropOverlayRect = (
 ): CropOverlayRect | null => {
   const base =
     context === 'source'
-      ? normaliseVideoCropBounds(video.sourceCrop ?? video.crop ?? defaultCrop)
+      ? normaliseVideoCropBounds(defaultCrop)
       : getVideoSourceBounds(video)
   const override = pending ? clampCropToBounds(pending, base) : null
   const target = override
