@@ -519,6 +519,14 @@ const getCropOverlayRect = (
     return null
   }
 
+  const epsilon = 0.001
+  const isFullWidth = Math.abs(left) < epsilon && Math.abs(width - 1) < epsilon
+  const isFullHeight = Math.abs(top) < epsilon && Math.abs(height - 1) < epsilon
+
+  if (isFullWidth && isFullHeight) {
+    return null
+  }
+
   return {
     left,
     top,
