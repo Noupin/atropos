@@ -1080,6 +1080,91 @@ describe('Layout editor interactions', () => {
     }
   })
 
+  it('matches the layout frame to the active crop aspect when the source crop is unset', async () => {
+    const layoutWithCrop: LayoutDefinition = {
+      ...baseLayout,
+      items: [
+        {
+          ...(baseLayout.items[0] as LayoutVideoItem),
+          frame: { x: 0.15, y: 0.12, width: 0.5, height: 0.32 },
+          crop: { x: 0.2, y: 0.15, width: 0.48, height: 0.36, units: 'fraction' },
+          sourceCrop: null
+        }
+      ]
+    }
+
+    let latestLayout: LayoutDefinition | null = layoutWithCrop
+    const onLayoutChange = vi.fn((next: LayoutDefinition) => {
+      latestLayout = next
+    })
+
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={sampleClip}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={layoutWithCrop}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={onLayoutChange}
+        onSaveLayout={vi.fn(async () => layoutWithCrop)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = findInteractiveCanvas(layoutCanvases)
+    await selectItemByName(layoutCanvas, /primary/i, {
+      pointerId: 55,
+      clientX: 70,
+      clientY: 90
+    })
+
+    const changeCount = onLayoutChange.mock.calls.length
+
+    const expectedCrop = (layoutWithCrop.items[0] as LayoutVideoItem).crop!
+    const expectedAspect =
+      (16 / 9) * (expectedCrop.width / Math.max(expectedCrop.height, 0.0001))
+
+    const matchButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Match source frame aspect'
+    })
+    const matchButton = matchButtons[matchButtons.length - 1]
+
+    await act(async () => {
+      fireEvent.click(matchButton)
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange).toHaveBeenCalledTimes(changeCount + 1)
+    })
+
+    const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as
+      | LayoutVideoItem
+      | undefined
+    expect(updatedVideo).toBeTruthy()
+    if (updatedVideo) {
+      const finalRatio = updatedVideo.frame.width / Math.max(updatedVideo.frame.height, 0.0001)
+      expect(finalRatio).toBeCloseTo(expectedAspect, 3)
+      expect(updatedVideo.crop).toMatchObject(expectedCrop)
+    }
+  })
+
   it('resets the source preview to the native aspect and full-frame crop', async () => {
     let latestLayout: LayoutDefinition | null = null
     const onLayoutChange = vi.fn((next: LayoutDefinition) => {

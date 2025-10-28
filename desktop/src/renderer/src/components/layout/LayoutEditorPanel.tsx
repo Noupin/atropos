@@ -193,8 +193,21 @@ const clampCropToBounds = (crop: LayoutCrop, bounds: LayoutCrop): LayoutCrop => 
   return { x, y, width, height, units: 'fraction' }
 }
 
+const frameToCrop = (frame: LayoutFrame | null | undefined): LayoutCrop | null => {
+  if (!frame) {
+    return null
+  }
+  return normaliseVideoCrop({
+    x: frame.x,
+    y: frame.y,
+    width: frame.width,
+    height: frame.height,
+    units: 'fraction'
+  })
+}
+
 const normaliseSourceCrop = (video: LayoutVideoItem): LayoutCrop => {
-  const base = video.sourceCrop ?? createDefaultCrop()
+  const base = video.sourceCrop ?? video.crop ?? createDefaultCrop()
   return normaliseVideoCrop(base)
 }
 
@@ -1165,8 +1178,9 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               }
             }
 
-            const sourceBounds = normaliseSourceCrop(item)
-            const boundedSource = clampCropToBounds(sourceBounds, sourceBounds)
+            const pendingSourceCrop = frameToCrop(pendingCrops.source[selectedItemId])
+            const sourceBounds = pendingSourceCrop ?? normaliseSourceCrop(item)
+            const boundedSource = clampCropToBounds(sourceBounds, createDefaultCrop())
             const sourceWidth = clamp(boundedSource.width)
             const sourceHeight = clamp(boundedSource.height)
             const sourceFrameAspect =
@@ -1221,7 +1235,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         return next
       })
     },
-    [layoutAspectRatio, selectedItemId, sourceAspectRatio, updateLayout]
+    [layoutAspectRatio, pendingCrops, selectedItemId, sourceAspectRatio, updateLayout]
   )
 
   const handleChangeVideoScaleMode = useCallback(
