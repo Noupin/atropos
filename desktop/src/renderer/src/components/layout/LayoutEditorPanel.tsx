@@ -193,8 +193,21 @@ const clampCropToBounds = (crop: LayoutCrop, bounds: LayoutCrop): LayoutCrop => 
   return { x, y, width, height, units: 'fraction' }
 }
 
+const frameToCrop = (frame: LayoutFrame | null | undefined): LayoutCrop | null => {
+  if (!frame) {
+    return null
+  }
+  return normaliseVideoCrop({
+    x: frame.x,
+    y: frame.y,
+    width: frame.width,
+    height: frame.height,
+    units: 'fraction'
+  })
+}
+
 const normaliseSourceCrop = (video: LayoutVideoItem): LayoutCrop => {
-  const base = video.sourceCrop ?? createDefaultCrop()
+  const base = video.sourceCrop ?? video.crop ?? createDefaultCrop()
   return normaliseVideoCrop(base)
 }
 
@@ -312,6 +325,62 @@ const snapFrameToAspect = (frame: LayoutFrame, aspect: number): LayoutFrame => {
     y: clamp(nextY),
     width: clamp(nextWidth),
     height: clamp(nextHeight)
+  }
+}
+
+const snapFrameToAspectPreservingHeight = (
+  frame: LayoutFrame,
+  aspect: number
+): LayoutFrame | null => {
+  if (!Number.isFinite(aspect) || aspect <= 0) {
+    return clampFrame(frame)
+  }
+
+  const width = clamp(frame.width)
+  const height = clamp(frame.height)
+  if (width <= 0 || height <= 0) {
+    return clampFrame(frame)
+  }
+
+  const currentAspect = width / Math.max(height, 0.0001)
+  if (Math.abs(currentAspect - aspect) < 0.0001) {
+    return clampFrame(frame)
+  }
+
+  const targetWidth = height * aspect
+  if (!Number.isFinite(targetWidth) || targetWidth <= 0) {
+    return clampFrame(frame)
+  }
+
+  if (targetWidth > 1) {
+    return null
+  }
+
+  const clampedWidth = clamp(targetWidth)
+  const clampedHeight = clamp(height)
+  const centerX = clamp(frame.x + width / 2)
+  const centerY = clamp(frame.y + height / 2)
+  let nextX = clamp(centerX - clampedWidth / 2)
+  let nextY = clamp(centerY - clampedHeight / 2)
+
+  if (nextX < 0) {
+    nextX = 0
+  }
+  if (nextX + clampedWidth > 1) {
+    nextX = clamp(1 - clampedWidth)
+  }
+  if (nextY < 0) {
+    nextY = 0
+  }
+  if (nextY + clampedHeight > 1) {
+    nextY = clamp(1 - clampedHeight)
+  }
+
+  return {
+    x: clamp(nextX),
+    y: clamp(nextY),
+    width: clampedWidth,
+    height: clampedHeight
   }
 }
 
@@ -1109,18 +1178,28 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               }
             }
 
-            const sourceBounds = normaliseSourceCrop(item)
-            const boundedSource = clampCropToBounds(sourceBounds, sourceBounds)
+            const pendingSourceCrop = frameToCrop(pendingCrops.source[selectedItemId])
+            const sourceBounds = pendingSourceCrop ?? normaliseSourceCrop(item)
+            const boundedSource = clampCropToBounds(sourceBounds, createDefaultCrop())
             const sourceWidth = clamp(boundedSource.width)
             const sourceHeight = clamp(boundedSource.height)
             const sourceFrameAspect =
               sourceWidth > 0 && sourceHeight > 0 && Number.isFinite(nativeAspect) && nativeAspect > 0
                 ? (nativeAspect * sourceWidth) / Math.max(sourceHeight, 0.0001)
                 : getFrameAspectRatio(currentFrame) ?? nativeAspect
-            const snappedFrame =
-              sourceFrameAspect && Number.isFinite(sourceFrameAspect) && sourceFrameAspect > 0
-                ? snapFrameToAspect(currentFrame, sourceFrameAspect)
-                : currentFrame
+            let snappedFrame = currentFrame
+            if (sourceFrameAspect && Number.isFinite(sourceFrameAspect) && sourceFrameAspect > 0) {
+              const horizontalHeadroom = Math.max(0, 1 - clamp(boundedSource.width))
+              const verticalHeadroom = Math.max(0, 1 - clamp(boundedSource.height))
+              const HEADROOM_EPSILON = 0.0001
+              const prefersPreservingHeight = horizontalHeadroom > verticalHeadroom + HEADROOM_EPSILON
+              if (prefersPreservingHeight) {
+                const stretchedFrame = snapFrameToAspectPreservingHeight(currentFrame, sourceFrameAspect)
+                snappedFrame = stretchedFrame ?? snapFrameToAspect(currentFrame, sourceFrameAspect)
+              } else {
+                snappedFrame = snapFrameToAspect(currentFrame, sourceFrameAspect)
+              }
+            }
             const cropCopy = normaliseVideoCrop(boundedSource)
 
             return {
@@ -1156,7 +1235,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         return next
       })
     },
-    [layoutAspectRatio, selectedItemId, sourceAspectRatio, updateLayout]
+    [layoutAspectRatio, pendingCrops, selectedItemId, sourceAspectRatio, updateLayout]
   )
 
   const handleChangeVideoScaleMode = useCallback(
