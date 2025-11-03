@@ -13,7 +13,8 @@ import useSharedVolume from '../hooks/useSharedVolume'
 import VideoPreviewStage from '../components/VideoPreviewStage'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
-import { fetchConfigEntries } from '../services/configApi'
+import { fetchConfigEntries, updateConfigEntries } from '../services/configApi'
+import type { ConfigEntry } from '../services/configApi'
 import {
   PLATFORM_LABELS,
   SUPPORTED_PLATFORMS,
@@ -57,16 +58,42 @@ const DEFAULT_DURATION_GUARDRAILS: DurationGuardrails = {
   sweetSpotMax: 60
 }
 
-type VideoPageMode = 'trim' | 'metadata' | 'upload'
+type VideoPageMode = 'trim' | 'layout' | 'metadata' | 'upload'
+
+type LayoutPreset = 'centered' | 'centered_with_corners' | 'no_zoom' | 'left_aligned'
+
+const LAYOUT_PRESETS: Array<{ value: LayoutPreset; label: string; description: string }> = [
+  {
+    value: 'centered',
+    label: 'Centered spotlight',
+    description: 'Foreground footage is centered with subtle background motion.'
+  },
+  {
+    value: 'centered_with_corners',
+    label: 'Framed corners',
+    description: 'Adds corner accents while keeping the main footage centered.'
+  },
+  {
+    value: 'no_zoom',
+    label: 'True to source',
+    description: 'Keeps the original framing without additional zoom.'
+  },
+  {
+    value: 'left_aligned',
+    label: 'Left aligned',
+    description: 'Pins the footage to the left to make space for captions or overlays.'
+  }
+]
 
 const VIDEO_PAGE_MODES: Array<{ id: VideoPageMode; label: string }> = [
   { id: 'trim', label: 'Trim' },
+  { id: 'layout', label: 'Layout' },
   { id: 'metadata', label: 'Metadata' },
   { id: 'upload', label: 'Upload' }
 ]
 
 const normaliseMode = (value: string | null | undefined): VideoPageMode => {
-  if (value === 'metadata' || value === 'upload') {
+  if (value === 'metadata' || value === 'upload' || value === 'layout') {
     return value
   }
   return 'trim'
@@ -98,6 +125,41 @@ const resolveGuardrailKey = (name: string): keyof DurationGuardrails | null => {
     default:
       return null
   }
+}
+
+const resolveLayoutKey = (
+  name: string
+): 'layoutPreset' | 'videoZoomRatio' | null => {
+  switch (name) {
+    case 'RENDER_LAYOUT':
+      return 'layoutPreset'
+    case 'VIDEO_ZOOM_RATIO':
+      return 'videoZoomRatio'
+    default:
+      return null
+  }
+}
+
+const parseLayoutPresetValue = (value: unknown): LayoutPreset | null => {
+  if (typeof value !== 'string') {
+    return null
+  }
+  return LAYOUT_PRESETS.some((preset) => preset.value === value)
+    ? (value as LayoutPreset)
+    : null
+}
+
+const parseZoomRatioValue = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.min(1, value))
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value)
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, Math.min(1, parsed))
+    }
+  }
+  return null
 }
 
 const getDefaultPreviewMode = (clip: Clip | null): 'adjusted' | 'rendered' =>
@@ -329,6 +391,66 @@ const VideoPage: FC = () => {
     sourceClip ? 'ready' : 'idle'
   )
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [layoutPreset, setLayoutPreset] = useState<LayoutPreset>('centered')
+  const [videoZoomRatio, setVideoZoomRatio] = useState<number>(0.4)
+  const [isSavingLayout, setIsSavingLayout] = useState(false)
+  const [layoutError, setLayoutError] = useState<string | null>(null)
+
+  const applyConfigEntries = useCallback(
+    (entries: ConfigEntry[]) => {
+      setGuardrails((prev) => {
+        let changed = false
+        const next = { ...prev }
+        for (const entry of entries) {
+          const guardrailKey = resolveGuardrailKey(entry.name)
+          if (!guardrailKey) {
+            continue
+          }
+          const numeric = parseGuardrailValue(entry.value)
+          if (numeric == null || next[guardrailKey] === numeric) {
+            continue
+          }
+          next[guardrailKey] = numeric
+          changed = true
+        }
+        return changed ? next : prev
+      })
+
+      let nextPreset: LayoutPreset | null = null
+      let nextZoom: number | null = null
+
+      for (const entry of entries) {
+        const layoutKey = resolveLayoutKey(entry.name)
+        if (layoutKey === 'layoutPreset') {
+          const parsedPreset = parseLayoutPresetValue(entry.value)
+          if (parsedPreset) {
+            nextPreset = parsedPreset
+          }
+        } else if (layoutKey === 'videoZoomRatio') {
+          const parsedRatio = parseZoomRatioValue(entry.value)
+          if (parsedRatio != null) {
+            nextZoom = parsedRatio
+          }
+        }
+      }
+
+      if (nextPreset) {
+        setLayoutPreset((previous) => (previous === nextPreset ? previous : nextPreset))
+      }
+
+      if (nextZoom != null) {
+        setVideoZoomRatio((previous) =>
+          Math.abs(previous - nextZoom) < 0.0001 ? previous : nextZoom
+        )
+      }
+    },
+    [setGuardrails, setLayoutPreset, setVideoZoomRatio]
+  )
+
+  const selectedLayoutPreset = useMemo(() => {
+    const preset = LAYOUT_PRESETS.find((item) => item.value === layoutPreset)
+    return preset ?? LAYOUT_PRESETS[0]
+  }, [layoutPreset])
 
   useEffect(() => {
     if (isBoundsLocked) {
@@ -349,42 +471,24 @@ const VideoPage: FC = () => {
   useEffect(() => {
     let isActive = true
 
-    const loadGuardrails = async (): Promise<void> => {
+    const loadConfiguration = async (): Promise<void> => {
       try {
         const entries = await fetchConfigEntries()
         if (!isActive) {
           return
         }
-        setGuardrails((prev) => {
-          let changed = false
-          const next = { ...prev }
-          for (const entry of entries) {
-            const key = resolveGuardrailKey(entry.name)
-            if (!key) {
-              continue
-            }
-            const numeric = parseGuardrailValue(entry.value)
-            if (numeric == null) {
-              continue
-            }
-            if (next[key] !== numeric) {
-              next[key] = numeric
-              changed = true
-            }
-          }
-          return changed ? next : prev
-        })
+        applyConfigEntries(entries)
       } catch (error) {
-        console.error('Unable to load clip duration guardrails', error)
+        console.error('Unable to load clip configuration defaults', error)
       }
     }
 
-    void loadGuardrails()
+    void loadConfiguration()
 
     return () => {
       isActive = false
     }
-  }, [])
+  }, [applyConfigEntries])
 
   const originalStart = clipState?.originalStartSeconds ?? 0
   const originalEnd =
@@ -519,6 +623,54 @@ const VideoPage: FC = () => {
       setStatusMessage('Great! Your video is queued. We will notify you when the upload is complete.')
     },
     [clipState, selectedPlatforms]
+  )
+
+  const handleLayoutPresetChange = useCallback(
+    (event: ChangeEvent<HTMLSelectElement>) => {
+      const nextPreset = parseLayoutPresetValue(event.target.value) ?? 'centered'
+      setLayoutPreset(nextPreset)
+      setLayoutError(null)
+    },
+    [setLayoutError, setLayoutPreset]
+  )
+
+  const handleLayoutZoomChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const parsed = Number.parseFloat(event.target.value)
+      if (Number.isFinite(parsed)) {
+        const clamped = Math.max(0, Math.min(1, parsed))
+        setVideoZoomRatio(clamped)
+      }
+      setLayoutError(null)
+    },
+    [setLayoutError, setVideoZoomRatio]
+  )
+
+  const handleSaveLayout = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      setLayoutError(null)
+      setIsSavingLayout(true)
+      try {
+        const clampedZoom = Math.max(0, Math.min(1, videoZoomRatio))
+        const entries = await updateConfigEntries({
+          RENDER_LAYOUT: layoutPreset,
+          VIDEO_ZOOM_RATIO: clampedZoom
+        })
+        applyConfigEntries(entries)
+        setStatusMessage('Layout preferences saved. Future renders will reflect your choices.')
+      } catch (error) {
+        console.error('Unable to save layout preferences', error)
+        setLayoutError(
+          error instanceof Error && error.message
+            ? error.message
+            : 'Unable to save layout preferences. Please try again.'
+        )
+      } finally {
+        setIsSavingLayout(false)
+      }
+    },
+    [applyConfigEntries, layoutPreset, setLayoutError, setIsSavingLayout, setStatusMessage, videoZoomRatio]
   )
 
   const uploadStatusLabel = useMemo(() => {
@@ -2053,6 +2205,66 @@ const VideoPage: FC = () => {
             >
               {statusMessage}
             </div>
+          ) : null}
+          {activeMode === 'layout' ? (
+            <form
+              className="space-y-4 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm"
+              onSubmit={handleSaveLayout}
+            >
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold text-[var(--fg)]">Layout preferences</h3>
+                <p className="text-xs text-[var(--muted)]">
+                  Choose how renders frame the clip so every export feels consistent.
+                </p>
+              </div>
+              <label className="flex flex-col gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                  Layout preset
+                </span>
+                <select
+                  value={layoutPreset}
+                  onChange={handleLayoutPresetChange}
+                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                >
+                  {LAYOUT_PRESETS.map((preset) => (
+                    <option key={preset.value} value={preset.value}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-[var(--muted)]">
+                  {selectedLayoutPreset.description}
+                </p>
+              </label>
+              <label className="flex flex-col gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                  Foreground coverage
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={videoZoomRatio}
+                  onChange={handleLayoutZoomChange}
+                />
+                <p className="text-xs text-[var(--muted)]">
+                  Foreground fills {Math.round(videoZoomRatio * 100)}% of the vertical frame.
+                </p>
+              </label>
+              {layoutError ? (
+                <div className="rounded-lg border border-[color:color-mix(in_srgb,var(--warning-strong)_45%,var(--edge))] bg-[color:var(--warning-soft)] px-3 py-2 text-xs text-[color:var(--warning-contrast)]">
+                  {layoutError}
+                </div>
+              ) : null}
+              <button
+                type="submit"
+                className="marble-button marble-button--primary w-full justify-center px-4 py-2 text-sm font-semibold disabled:opacity-70"
+                disabled={isSavingLayout}
+              >
+                {isSavingLayout ? 'Saving layout…' : 'Save layout'}
+              </button>
+            </form>
           ) : null}
           {activeMode === 'metadata' ? (
             <form
