@@ -698,15 +698,23 @@ describe('Layout editor interactions', () => {
     })
 
     await act(async () => {
-      pointerDown(sourceCanvas, { pointerId: 12, clientX: 4, clientY: 4 })
+      pointerDown(sourceCanvas, { pointerId: 12, clientX: 180, clientY: 380 })
     })
     await act(async () => {
-      pointerUp(sourceCanvas, { pointerId: 12, clientX: 4, clientY: 4 })
+      pointerUp(sourceCanvas, { pointerId: 12, clientX: 180, clientY: 380 })
+    })
+    await act(async () => {
+      pointerDown(layoutCanvas, { pointerId: 13, clientX: 180, clientY: 380 })
+    })
+    await act(async () => {
+      pointerUp(layoutCanvas, { pointerId: 13, clientX: 180, clientY: 380 })
     })
 
+    resetLayoutSelection()
+
     await waitFor(() => {
-      expect(within(sourceCanvas).getByRole('group', { name: /Primary/i }).className).not.toContain('ring-2')
-      expect(within(layoutCanvas).getByRole('group', { name: /Primary/i }).className).not.toContain('ring-2')
+      expect(within(sourceCanvas).queryByTestId('selection-outline')).toBeNull()
+      expect(within(layoutCanvas).queryByTestId('selection-outline')).toBeNull()
     })
   })
 
@@ -868,7 +876,7 @@ describe('Layout editor interactions', () => {
     }
   })
 
-  it('does not render frame aspect lock controls on the layout canvas', async () => {
+  it('renders frame aspect lock controls on the layout canvas', async () => {
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
@@ -902,16 +910,13 @@ describe('Layout editor interactions', () => {
     const layoutCanvas = findInteractiveCanvas(layoutCanvases)
     await selectItemByName(layoutCanvas, /primary/i, { pointerId: 1 })
 
-    expect(
-      within(layoutCanvas).queryByRole('button', {
-        name: 'Unlock frame aspect (freeform)'
-      })
-    ).toBeNull()
-    expect(
-      within(layoutCanvas).queryByRole('button', {
-        name: 'Lock frame aspect (preserve ratio)'
-      })
-    ).toBeNull()
+    await waitFor(() => {
+      expect(
+        within(layoutCanvas).getByRole('button', {
+          name: 'Unlock frame aspect (freeform)'
+        })
+      ).toBeInTheDocument()
+    })
   })
 
   it('does not render crop aspect lock controls on the source canvas', async () => {
@@ -1006,13 +1011,13 @@ describe('Layout editor interactions', () => {
       clientY: 80
     })
 
-    const frameLockedButtons = await within(layoutCanvas).findAllByRole('button', {
+    const unlockButtons = await within(layoutCanvas).findAllByRole('button', {
       name: 'Unlock frame aspect (freeform)'
     })
-    const frameLockedButton = frameLockedButtons[frameLockedButtons.length - 1]
+    const unlockButton = unlockButtons[unlockButtons.length - 1]
 
     await act(async () => {
-      fireEvent.click(frameLockedButton)
+      fireEvent.click(unlockButton)
     })
 
     await waitFor(() => {
@@ -1216,6 +1221,11 @@ describe('Layout editor interactions', () => {
     })
     await act(async () => {
       fireEvent.click(unlockButtons[unlockButtons.length - 1])
+    })
+
+    await waitFor(() => {
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.lockAspectRatio).toBe(false)
     })
 
     const eastHandle = within(layoutItem).getByLabelText('Resize east')

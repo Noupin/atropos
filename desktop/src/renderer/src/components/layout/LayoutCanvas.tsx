@@ -23,7 +23,9 @@ import LayoutItemToolbar, {
   RemoveIcon,
   SendBackwardIcon,
   CropModeIcon,
-  CropConfirmIcon
+  CropConfirmIcon,
+  LockIcon,
+  UnlockIcon
 } from './LayoutItemToolbar'
 import { useLayoutSelection } from './layoutSelectionStore'
 
@@ -139,6 +141,12 @@ type LayoutCanvasProps = {
   onRequestChangeScaleMode?: (itemId: string, mode: LayoutVideoItem['scaleMode']) => void
   getPendingCrop?: (itemId: string, context: 'source' | 'layout') => LayoutFrame | null
   onRequestFinishCrop?: () => void
+  onRequestSetAspectLock?: (request: {
+    itemId: string
+    target: 'frame' | 'crop'
+    locked: boolean
+    context: 'source' | 'layout'
+  }) => void
 }
 
 type Guide = {
@@ -781,6 +789,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   onRequestResetAspect,
   onRequestChangeTransformTarget,
   getAspectRatioForItem,
+  onRequestSetAspectLock,
   cropContext = 'layout',
   enableScaleModeMenu = false,
   onRequestChangeScaleMode,
@@ -809,6 +818,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const [hoverTarget, setHoverTarget] = useState<HoverTarget>({ itemId: null, handle: null })
   const [cursor, setCursor] = useState<string>('default')
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
+  const contextMenuRef = useRef<ContextMenuState>(null)
 
   useGuideFade(guidesRef, setActiveGuides)
 
@@ -1166,7 +1176,16 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         setSelectedItemId(nextSelection)
       }
       setToolbarAnchorId(nextSelection)
-      const pointerAspectLocked = false
+      const item = layout.items.find((candidate) => candidate.id === nextSelection)
+      let pointerAspectLocked = false
+      if (item && (item as LayoutVideoItem).kind === 'video') {
+        const video = item as LayoutVideoItem
+        if (transformTarget === 'frame') {
+          pointerAspectLocked = Boolean(video.lockAspectRatio)
+        } else if (transformTarget === 'crop') {
+          pointerAspectLocked = Boolean(video.lockCropAspectRatio)
+        }
+      }
       commitHover(
         { itemId: nextSelection, handle: handle ?? null },
         handle ? cursorForHandle(handle, pointerAspectLocked) : 'grab'
@@ -1178,7 +1197,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
       // Only start an active interaction when we are resizing or we intend to drag the selected item.
       // A simple click-to-select should NOT set interactionRef; selection must persist after pointerup.
-      const item = layout.items.find((candidate) => candidate.id === nextSelection)
       if (!item || !itemIsEditable(item)) {
         clearInteraction()
         return
@@ -1490,6 +1508,18 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     [clearHover, clearInteraction]
   )
 
+  const handleSelectScaleMode = useCallback(
+    (mode: LayoutVideoItem['scaleMode']) => {
+      const menuState = contextMenuRef.current
+      if (!menuState) {
+        return
+      }
+      onRequestChangeScaleMode?.(menuState.itemId, mode)
+      setContextMenu(null)
+    },
+    [onRequestChangeScaleMode]
+  )
+
   const handleItemContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>, item: LayoutItem) => {
       if (!enableScaleModeMenu || !onRequestChangeScaleMode) {
@@ -1570,6 +1600,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   useEffect(() => {
     if (!selectedItemId) {
+      persistSelectionIdRef.current = null
       setToolbarAnchorId(null)
       return
     }
@@ -1614,6 +1645,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   }, [])
 
   useEffect(() => {
+    contextMenuRef.current = contextMenu
     if (!contextMenu) {
       return
     }
@@ -1629,13 +1661,31 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       }
       setContextMenu(null)
     }
+    const handleClickCapture = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      const optionButton = target?.closest<HTMLButtonElement>('[data-scale-mode-option]')
+      if (!optionButton) {
+        if (!target?.closest('[data-layout-context-menu="true"]')) {
+          setContextMenu(null)
+        }
+        return
+      }
+      const modeAttr = optionButton.getAttribute('data-scale-mode-option')
+      if (!modeAttr) {
+        return
+      }
+      event.preventDefault()
+      handleSelectScaleMode(modeAttr as LayoutVideoItem['scaleMode'])
+    }
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('pointerdown', handlePointerDown, true)
+    window.addEventListener('click', handleClickCapture, true)
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('pointerdown', handlePointerDown, true)
+      window.removeEventListener('click', handleClickCapture, true)
     }
-  }, [contextMenu])
+  }, [contextMenu, handleSelectScaleMode])
 
   const selectionBounds = useMemo(() => {
     if (!activeSelection) {
@@ -1669,6 +1719,39 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   const toolbarActions = useMemo<LayoutItemToolbarAction[]>(() => {
     const actions: LayoutItemToolbarAction[] = []
+
+    if (primaryIsVideo && activeSelection && onRequestSetAspectLock) {
+      const video = activeSelection as LayoutVideoItem
+      if (transformTarget === 'frame') {
+        const locked = Boolean(video.lockAspectRatio)
+        actions.push({
+          key: 'toggle-frame-aspect-lock',
+          label: locked ? 'Unlock frame aspect (freeform)' : 'Lock frame aspect (preserve ratio)',
+          icon: locked ? <UnlockIcon /> : <LockIcon />,
+          onSelect: () =>
+            onRequestSetAspectLock({
+              itemId: video.id,
+              target: 'frame',
+              locked: !locked,
+              context: cropContext
+            })
+        })
+      } else if (transformTarget === 'crop' && cropContext === 'layout') {
+        const locked = Boolean(video.lockCropAspectRatio)
+        actions.push({
+          key: 'toggle-crop-aspect-lock',
+          label: locked ? 'Unlock crop aspect (freeform)' : 'Lock crop aspect (preserve ratio)',
+          icon: locked ? <UnlockIcon /> : <LockIcon />,
+          onSelect: () =>
+            onRequestSetAspectLock({
+              itemId: video.id,
+              target: 'crop',
+              locked: !locked,
+              context: cropContext
+            })
+        })
+      }
+    }
 
     if (primaryIsVideo && onRequestChangeTransformTarget) {
       if (transformTarget === 'crop') {
@@ -1730,11 +1813,13 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
     return actions
   }, [
+    activeSelection,
     cropContext,
     onRequestBringForward,
     onRequestChangeTransformTarget,
     onRequestDelete,
     onRequestDuplicate,
+    onRequestSetAspectLock,
     onRequestResetAspect,
     onRequestSendBackward,
     primaryIsVideo,
@@ -2075,14 +2160,14 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                         const cursorName = cursorForHandle(handle.id, false)
                         const cursorClass = cursorName === 'default' ? 'cursor-default' : `cursor-${cursorName}`
                         return (
-                          <button
-                            key={`crop-${handle.id}`}
-                            type="button"
-                            tabIndex={-1}
-                            aria-label={handle.label}
-                            data-handle={handle.id}
-                            data-item-id={item.id}
-                            className={`absolute h-3 w-3 rounded-none border-2 border-dashed text-transparent transition pointer-events-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${cursorClass}`}
+                        <button
+                          key={`crop-${handle.id}`}
+                          type="button"
+                          tabIndex={-1}
+                          aria-label={handle.label}
+                          data-handle={handle.id}
+                          data-item-id={item.id}
+                          className={`absolute h-3 w-3 rotate-45 rounded-none border-2 border-dashed text-transparent transition pointer-events-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${cursorClass}`}
                             style={
                               {
                                 left: placement.left,
@@ -2150,6 +2235,35 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           data-layout-context-menu="true"
           className="fixed z-[1000] min-w-[220px] rounded-lg border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_94%,transparent)] p-1 shadow-[0_12px_28px_rgba(15,23,42,0.4)]"
           style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          onMouseUpCapture={(event) => {
+            if (event.button !== 0) {
+              return
+            }
+            const target = event.target as HTMLElement | null
+            const button = target?.closest<HTMLButtonElement>('[data-scale-mode-option]')
+            if (!button) {
+              return
+            }
+            const modeAttr = button.getAttribute('data-scale-mode-option')
+            if (!modeAttr) {
+              return
+            }
+            event.preventDefault()
+            handleSelectScaleMode(modeAttr as LayoutVideoItem['scaleMode'])
+          }}
+          onClick={(event) => {
+            const target = event.target as HTMLElement | null
+            const button = target?.closest<HTMLButtonElement>('[data-scale-mode-option]')
+            if (!button) {
+              return
+            }
+            const modeAttr = button.getAttribute('data-scale-mode-option')
+            if (!modeAttr) {
+              return
+            }
+            event.preventDefault()
+            handleSelectScaleMode(modeAttr as LayoutVideoItem['scaleMode'])
+          }}
         >
           <div className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
             Display mode
@@ -2167,14 +2281,20 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
               <button
                 key={option.mode}
                 type="button"
+                data-scale-mode-option={option.mode ?? ''}
                 className={`flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
                   isActive
                     ? 'bg-[color:color-mix(in_srgb,var(--accent-soft)_85%,transparent)] text-[var(--fg)]'
                     : 'text-[color:color-mix(in_srgb,var(--muted)_90%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--panel)_88%,transparent)]'
                 }`}
                 onClick={() => {
-                  onRequestChangeScaleMode?.(video.id, option.mode)
-                  setContextMenu(null)
+                  handleSelectScaleMode(option.mode)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    handleSelectScaleMode(option.mode)
+                  }
                 }}
               >
                 <span className="flex w-full items-center justify-between">
