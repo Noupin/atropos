@@ -23,7 +23,9 @@ import LayoutItemToolbar, {
   RemoveIcon,
   SendBackwardIcon,
   CropModeIcon,
-  CropConfirmIcon
+  CropConfirmIcon,
+  LockIcon,
+  UnlockIcon
 } from './LayoutItemToolbar'
 import { useLayoutSelection } from './layoutSelectionStore'
 
@@ -132,6 +134,7 @@ type LayoutCanvasProps = {
   style?: CSSProperties
   ariaLabel?: string
   onRequestResetAspect?: (target: 'frame' | 'crop', context: 'source' | 'layout') => void
+  onRequestToggleAspectLock?: (target: 'frame' | 'crop', context: 'source' | 'layout') => void
   onRequestChangeTransformTarget?: (target: 'frame' | 'crop') => void
   getAspectRatioForItem?: (item: LayoutItem, target: 'frame' | 'crop') => number | null
   cropContext?: 'source' | 'layout'
@@ -779,6 +782,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   aspectRatioOverride,
   ariaLabel,
   onRequestResetAspect,
+  onRequestToggleAspectLock,
   onRequestChangeTransformTarget,
   getAspectRatioForItem,
   cropContext = 'layout',
@@ -1058,9 +1062,26 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       const datasetHandle = dataset.handle as ResizeHandle | undefined
       const datasetItemId = dataset.itemId as string | undefined
       if (datasetHandle && datasetItemId) {
+        // Determine aspect lock state for cursor display
+        let hoverAspectLocked = false
+        if (layout) {
+          const item = layout.items.find((i) => i.id === datasetItemId)
+          if (item && (item as LayoutVideoItem).kind === 'video') {
+            const video = item as LayoutVideoItem
+            if (cropContext === 'source') {
+              hoverAspectLocked = video.lockCropAspectRatio ?? false
+            } else {
+              if (transformTarget === 'crop') {
+                hoverAspectLocked = video.lockCropAspectRatio ?? false
+              } else {
+                hoverAspectLocked = video.lockAspectRatio ?? false
+              }
+            }
+          }
+        }
         commitHover(
           { itemId: datasetItemId, handle: datasetHandle },
-          cursorForHandle(datasetHandle)
+          cursorForHandle(datasetHandle, hoverAspectLocked)
         )
         return
       }
@@ -1077,7 +1098,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         clearHover()
       }
     },
-    [clearHover, commitHover, getPointerPosition, hitTestAtPoint]
+    [clearHover, commitHover, cropContext, getPointerPosition, hitTestAtPoint, layout, transformTarget]
   )
 
   const handlePointerDownCapture = useCallback(
@@ -1166,21 +1187,38 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         setSelectedItemId(nextSelection)
       }
       setToolbarAnchorId(nextSelection)
-      const pointerAspectLocked = false
-      commitHover(
-        { itemId: nextSelection, handle: handle ?? null },
-        handle ? cursorForHandle(handle, pointerAspectLocked) : 'grab'
-      )
-
-      if (!pointer) {
-        return
-      }
 
       // Only start an active interaction when we are resizing or we intend to drag the selected item.
       // A simple click-to-select should NOT set interactionRef; selection must persist after pointerup.
       const item = layout.items.find((candidate) => candidate.id === nextSelection)
       if (!item || !itemIsEditable(item)) {
         clearInteraction()
+        return
+      }
+
+      // Determine aspect lock state based on context and target
+      let pointerAspectLocked = false
+      if ((item as LayoutVideoItem).kind === 'video') {
+        const video = item as LayoutVideoItem
+        if (cropContext === 'source') {
+          // Source context: check crop aspect lock
+          pointerAspectLocked = video.lockCropAspectRatio ?? false
+        } else {
+          // Layout context: check based on target (frame or crop)
+          if (transformTarget === 'crop') {
+            pointerAspectLocked = video.lockCropAspectRatio ?? false
+          } else {
+            pointerAspectLocked = video.lockAspectRatio ?? false
+          }
+        }
+      }
+
+      commitHover(
+        { itemId: nextSelection, handle: handle ?? null },
+        handle ? cursorForHandle(handle, pointerAspectLocked) : 'grab'
+      )
+
+      if (!pointer) {
         return
       }
 
@@ -1701,6 +1739,24 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       disabled: !primaryIsVideo || !onRequestResetAspect
     })
 
+    // Add aspect ratio lock toggle
+    if (primaryIsVideo && onRequestToggleAspectLock && activeSelection) {
+      const video = activeSelection as LayoutVideoItem
+      const isLocked =
+        cropContext === 'source'
+          ? video.lockCropAspectRatio ?? false
+          : transformTarget === 'crop'
+            ? video.lockCropAspectRatio ?? false
+            : video.lockAspectRatio ?? false
+
+      actions.push({
+        key: 'toggle-aspect-lock',
+        label: isLocked ? 'Unlock aspect ratio' : 'Lock aspect ratio',
+        icon: isLocked ? <LockIcon /> : <UnlockIcon />,
+        onSelect: () => onRequestToggleAspectLock(transformTarget, cropContext)
+      })
+    }
+
     actions.push(
       {
         key: 'bring-forward',
@@ -1730,6 +1786,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
     return actions
   }, [
+    activeSelection,
     cropContext,
     onRequestBringForward,
     onRequestChangeTransformTarget,
@@ -1737,8 +1794,10 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     onRequestDuplicate,
     onRequestResetAspect,
     onRequestSendBackward,
+    onRequestToggleAspectLock,
     primaryIsVideo,
-    transformTarget
+    transformTarget,
+    onRequestFinishCrop
   ])
 
   const stopPointerPropagation = useCallback((event: ReactPointerEvent<HTMLElement>) => {
@@ -1911,7 +1970,22 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const showHandles = isSelected || isHovered
         const label = getItemLabel(item)
         const palette = getItemAppearance(item, colorScheme)
-        const itemAspectLocked = false
+
+        // Determine aspect lock state based on context and target
+        let itemAspectLocked = false
+        if ((item as LayoutVideoItem).kind === 'video') {
+          const video = item as LayoutVideoItem
+          if (cropContext === 'source') {
+            itemAspectLocked = video.lockCropAspectRatio ?? false
+          } else {
+            if (transformTarget === 'crop') {
+              itemAspectLocked = video.lockCropAspectRatio ?? false
+            } else {
+              itemAspectLocked = video.lockAspectRatio ?? false
+            }
+          }
+        }
+
         const classes = getItemClasses ? getItemClasses(item, isSelected) : ''
         const shouldShowLabel =
           labelVisibility === 'always' || (labelVisibility === 'selected' && isSelected)
