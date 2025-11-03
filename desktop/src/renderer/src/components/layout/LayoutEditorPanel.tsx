@@ -1316,6 +1316,48 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     [pendingCrops, selectedItemId, updateLayout]
   )
 
+  const getSourceAspectRatioForItem = useCallback(
+    (item: LayoutItem, _target: 'frame' | 'crop'): number | null => {
+      if ((item as LayoutVideoItem).kind !== 'video') {
+        return null
+      }
+
+      const video = item as LayoutVideoItem
+
+      // Source context: always use crop aspect if locked (target parameter unused)
+      if (video.lockCropAspectRatio && video.cropAspectRatio) {
+        return video.cropAspectRatio
+      }
+      return null
+    },
+    []
+  )
+
+  const getLayoutAspectRatioForItem = useCallback(
+    (item: LayoutItem, target: 'frame' | 'crop'): number | null => {
+      if ((item as LayoutVideoItem).kind !== 'video') {
+        return null
+      }
+
+      const video = item as LayoutVideoItem
+
+      // Layout context: return based on target
+      if (target === 'crop') {
+        if (video.lockCropAspectRatio && video.cropAspectRatio) {
+          return video.cropAspectRatio
+        }
+        return null
+      } else {
+        // frame
+        if (video.lockAspectRatio && video.frameAspectRatio) {
+          return video.frameAspectRatio
+        }
+        return null
+      }
+    },
+    []
+  )
+
   const handleChangeVideoScaleMode = useCallback(
     (itemId: string, mode: LayoutVideoItem['scaleMode']) => {
       const sourceAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
@@ -2505,6 +2547,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               aspectRatioOverride={sourceAspectRatio}
               onRequestResetAspect={handleResetToSourceAspect}
               onRequestToggleAspectLock={handleToggleAspectLock}
+              getAspectRatioForItem={getSourceAspectRatioForItem}
               cropContext="source"
               getPendingCrop={getPendingCropFrame}
               style={sourceCanvasStyle}
@@ -2558,6 +2601,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               aspectRatioOverride={layoutAspectRatio}
               onRequestResetAspect={handleResetToSourceAspect}
               onRequestToggleAspectLock={handleToggleAspectLock}
+              getAspectRatioForItem={getLayoutAspectRatioForItem}
               onRequestChangeTransformTarget={handleTransformTargetChange}
               cropContext="layout"
               getPendingCrop={getPendingCropFrame}
