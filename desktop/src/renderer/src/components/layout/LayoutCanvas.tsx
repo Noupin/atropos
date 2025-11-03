@@ -1103,12 +1103,16 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   const handlePointerDownCapture = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      setContextMenu((current) => (current ? null : current))
+      // Don't close context menu if clicking within it
+      const targetElement = event.target as HTMLElement | null
+      if (!targetElement?.closest('[data-layout-context-menu="true"]')) {
+        setContextMenu((current) => (current ? null : current))
+      }
+
       if (!layout) {
         return
       }
 
-      const targetElement = event.target as HTMLElement | null
       if (targetElement?.closest('[data-layout-item-toolbar="true"]')) {
         justSelectedRef.current = false
         suppressNextClickRef.current = false
