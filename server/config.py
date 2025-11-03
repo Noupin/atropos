@@ -29,9 +29,16 @@ CAPTION_OUTLINE_BGR = (236, 236, 236)  # hex ececec
 # Constant frame-rate to avoid VFR issues on platforms like TikTok/Reels
 OUTPUT_FPS: float = 30.0
 
-# Name of the render layout to use. Options: "centered", "centered_with_corners", "no_zoom", "left_aligned"
+# Layout storage root and default layout identifier
+_layout_root_override = os.environ.get("ATROPOS_LAYOUTS_ROOT")
+if _layout_root_override:
+    LAYOUTS_ROOT = Path(_layout_root_override).expanduser()
+else:
+    LAYOUTS_ROOT = Path(__file__).resolve().parents[1] / "layouts"
+
+# Identifier of the render layout to use by default
 RENDER_LAYOUT = os.environ.get("RENDER_LAYOUT", "centered")
-VIDEO_ZOOM_RATIO = 0.4  # fraction of vertical space used by foreground video in centered layout
+VIDEO_ZOOM_RATIO = 0.4  # legacy zoom ratio retained for backwards compatibility
 
 # Clip boundary snapping options
 SNAP_TO_SILENCE = False

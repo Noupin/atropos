@@ -66,6 +66,7 @@ class AdjustmentMetadata:
     end_seconds: float
     original_start_seconds: Optional[float]
     original_end_seconds: Optional[float]
+    layout_id: Optional[str]
 
 
 @dataclass
@@ -95,6 +96,7 @@ class LibraryClip:
     original_start_seconds: float
     original_end_seconds: float
     has_adjustments: bool
+    layout_id: Optional[str]
 
     def to_payload(self, request) -> Dict[str, object]:  # type: ignore[override]
         from fastapi import Request  # local import to avoid circular for typing
@@ -141,6 +143,7 @@ class LibraryClip:
             "timestamp_url": self.timestamp_url,
             "timestamp_seconds": self.timestamp_seconds,
             "thumbnail_url": str(thumbnail_url),
+            "layout_id": self.layout_id,
             "start_seconds": self.start_seconds,
             "end_seconds": self.end_seconds,
             "original_start_seconds": self.original_start_seconds,
@@ -183,11 +186,15 @@ def load_adjustment_metadata(clip_path: Path) -> Optional[AdjustmentMetadata]:
         if isinstance(original_end, (int, float)) and math.isfinite(float(original_end))
         else None
     )
+    raw_layout = raw.get("layout_id")
+    layout_id = str(raw_layout).strip() if isinstance(raw_layout, str) and raw_layout.strip() else None
+
     return AdjustmentMetadata(
         start_seconds=start_value,
         end_seconds=end_value,
         original_start_seconds=original_start_value,
         original_end_seconds=original_end_value,
+        layout_id=layout_id,
     )
 
 
@@ -198,6 +205,7 @@ def write_adjustment_metadata(
     end_seconds: float,
     original_start_seconds: float,
     original_end_seconds: float,
+    layout_id: Optional[str] = None,
 ) -> None:
     meta_path = clip_path.with_suffix(ADJUSTMENT_METADATA_SUFFIX)
     payload = {
@@ -207,6 +215,8 @@ def write_adjustment_metadata(
         "original_end_seconds": float(original_end_seconds),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    if layout_id:
+        payload["layout_id"] = layout_id
     meta_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
@@ -488,6 +498,7 @@ def _build_clip(
         original_start = None
         original_end = None
 
+    layout_id: Optional[str] = None
     adjustments = load_adjustment_metadata(clip_path)
     if adjustments:
         start = adjustments.start_seconds
@@ -496,6 +507,7 @@ def _build_clip(
             original_start = adjustments.original_start_seconds
         if adjustments.original_end_seconds is not None:
             original_end = adjustments.original_end_seconds
+        layout_id = adjustments.layout_id or layout_id
     description_text = _read_description_file(
         [
             clip_path.with_suffix(".txt"),
@@ -594,6 +606,7 @@ def _build_clip(
         original_start_seconds=original_start_value,
         original_end_seconds=original_end_value,
         has_adjustments=has_adjustments,
+        layout_id=layout_id,
     )
 
 

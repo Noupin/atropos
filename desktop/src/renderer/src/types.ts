@@ -26,6 +26,7 @@ export interface Clip {
   originalStartSeconds: number
   originalEndSeconds: number
   hasAdjustments: boolean
+  layoutId: string | null
 }
 
 export type SupportedPlatform = 'tiktok' | 'youtube' | 'instagram'
@@ -60,6 +61,7 @@ export interface AccountSummary {
   active: boolean
   tone: string | null
   effectiveTone: string | null
+  defaultLayoutId: string | null
 }
 
 export interface AuthPingSummary {

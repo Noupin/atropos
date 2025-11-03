@@ -44,7 +44,7 @@ from library import (
 from steps.cut import save_clip
 from steps.subtitle import build_srt_for_range
 from steps.render import render_vertical_with_captions
-from steps.render_layouts import get_layout
+from layouts import LayoutNotFoundError, load_layout
 from helpers.description import maybe_append_website_link
 from common.caption_utils import prepare_hashtags
 from helpers.hashtags import generate_hashtag_strings
@@ -225,6 +225,7 @@ class ClipAdjustmentRequest(BaseModel):
 
     start_seconds: float = Field(..., ge=0)
     end_seconds: float = Field(..., gt=0)
+    layout_id: str | None = None
 
     @model_validator(mode="after")
     def _validate_range(self) -> "ClipAdjustmentRequest":
@@ -434,6 +435,7 @@ class ClipArtifact:
     original_start_seconds: float = 0.0
     original_end_seconds: float = 0.0
     source_duration_seconds: float | None = None
+    layout_id: str | None = None
 
 
 class ClipManifest(BaseModel):
@@ -461,6 +463,7 @@ class ClipManifest(BaseModel):
     original_start_seconds: float = Field(..., ge=0)
     original_end_seconds: float = Field(..., ge=0)
     has_adjustments: bool = False
+    layout_id: str | None = None
 
 
 class LibraryClipManifest(ClipManifest):
@@ -506,6 +509,7 @@ def _clip_to_payload(clip: ClipArtifact, request: Request, job_id: str) -> Dict[
         "original_start_seconds": clip.original_start_seconds,
         "original_end_seconds": clip.original_end_seconds,
         "has_adjustments": has_adjustments,
+        "layout_id": clip.layout_id,
     }
 
 
@@ -665,6 +669,7 @@ class JobState:
             original_start_seconds=max(0.0, original_start_value),
             original_end_seconds=max(0.0, original_end_value),
             source_duration_seconds=source_duration,
+            layout_id=_ensure_str(data.get("layout_id")),
         )
 
         self.project_dir = base
@@ -821,7 +826,8 @@ def _apply_clip_adjustment(
     quote: str | None,
     original_start_seconds: float,
     original_end_seconds: float,
-) -> tuple[float, str]:
+    layout_id: str | None = None,
+) -> tuple[float, str, str]:
     """Rebuild clip assets for the provided ``stem`` using the new range."""
 
     if end_seconds <= start_seconds:
@@ -881,12 +887,18 @@ def _apply_clip_adjustment(
             detail="Failed to regenerate subtitles for the clip.",
         ) from exc
 
+    layout_identifier = layout_id or pipeline_config.RENDER_LAYOUT
+    try:
+        layout_definition = load_layout(layout_identifier)
+    except LayoutNotFoundError:
+        layout_definition = load_layout("centered")
+
     try:
         render_vertical_with_captions(
             raw_clip_path,
             subtitle_path,
             vertical_path,
-            layout=get_layout(pipeline_config.RENDER_LAYOUT),
+            layout=layout_definition,
         )
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Failed to render adjusted clip %s", stem, exc_info=exc)
@@ -911,8 +923,9 @@ def _apply_clip_adjustment(
         end_seconds=end_seconds,
         original_start_seconds=original_start_seconds,
         original_end_seconds=original_end_seconds,
+        layout_id=layout_definition.id,
     )
-    return duration, description_text
+    return duration, description_text, layout_definition.id
 
 
 def _validate_short_path(project_dir: Path, short_path: Path) -> Path:
@@ -1435,7 +1448,7 @@ async def adjust_job_clip(
     start_seconds = float(payload.start_seconds)
     end_seconds = float(payload.end_seconds)
 
-    duration, description_text = _apply_clip_adjustment(
+    duration, description_text, applied_layout_id = _apply_clip_adjustment(
         project_dir=project_dir,
         stem=clip.video_path.stem,
         start_seconds=start_seconds,
@@ -1447,6 +1460,7 @@ async def adjust_job_clip(
         quote=clip.quote,
         original_start_seconds=clip.original_start_seconds,
         original_end_seconds=clip.original_end_seconds,
+        layout_id=payload.layout_id or clip.layout_id,
     )
 
     updated = ClipArtifact(
@@ -1470,6 +1484,7 @@ async def adjust_job_clip(
         original_start_seconds=clip.original_start_seconds,
         original_end_seconds=clip.original_end_seconds,
         source_duration_seconds=clip.source_duration_seconds,
+        layout_id=applied_layout_id,
     )
 
     with state.lock:
@@ -1696,6 +1711,7 @@ async def adjust_library_clip(
         quote=target.quote,
         original_start_seconds=target.original_start_seconds,
         original_end_seconds=target.original_end_seconds,
+        layout_id=payload.layout_id or target.layout_id,
     )
 
     refreshed = list_account_clips_sync(account_value)

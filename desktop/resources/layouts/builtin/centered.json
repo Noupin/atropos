@@ -1,0 +1,42 @@
+{
+  "id": "centered",
+  "name": "Centered spotlight",
+  "version": 1,
+  "description": "Primary video centered with blurred background and caption area below.",
+  "author": "Atropos",
+  "tags": ["focus", "standard"],
+  "canvas": {
+    "width": 1080,
+    "height": 1920,
+    "background": {
+      "kind": "blur",
+      "radius": 45,
+      "opacity": 0.6,
+      "brightness": 0.55
+    }
+  },
+  "captionArea": {
+    "x": 0.08,
+    "y": 0.78,
+    "width": 0.84,
+    "height": 0.18,
+    "align": "center",
+    "maxLines": 3
+  },
+  "items": [
+    {
+      "id": "primary-video",
+      "kind": "video",
+      "name": "Foreground",
+      "source": "primary",
+      "frame": {
+        "x": 0.0833,
+        "y": 0.12,
+        "width": 0.8334,
+        "height": 0.66
+      },
+      "scaleMode": "cover",
+      "zIndex": 10
+    }
+  ]
+}

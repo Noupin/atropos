@@ -11,8 +11,16 @@ import { formatDuration } from '../lib/format'
 import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import useSharedVolume from '../hooks/useSharedVolume'
 import VideoPreviewStage from '../components/VideoPreviewStage'
+import LayoutEditorPanel from '../components/layout/LayoutEditorPanel'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
+import {
+  fetchLayoutCollection as fetchLayoutCollectionApi,
+  loadLayoutDefinition as loadLayoutDefinitionApi,
+  saveLayoutDefinition as saveLayoutDefinitionApi,
+  importLayoutDefinition as importLayoutDefinitionApi,
+  exportLayoutDefinition as exportLayoutDefinitionApi
+} from '../services/layouts'
 import { fetchConfigEntries } from '../services/configApi'
 import {
   PLATFORM_LABELS,
@@ -20,6 +28,8 @@ import {
   type Clip,
   type SupportedPlatform
 } from '../types'
+import type { LayoutCollection } from '../../../types/api'
+import type { LayoutCategory, LayoutDefinition } from '../../../types/layouts'
 import {
   ensureCspAndElectronAllowLocalMedia,
   resolveOriginalSource,
@@ -57,16 +67,17 @@ const DEFAULT_DURATION_GUARDRAILS: DurationGuardrails = {
   sweetSpotMax: 60
 }
 
-type VideoPageMode = 'trim' | 'metadata' | 'upload'
+type VideoPageMode = 'layout' | 'trim' | 'metadata' | 'upload'
 
 const VIDEO_PAGE_MODES: Array<{ id: VideoPageMode; label: string }> = [
+  { id: 'layout', label: 'Layout' },
   { id: 'trim', label: 'Trim' },
   { id: 'metadata', label: 'Metadata' },
   { id: 'upload', label: 'Upload' }
 ]
 
 const normaliseMode = (value: string | null | undefined): VideoPageMode => {
-  if (value === 'metadata' || value === 'upload') {
+  if (value === 'layout' || value === 'metadata' || value === 'upload') {
     return value
   }
   return 'trim'
@@ -314,6 +325,8 @@ const VideoPage: FC = () => {
   const [adjustedBuffering, setAdjustedBuffering] = useState(false)
   const [pendingSourceOverride, setPendingSourceOverride] = useState<string | null>(null)
   const playbackWindowRef = useRef({ start: previewTarget.start, end: previewTarget.end })
+  const layoutClipIdRef = useRef<string | null>(clipState?.id ?? null)
+  const layoutAppliedIdRef = useRef<string | null>(clipState?.layoutId ?? null)
   const [saveSteps, setSaveSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
   const [title, setTitle] = useState<string>(sourceClip?.title ?? '')
   const [description, setDescription] = useState<string>(sourceClip?.description ?? '')
@@ -327,6 +340,62 @@ const VideoPage: FC = () => {
     sourceClip ? 'ready' : 'idle'
   )
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [layoutCollection, setLayoutCollection] = useState<LayoutCollection | null>(null)
+  const [isLayoutCollectionLoading, setIsLayoutCollectionLoading] = useState(false)
+  const [layoutCollectionError, setLayoutCollectionError] = useState<string | null>(null)
+  const [activeLayoutDefinition, setActiveLayoutDefinition] = useState<LayoutDefinition | null>(null)
+  const [activeLayoutReference, setActiveLayoutReference] = useState<{
+    id: string
+    category: LayoutCategory | null
+  } | null>(null)
+  const [isLayoutLoading, setIsLayoutLoading] = useState(false)
+  const [isSavingLayout, setIsSavingLayout] = useState(false)
+  const [isApplyingLayout, setIsApplyingLayout] = useState(false)
+  const [layoutStatusMessage, setLayoutStatusMessage] = useState<string | null>(null)
+  const [layoutErrorMessage, setLayoutErrorMessage] = useState<string | null>(null)
+  const [layoutRenderSteps, setLayoutRenderSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
+  const [isLayoutRendering, setIsLayoutRendering] = useState(false)
+  const [layoutRenderStatusMessage, setLayoutRenderStatusMessage] = useState<string | null>(null)
+  const [layoutRenderErrorMessage, setLayoutRenderErrorMessage] = useState<string | null>(null)
+
+  const resolveLayoutCategory = useCallback(
+    (identifier: string | null | undefined): LayoutCategory | null => {
+      if (!identifier || !layoutCollection) {
+        return null
+      }
+      if (layoutCollection.custom.some((entry) => entry.id === identifier)) {
+        return 'custom'
+      }
+      if (layoutCollection.builtin.some((entry) => entry.id === identifier)) {
+        return 'builtin'
+      }
+      return null
+    },
+    [layoutCollection]
+  )
+
+  useEffect(() => {
+    setLayoutRenderSteps(createInitialSaveSteps())
+    setLayoutRenderStatusMessage(null)
+    setLayoutRenderErrorMessage(null)
+  }, [activeLayoutDefinition?.id])
+
+  const refreshLayoutCollection = useCallback(async () => {
+    setIsLayoutCollectionLoading(true)
+    setLayoutCollectionError(null)
+    try {
+      const collection = await fetchLayoutCollectionApi()
+      setLayoutCollection(collection)
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Unable to load layouts. Please try again.'
+      setLayoutCollectionError(message)
+    } finally {
+      setIsLayoutCollectionLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     let isActive = true
@@ -368,6 +437,325 @@ const VideoPage: FC = () => {
     }
   }, [])
 
+  useEffect(() => {
+    void refreshLayoutCollection()
+  }, [refreshLayoutCollection])
+
+  useEffect(() => {
+    const clipId = clipState?.id ?? null
+    const layoutId = clipState?.layoutId ?? null
+    if (!clipId) {
+      layoutClipIdRef.current = null
+      layoutAppliedIdRef.current = null
+      setActiveLayoutReference(null)
+      setActiveLayoutDefinition(null)
+      return
+    }
+    const clipChanged = layoutClipIdRef.current !== clipId
+    const layoutChanged = layoutAppliedIdRef.current !== layoutId
+    if (!clipChanged && !layoutChanged) {
+      return
+    }
+    layoutClipIdRef.current = clipId
+    layoutAppliedIdRef.current = layoutId
+    if (layoutId) {
+      setActiveLayoutReference({ id: layoutId, category: resolveLayoutCategory(layoutId) })
+    } else {
+      setActiveLayoutReference(null)
+    }
+  }, [clipState, resolveLayoutCategory])
+
+  useEffect(() => {
+    if (!activeLayoutReference) {
+      return
+    }
+    let cancelled = false
+    setIsLayoutLoading(true)
+    setLayoutErrorMessage(null)
+    ;(async () => {
+      try {
+        const definition = await loadLayoutDefinitionApi(
+          activeLayoutReference.id,
+          activeLayoutReference.category ?? null
+        )
+        if (cancelled) {
+          return
+        }
+        setActiveLayoutDefinition(definition)
+      } catch (error) {
+        if (cancelled) {
+          return
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unable to load the selected layout. Please try a different layout.'
+        setLayoutErrorMessage(message)
+      } finally {
+        if (!cancelled) {
+          setIsLayoutLoading(false)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeLayoutReference])
+
+  const handleLayoutChange = useCallback((layout: LayoutDefinition) => {
+    setActiveLayoutDefinition(layout)
+    setLayoutStatusMessage(null)
+    setLayoutErrorMessage(null)
+  }, [])
+
+  const handleSelectLayout = useCallback((id: string, category: LayoutCategory) => {
+    setActiveLayoutReference({ id, category })
+    setLayoutStatusMessage(null)
+    setLayoutErrorMessage(null)
+  }, [])
+
+  const handleCreateBlankLayout = useCallback(() => {
+    setActiveLayoutReference(null)
+    setLayoutStatusMessage(null)
+    setLayoutErrorMessage(null)
+  }, [])
+
+  const handleSaveLayoutDefinition = useCallback(
+    async (
+      layout: LayoutDefinition,
+      options?: { originalId?: string | null; originalCategory?: LayoutCategory | null }
+    ): Promise<LayoutDefinition> => {
+      setIsSavingLayout(true)
+      setLayoutStatusMessage(null)
+      setLayoutErrorMessage(null)
+      try {
+        const saved = await saveLayoutDefinitionApi({
+          layout,
+          originalId: options?.originalId ?? null,
+          originalCategory: options?.originalCategory ?? null
+        })
+        setActiveLayoutDefinition(saved)
+        setActiveLayoutReference({ id: saved.id, category: 'custom' })
+        await refreshLayoutCollection()
+        setLayoutStatusMessage('Layout saved to your custom layouts.')
+        return saved
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unable to save the layout. Please try again.'
+        setLayoutErrorMessage(message)
+        throw error
+      } finally {
+        setIsSavingLayout(false)
+      }
+    },
+    [refreshLayoutCollection]
+  )
+
+  const handleImportLayoutDefinition = useCallback(async () => {
+    setLayoutStatusMessage(null)
+    setLayoutErrorMessage(null)
+    try {
+      const imported = await importLayoutDefinitionApi()
+      if (!imported) {
+        return
+      }
+      await refreshLayoutCollection()
+      setActiveLayoutDefinition(imported)
+      setActiveLayoutReference({ id: imported.id, category: 'custom' })
+      setLayoutStatusMessage(`Imported layout “${imported.name}”.`)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unable to import the layout. Please try again.'
+      setLayoutErrorMessage(message)
+    }
+  }, [refreshLayoutCollection])
+
+  const handleExportLayoutDefinition = useCallback(
+    async (id: string, category: LayoutCategory) => {
+      setLayoutStatusMessage(null)
+      setLayoutErrorMessage(null)
+      try {
+        await exportLayoutDefinitionApi(id, category)
+        setLayoutStatusMessage('Layout exported successfully.')
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unable to export the layout. Please try again.'
+        setLayoutErrorMessage(message)
+      }
+    },
+    []
+  )
+
+  const applyUpdatedClip = useCallback(
+    (updated: Clip) => {
+      setClipState(updated)
+      setRangeStart(updated.startSeconds)
+      setRangeEnd(updated.endSeconds)
+      setTitle(updated.title)
+      setDescription(updated.description ?? '')
+      setStatusMessage(null)
+      setUploadStatus((previous) => (previous === 'scheduled' ? previous : 'ready'))
+      setWindowStart(Math.max(0, Math.min(updated.startSeconds, updated.originalStartSeconds)))
+      const fallbackSourceEnd = Math.max(
+        minGap,
+        updated.originalEndSeconds,
+        updated.endSeconds,
+        updated.originalStartSeconds + Math.max(updated.durationSec, minGap)
+      )
+      const updatedSourceEnd =
+        updated.sourceDurationSeconds != null && Number.isFinite(updated.sourceDurationSeconds)
+          ? Math.max(minGap, updated.sourceDurationSeconds)
+          : fallbackSourceEnd
+      const desiredWindowEnd = Math.max(
+        updated.endSeconds,
+        updated.originalEndSeconds,
+        updated.startSeconds + minGap,
+        updated.originalStartSeconds + minGap
+      )
+      setWindowEnd(Math.min(updatedSourceEnd, desiredWindowEnd))
+      setPreviewTarget({ start: updated.startSeconds, end: updated.endSeconds })
+      setPreviewMode(getDefaultPreviewMode(updated))
+      layoutAppliedIdRef.current = updated.layoutId ?? null
+      if (updated.layoutId) {
+        setActiveLayoutReference({ id: updated.layoutId, category: resolveLayoutCategory(updated.layoutId) })
+      } else {
+        setActiveLayoutReference(null)
+      }
+    },
+    [minGap, resolveLayoutCategory]
+  )
+
+  const handleApplyLayoutDefinition = useCallback(
+    async (layout: LayoutDefinition) => {
+      if (!clipState) {
+        setLayoutErrorMessage('Load a clip before applying a layout.')
+        return
+      }
+      setIsApplyingLayout(true)
+      setLayoutStatusMessage(null)
+      setLayoutErrorMessage(null)
+      try {
+        let reference = activeLayoutReference
+        let currentLayout = layout
+        const requiresSave =
+          !reference || reference.id !== layout.id || reference.category !== 'custom'
+        if (requiresSave) {
+          currentLayout = await handleSaveLayoutDefinition(layout, {
+            originalId: reference?.id ?? null,
+            originalCategory: reference?.category ?? null
+          })
+          reference = { id: currentLayout.id, category: 'custom' }
+        } else {
+          await handleSaveLayoutDefinition(layout, {
+            originalId: reference.id,
+            originalCategory: reference.category
+          })
+        }
+
+        const layoutIdToApply = reference?.id ?? currentLayout.id
+        if (!layoutIdToApply) {
+          throw new Error('Layout must be saved before applying.')
+        }
+
+        if (context === 'library') {
+          const accountForUpdate = accountId ?? clipState.accountId
+          if (!accountForUpdate) {
+            throw new Error('Missing account information for this clip.')
+          }
+          const updated = await adjustLibraryClip(accountForUpdate, clipState.id, {
+            startSeconds: clipState.startSeconds,
+            endSeconds: clipState.endSeconds,
+            layoutId: layoutIdToApply
+          })
+          applyUpdatedClip(updated)
+        } else {
+          if (!jobId) {
+            throw new Error('Missing job information for this clip.')
+          }
+          const updated = await adjustJobClip(jobId, clipState.id, {
+            startSeconds: clipState.startSeconds,
+            endSeconds: clipState.endSeconds,
+            layoutId: layoutIdToApply
+          })
+          applyUpdatedClip(updated)
+        }
+        layoutAppliedIdRef.current = layoutIdToApply
+        setLayoutStatusMessage('Layout applied to this clip.')
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unable to apply the layout. Please try again.'
+        setLayoutErrorMessage(message)
+      } finally {
+        setIsApplyingLayout(false)
+      }
+    },
+    [
+      accountId,
+      activeLayoutReference,
+      applyUpdatedClip,
+      clipState,
+      context,
+      handleSaveLayoutDefinition,
+      jobId
+    ]
+  )
+
+  const runStepAnimation = useCallback(async (setSteps: (updater: (prev: SaveStepState[]) => SaveStepState[]) => void) => {
+    for (let index = 1; index < SAVE_STEP_DEFINITIONS.length; index += 1) {
+      await delay(200)
+      setSteps((prev) =>
+        prev.map((step, stepIndex) => {
+          if (stepIndex < index) {
+            return { ...step, status: 'completed' }
+          }
+          if (stepIndex === index) {
+            return { ...step, status: 'running' }
+          }
+          return { ...step, status: 'pending' }
+        })
+      )
+    }
+    await delay(200)
+    setSteps((prev) => prev.map((step) => ({ ...step, status: 'completed' })))
+  }, [])
+
+  const handleRenderLayoutDefinition = useCallback(
+    async (layout: LayoutDefinition) => {
+      if (!clipState) {
+        setLayoutErrorMessage('Load a clip before rendering a layout.')
+        return
+      }
+      setLayoutRenderSteps(
+        SAVE_STEP_DEFINITIONS.map((step, index) => ({
+          ...step,
+          status: index === 0 ? 'running' : 'pending'
+        }))
+      )
+      setIsLayoutRendering(true)
+      setLayoutRenderStatusMessage(null)
+      setLayoutRenderErrorMessage(null)
+      try {
+        await handleApplyLayoutDefinition(layout)
+        await runStepAnimation(setLayoutRenderSteps)
+        setLayoutRenderStatusMessage('Rendering started with the latest layout. We will notify you when it finishes.')
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unable to render the clip with this layout. Please try again.'
+        setLayoutRenderErrorMessage(message)
+        setLayoutRenderSteps((prev) =>
+          prev.map((step) => (step.status === 'running' ? { ...step, status: 'failed' } : step))
+        )
+      } finally {
+        setIsLayoutRendering(false)
+      }
+    },
+    [clipState, handleApplyLayoutDefinition, runStepAnimation]
+  )
+
   const originalStart = clipState?.originalStartSeconds ?? 0
   const originalEnd =
     clipState?.originalEndSeconds ?? originalStart + (clipState?.durationSec ?? 10)
@@ -403,39 +791,6 @@ const VideoPage: FC = () => {
       setPreviewMode('rendered')
     }
   }, [clipState, previewMode])
-
-  const applyUpdatedClip = useCallback(
-    (updated: Clip) => {
-      setClipState(updated)
-      setRangeStart(updated.startSeconds)
-      setRangeEnd(updated.endSeconds)
-      setTitle(updated.title)
-      setDescription(updated.description ?? '')
-      setStatusMessage(null)
-      setUploadStatus((previous) => (previous === 'scheduled' ? previous : 'ready'))
-      setWindowStart(Math.max(0, Math.min(updated.startSeconds, updated.originalStartSeconds)))
-      const fallbackSourceEnd = Math.max(
-        minGap,
-        updated.originalEndSeconds,
-        updated.endSeconds,
-        updated.originalStartSeconds + Math.max(updated.durationSec, minGap)
-      )
-      const updatedSourceEnd =
-        updated.sourceDurationSeconds != null && Number.isFinite(updated.sourceDurationSeconds)
-          ? Math.max(minGap, updated.sourceDurationSeconds)
-          : fallbackSourceEnd
-      const desiredWindowEnd = Math.max(
-        updated.endSeconds,
-        updated.originalEndSeconds,
-        updated.startSeconds + minGap,
-        updated.originalStartSeconds + minGap
-      )
-      setWindowEnd(Math.min(updatedSourceEnd, desiredWindowEnd))
-      setPreviewTarget({ start: updated.startSeconds, end: updated.endSeconds })
-      setPreviewMode(getDefaultPreviewMode(updated))
-    },
-    [minGap]
-  )
 
   const handleModeChange = useCallback(
     (mode: VideoPageMode) => {
@@ -1587,25 +1942,6 @@ const VideoPage: FC = () => {
     }
   }, [clipState, previewEnd, previewMode, previewSourceIsFile, previewStart])
 
-  const runSaveStepAnimation = useCallback(async () => {
-    for (let index = 1; index < SAVE_STEP_DEFINITIONS.length; index += 1) {
-      await delay(200)
-      setSaveSteps((prev) =>
-        prev.map((step, stepIndex) => {
-          if (stepIndex < index) {
-            return { ...step, status: 'completed' }
-          }
-          if (stepIndex === index) {
-            return { ...step, status: 'running' }
-          }
-          return { ...step, status: 'pending' }
-        })
-      )
-    }
-    await delay(200)
-    setSaveSteps((prev) => prev.map((step) => ({ ...step, status: 'completed' })))
-  }, [])
-
   const handleSave = useCallback(async () => {
     if (!clipState) {
       return
@@ -1635,7 +1971,8 @@ const VideoPage: FC = () => {
         }
         const updated = await adjustLibraryClip(accountForUpdate, clipState.id, {
           startSeconds: adjustedStart,
-          endSeconds: adjustedEnd
+          endSeconds: adjustedEnd,
+          layoutId: clipState.layoutId ?? null
         })
         applyUpdatedClip(updated)
       } else {
@@ -1644,11 +1981,12 @@ const VideoPage: FC = () => {
         }
         const updated = await adjustJobClip(jobId, clipState.id, {
           startSeconds: adjustedStart,
-          endSeconds: adjustedEnd
+          endSeconds: adjustedEnd,
+          layoutId: clipState.layoutId ?? null
         })
         applyUpdatedClip(updated)
       }
-      await runSaveStepAnimation()
+      await runStepAnimation(setSaveSteps)
       setSaveSuccess('Clip boundaries updated successfully.')
     } catch (error) {
       const message =
@@ -1662,16 +2000,7 @@ const VideoPage: FC = () => {
     } finally {
       setIsSaving(false)
     }
-  }, [
-    applyUpdatedClip,
-    clipState,
-    context,
-    rangeEnd,
-    rangeStart,
-    runSaveStepAnimation,
-    accountId,
-    jobId
-  ])
+  }, [applyUpdatedClip, clipState, context, rangeEnd, rangeStart, runStepAnimation, accountId, jobId])
 
   if (!clipState) {
     return (
@@ -1768,34 +2097,71 @@ const VideoPage: FC = () => {
   const startHandleValueMax = Number.isFinite(rangeEnd - minGap) ? rangeEnd - minGap : rangeEnd
   const endHandleValueMin = Number.isFinite(rangeStart + minGap) ? rangeStart + minGap : rangeStart
   const endHandleValueMax = Number.isFinite(windowEnd) ? windowEnd : rangeEnd
+  const layoutPanelStatus = layoutStatusMessage
+  const layoutPanelError = layoutErrorMessage ?? layoutCollectionError
+
+  const tabNavigation = (
+    <nav
+      aria-label="Video modes"
+      className="inline-flex rounded-[16px] border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-1 text-sm font-semibold text-[var(--fg)] shadow-[0_14px_28px_rgba(43,42,40,0.16)]"
+    >
+      {VIDEO_PAGE_MODES.map((tab) => {
+        const isActive = activeMode === tab.id
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => handleModeChange(tab.id)}
+            aria-pressed={isActive}
+            className={`flex-1 whitespace-nowrap rounded-[12px] px-4 py-2 transition ${
+              isActive
+                ? 'bg-[color:color-mix(in_srgb,var(--accent)_24%,transparent)] text-[var(--fg)] shadow-[0_10px_18px_rgba(43,42,40,0.18)]'
+                : 'text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_60%,transparent)] hover:text-[var(--fg)]'
+            }`}
+          >
+            {tab.label}
+          </button>
+        )
+      })}
+    </nav>
+  )
+
+  if (activeMode === 'layout') {
+    return (
+      <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
+        <LayoutEditorPanel
+          tabNavigation={tabNavigation}
+          clip={clipState}
+          layoutCollection={layoutCollection}
+          isCollectionLoading={isLayoutCollectionLoading}
+          selectedLayout={activeLayoutDefinition}
+          selectedLayoutReference={activeLayoutReference}
+          isLayoutLoading={isLayoutLoading}
+          appliedLayoutId={clipState?.layoutId ?? null}
+          isSavingLayout={isSavingLayout}
+          isApplyingLayout={isApplyingLayout}
+          statusMessage={layoutPanelStatus}
+          errorMessage={layoutPanelError}
+          onSelectLayout={handleSelectLayout}
+          onCreateBlankLayout={handleCreateBlankLayout}
+          onLayoutChange={handleLayoutChange}
+          onSaveLayout={handleSaveLayoutDefinition}
+          onImportLayout={handleImportLayoutDefinition}
+          onExportLayout={handleExportLayoutDefinition}
+          onApplyLayout={handleApplyLayoutDefinition}
+          onRenderLayout={handleRenderLayoutDefinition}
+          renderSteps={layoutRenderSteps}
+          isRenderingLayout={isLayoutRendering}
+          renderStatusMessage={layoutRenderStatusMessage}
+          renderErrorMessage={layoutRenderErrorMessage}
+        />
+      </section>
+    )
+  }
 
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
-      <div className="flex flex-wrap justify-start gap-3">
-        <nav
-          aria-label="Video modes"
-          className="inline-flex rounded-[16px] border border-white/10 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-1 text-sm font-semibold text-[var(--fg)] shadow-[0_14px_28px_rgba(43,42,40,0.16)]"
-        >
-          {VIDEO_PAGE_MODES.map((tab) => {
-            const isActive = activeMode === tab.id
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => handleModeChange(tab.id)}
-                aria-pressed={isActive}
-                className={`flex-1 whitespace-nowrap rounded-[12px] px-4 py-2 transition ${
-                  isActive
-                    ? 'bg-[color:color-mix(in_srgb,var(--accent)_24%,transparent)] text-[var(--fg)] shadow-[0_10px_18px_rgba(43,42,40,0.18)]'
-                    : 'text-[var(--muted)] hover:bg-[color:color-mix(in_srgb,var(--panel)_60%,transparent)] hover:text-[var(--fg)]'
-                }`}
-              >
-                {tab.label}
-              </button>
-            )
-          })}
-        </nav>
-      </div>
+      <div className="flex flex-wrap justify-start gap-3">{tabNavigation}</div>
       <div className="flex flex-col gap-6 lg:flex-row">
         <div className="flex-1 rounded-2xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
           <div className="flex h-full flex-col gap-4">
@@ -1830,7 +2196,7 @@ const VideoPage: FC = () => {
                 </div>
               ) : null}
             </VideoPreviewStage>
-            {previewMode === 'adjusted' ? (
+            {activeMode !== 'layout' && previewMode === 'adjusted' ? (
               <div className="space-y-2">
                 {adjustedSourceState.status === 'missing' ? (
                   <div className="flex flex-col gap-2 rounded-xl border border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] px-3 py-2 text-sm text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]">
@@ -1890,7 +2256,8 @@ const VideoPage: FC = () => {
                 ) : null}
               </div>
             ) : null}
-            <div className="space-y-3">
+            {activeMode !== 'layout' ? (
+              <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
                   View mode
@@ -1943,7 +2310,8 @@ const VideoPage: FC = () => {
                   step 7 and refresh the export.
                 </p>
               ) : null}
-            </div>
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="flex w-full max-w-xl flex-col gap-6">

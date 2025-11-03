@@ -5,6 +5,35 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Profile from '../pages/Profile'
 import type { AccountPlatformConnection, AccountSummary, AuthPingSummary } from '../types'
 
+const layoutCollectionMock = {
+  builtin: [
+    {
+      id: 'centered',
+      name: 'Centered spotlight',
+      description: 'Primary video with blurred background.',
+      author: 'Atropos',
+      category: 'builtin',
+      version: 1,
+      tags: ['builtin']
+    }
+  ],
+  custom: [
+    {
+      id: 'creator-template',
+      name: 'Creator template',
+      description: 'Personalised intro block.',
+      author: 'You',
+      category: 'custom',
+      version: 1,
+      tags: ['custom']
+    }
+  ]
+}
+
+vi.mock('../services/layouts', () => ({
+  fetchLayoutCollection: vi.fn(async () => layoutCollectionMock)
+}))
+
 const accessStateMock = {
   isLoading: false,
   isSubscriptionActive: true,
@@ -94,7 +123,8 @@ const sampleAccounts: AccountSummary[] = [
     platforms: [createPlatform()],
     active: true,
     tone: null,
-    effectiveTone: 'funny'
+    effectiveTone: 'funny',
+    defaultLayoutId: null
   },
   {
     id: 'account-2',
@@ -104,7 +134,8 @@ const sampleAccounts: AccountSummary[] = [
     platforms: [],
     active: true,
     tone: 'tech',
-    effectiveTone: 'tech'
+    effectiveTone: 'tech',
+    defaultLayoutId: 'creator-template'
   }
 ]
 
@@ -285,6 +316,25 @@ describe('Profile page', () => {
     await waitFor(() => expect(updateAccountMock).toHaveBeenCalledTimes(1))
     expect(updateAccountMock).toHaveBeenCalledWith('account-2', { tone: 'science' })
     expect(await scope.findByText(/Tone set to Science/i)).toBeInTheDocument()
+  })
+
+  it('updates the default layout when a new preset is selected', async () => {
+    const layoutUpdatedAccount: AccountSummary = {
+      ...sampleAccounts[0],
+      defaultLayoutId: 'centered'
+    }
+    updateAccountMock.mockResolvedValueOnce(layoutUpdatedAccount)
+
+    renderProfile()
+
+    const creatorCard = await screen.findByTestId('account-card-account-1')
+    const scope = within(creatorCard)
+    const layoutSelect = await scope.findByTestId('layout-account-1')
+    fireEvent.change(layoutSelect, { target: { value: 'centered' } })
+
+    await waitFor(() => expect(updateAccountMock).toHaveBeenCalledTimes(1))
+    expect(updateAccountMock).toHaveBeenCalledWith('account-1', { defaultLayoutId: 'centered' })
+    expect(await scope.findByText(/Layout set to Centered spotlight/i)).toBeInTheDocument()
   })
 
   it('disables and removes a platform connection', async () => {
