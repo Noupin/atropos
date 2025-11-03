@@ -1072,7 +1072,9 @@ describe('Layout editor interactions', () => {
         expect(crop).toMatchObject({ x: 0, y: 0, width: 1, height: 1 })
         const cropRatio = crop.width / Math.max(crop.height, 0.0001)
         const expectedFrameRatio = (16 / 9) * cropRatio
-        expect(snappedRatio).toBeCloseTo(expectedFrameRatio, 3)
+        const layoutAspect = baseLayout.canvas.width / Math.max(baseLayout.canvas.height, 0.0001)
+        const expectedNormalisedFrameRatio = expectedFrameRatio / layoutAspect
+        expect(snappedRatio).toBeCloseTo(expectedNormalisedFrameRatio, 3)
         if (snappedVideo.cropAspectRatio != null) {
           expect(snappedVideo.cropAspectRatio).toBeCloseTo(cropRatio, 3)
         }
@@ -1140,6 +1142,7 @@ describe('Layout editor interactions', () => {
     const expectedCrop = (layoutWithCrop.items[0] as LayoutVideoItem).crop!
     const expectedAspect =
       (16 / 9) * (expectedCrop.width / Math.max(expectedCrop.height, 0.0001))
+    const layoutAspect = baseLayout.canvas.width / Math.max(baseLayout.canvas.height, 0.0001)
 
     const matchButtons = await within(layoutCanvas).findAllByRole('button', {
       name: 'Match source frame aspect'
@@ -1160,7 +1163,7 @@ describe('Layout editor interactions', () => {
     expect(updatedVideo).toBeTruthy()
     if (updatedVideo) {
       const finalRatio = updatedVideo.frame.width / Math.max(updatedVideo.frame.height, 0.0001)
-      expect(finalRatio).toBeCloseTo(expectedAspect, 3)
+      expect(finalRatio).toBeCloseTo(expectedAspect / layoutAspect, 3)
       expect(updatedVideo.crop).toMatchObject(expectedCrop)
     }
   })

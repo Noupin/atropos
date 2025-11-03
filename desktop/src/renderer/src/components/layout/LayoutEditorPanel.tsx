@@ -1145,6 +1145,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
         return
       }
       const nativeAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
+      const layoutCanvasAspect = layoutAspectRatio > 0 ? layoutAspectRatio : 1
       updateLayout(
         (layout) => ({
           ...layout,
@@ -1156,13 +1157,19 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
             const currentFrame = clampFrame(item.frame)
 
             if (context === 'source') {
-              const desiredFrameAspect =
-                Number.isFinite(nativeAspect) && nativeAspect > 0
-                  ? nativeAspect
-                  : getFrameAspectRatio(currentFrame)
+              const sourceCanvasAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutCanvasAspect
+              const desiredDisplayAspect =
+                Number.isFinite(nativeAspect) && nativeAspect > 0 ? nativeAspect : null
+              const fallbackAspect = getFrameAspectRatio(currentFrame)
+              const targetAspect =
+                desiredDisplayAspect && Number.isFinite(desiredDisplayAspect) && desiredDisplayAspect > 0
+                  ? sourceCanvasAspect > 0
+                    ? desiredDisplayAspect / sourceCanvasAspect
+                    : null
+                  : fallbackAspect
               const snappedFrame =
-                desiredFrameAspect && Number.isFinite(desiredFrameAspect) && desiredFrameAspect > 0
-                  ? snapFrameToAspect(currentFrame, desiredFrameAspect)
+                targetAspect && Number.isFinite(targetAspect) && targetAspect > 0
+                  ? snapFrameToAspect(currentFrame, targetAspect)
                   : currentFrame
               const defaultCrop = createDefaultCrop()
 
@@ -1181,23 +1188,33 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
             const pendingSourceCrop = frameToCrop(pendingCrops.source[selectedItemId])
             const sourceBounds = pendingSourceCrop ?? normaliseSourceCrop(item)
             const boundedSource = clampCropToBounds(sourceBounds, createDefaultCrop())
-            const sourceWidth = clamp(boundedSource.width)
-            const sourceHeight = clamp(boundedSource.height)
-            const sourceFrameAspect =
-              sourceWidth > 0 && sourceHeight > 0 && Number.isFinite(nativeAspect) && nativeAspect > 0
-                ? (nativeAspect * sourceWidth) / Math.max(sourceHeight, 0.0001)
-                : getFrameAspectRatio(currentFrame) ?? nativeAspect
+            const cropAspect = getCropAspectRatio(boundedSource)
+            const sourceDisplayAspect =
+              cropAspect && Number.isFinite(sourceAspectRatio) && sourceAspectRatio > 0
+                ? cropAspect * sourceAspectRatio
+                : null
+            const fallbackAspect = getFrameAspectRatio(currentFrame)
+            const normalisedNativeAspect =
+              Number.isFinite(nativeAspect) && nativeAspect > 0 && layoutCanvasAspect > 0
+                ? nativeAspect / layoutCanvasAspect
+                : null
+            const targetAspect =
+              sourceDisplayAspect && Number.isFinite(sourceDisplayAspect) && sourceDisplayAspect > 0
+                ? layoutCanvasAspect > 0
+                  ? sourceDisplayAspect / layoutCanvasAspect
+                  : null
+                : fallbackAspect ?? normalisedNativeAspect
             let snappedFrame = currentFrame
-            if (sourceFrameAspect && Number.isFinite(sourceFrameAspect) && sourceFrameAspect > 0) {
+            if (targetAspect && Number.isFinite(targetAspect) && targetAspect > 0) {
               const horizontalHeadroom = Math.max(0, 1 - clamp(boundedSource.width))
               const verticalHeadroom = Math.max(0, 1 - clamp(boundedSource.height))
               const HEADROOM_EPSILON = 0.0001
               const prefersPreservingHeight = horizontalHeadroom > verticalHeadroom + HEADROOM_EPSILON
               if (prefersPreservingHeight) {
-                const stretchedFrame = snapFrameToAspectPreservingHeight(currentFrame, sourceFrameAspect)
-                snappedFrame = stretchedFrame ?? snapFrameToAspect(currentFrame, sourceFrameAspect)
+                const stretchedFrame = snapFrameToAspectPreservingHeight(currentFrame, targetAspect)
+                snappedFrame = stretchedFrame ?? snapFrameToAspect(currentFrame, targetAspect)
               } else {
-                snappedFrame = snapFrameToAspect(currentFrame, sourceFrameAspect)
+                snappedFrame = snapFrameToAspect(currentFrame, targetAspect)
               }
             }
             const cropCopy = normaliseVideoCrop(boundedSource)
