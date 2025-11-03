@@ -286,6 +286,8 @@ const VideoPage: FC = () => {
     )
   })
   const [expandAmount, setExpandAmount] = useState(DEFAULT_EXPAND_SECONDS)
+  const [isBoundsLocked, setIsBoundsLocked] = useState(false)
+  const lockedDurationRef = useRef(minGap)
   const [activeHandle, setActiveHandle] = useState<'start' | 'end' | null>(null)
   const [engagedHandle, setEngagedHandle] = useState<'start' | 'end' | null>(null)
   const [startInteractionOrigin, setStartInteractionOrigin] = useState<number | null>(null)
@@ -327,6 +329,22 @@ const VideoPage: FC = () => {
     sourceClip ? 'ready' : 'idle'
   )
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (isBoundsLocked) {
+      lockedDurationRef.current = Math.max(minGap, rangeEnd - rangeStart)
+    }
+  }, [isBoundsLocked, minGap, rangeEnd, rangeStart])
+
+  const handleToggleBoundsLock = useCallback(() => {
+    setIsBoundsLocked((previous) => {
+      const next = !previous
+      if (next) {
+        lockedDurationRef.current = Math.max(minGap, rangeEnd - rangeStart)
+      }
+      return next
+    })
+  }, [minGap, rangeEnd, rangeStart])
 
   useEffect(() => {
     let isActive = true
@@ -647,18 +665,58 @@ const VideoPage: FC = () => {
 
   const handleStartChange = useCallback(
     (value: number) => {
+      if (isBoundsLocked) {
+        const targetDuration = lockedDurationRef.current ?? rangeEnd - rangeStart
+        const availableDuration = Math.max(minGap, windowEnd - windowStart)
+        const duration = Math.min(Math.max(minGap, targetDuration), availableDuration)
+        const maxStart = windowEnd - duration
+        const clampedStart = Math.max(windowStart, Math.min(value, maxStart))
+        const nextStart = Number.isFinite(clampedStart) ? clampedStart : windowStart
+        const nextEnd = Math.min(windowEnd, Math.max(nextStart + duration, nextStart + minGap))
+        setRangeStart(nextStart)
+        setRangeEnd(nextEnd)
+        return
+      }
       const next = clampWithinWindow(value, 'start')
       setRangeStart(Math.min(next, rangeEnd - minGap))
     },
-    [clampWithinWindow, rangeEnd]
+    [
+      clampWithinWindow,
+      isBoundsLocked,
+      minGap,
+      rangeEnd,
+      rangeStart,
+      windowEnd,
+      windowStart
+    ]
   )
 
   const handleEndChange = useCallback(
     (value: number) => {
+      if (isBoundsLocked) {
+        const targetDuration = lockedDurationRef.current ?? rangeEnd - rangeStart
+        const availableDuration = Math.max(minGap, windowEnd - windowStart)
+        const duration = Math.min(Math.max(minGap, targetDuration), availableDuration)
+        const minEnd = windowStart + duration
+        const clampedEnd = Math.min(windowEnd, Math.max(value, minEnd))
+        const nextEnd = Number.isFinite(clampedEnd) ? clampedEnd : windowStart + duration
+        const nextStart = Math.max(windowStart, Math.min(nextEnd - duration, windowEnd - duration))
+        setRangeStart(nextStart)
+        setRangeEnd(Math.min(windowEnd, Math.max(nextEnd, nextStart + minGap)))
+        return
+      }
       const next = clampWithinWindow(value, 'end')
       setRangeEnd(Math.max(next, rangeStart + minGap))
     },
-    [clampWithinWindow, rangeStart]
+    [
+      clampWithinWindow,
+      isBoundsLocked,
+      minGap,
+      rangeEnd,
+      rangeStart,
+      windowEnd,
+      windowStart
+    ]
   )
 
   const syncPreviewToRange = useCallback(
@@ -688,20 +746,41 @@ const VideoPage: FC = () => {
   const snapRangeToValues = useCallback(
     (startValue: number, endValue: number) => {
       const baseStart = Math.max(0, Number.isFinite(startValue) ? startValue : 0)
-      const rawEnd = Number.isFinite(endValue) ? endValue : baseStart
-      const baseEnd = rawEnd > baseStart + minGap ? rawEnd : baseStart + minGap
+      let baseEnd: number
+      if (isBoundsLocked) {
+        const targetDuration = lockedDurationRef.current ?? rangeEnd - rangeStart
+        const availableDuration = Math.max(minGap, sourceEndBound - sourceStartBound)
+        const duration = Math.min(Math.max(minGap, targetDuration), availableDuration)
+        const maxStart = sourceEndBound - duration
+        const adjustedStart = Math.max(sourceStartBound, Math.min(baseStart, maxStart))
+        baseEnd = adjustedStart + duration
+      } else {
+        const rawEnd = Number.isFinite(endValue) ? endValue : baseStart
+        baseEnd = rawEnd > baseStart + minGap ? rawEnd : baseStart + minGap
+      }
 
       let nextWindowStart = windowStart
       let nextWindowEnd = windowEnd
 
-      const clampedBaseStart = Math.max(
+      let clampedBaseStart = Math.max(
         sourceStartBound,
         Math.min(baseStart, sourceEndBound - minGap)
       )
-      const clampedBaseEnd = Math.min(
+      let clampedBaseEnd = Math.min(
         sourceEndBound,
         Math.max(baseEnd, clampedBaseStart + minGap)
       )
+
+      if (isBoundsLocked) {
+        const targetDuration = lockedDurationRef.current ?? rangeEnd - rangeStart
+        const availableDuration = Math.max(minGap, sourceEndBound - sourceStartBound)
+        const duration = Math.min(Math.max(minGap, targetDuration), availableDuration)
+        const maxStart = sourceEndBound - duration
+        const desiredStart = Math.max(sourceStartBound, Math.min(baseStart, maxStart))
+        const desiredEnd = desiredStart + duration
+        clampedBaseStart = desiredStart
+        clampedBaseEnd = Math.min(sourceEndBound, Math.max(desiredEnd, desiredStart + minGap))
+      }
 
       if (clampedBaseStart < windowStart) {
         nextWindowStart = clampedBaseStart
@@ -737,8 +816,12 @@ const VideoPage: FC = () => {
     },
     [
       minGap,
+      isBoundsLocked,
+      lockedDurationRef,
       sourceEndBound,
       sourceStartBound,
+      rangeEnd,
+      rangeStart,
       syncPreviewToRange,
       windowEnd,
       windowStart
@@ -935,14 +1018,28 @@ const VideoPage: FC = () => {
         if (kind === 'start') {
           handleStartChange(windowStart)
         } else {
-          handleEndChange(rangeStart + minGap)
+          if (isBoundsLocked) {
+            const targetDuration = lockedDurationRef.current ?? rangeEnd - rangeStart
+            const availableDuration = Math.max(minGap, windowEnd - windowStart)
+            const duration = Math.min(Math.max(minGap, targetDuration), availableDuration)
+            handleEndChange(windowStart + duration)
+          } else {
+            handleEndChange(rangeStart + minGap)
+          }
         }
       } else if (key === 'Enter') {
         commitPreviewTarget()
       } else if (key === 'End') {
         event.preventDefault()
         if (kind === 'start') {
-          handleStartChange(rangeEnd - minGap)
+          if (isBoundsLocked) {
+            const targetDuration = lockedDurationRef.current ?? rangeEnd - rangeStart
+            const availableDuration = Math.max(minGap, windowEnd - windowStart)
+            const duration = Math.min(Math.max(minGap, targetDuration), availableDuration)
+            handleStartChange(windowEnd - duration)
+          } else {
+            handleStartChange(rangeEnd - minGap)
+          }
         } else {
           handleEndChange(windowEnd)
         }
@@ -952,6 +1049,8 @@ const VideoPage: FC = () => {
       commitPreviewTarget,
       handleEndChange,
       handleStartChange,
+      isBoundsLocked,
+      lockedDurationRef,
       minGap,
       rangeEnd,
       rangeStart,
@@ -2229,6 +2328,20 @@ const VideoPage: FC = () => {
               <div className="flex justify-between text-xs text-[var(--muted)]">
                 <span>{formatDuration(windowStart)}</span>
                 <span>{formatDuration(windowEnd)}</span>
+              </div>
+              <div className="mt-2 flex flex-col gap-1 text-xs text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)] sm:flex-row sm:items-center sm:justify-between">
+                <label className="flex items-center gap-2 font-semibold uppercase tracking-wide">
+                  <input
+                    type="checkbox"
+                    checked={isBoundsLocked}
+                    onChange={handleToggleBoundsLock}
+                    className="h-4 w-4 rounded border border-white/20 bg-transparent text-[color:var(--ring)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  />
+                  Lock aspect ratio
+                </label>
+                <span className="text-[10px] uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_65%,transparent)]">
+                  Keep the clip length fixed while dragging handles.
+                </span>
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
