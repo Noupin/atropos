@@ -1414,19 +1414,19 @@ if __name__ == "__main__":
     # Crash Course World History
     # yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9"
     # World History Battles
-    # start next one at [80:]
+    # start next one at [90:]
     yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
 
 
-    # tone = Tone.CONSPIRACY
-    # account = "secrets"
-    # # Bright Insight: Lost Civilizations
-    # # start next one at [60:]
-    # yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
+    tone = Tone.CONSPIRACY
+    account = "secrets"
+    # Bright Insight: Lost Civilizations
+    # start next one at [70:]
+    yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
 
 
     urls = get_video_urls(yt_url)
     # FUNNYKINDA NEEDS REVERSED
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[60:80]:
+    for url in urls[80:90]:
         process_video(url, account=account, tone=tone)
