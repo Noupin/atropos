@@ -1255,6 +1255,59 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     [layoutAspectRatio, pendingCrops, selectedItemId, sourceAspectRatio, updateLayout]
   )
 
+  const handleToggleAspectLock = useCallback(
+    (itemId: string, target: 'frame' | 'crop') => {
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: layout.items.map((item) => {
+            if (item.kind !== 'video' || item.id !== itemId) {
+              return item
+            }
+
+            const video = item as LayoutVideoItem
+            const isCurrentlyLocked =
+              target === 'frame' ? video.lockAspectRatio ?? false : video.lockCropAspectRatio ?? false
+
+            if (isCurrentlyLocked) {
+              // Unlocking - clear the lock and stored aspect ratio
+              return {
+                ...video,
+                ...(target === 'frame'
+                  ? { lockAspectRatio: false, frameAspectRatio: null }
+                  : { lockCropAspectRatio: false, cropAspectRatio: null })
+              }
+            } else {
+              // Locking - store the current aspect ratio
+              let aspectRatio: number | null = null
+
+              if (target === 'frame') {
+                const frame = video.frame
+                if (frame.width > 0 && frame.height > 0) {
+                  aspectRatio = frame.width / frame.height
+                }
+              } else {
+                const crop = video.crop ?? video.sourceCrop
+                if (crop && crop.width > 0 && crop.height > 0) {
+                  aspectRatio = crop.width / crop.height
+                }
+              }
+
+              return {
+                ...video,
+                ...(target === 'frame'
+                  ? { lockAspectRatio: true, frameAspectRatio: aspectRatio }
+                  : { lockCropAspectRatio: true, cropAspectRatio: aspectRatio })
+              }
+            }
+          })
+        }),
+        { trackHistory: true }
+      )
+    },
+    [updateLayout]
+  )
+
   const handleChangeVideoScaleMode = useCallback(
     (itemId: string, mode: LayoutVideoItem['scaleMode']) => {
       const sourceAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
@@ -2443,6 +2496,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               transformTarget="crop"
               aspectRatioOverride={sourceAspectRatio}
               onRequestResetAspect={handleResetToSourceAspect}
+              onRequestToggleAspectLock={handleToggleAspectLock}
               cropContext="source"
               getPendingCrop={getPendingCropFrame}
               style={sourceCanvasStyle}
@@ -2496,6 +2550,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               aspectRatioOverride={layoutAspectRatio}
               onRequestResetAspect={handleResetToSourceAspect}
               onRequestChangeTransformTarget={handleTransformTargetChange}
+              onRequestToggleAspectLock={handleToggleAspectLock}
               cropContext="layout"
               getPendingCrop={getPendingCropFrame}
               onRequestFinishCrop={handleFinishCrop}
