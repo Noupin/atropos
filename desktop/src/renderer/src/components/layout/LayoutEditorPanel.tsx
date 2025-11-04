@@ -1315,6 +1315,35 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     [layoutAspectRatio, sourceAspectRatio, updateLayout]
   )
 
+  const handleToggleAspectLock = useCallback(
+    (itemId: string) => {
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: layout.items.map((item) => {
+            if (item.kind !== 'video' || item.id !== itemId) {
+              return item
+            }
+            const video = item as LayoutVideoItem
+            const currentFrame = video.frame
+            const currentAspectRatio = currentFrame.width > 0 && currentFrame.height > 0
+              ? currentFrame.width / currentFrame.height
+              : null
+            return {
+              ...video,
+              lockAspectRatio: !video.lockAspectRatio,
+              frameAspectRatio: !video.lockAspectRatio && currentAspectRatio
+                ? currentAspectRatio
+                : video.frameAspectRatio
+            }
+          })
+        }),
+        { trackHistory: true }
+      )
+    },
+    [updateLayout]
+  )
+
   const handleAddItem = useCallback(
     (kind: LayoutItem['kind']) => {
       if (!draftLayout) {
@@ -2447,6 +2476,9 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               getPendingCrop={getPendingCropFrame}
               style={sourceCanvasStyle}
               ariaLabel="Source preview canvas"
+              enableScaleModeMenu
+              onRequestChangeScaleMode={handleChangeVideoScaleMode}
+              onRequestToggleAspectLock={handleToggleAspectLock}
             />
           </div>
         </div>
@@ -2501,6 +2533,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               onRequestFinishCrop={handleFinishCrop}
               enableScaleModeMenu
               onRequestChangeScaleMode={handleChangeVideoScaleMode}
+              onRequestToggleAspectLock={handleToggleAspectLock}
               style={layoutCanvasStyle}
               ariaLabel="Layout preview canvas"
             />

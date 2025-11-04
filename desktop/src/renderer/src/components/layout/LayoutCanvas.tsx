@@ -23,7 +23,9 @@ import LayoutItemToolbar, {
   RemoveIcon,
   SendBackwardIcon,
   CropModeIcon,
-  CropConfirmIcon
+  CropConfirmIcon,
+  LockIcon,
+  UnlockIcon
 } from './LayoutItemToolbar'
 import { useLayoutSelection } from './layoutSelectionStore'
 
@@ -139,6 +141,7 @@ type LayoutCanvasProps = {
   onRequestChangeScaleMode?: (itemId: string, mode: LayoutVideoItem['scaleMode']) => void
   getPendingCrop?: (itemId: string, context: 'source' | 'layout') => LayoutFrame | null
   onRequestFinishCrop?: () => void
+  onRequestToggleAspectLock?: (itemId: string) => void
 }
 
 type Guide = {
@@ -785,7 +788,8 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   enableScaleModeMenu = false,
   onRequestChangeScaleMode,
   getPendingCrop,
-  onRequestFinishCrop
+  onRequestFinishCrop,
+  onRequestToggleAspectLock
 }) => {
   const colorScheme = useColorScheme()
   const [selectedItemId, setSelectedItemId] = useLayoutSelection()
@@ -1166,7 +1170,12 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         setSelectedItemId(nextSelection)
       }
       setToolbarAnchorId(nextSelection)
-      const pointerAspectLocked = false
+      const selectedItem = layout.items.find((candidate) => candidate.id === nextSelection)
+      const pointerAspectLocked = Boolean(
+        selectedItem &&
+        (selectedItem as LayoutVideoItem).kind === 'video' &&
+        (selectedItem as LayoutVideoItem).lockAspectRatio
+      )
       commitHover(
         { itemId: nextSelection, handle: handle ?? null },
         handle ? cursorForHandle(handle, pointerAspectLocked) : 'grab'
@@ -1911,7 +1920,10 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const showHandles = isSelected || isHovered
         const label = getItemLabel(item)
         const palette = getItemAppearance(item, colorScheme)
-        const itemAspectLocked = false
+        const itemAspectLocked = Boolean(
+          (item as LayoutVideoItem).kind === 'video' &&
+          (item as LayoutVideoItem).lockAspectRatio
+        )
         const classes = getItemClasses ? getItemClasses(item, isSelected) : ''
         const shouldShowLabel =
           labelVisibility === 'always' || (labelVisibility === 'selected' && isSelected)
@@ -2189,6 +2201,41 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
               </button>
             )
           })}
+          {onRequestToggleAspectLock ? (
+            <>
+              <div className="my-1 border-t border-[color:var(--edge-soft)]" />
+              <div className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                Aspect ratio
+              </div>
+              <button
+                type="button"
+                className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] text-[color:color-mix(in_srgb,var(--muted)_90%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--panel)_88%,transparent)]"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  const video = activeSelection as LayoutVideoItem
+                  onRequestToggleAspectLock(video.id)
+                }}
+              >
+                <span className="flex h-4 w-4 items-center justify-center text-[color:var(--fg)]">
+                  {(activeSelection as LayoutVideoItem).lockAspectRatio ? (
+                    <LockIcon />
+                  ) : (
+                    <UnlockIcon />
+                  )}
+                </span>
+                <span className="flex flex-col gap-0.5">
+                  <span>
+                    {(activeSelection as LayoutVideoItem).lockAspectRatio ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
+                  </span>
+                  <span className="text-[11px] text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
+                    {(activeSelection as LayoutVideoItem).lockAspectRatio
+                      ? 'Allow freeform resizing'
+                      : 'Maintain current aspect ratio'}
+                  </span>
+                </span>
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
       {selectionBounds ? (
