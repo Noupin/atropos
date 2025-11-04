@@ -1709,11 +1709,26 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         ? video.lockAspectRatio ?? false
         : video.lockCropAspectRatio ?? false
 
+      console.log('[LayoutCanvas] Toolbar actions memo - aspect lock state:', {
+        itemId: activeSelection.id,
+        transformTarget,
+        lockAspectRatio: video.lockAspectRatio,
+        lockCropAspectRatio: video.lockCropAspectRatio,
+        isLocked
+      })
+
       actions.push({
         key: 'toggle-aspect-lock',
         label: isLocked ? 'Unlock aspect ratio' : 'Lock aspect ratio',
         icon: isLocked ? <LockIcon /> : <UnlockIcon />,
-        onSelect: () => onRequestToggleAspectLock(activeSelection.id, transformTarget)
+        onSelect: () => {
+          console.log('[LayoutCanvas] Toggle aspect lock button clicked:', {
+            itemId: activeSelection.id,
+            target: transformTarget,
+            currentlyLocked: isLocked
+          })
+          onRequestToggleAspectLock(activeSelection.id, transformTarget)
+        }
       })
     }
 

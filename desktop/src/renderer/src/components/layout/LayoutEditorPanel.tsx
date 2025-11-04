@@ -1257,6 +1257,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
 
   const handleToggleAspectLock = useCallback(
     (itemId: string, target: 'frame' | 'crop') => {
+      console.log('[LayoutEditorPanel] handleToggleAspectLock called:', { itemId, target })
       updateLayout(
         (layout) => ({
           ...layout,
@@ -1269,14 +1270,27 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
             const isCurrentlyLocked =
               target === 'frame' ? video.lockAspectRatio ?? false : video.lockCropAspectRatio ?? false
 
+            console.log('[LayoutEditorPanel] Toggling lock:', {
+              itemId,
+              target,
+              isCurrentlyLocked,
+              lockAspectRatio: video.lockAspectRatio,
+              lockCropAspectRatio: video.lockCropAspectRatio
+            })
+
             if (isCurrentlyLocked) {
               // Unlocking - clear the lock and stored aspect ratio
-              return {
+              const result = {
                 ...video,
                 ...(target === 'frame'
                   ? { lockAspectRatio: false, frameAspectRatio: null }
                   : { lockCropAspectRatio: false, cropAspectRatio: null })
               }
+              console.log('[LayoutEditorPanel] Unlocked result:', {
+                lockAspectRatio: result.lockAspectRatio,
+                lockCropAspectRatio: result.lockCropAspectRatio
+              })
+              return result
             } else {
               // Locking - store the current aspect ratio
               let aspectRatio: number | null = null
@@ -1293,12 +1307,20 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                 }
               }
 
-              return {
+              const result = {
                 ...video,
                 ...(target === 'frame'
                   ? { lockAspectRatio: true, frameAspectRatio: aspectRatio }
                   : { lockCropAspectRatio: true, cropAspectRatio: aspectRatio })
               }
+              console.log('[LayoutEditorPanel] Locked result:', {
+                aspectRatio,
+                lockAspectRatio: result.lockAspectRatio,
+                lockCropAspectRatio: result.lockCropAspectRatio,
+                frameAspectRatio: result.frameAspectRatio,
+                cropAspectRatio: result.cropAspectRatio
+              })
+              return result
             }
           })
         }),
