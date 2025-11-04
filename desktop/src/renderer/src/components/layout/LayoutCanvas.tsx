@@ -2201,7 +2201,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
               </button>
             )
           })}
-          {onRequestToggleAspectLock ? (
+          {onRequestToggleAspectLock && (
             <>
               <div className="my-1 border-t border-[color:var(--edge-soft)]" />
               <div className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
@@ -2235,7 +2235,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                 </span>
               </button>
             </>
-          ) : null}
+          )}
         </div>
       ) : null}
       {selectionBounds ? (
