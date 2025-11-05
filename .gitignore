@@ -22,6 +22,7 @@ server/integrations/instagram/instagrapi_session.json
 server/integrations/instagram/instagrapi_state.json
 yt_client_secret.json
 /server/tokens
+web/js/social.config.js
 
 # Terraform
 .terraform/

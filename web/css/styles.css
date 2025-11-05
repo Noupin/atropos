@@ -76,6 +76,17 @@ body::after {
     radial-gradient(1px 1px at 75% 35%, rgba(0, 0, 0, 0.022) 0, transparent 60%),
     radial-gradient(1px 1px at 40% 80%, rgba(0, 0, 0, 0.028) 0, transparent 60%);
 }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .frame {
   width: 100%;
   display: flex;
@@ -332,6 +343,7 @@ body::after {
   gap: clamp(32px, 6vw, 72px);
   align-items: flex-start;
   justify-content: space-between;
+  width: 100%;
 }
 .hero__content,
 .hero__signup {
@@ -344,6 +356,170 @@ body::after {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.hero__rotator {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.hero__rotator-label {
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.flipboard {
+  --flip-duration: 0.8s;
+  position: relative;
+  min-width: min(260px, 100%);
+  max-width: min(420px, 100%);
+  min-height: clamp(54px, 10vw, 72px);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fdfdfc, #e9e5dc);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08), 0 18px 40px rgba(0, 0, 0, 0.14);
+  perspective: 1200px;
+  overflow: hidden;
+}
+.flipboard::before,
+.flipboard::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+  z-index: 4;
+}
+.flipboard::before {
+  top: 50%;
+  opacity: 0.6;
+}
+.flipboard::after {
+  top: calc(50% + 1px);
+  opacity: 0.35;
+}
+.flipboard__panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 clamp(18px, 4vw, 28px);
+  font-size: clamp(18px, 4.8vw, 28px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-align: center;
+  color: var(--crevice);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), #f2eee6);
+  border-radius: inherit;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  transform-origin: center top;
+  backface-visibility: hidden;
+}
+.flipboard__panel::before,
+.flipboard__panel::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 50%;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.flipboard__panel::before {
+  top: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(229, 225, 216, 0.86));
+}
+.flipboard__panel::after {
+  bottom: 0;
+  background: linear-gradient(180deg, rgba(232, 228, 221, 0.9), rgba(212, 207, 198, 0.92));
+}
+.flipboard__panel--current {
+  position: relative;
+  z-index: 2;
+}
+.flipboard__panel--exit {
+  animation: flipboard-leave var(--flip-duration) forwards ease-in;
+}
+.flipboard__panel--enter {
+  transform-origin: center bottom;
+  animation: flipboard-enter var(--flip-duration) forwards ease-out;
+}
+
+@keyframes flipboard-leave {
+  0% {
+    transform: rotateX(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: rotateX(-92deg);
+    opacity: 0;
+  }
+}
+
+@keyframes flipboard-enter {
+  0% {
+    transform: rotateX(92deg);
+    opacity: 0;
+  }
+  100% {
+    transform: rotateX(0deg);
+    opacity: 1;
+  }
+}
+.hero__metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: clamp(12px, 3vw, 20px);
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 18px;
+  border: 1px solid rgba(216, 212, 204, 0.8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  padding: clamp(14px, 4vw, 20px);
+}
+.hero__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+.hero__metric-label {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.hero__metric-value {
+  font-size: clamp(24px, 5vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--crevice);
+}
+.hero__metric-caption {
+  font-size: 14px;
+  color: #4f4c46;
+}
+.hero__subbanner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px clamp(12px, 3vw, 24px);
+  align-items: center;
+  padding: clamp(12px, 3vw, 18px) clamp(16px, 4vw, 24px);
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(45, 44, 41, 0.08), rgba(45, 44, 41, 0));
+  border: 1px solid rgba(43, 42, 40, 0.12);
+  font-size: clamp(15px, 2.6vw, 17px);
+  color: #3a3732;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+.hero__subbanner-highlight {
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--crevice);
 }
 .hero__signup {
   align-items: flex-start;
@@ -488,6 +664,13 @@ footer {
   }
   .hero {
     gap: 24px;
+  }
+  .hero__rotator {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .flipboard {
+    width: 100%;
   }
   .hero__content,
   .hero__signup {

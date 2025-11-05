@@ -9,6 +9,11 @@ const navTarget = document.getElementById("navSignupTarget");
 const heroSlot = document.getElementById("heroSignupSlot");
 const signupWrapper = document.getElementById("signupWrapper");
 const sentinel = document.getElementById("signupScrollSentinel");
+const phraseRotator = document.getElementById("phraseRotator");
+const phraseAnnouncer = document.getElementById("phraseAnnouncer");
+const metricsEl = document.getElementById("socialMetrics");
+const youtubeMetricEl = document.getElementById("youtubeMetric");
+const instagramMetricEl = document.getElementById("instagramMetric");
 
 function moveSignup(toNav) {
   if (!signupWrapper || !nav || !navTarget || !heroSlot) return;
@@ -100,3 +105,180 @@ form.addEventListener("submit", async (e) => {
     btn.disabled = false;
   }
 });
+
+const marketingPhrases = [
+  "Turn long-form into shorts",
+  "Repurpose live streams",
+  "Clip channels 24/7",
+];
+const rotationInterval = 5000;
+const flipDuration = 820;
+
+if (phraseRotator && marketingPhrases.length > 1) {
+  let currentIndex = 0;
+  const currentPanel = phraseRotator.querySelector(
+    ".flipboard__panel--current"
+  );
+  if (currentPanel) {
+    currentPanel.textContent = marketingPhrases[0];
+  }
+  if (phraseAnnouncer) {
+    phraseAnnouncer.textContent = `Marketing phrases change every five seconds. Current: ${marketingPhrases[0]}.`;
+  }
+
+  const rotatePhrase = () => {
+    const nextIndex = (currentIndex + 1) % marketingPhrases.length;
+    const nextPanel = document.createElement("div");
+    nextPanel.className = "flipboard__panel flipboard__panel--enter";
+    nextPanel.textContent = marketingPhrases[nextIndex];
+    phraseRotator.appendChild(nextPanel);
+
+    const outgoing = phraseRotator.querySelector(
+      ".flipboard__panel--current"
+    );
+    if (outgoing) {
+      outgoing.classList.add("flipboard__panel--exit");
+    }
+
+    setTimeout(() => {
+      if (outgoing && outgoing.parentElement === phraseRotator) {
+        outgoing.remove();
+      }
+      nextPanel.classList.remove("flipboard__panel--enter");
+      nextPanel.classList.add("flipboard__panel--current");
+    }, flipDuration);
+
+    currentIndex = nextIndex;
+    if (phraseAnnouncer) {
+      phraseAnnouncer.textContent = `Marketing phrases change every five seconds. Current: ${marketingPhrases[nextIndex]}.`;
+    }
+  };
+
+  setInterval(rotatePhrase, rotationInterval);
+}
+
+function formatCount(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return null;
+  const thresholds = [
+    { limit: 1e9, suffix: "B" },
+    { limit: 1e6, suffix: "M" },
+    { limit: 1e3, suffix: "K" },
+  ];
+
+  for (const { limit, suffix } of thresholds) {
+    if (num >= limit) {
+      const scaled = (num / limit).toFixed(1);
+      return `${parseFloat(scaled).toString()}${suffix}`;
+    }
+  }
+  return Math.round(num).toLocaleString();
+}
+
+function applyMetric(el, value, fallback) {
+  if (!el) return;
+  const formatted = formatCount(value);
+  if (formatted) {
+    el.textContent = formatted;
+  } else if (fallback) {
+    el.textContent = fallback;
+  }
+}
+
+async function fetchYouTubeSubscribers(channelId, apiKey) {
+  const params = new URLSearchParams({
+    part: "statistics",
+    id: channelId,
+    key: apiKey,
+  });
+
+  const res = await fetch(
+    `https://www.googleapis.com/youtube/v3/channels?${params.toString()}`
+  );
+  if (!res.ok) {
+    throw new Error(`YouTube API request failed with ${res.status}`);
+  }
+  const data = await res.json();
+  const stats = data?.items?.[0]?.statistics;
+  return stats ? Number(stats.subscriberCount) : null;
+}
+
+async function fetchInstagramFollowers(userId, accessToken) {
+  const params = new URLSearchParams({
+    fields: "followers_count",
+    access_token: accessToken,
+  });
+
+  const res = await fetch(
+    `https://graph.facebook.com/v17.0/${userId}?${params.toString()}`
+  );
+  if (!res.ok) {
+    throw new Error(`Instagram API request failed with ${res.status}`);
+  }
+  const data = await res.json();
+  return data ? Number(data.followers_count) : null;
+}
+
+if (metricsEl) {
+  const youtubeFallback = metricsEl.dataset.youtubeFallback;
+  const instagramFallback = metricsEl.dataset.instagramFallback;
+  if (youtubeFallback && youtubeMetricEl) {
+    applyMetric(youtubeMetricEl, Number(youtubeFallback), youtubeFallback);
+  }
+  if (instagramFallback && instagramMetricEl) {
+    applyMetric(
+      instagramMetricEl,
+      Number(instagramFallback),
+      instagramFallback
+    );
+  }
+
+  const socialConfig = window.atroposSocialConfig || {};
+  const youtubeConfig = socialConfig.youtube || {};
+  const instagramConfig = socialConfig.instagram || {};
+  const refreshInterval = Math.max(
+    0,
+    Number(socialConfig.refreshIntervalMs || 0)
+  );
+
+  const loadMetrics = async () => {
+    try {
+      if (youtubeConfig.channelId && youtubeConfig.apiKey && youtubeMetricEl) {
+        const count = await fetchYouTubeSubscribers(
+          youtubeConfig.channelId,
+          youtubeConfig.apiKey
+        );
+        applyMetric(youtubeMetricEl, count, youtubeMetricEl.textContent);
+      }
+    } catch (err) {
+      console.warn("YouTube metrics unavailable", err);
+    }
+
+    try {
+      if (
+        instagramConfig.userId &&
+        instagramConfig.accessToken &&
+        instagramMetricEl
+      ) {
+        const count = await fetchInstagramFollowers(
+          instagramConfig.userId,
+          instagramConfig.accessToken
+        );
+        applyMetric(
+          instagramMetricEl,
+          count,
+          instagramMetricEl.textContent
+        );
+      }
+    } catch (err) {
+      console.warn("Instagram metrics unavailable", err);
+    }
+  };
+
+  if (youtubeConfig.channelId || instagramConfig.userId) {
+    loadMetrics();
+    if (refreshInterval) {
+      setInterval(loadMetrics, refreshInterval);
+    }
+  }
+}

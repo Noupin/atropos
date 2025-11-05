@@ -26,6 +26,48 @@
               Your long-form, <em>transformed</em> into clips.
             </p>
           </header>
+
+          <div class="hero__rotator" aria-live="polite" aria-atomic="true">
+            <span class="hero__rotator-label">Rotating every 5 seconds</span>
+            <div class="flipboard" id="phraseRotator">
+              <div class="flipboard__panel flipboard__panel--current">
+                Turn long-form into shorts
+              </div>
+            </div>
+            <span class="sr-only" id="phraseAnnouncer">
+              Marketing phrases change every five seconds.
+            </span>
+          </div>
+
+          <div
+            class="hero__metrics"
+            id="socialMetrics"
+            data-youtube-fallback="12800"
+            data-instagram-fallback="8600"
+          >
+            <div class="hero__metric" data-platform="youtube">
+              <span class="hero__metric-label">YouTube</span>
+              <span class="hero__metric-value" id="youtubeMetric">12.8K</span>
+              <span class="hero__metric-caption">Subscribers</span>
+            </div>
+            <div class="hero__metric" data-platform="instagram">
+              <span class="hero__metric-label">Instagram</span>
+              <span class="hero__metric-value" id="instagramMetric">8.6K</span>
+              <span class="hero__metric-caption">Followers</span>
+            </div>
+          </div>
+
+          <div class="hero__subbanner" role="status" aria-live="polite">
+            <span>
+              Over
+              <strong class="hero__subbanner-highlight">4,800 clips</strong>
+              created so far
+            </span>
+            <span>
+              in under
+              <strong class="hero__subbanner-highlight">7 months</strong>
+            </span>
+          </div>
         </div>
 
         <div class="hero__signup">
@@ -163,6 +205,7 @@
       <footer><span id="year"></span> · Atropos</footer>
     </main>
 
-    <script src="/js/main.js"></script>
+    <script src="/js/social.config.js" defer></script>
+    <script src="/js/main.js" defer></script>
   </body>
 </html>

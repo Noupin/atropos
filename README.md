@@ -27,3 +27,14 @@ The platform combines a local-first desktop experience with remote licensing. Th
 | Infrastructure | Terraform, Wrangler, and deployment automation | [infrastructure/README.md](infrastructure/README.md) |
 
 For additional background on historical workflows, see [server/README.md](server/README.md) which incorporates the earlier bulk upload guide.
+
+## Marketing site hero metrics
+
+The marketing site under [`web/`](web/) can display live follower counts from YouTube and Instagram in the homepage hero.
+
+1. Copy [`web/js/social.config.example.js`](web/js/social.config.example.js) to `web/js/social.config.js` and fill in your credentials. The example file is ignored by Git so secrets stay local.
+2. **YouTube:** Enable the YouTube Data API v3 for your Google Cloud project, then create an API key under **APIs & Services → Credentials**. Locate your channel ID from the YouTube Studio advanced settings.
+3. **Instagram:** Create a Meta app and connect your Instagram Business or Creator account to the Instagram Graph API. Generate a User Access Token with the `instagram_basic` permission and capture the Instagram user ID from the Graph API Explorer.
+4. Optionally adjust `refreshIntervalMs` (milliseconds) to refresh counts on a cadence; omit it to load counts only once per visit.
+
+Without credentials, the hero falls back to the static figures baked into the markup so the layout remains consistent.
