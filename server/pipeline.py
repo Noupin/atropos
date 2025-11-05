@@ -1384,7 +1384,7 @@ if __name__ == "__main__":
     # # Melodysheep: Water Worlds
     # # yt_url = "https://www.youtube.com/watch?v=URyiCGZNjdI"
     # # General URL
-    # # start next one at [:10]
+    # # start next one at [20:]
     # yt_url = "https://www.youtube.com/playlist?list=PLkoaIad9k4NKy7C4Z8YqCYH1drLha_tYf"
 
 
@@ -1393,36 +1393,36 @@ if __name__ == "__main__":
     # # In Review Playlist (newest first)
     # # yt_url = "https://www.youtube.com/playlist?list=PLy3mMHt2i7RKE9ba8rfL7_qnFcpbUaA8_"
     # # KFAF Playlist(newest first)
-    # # start next one at [30:]
+    # # start next one at [40:]
     # yt_url = "https://www.youtube.com/playlist?list=PLOlEpGVXWUVurPHlIotFyz-cIOXjV_cxx"
     # # Last Of Us
     # # start next one at [2:]
     # # yt_url = "https://www.youtube.com/playlist?list=PLBIL5prmXqedEXXikBxPsvKRREB-DaoWb"
 
 
-    # tone = Tone.HEALTH
-    # account = "health"
-    # # Matt Lane: Can I Get Fit On Fast Food?
-    # # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
-    # # Matt Lane: Ask MLFit Show
-    # # start next one at [80:]
-    # yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
-
-
-    tone = Tone.HISTORY
-    account = "history"
-    # Crash Course World History
-    # yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9"
-    # World History Battles
+    tone = Tone.HEALTH
+    account = "health"
+    # Matt Lane: Can I Get Fit On Fast Food?
+    # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
+    # Matt Lane: Ask MLFit Show
     # start next one at [90:]
-    yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
+    yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
 
 
-    tone = Tone.CONSPIRACY
-    account = "secrets"
-    # Bright Insight: Lost Civilizations
-    # start next one at [70:]
-    yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
+    # tone = Tone.HISTORY
+    # account = "history"
+    # # Crash Course World History
+    # # yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9"
+    # # World History Battles
+    # # start next one at [90:]
+    # yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
+
+
+    # tone = Tone.CONSPIRACY
+    # account = "secrets"
+    # # Bright Insight: Lost Civilizations
+    # # start next one at [68:]
+    # yt_url = "https://www.youtube.com/playlist?list=PL8PPtxxTQjQu7fznaPSkk-WosHgPs5y4Z"
 
 
     urls = get_video_urls(yt_url)
