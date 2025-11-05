@@ -23,7 +23,9 @@ import LayoutItemToolbar, {
   RemoveIcon,
   SendBackwardIcon,
   CropModeIcon,
-  CropConfirmIcon
+  CropConfirmIcon,
+  LockIcon,
+  UnlockIcon
 } from './LayoutItemToolbar'
 import { useLayoutSelection } from './layoutSelectionStore'
 
@@ -139,6 +141,7 @@ type LayoutCanvasProps = {
   onRequestChangeScaleMode?: (itemId: string, mode: LayoutVideoItem['scaleMode']) => void
   getPendingCrop?: (itemId: string, context: 'source' | 'layout') => LayoutFrame | null
   onRequestFinishCrop?: () => void
+  onRequestToggleAspectLock?: (itemId: string, target: 'frame' | 'crop') => void
 }
 
 type Guide = {
@@ -785,7 +788,8 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   enableScaleModeMenu = false,
   onRequestChangeScaleMode,
   getPendingCrop,
-  onRequestFinishCrop
+  onRequestFinishCrop,
+  onRequestToggleAspectLock
 }) => {
   const colorScheme = useColorScheme()
   const [selectedItemId, setSelectedItemId] = useLayoutSelection()
@@ -1166,7 +1170,16 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         setSelectedItemId(nextSelection)
       }
       setToolbarAnchorId(nextSelection)
-      const pointerAspectLocked = false
+
+      // Read aspect ratio lock state from the selected item
+      const selectedItem = layout.items.find((candidate) => candidate.id === nextSelection)
+      const pointerAspectLocked =
+        selectedItem && (selectedItem as LayoutVideoItem).kind === 'video'
+          ? transformTarget === 'frame'
+            ? (selectedItem as LayoutVideoItem).lockAspectRatio ?? false
+            : (selectedItem as LayoutVideoItem).lockCropAspectRatio ?? false
+          : false
+
       commitHover(
         { itemId: nextSelection, handle: handle ?? null },
         handle ? cursorForHandle(handle, pointerAspectLocked) : 'grab'
@@ -2189,6 +2202,42 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
               </button>
             )
           })}
+          <div className="my-1 h-px bg-[color:var(--edge-soft)]" />
+          <div className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+            Aspect ratio
+          </div>
+          {(() => {
+            const video = activeSelection as LayoutVideoItem
+            const isLocked = transformTarget === 'frame'
+              ? video.lockAspectRatio ?? false
+              : video.lockCropAspectRatio ?? false
+            return (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition text-[color:color-mix(in_srgb,var(--muted)_90%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--panel)_88%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onRequestToggleAspectLock?.(video.id, transformTarget)
+                  // Don't close the context menu - it stays open
+                }}
+              >
+                <span className="flex h-4 w-4 items-center justify-center">
+                  {isLocked ? <LockIcon /> : <UnlockIcon />}
+                </span>
+                <span className="flex flex-col gap-0.5 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span>{isLocked ? 'Locked aspect ratio' : 'Freeform resize'}</span>
+                    {isLocked ? (
+                      <span className="text-xs font-medium text-[color:var(--ring)]">Active</span>
+                    ) : null}
+                  </span>
+                  <span className="text-[11px] text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
+                    {isLocked ? 'Resize maintains aspect ratio' : 'Resize freely in any direction'}
+                  </span>
+                </span>
+              </button>
+            )
+          })()}
         </div>
       ) : null}
       {selectionBounds ? (

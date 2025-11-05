@@ -1315,6 +1315,58 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     [layoutAspectRatio, sourceAspectRatio, updateLayout]
   )
 
+  const handleToggleAspectLock = useCallback(
+    (itemId: string, target: 'frame' | 'crop') => {
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: layout.items.map((item) => {
+            if (item.kind !== 'video' || item.id !== itemId) {
+              return item
+            }
+            const video = item as LayoutVideoItem
+
+            // Toggle the appropriate lock based on target
+            if (target === 'frame') {
+              const currentLock = video.lockAspectRatio ?? false
+              const newLock = !currentLock
+
+              // Calculate current aspect ratio from frame
+              const frameAspect = video.frame.width > 0 && video.frame.height > 0
+                ? video.frame.width / Math.max(video.frame.height, 0.0001)
+                : null
+
+              return {
+                ...video,
+                lockAspectRatio: newLock,
+                frameAspectRatio: newLock ? (frameAspect ?? 1) : null
+              }
+            } else {
+              // target === 'crop'
+              const currentLock = video.lockCropAspectRatio ?? false
+              const newLock = !currentLock
+
+              // Calculate current aspect ratio from crop
+              const sourceBounds = normaliseSourceCrop(video)
+              const currentCrop = clampCropToBounds(normaliseVideoCrop(video.crop), sourceBounds)
+              const cropAspect = currentCrop.width > 0 && currentCrop.height > 0
+                ? currentCrop.width / Math.max(currentCrop.height, 0.0001)
+                : null
+
+              return {
+                ...video,
+                lockCropAspectRatio: newLock,
+                cropAspectRatio: newLock ? (cropAspect ?? 1) : null
+              }
+            }
+          })
+        }),
+        { trackHistory: true }
+      )
+    },
+    [updateLayout]
+  )
+
   const handleAddItem = useCallback(
     (kind: LayoutItem['kind']) => {
       if (!draftLayout) {
@@ -2443,8 +2495,11 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               transformTarget="crop"
               aspectRatioOverride={sourceAspectRatio}
               onRequestResetAspect={handleResetToSourceAspect}
+              onRequestToggleAspectLock={handleToggleAspectLock}
               cropContext="source"
               getPendingCrop={getPendingCropFrame}
+              enableScaleModeMenu
+              onRequestChangeScaleMode={handleChangeVideoScaleMode}
               style={sourceCanvasStyle}
               ariaLabel="Source preview canvas"
             />
@@ -2496,6 +2551,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               aspectRatioOverride={layoutAspectRatio}
               onRequestResetAspect={handleResetToSourceAspect}
               onRequestChangeTransformTarget={handleTransformTargetChange}
+              onRequestToggleAspectLock={handleToggleAspectLock}
               cropContext="layout"
               getPendingCrop={getPendingCropFrame}
               onRequestFinishCrop={handleFinishCrop}
