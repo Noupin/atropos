@@ -1315,6 +1315,58 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     [layoutAspectRatio, sourceAspectRatio, updateLayout]
   )
 
+  const handleToggleAspectLock = useCallback(
+    (itemId: string, target: 'frame' | 'crop') => {
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: layout.items.map((item) => {
+            if (item.kind !== 'video' || item.id !== itemId) {
+              return item
+            }
+            const video = item as LayoutVideoItem
+            if (target === 'frame') {
+              const currentLock = video.lockAspectRatio ?? false
+              const newLock = !currentLock
+
+              // Capture current aspect ratio when locking
+              let capturedAspect: number | null = null
+              if (newLock) {
+                const aspect = getFrameAspectRatio(video.frame)
+                capturedAspect = aspect && Number.isFinite(aspect) && aspect > 0 ? aspect : null
+              }
+
+              return {
+                ...video,
+                lockAspectRatio: newLock,
+                frameAspectRatio: capturedAspect
+              }
+            } else {
+              const currentLock = video.lockCropAspectRatio ?? false
+              const newLock = !currentLock
+
+              // Capture current crop aspect ratio when locking
+              let capturedAspect: number | null = null
+              if (newLock) {
+                const crop = normaliseVideoCrop(video.crop)
+                const aspect = getCropAspectRatio(crop)
+                capturedAspect = aspect && Number.isFinite(aspect) && aspect > 0 ? aspect : null
+              }
+
+              return {
+                ...video,
+                lockCropAspectRatio: newLock,
+                cropAspectRatio: capturedAspect
+              }
+            }
+          })
+        }),
+        { trackHistory: true }
+      )
+    },
+    [updateLayout]
+  )
+
   const handleAddItem = useCallback(
     (kind: LayoutItem['kind']) => {
       if (!draftLayout) {
@@ -2440,9 +2492,10 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                   <span className="text-xs text-white/70">{sourcePreviewMessage}</span>
                 )
               }
-              transformTarget="crop"
+              transformTarget="frame"
               aspectRatioOverride={sourceAspectRatio}
               onRequestResetAspect={handleResetToSourceAspect}
+              onRequestToggleAspectLock={handleToggleAspectLock}
               cropContext="source"
               getPendingCrop={getPendingCropFrame}
               style={sourceCanvasStyle}

@@ -23,7 +23,9 @@ import LayoutItemToolbar, {
   RemoveIcon,
   SendBackwardIcon,
   CropModeIcon,
-  CropConfirmIcon
+  CropConfirmIcon,
+  LockIcon,
+  UnlockIcon
 } from './LayoutItemToolbar'
 import { useLayoutSelection } from './layoutSelectionStore'
 
@@ -139,6 +141,7 @@ type LayoutCanvasProps = {
   onRequestChangeScaleMode?: (itemId: string, mode: LayoutVideoItem['scaleMode']) => void
   getPendingCrop?: (itemId: string, context: 'source' | 'layout') => LayoutFrame | null
   onRequestFinishCrop?: () => void
+  onRequestToggleAspectLock?: (itemId: string, target: 'frame' | 'crop') => void
 }
 
 type Guide = {
@@ -785,7 +788,8 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   enableScaleModeMenu = false,
   onRequestChangeScaleMode,
   getPendingCrop,
-  onRequestFinishCrop
+  onRequestFinishCrop,
+  onRequestToggleAspectLock
 }) => {
   const colorScheme = useColorScheme()
   const [selectedItemId, setSelectedItemId] = useLayoutSelection()
@@ -1166,7 +1170,15 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         setSelectedItemId(nextSelection)
       }
       setToolbarAnchorId(nextSelection)
-      const pointerAspectLocked = false
+
+      // Determine aspect lock state from item properties
+      const item = layout.items.find((candidate) => candidate.id === nextSelection)
+      const pointerAspectLocked = item && (item as LayoutVideoItem).kind === 'video'
+        ? transformTarget === 'frame'
+          ? ((item as LayoutVideoItem).lockAspectRatio ?? false)
+          : ((item as LayoutVideoItem).lockCropAspectRatio ?? false)
+        : false
+
       commitHover(
         { itemId: nextSelection, handle: handle ?? null },
         handle ? cursorForHandle(handle, pointerAspectLocked) : 'grab'
@@ -1178,7 +1190,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
       // Only start an active interaction when we are resizing or we intend to drag the selected item.
       // A simple click-to-select should NOT set interactionRef; selection must persist after pointerup.
-      const item = layout.items.find((candidate) => candidate.id === nextSelection)
       if (!item || !itemIsEditable(item)) {
         clearInteraction()
         return
@@ -1204,7 +1215,15 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       const snapEnabled = event.altKey || event.metaKey
       const aspectLocked = pointerAspectLocked
       let aspectRatioValue: number | undefined
-      if (typeof getAspectRatioForItem === 'function') {
+      if (aspectLocked && (item as LayoutVideoItem).kind === 'video') {
+        // When locked, use the stored aspect ratio if available
+        const video = item as LayoutVideoItem
+        const storedRatio = transformTarget === 'frame' ? video.frameAspectRatio : video.cropAspectRatio
+        if (storedRatio && Number.isFinite(storedRatio) && storedRatio > 0) {
+          aspectRatioValue = storedRatio
+        }
+      }
+      if (!aspectRatioValue && typeof getAspectRatioForItem === 'function') {
         const ratio = getAspectRatioForItem(item, transformTarget)
         if (ratio && Number.isFinite(ratio) && ratio > 0) {
           aspectRatioValue = ratio
@@ -1492,7 +1511,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   const handleItemContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>, item: LayoutItem) => {
-      if (!enableScaleModeMenu || !onRequestChangeScaleMode) {
+      const hasScaleMenu = enableScaleModeMenu && onRequestChangeScaleMode
+      const hasAspectLock = cropContext === 'source' && transformTarget === 'frame' && onRequestToggleAspectLock
+      if (!hasScaleMenu && !hasAspectLock) {
         return
       }
       if ((item as LayoutVideoItem).kind !== 'video') {
@@ -1514,7 +1535,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         : event.clientY
       setContextMenu({ x: safeX, y: safeY, itemId: video.id })
     },
-    [enableScaleModeMenu, onRequestChangeScaleMode, selectedItemId, setSelectedItemId]
+    [cropContext, enableScaleModeMenu, onRequestChangeScaleMode, onRequestToggleAspectLock, selectedItemId, setSelectedItemId, transformTarget]
   )
 
   const handles: Array<{ id: ResizeHandle; positionClass: string; label: string }> = useMemo(
@@ -1911,7 +1932,11 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const showHandles = isSelected || isHovered
         const label = getItemLabel(item)
         const palette = getItemAppearance(item, colorScheme)
-        const itemAspectLocked = false
+        const itemAspectLocked = (item as LayoutVideoItem).kind === 'video'
+          ? transformTarget === 'frame'
+            ? ((item as LayoutVideoItem).lockAspectRatio ?? false)
+            : ((item as LayoutVideoItem).lockCropAspectRatio ?? false)
+          : false
         const classes = getItemClasses ? getItemClasses(item, isSelected) : ''
         const shouldShowLabel =
           labelVisibility === 'always' || (labelVisibility === 'selected' && isSelected)
@@ -2145,50 +2170,93 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           </div>
         )
       })}
-      {contextMenu && enableScaleModeMenu && activeSelection && (activeSelection as LayoutVideoItem).kind === 'video' ? (
+      {contextMenu && activeSelection && (activeSelection as LayoutVideoItem).kind === 'video' ? (
         <div
           data-layout-context-menu="true"
           className="fixed z-[1000] min-w-[220px] rounded-lg border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_94%,transparent)] p-1 shadow-[0_12px_28px_rgba(15,23,42,0.4)]"
           style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
         >
-          <div className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-            Display mode
-          </div>
-          {(
-            [
-              { mode: 'cover' as LayoutVideoItem['scaleMode'], label: 'Auto crop to fill', description: 'Crop video to match the frame' },
-              { mode: 'fill' as LayoutVideoItem['scaleMode'], label: 'Stretch to frame', description: 'Stretch without cropping' }
-            ] as const
-          ).map((option) => {
-            const video = activeSelection as LayoutVideoItem
-            const currentMode = video.scaleMode ?? 'cover'
-            const isActive = currentMode === option.mode || (option.mode === 'cover' && currentMode == null)
-            return (
-              <button
-                key={option.mode}
-                type="button"
-                className={`flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
-                  isActive
-                    ? 'bg-[color:color-mix(in_srgb,var(--accent-soft)_85%,transparent)] text-[var(--fg)]'
-                    : 'text-[color:color-mix(in_srgb,var(--muted)_90%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--panel)_88%,transparent)]'
-                }`}
-                onClick={() => {
-                  onRequestChangeScaleMode?.(video.id, option.mode)
-                  setContextMenu(null)
-                }}
-              >
-                <span className="flex w-full items-center justify-between">
-                  <span>{option.label}</span>
-                  {isActive ? (
-                    <span className="text-xs font-medium text-[color:var(--ring)]">Active</span>
-                  ) : null}
-                </span>
-                <span className="text-[11px] text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
-                  {option.description}
-                </span>
-              </button>
-            )
-          })}
+          {cropContext === 'source' && transformTarget === 'frame' && onRequestToggleAspectLock ? (
+            <>
+              <div className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                Aspect ratio
+              </div>
+              {(() => {
+                const video = activeSelection as LayoutVideoItem
+                const isLocked = transformTarget === 'frame' ? (video.lockAspectRatio ?? false) : (video.lockCropAspectRatio ?? false)
+                const isDragging = Boolean(interactionRef.current)
+                return (
+                  <button
+                    type="button"
+                    disabled={isDragging}
+                    className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                      isDragging
+                        ? 'cursor-not-allowed opacity-50'
+                        : 'text-[color:color-mix(in_srgb,var(--muted)_90%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--panel)_88%,transparent)]'
+                    }`}
+                    onClick={() => {
+                      if (!isDragging) {
+                        onRequestToggleAspectLock(video.id, transformTarget)
+                        setContextMenu(null)
+                      }
+                    }}
+                  >
+                    <span className="flex h-4 w-4 items-center justify-center text-[color:var(--fg)]">
+                      {isLocked ? <LockIcon /> : <UnlockIcon />}
+                    </span>
+                    <span className="flex flex-1 flex-col gap-0.5">
+                      <span className="text-[color:var(--fg)]">{isLocked ? 'Unlock aspect ratio' : 'Lock aspect ratio'}</span>
+                      <span className="text-[11px] text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
+                        {isLocked ? 'Allow freeform resizing' : 'Maintain current proportions'}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })()}
+            </>
+          ) : null}
+          {enableScaleModeMenu && onRequestChangeScaleMode ? (
+            <>
+              <div className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                Display mode
+              </div>
+              {(
+                [
+                  { mode: 'cover' as LayoutVideoItem['scaleMode'], label: 'Auto crop to fill', description: 'Crop video to match the frame' },
+                  { mode: 'fill' as LayoutVideoItem['scaleMode'], label: 'Stretch to frame', description: 'Stretch without cropping' }
+                ] as const
+              ).map((option) => {
+                const video = activeSelection as LayoutVideoItem
+                const currentMode = video.scaleMode ?? 'cover'
+                const isActive = currentMode === option.mode || (option.mode === 'cover' && currentMode == null)
+                return (
+                  <button
+                    key={option.mode}
+                    type="button"
+                    className={`flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                      isActive
+                        ? 'bg-[color:color-mix(in_srgb,var(--accent-soft)_85%,transparent)] text-[var(--fg)]'
+                        : 'text-[color:color-mix(in_srgb,var(--muted)_90%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--panel)_88%,transparent)]'
+                    }`}
+                    onClick={() => {
+                      onRequestChangeScaleMode?.(video.id, option.mode)
+                      setContextMenu(null)
+                    }}
+                  >
+                    <span className="flex w-full items-center justify-between">
+                      <span>{option.label}</span>
+                      {isActive ? (
+                        <span className="text-xs font-medium text-[color:var(--ring)]">Active</span>
+                      ) : null}
+                    </span>
+                    <span className="text-[11px] text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
+                      {option.description}
+                    </span>
+                  </button>
+                )
+              })}
+            </>
+          ) : null}
         </div>
       ) : null}
       {selectionBounds ? (
