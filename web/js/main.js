@@ -4,6 +4,49 @@ const form = document.getElementById("signup");
 const statusEl = document.getElementById("status");
 const emailEl = document.getElementById("email");
 const btn = document.getElementById("submitBtn");
+const nav = document.getElementById("topNav");
+const navTarget = document.getElementById("navSignupTarget");
+const heroSlot = document.getElementById("heroSignupSlot");
+const signupWrapper = document.getElementById("signupWrapper");
+const sentinel = document.getElementById("signupScrollSentinel");
+
+function moveSignup(toNav) {
+  if (!signupWrapper || !nav || !navTarget || !heroSlot) return;
+
+  const destination = toNav ? navTarget : heroSlot;
+  if (destination.contains(signupWrapper)) return;
+
+  destination.appendChild(signupWrapper);
+  if (toNav) {
+    nav.classList.add("compact");
+    document.body.classList.add("nav-compact");
+  } else {
+    nav.classList.remove("compact");
+    document.body.classList.remove("nav-compact");
+  }
+}
+
+if (signupWrapper && nav && navTarget && heroSlot && sentinel) {
+  const observerCallback = (entries) => {
+    const entry = entries[0];
+    if (!entry) return;
+    moveSignup(!entry.isIntersecting);
+  };
+
+  if ("IntersectionObserver" in window) {
+    const observer = new IntersectionObserver(observerCallback, {
+      rootMargin: "-120px 0px 0px 0px",
+    });
+    observer.observe(sentinel);
+  } else {
+    const handleScroll = () => {
+      const rect = sentinel.getBoundingClientRect();
+      moveSignup(rect.top < 100);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
+  }
+}
 
 function showStatus(kind, text) {
   statusEl.className = "status show " + (kind || "");

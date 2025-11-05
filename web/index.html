@@ -11,6 +11,11 @@
     <link rel="stylesheet" href="/css/styles.css" />
   </head>
   <body>
+    <header class="top-nav" id="topNav">
+      <a class="brand" href="/" aria-label="Back to the Atropos home page">Atropos</a>
+      <div class="top-nav__cta" id="navSignupTarget"></div>
+    </header>
+
     <main class="frame" role="main" aria-labelledby="hero-title">
       <section class="panel">
         <header>
@@ -21,24 +26,52 @@
           </p>
         </header>
 
-        <form id="signup" aria-label="Email signup">
-          <input
-            id="email"
-            name="email"
-            type="email"
-            placeholder="you@example.com"
-            autocomplete="email"
-            required
-          />
-          <button id="submitBtn" type="submit" aria-label="Join the list">
-            Claim Your Spot
-          </button>
-        </form>
+        <div id="signupScrollSentinel" aria-hidden="true"></div>
+        <div class="signup-slot" id="heroSignupSlot">
+          <div class="signup-wrapper" id="signupWrapper">
+            <form id="signup" aria-label="Email signup">
+              <input
+                id="email"
+                name="email"
+                type="email"
+                placeholder="you@example.com"
+                autocomplete="email"
+                required
+              />
+              <button id="submitBtn" type="submit" aria-label="Join the list">
+                Claim Your Spot
+              </button>
+            </form>
 
-        <!-- Hidden until needed -->
-        <div class="status" id="status" aria-live="polite"></div>
+            <!-- Hidden until needed -->
+            <div class="status" id="status" aria-live="polite"></div>
+          </div>
+        </div>
 
         <p class="fine">Early access invites, launch info, and nothing else.</p>
+
+        <article class="story" aria-label="About Atropos">
+          <h2>Craft a video presence without starting from scratch</h2>
+          <p>
+            Atropos listens to the stories you have already told in podcasts, webinars,
+            livestreams, and interviews, then distills them into the clips your audience
+            keeps asking for. No more endless timelines or repetitive edits—just the best
+            parts of your voice, ready for every channel that matters.
+          </p>
+          <p>
+            We analyze structure, tone, and pacing so your highlights stay true to you.
+            Our models surface resonant moments, add smart captions, and package short
+            videos sized perfectly for TikTok, YouTube Shorts, Instagram Reels, and every
+            platform that rewards quick, memorable storytelling.
+          </p>
+          <p>
+            Whether you are building a loyal community or launching your next product,
+            Atropos keeps you present without the grind. Share your email to join the
+            creators shaping what comes next—we will reach out with early access once we
+            are ready to bring you onboard.
+          </p>
+        </article>
+
         <footer><span id="year"></span> · Atropos</footer>
       </section>
     </main>
