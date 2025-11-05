@@ -23,7 +23,9 @@ import LayoutItemToolbar, {
   RemoveIcon,
   SendBackwardIcon,
   CropModeIcon,
-  CropConfirmIcon
+  CropConfirmIcon,
+  LockIcon,
+  UnlockIcon
 } from './LayoutItemToolbar'
 import { useLayoutSelection } from './layoutSelectionStore'
 
@@ -132,6 +134,7 @@ type LayoutCanvasProps = {
   style?: CSSProperties
   ariaLabel?: string
   onRequestResetAspect?: (target: 'frame' | 'crop', context: 'source' | 'layout') => void
+  onRequestFullReset?: (context: 'source' | 'layout') => void
   onRequestChangeTransformTarget?: (target: 'frame' | 'crop') => void
   getAspectRatioForItem?: (item: LayoutItem, target: 'frame' | 'crop') => number | null
   cropContext?: 'source' | 'layout'
@@ -139,6 +142,7 @@ type LayoutCanvasProps = {
   onRequestChangeScaleMode?: (itemId: string, mode: LayoutVideoItem['scaleMode']) => void
   getPendingCrop?: (itemId: string, context: 'source' | 'layout') => LayoutFrame | null
   onRequestFinishCrop?: () => void
+  onRequestToggleLock?: () => void
 }
 
 type Guide = {
@@ -779,13 +783,15 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   aspectRatioOverride,
   ariaLabel,
   onRequestResetAspect,
+  onRequestFullReset,
   onRequestChangeTransformTarget,
   getAspectRatioForItem,
   cropContext = 'layout',
   enableScaleModeMenu = false,
   onRequestChangeScaleMode,
   getPendingCrop,
-  onRequestFinishCrop
+  onRequestFinishCrop,
+  onRequestToggleLock
 }) => {
   const colorScheme = useColorScheme()
   const [selectedItemId, setSelectedItemId] = useLayoutSelection()
@@ -1166,7 +1172,14 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         setSelectedItemId(nextSelection)
       }
       setToolbarAnchorId(nextSelection)
-      const pointerAspectLocked = false
+
+      // Determine aspect lock state from the item
+      const selectedItem = layout.items.find((candidate) => candidate.id === nextSelection)
+      const pointerAspectLocked =
+        selectedItem && (selectedItem as LayoutVideoItem).kind === 'video'
+          ? ((selectedItem as LayoutVideoItem).lockAspectRatio ?? true) // Default to locked
+          : false
+
       commitHover(
         { itemId: nextSelection, handle: handle ?? null },
         handle ? cursorForHandle(handle, pointerAspectLocked) : 'grab'
@@ -1202,7 +1215,8 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         originFrame = cropToOverlayFrame(frameBounds, sourceBounds, currentCrop)
       }
       const snapEnabled = event.altKey || event.metaKey
-      const aspectLocked = pointerAspectLocked
+      // Aspect lock is always disabled in crop mode, otherwise use item's lock state
+      const aspectLocked = transformTarget === 'crop' ? false : pointerAspectLocked
       let aspectRatioValue: number | undefined
       if (typeof getAspectRatioForItem === 'function') {
         const ratio = getAspectRatioForItem(item, transformTarget)
@@ -1690,6 +1704,18 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       }
     }
 
+    // Add lock/unlock toggle for video items in frame mode (not in crop mode)
+    if (primaryIsVideo && transformTarget === 'frame' && onRequestToggleLock) {
+      const videoItem = activeSelection as LayoutVideoItem
+      const isLocked = videoItem.lockAspectRatio ?? true // Default to locked
+      actions.push({
+        key: 'toggle-lock',
+        label: isLocked ? 'Unlock aspect ratio' : 'Lock aspect ratio',
+        icon: isLocked ? <LockIcon /> : <UnlockIcon />,
+        onSelect: () => onRequestToggleLock()
+      })
+    }
+
     actions.push({
       key: 'reset-aspect',
       label: cropContext === 'source' ? 'Reset to video aspect' : 'Match source frame aspect',
@@ -1700,6 +1726,16 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           : undefined,
       disabled: !primaryIsVideo || !onRequestResetAspect
     })
+
+    // Add Full Reset for Layout Preview
+    if (primaryIsVideo && cropContext === 'layout' && onRequestFullReset) {
+      actions.push({
+        key: 'full-reset',
+        label: 'Full reset to source',
+        icon: <AspectResetIcon />,
+        onSelect: () => onRequestFullReset(cropContext)
+      })
+    }
 
     actions.push(
       {
@@ -1730,13 +1766,17 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
     return actions
   }, [
+    activeSelection,
     cropContext,
     onRequestBringForward,
     onRequestChangeTransformTarget,
     onRequestDelete,
     onRequestDuplicate,
+    onRequestFinishCrop,
+    onRequestFullReset,
     onRequestResetAspect,
     onRequestSendBackward,
+    onRequestToggleLock,
     primaryIsVideo,
     transformTarget
   ])
@@ -1911,12 +1951,18 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const showHandles = isSelected || isHovered
         const label = getItemLabel(item)
         const palette = getItemAppearance(item, colorScheme)
-        const itemAspectLocked = false
+        const videoItem = (item as LayoutVideoItem).kind === 'video' ? (item as LayoutVideoItem) : null
+        // Get aspect lock state for cursor display (always false in crop mode)
+        const itemAspectLocked =
+          transformTarget === 'crop'
+            ? false
+            : videoItem
+              ? (videoItem.lockAspectRatio ?? true)
+              : false
         const classes = getItemClasses ? getItemClasses(item, isSelected) : ''
         const shouldShowLabel =
           labelVisibility === 'always' || (labelVisibility === 'selected' && isSelected)
         const editable = itemIsEditable(item)
-        const videoItem = (item as LayoutVideoItem).kind === 'video' ? (item as LayoutVideoItem) : null
         const pendingCrop = videoItem ? getPendingCrop?.(videoItem.id, cropContext) : null
         const cropOverlayRect =
           isPrimarySelection && transformTarget === 'crop' && videoItem

@@ -1173,11 +1173,14 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                   : currentFrame
               const defaultCrop = createDefaultCrop()
 
+              const resetAspect =
+                targetAspect && Number.isFinite(targetAspect) && targetAspect > 0 ? targetAspect : null
+
               return {
                 ...item,
-                lockAspectRatio: false,
+                lockAspectRatio: true, // Lock after reset
                 lockCropAspectRatio: false,
-                frameAspectRatio: null,
+                frameAspectRatio: resetAspect, // Save the reset aspect ratio
                 cropAspectRatio: null,
                 frame: clampFrame(snappedFrame),
                 sourceCrop: defaultCrop,
@@ -1218,12 +1221,14 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               }
             }
             const cropCopy = normaliseVideoCrop(boundedSource)
+            const resetAspect =
+              targetAspect && Number.isFinite(targetAspect) && targetAspect > 0 ? targetAspect : null
 
             return {
               ...item,
-              lockAspectRatio: false,
+              lockAspectRatio: true, // Lock after reset
               lockCropAspectRatio: false,
-              frameAspectRatio: null,
+              frameAspectRatio: resetAspect, // Save the reset aspect ratio
               cropAspectRatio: null,
               frame: clampFrame(snappedFrame),
               crop: cropCopy
@@ -1315,6 +1320,131 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     [layoutAspectRatio, sourceAspectRatio, updateLayout]
   )
 
+  const handleToggleLock = useCallback(() => {
+    if (!selectedItemId || !draftLayout) {
+      return
+    }
+    updateLayout(
+      (layout) => ({
+        ...layout,
+        items: layout.items.map((item) => {
+          if (item.kind !== 'video' || item.id !== selectedItemId) {
+            return item
+          }
+          const video = item as LayoutVideoItem
+          const currentLockState = video.lockAspectRatio ?? true // Default to locked
+          const currentFrame = clampFrame(video.frame)
+          const currentAspect =
+            currentFrame.width > 0 && currentFrame.height > 0
+              ? currentFrame.width / Math.max(currentFrame.height, 0.0001)
+              : null
+
+          // When locking, save the current aspect ratio
+          // When unlocking, clear the saved aspect ratio
+          return {
+            ...video,
+            lockAspectRatio: !currentLockState,
+            frameAspectRatio: !currentLockState && currentAspect ? currentAspect : null
+          }
+        })
+      }),
+      { trackHistory: true }
+    )
+  }, [draftLayout, selectedItemId, updateLayout])
+
+  const handleFullReset = useCallback(
+    (context: 'source' | 'layout') => {
+      if (!selectedItemId || context !== 'layout') {
+        return
+      }
+      const nativeAspect = sourceAspectRatio > 0 ? sourceAspectRatio : layoutAspectRatio
+      const layoutCanvasAspect = layoutAspectRatio > 0 ? layoutAspectRatio : 1
+      updateLayout(
+        (layout) => ({
+          ...layout,
+          items: layout.items.map((item) => {
+            if (item.kind !== 'video' || item.id !== selectedItemId) {
+              return item
+            }
+
+            // Get the source frame and crop from the item
+            const pendingSourceCrop = frameToCrop(pendingCrops.source[selectedItemId])
+            const sourceBounds = pendingSourceCrop ?? normaliseSourceCrop(item)
+            const cropAspect = getCropAspectRatio(sourceBounds)
+            const sourceDisplayAspect =
+              cropAspect && Number.isFinite(sourceAspectRatio) && sourceAspectRatio > 0
+                ? cropAspect * sourceAspectRatio
+                : null
+            const normalisedNativeAspect =
+              Number.isFinite(nativeAspect) && nativeAspect > 0 && layoutCanvasAspect > 0
+                ? nativeAspect / layoutCanvasAspect
+                : null
+            const targetAspect =
+              sourceDisplayAspect && Number.isFinite(sourceDisplayAspect) && sourceDisplayAspect > 0
+                ? layoutCanvasAspect > 0
+                  ? sourceDisplayAspect / layoutCanvasAspect
+                  : null
+                : normalisedNativeAspect
+
+            // Reset to source frame
+            const sourceFrame = item.frame // Use the current source frame
+            let snappedFrame = sourceFrame
+            if (targetAspect && Number.isFinite(targetAspect) && targetAspect > 0) {
+              snappedFrame = snapFrameToAspect(sourceFrame, targetAspect)
+            }
+            const cropCopy = normaliseVideoCrop(sourceBounds)
+
+            return {
+              ...item,
+              lockAspectRatio: true, // Lock by default after reset
+              lockCropAspectRatio: false,
+              frameAspectRatio: targetAspect,
+              cropAspectRatio: null,
+              frame: clampFrame(snappedFrame),
+              crop: cropCopy
+            }
+          })
+        }),
+        { trackHistory: true }
+      )
+      setPendingCrops((current) => {
+        const next = {
+          source: { ...current.source },
+          layout: { ...current.layout }
+        }
+        if (next.layout[selectedItemId]) {
+          delete next.layout[selectedItemId]
+        }
+        return next
+      })
+    },
+    [layoutAspectRatio, pendingCrops, selectedItemId, sourceAspectRatio, updateLayout]
+  )
+
+  const getAspectRatioForItem = useCallback(
+    (item: LayoutItem, _target: 'frame' | 'crop'): number | null => {
+      if (item.kind !== 'video') {
+        return null
+      }
+      const video = item as LayoutVideoItem
+      const isLocked = video.lockAspectRatio ?? true // Default to locked
+      if (!isLocked) {
+        return null // Not locked, no aspect ratio constraint
+      }
+      // Return the saved aspect ratio or calculate from current frame
+      if (video.frameAspectRatio && Number.isFinite(video.frameAspectRatio) && video.frameAspectRatio > 0) {
+        return video.frameAspectRatio
+      }
+      // Fallback to current frame aspect
+      const frame = clampFrame(video.frame)
+      if (frame.width > 0 && frame.height > 0) {
+        return frame.width / Math.max(frame.height, 0.0001)
+      }
+      return null
+    },
+    []
+  )
+
   const handleAddItem = useCallback(
     (kind: LayoutItem['kind']) => {
       if (!draftLayout) {
@@ -1323,6 +1453,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
       let newItem: LayoutItem
       if (kind === 'video') {
         const initialFrame: LayoutFrame = { x: 0.1, y: 0.1, width: 0.8, height: 0.6 }
+        const initialAspect = initialFrame.width / Math.max(initialFrame.height, 0.0001)
         newItem = {
           id: createItemId('video'),
           kind: 'video',
@@ -1334,9 +1465,9 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
           rotation: null,
           opacity: 1,
           mirror: false,
-          lockAspectRatio: false,
+          lockAspectRatio: true, // Default to locked
           lockCropAspectRatio: false,
-          frameAspectRatio: null,
+          frameAspectRatio: initialAspect, // Save initial aspect ratio
           cropAspectRatio: null,
           zIndex: draftLayout.items.length
         }
@@ -2443,6 +2574,8 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               transformTarget="crop"
               aspectRatioOverride={sourceAspectRatio}
               onRequestResetAspect={handleResetToSourceAspect}
+              onRequestToggleLock={handleToggleLock}
+              getAspectRatioForItem={getAspectRatioForItem}
               cropContext="source"
               getPendingCrop={getPendingCropFrame}
               style={sourceCanvasStyle}
@@ -2495,6 +2628,9 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
               labelVisibility="selected"
               aspectRatioOverride={layoutAspectRatio}
               onRequestResetAspect={handleResetToSourceAspect}
+              onRequestFullReset={handleFullReset}
+              onRequestToggleLock={handleToggleLock}
+              getAspectRatioForItem={getAspectRatioForItem}
               onRequestChangeTransformTarget={handleTransformTargetChange}
               cropContext="layout"
               getPendingCrop={getPendingCropFrame}
