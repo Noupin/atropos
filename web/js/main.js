@@ -112,49 +112,160 @@ const marketingPhrases = [
   "Clip channels 24/7",
 ];
 const rotationInterval = 5000;
-const flipDuration = 820;
+const tileFlipDuration = 800;
+const tileFaces = new WeakMap();
 
-if (phraseRotator && marketingPhrases.length > 1) {
-  let currentIndex = 0;
-  const currentPanel = phraseRotator.querySelector(
-    ".flipboard__panel--current"
-  );
-  if (currentPanel) {
-    currentPanel.textContent = marketingPhrases[0];
+const displayChar = (char) => {
+  if (char === " ") return "\u00A0";
+  if (char === undefined || char === null) return "\u00A0";
+  return char;
+};
+
+function setSpaceState(tile, char) {
+  if (!tile) return;
+  if (!char || char.trim() === "") {
+    tile.classList.add("flipboard__tile--space");
+  } else {
+    tile.classList.remove("flipboard__tile--space");
   }
-  if (phraseAnnouncer) {
-    phraseAnnouncer.textContent = `Marketing phrases change every five seconds. Current: ${marketingPhrases[0]}.`;
-  }
+}
 
-  const rotatePhrase = () => {
-    const nextIndex = (currentIndex + 1) % marketingPhrases.length;
-    const nextPanel = document.createElement("div");
-    nextPanel.className = "flipboard__panel flipboard__panel--enter";
-    nextPanel.textContent = marketingPhrases[nextIndex];
-    phraseRotator.appendChild(nextPanel);
+function createFace(tile, className, char) {
+  const face = document.createElement("span");
+  face.className = `flipboard__tile-face ${className}`;
+  const letter = document.createElement("span");
+  letter.className = "flipboard__tile-letter";
+  letter.textContent = displayChar(char);
+  face.appendChild(letter);
+  tile.appendChild(face);
+  return face;
+}
 
-    const outgoing = phraseRotator.querySelector(
-      ".flipboard__panel--current"
-    );
-    if (outgoing) {
-      outgoing.classList.add("flipboard__panel--exit");
-    }
-
-    setTimeout(() => {
-      if (outgoing && outgoing.parentElement === phraseRotator) {
-        outgoing.remove();
-      }
-      nextPanel.classList.remove("flipboard__panel--enter");
-      nextPanel.classList.add("flipboard__panel--current");
-    }, flipDuration);
-
-    currentIndex = nextIndex;
-    if (phraseAnnouncer) {
-      phraseAnnouncer.textContent = `Marketing phrases change every five seconds. Current: ${marketingPhrases[nextIndex]}.`;
-    }
+function createTile(char) {
+  const tile = document.createElement("span");
+  tile.className = "flipboard__tile";
+  const normalized = char ?? " ";
+  const faces = {
+    upper: createFace(tile, "flipboard__tile-face--upper", normalized),
+    lower: createFace(tile, "flipboard__tile-face--lower", normalized),
+    upperNext: createFace(tile, "flipboard__tile-face--upper-next", normalized),
+    lowerNext: createFace(tile, "flipboard__tile-face--lower-next", normalized),
   };
+  tile.dataset.char = normalized;
+  setSpaceState(tile, normalized);
+  tileFaces.set(tile, faces);
+  return tile;
+}
 
-  setInterval(rotatePhrase, rotationInterval);
+function setFaceLetter(face, char) {
+  const letter = face?.querySelector?.(".flipboard__tile-letter");
+  if (letter) {
+    letter.textContent = displayChar(char);
+  }
+}
+
+function setTileImmediate(tile, char) {
+  const targetChar = char ?? " ";
+  const faces = tileFaces.get(tile);
+  if (!faces) return;
+  setFaceLetter(faces.upper, targetChar);
+  setFaceLetter(faces.lower, targetChar);
+  setFaceLetter(faces.upperNext, targetChar);
+  setFaceLetter(faces.lowerNext, targetChar);
+  tile.dataset.char = targetChar;
+  setSpaceState(tile, targetChar);
+}
+
+function flipTileTo(tile, char) {
+  const targetChar = char ?? " ";
+  const currentChar = tile.dataset.char ?? " ";
+  if (currentChar === targetChar) {
+    setSpaceState(tile, targetChar);
+    return;
+  }
+
+  const faces = tileFaces.get(tile);
+  if (!faces) return;
+
+  setFaceLetter(faces.upperNext, targetChar);
+  setFaceLetter(faces.lowerNext, targetChar);
+  setSpaceState(tile, targetChar);
+  tile.classList.add("flipboard__tile--flip");
+
+  setTimeout(() => {
+    setFaceLetter(faces.upper, targetChar);
+    setFaceLetter(faces.lower, targetChar);
+    setFaceLetter(faces.upperNext, targetChar);
+    setFaceLetter(faces.lowerNext, targetChar);
+    tile.dataset.char = targetChar;
+    tile.classList.remove("flipboard__tile--flip");
+  }, tileFlipDuration);
+}
+
+function updatePhraseBoard(nextPhrase, { immediate = false } = {}) {
+  if (!phraseRotator) return;
+
+  const letters = Array.from(nextPhrase);
+  const fallback = phraseRotator.querySelector(".flipboard__fallback");
+  if (fallback) {
+    fallback.remove();
+  }
+  phraseRotator.setAttribute("data-ready", "true");
+
+  let tiles = Array.from(phraseRotator.querySelectorAll(".flipboard__tile"));
+
+  while (tiles.length < letters.length) {
+    const tile = createTile(letters[tiles.length] ?? " ");
+    phraseRotator.appendChild(tile);
+    tiles.push(tile);
+  }
+
+  while (tiles.length > letters.length) {
+    const tile = tiles.pop();
+    tile?.remove();
+  }
+
+  tiles = Array.from(phraseRotator.querySelectorAll(".flipboard__tile"));
+
+  letters.forEach((char, index) => {
+    const tile = tiles[index];
+    if (!tile) return;
+    if (immediate) {
+      setTileImmediate(tile, char);
+    } else {
+      flipTileTo(tile, char);
+    }
+  });
+}
+
+function announcePhrase(text) {
+  if (phraseAnnouncer) {
+    phraseAnnouncer.textContent = `Marketing phrase: ${text}.`;
+  }
+}
+
+if (phraseRotator && marketingPhrases.length) {
+  const initialPhrase =
+    phraseRotator.dataset.initialPhrase || marketingPhrases[0];
+  let currentIndex = Math.max(
+    marketingPhrases.indexOf(initialPhrase),
+    0
+  );
+
+  updatePhraseBoard(initialPhrase, { immediate: true });
+  announcePhrase(initialPhrase);
+
+  if (marketingPhrases.length > 1) {
+    const rotatePhrase = () => {
+      const nextIndex = (currentIndex + 1) % marketingPhrases.length;
+      const phrase = marketingPhrases[nextIndex];
+      updatePhraseBoard(phrase);
+      announcePhrase(phrase);
+      currentIndex = nextIndex;
+    };
+
+    setInterval(rotatePhrase, rotationInterval);
+  }
 }
 
 function formatCount(value) {

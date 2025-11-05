@@ -28,14 +28,15 @@
           </header>
 
           <div class="hero__rotator" aria-live="polite" aria-atomic="true">
-            <span class="hero__rotator-label">Rotating every 5 seconds</span>
-            <div class="flipboard" id="phraseRotator">
-              <div class="flipboard__panel flipboard__panel--current">
-                Turn long-form into shorts
-              </div>
+            <div
+              class="flipboard"
+              id="phraseRotator"
+              data-initial-phrase="Turn long-form into shorts"
+            >
+              <span class="flipboard__fallback">Turn long-form into shorts</span>
             </div>
             <span class="sr-only" id="phraseAnnouncer">
-              Marketing phrases change every five seconds.
+              Marketing phrase: Turn long-form into shorts.
             </span>
           </div>
 
