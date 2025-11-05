@@ -1,37 +1,48 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Atropos</title>
-  <meta name="description" content="Atropos — Made for you, by you." />
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png">
-  <link rel="shortcut icon" href="/favicon.ico">
-  <link rel="stylesheet" href="/css/styles.css">
-</head>
-<body>
-  <main class="frame" role="main" aria-labelledby="hero-title">
-    <section class="panel">
-      <header>
-        <h1 id="hero-title">Atropos</h1>
-        <p class="tagline">Made for you, by you.</p>
-        <p class="support">Your long-form, <em>transformed</em> into clips.</p>
-      </header>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Atropos</title>
+    <meta name="description" content="Atropos — Made for you, by you." />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <main class="frame" role="main" aria-labelledby="hero-title">
+      <section class="panel">
+        <header>
+          <h1 id="hero-title">Atropos</h1>
+          <p class="tagline">Made for you, by you.</p>
+          <p class="support">
+            Your long-forme, <em>transformed</em> into clips.
+          </p>
+        </header>
 
-      <form id="signup" aria-label="Email signup">
-        <input id="email" name="email" type="email" placeholder="you@example.com" autocomplete="email" required />
-        <button id="submitBtn" type="submit" aria-label="Join the list">Claim Your Spot</button>
-      </form>
+        <form id="signup" aria-label="Email signup">
+          <input
+            id="email"
+            name="email"
+            type="email"
+            placeholder="you@example.com"
+            autocomplete="email"
+            required
+          />
+          <button id="submitBtn" type="submit" aria-label="Join the list">
+            Claim Your Spot
+          </button>
+        </form>
 
-      <!-- Hidden until needed -->
-      <div class="status" id="status" aria-live="polite"></div>
+        <!-- Hidden until needed -->
+        <div class="status" id="status" aria-live="polite"></div>
 
-      <p class="fine">Early access invites, launch info, and nothing else.</p>
-      <footer><span id="year"></span> · Atropos</footer>
-    </section>
-  </main>
+        <p class="fine">Early access invites, launch info, and nothing else.</p>
+        <footer><span id="year"></span> · Atropos</footer>
+      </section>
+    </main>
 
-  <script src="/js/main.js"></script>
-</body>
+    <script src="/js/main.js"></script>
+  </body>
 </html>
