@@ -5,6 +5,7 @@ import MarbleSelect from './components/MarbleSelect'
 import TrialBadge from './components/TrialBadge'
 import ClipPage from './pages/Clip'
 import VideoPage from './pages/VideoPage'
+import VideoMetadataPage from './pages/VideoMetadataPage'
 import Home from './pages/Home'
 import Library from './pages/Library'
 import Profile from './pages/Profile'
@@ -80,7 +81,7 @@ type NavItemLabelProps = {
 }
 
 type LibraryAttachment = {
-  key: 'video-trim' | 'video-metadata' | 'video-upload'
+  key: string
   label: string
   ariaLabel: string
   srText: string | null
@@ -847,19 +848,43 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     }
 
     const navState = videoLocationState ? { ...videoLocationState } : undefined
-    const tabDefinitions: Array<{ id: 'trim' | 'metadata' | 'upload'; label: string; ariaFallback: string }> = [
-      { id: 'trim', label: 'Trim', ariaFallback: 'Trim video' },
-      { id: 'metadata', label: 'Metadata', ariaFallback: 'Edit video metadata' },
-      { id: 'upload', label: 'Upload', ariaFallback: 'Manage upload settings' }
+    const tabDefinitions: Array<{
+      id: 'trim' | 'metadata' | 'upload'
+      label: string
+      ariaFallback: string
+      path: (clipSegment: string) => string
+    }> = [
+      {
+        id: 'trim',
+        label: 'Trim',
+        ariaFallback: 'Trim video',
+        path: (seg) => `/video/${seg}?mode=trim`
+      },
+      {
+        id: 'metadata',
+        label: 'Metadata',
+        ariaFallback: 'Edit video metadata',
+        path: (seg) => `/video/${seg}/metadata`
+      },
+      {
+        id: 'upload',
+        label: 'Upload',
+        ariaFallback: 'Manage upload settings',
+        path: (seg) => `/video/${seg}?mode=upload`
+      }
     ]
 
-    const activeDefinition = tabDefinitions.find((definition) => definition.id === videoMode)
+    // Check if we're on the metadata page
+    const isMetadataPage = location.pathname.includes('/metadata')
+    const activeDefinition = isMetadataPage
+      ? tabDefinitions.find((def) => def.id === 'metadata')
+      : tabDefinitions.find((definition) => definition.id === videoMode)
 
     if (!activeDefinition) {
       return [] as LibraryAttachment[]
     }
 
-    const to = `/video/${clipSegment}?mode=${activeDefinition.id}`
+    const to = activeDefinition.path(clipSegment)
 
     return [
       {
@@ -1073,6 +1098,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
             }
           />
           <Route path="/video/:id/:legacyMode" element={<LegacyVideoPathRedirect />} />
+          <Route path="/video/:id/metadata" element={<VideoMetadataPage />} />
           <Route path="/video/:id" element={<VideoPage />} />
           <Route path="/clip/:id" element={<ClipPage />} />
           <Route path="/clip/:id/edit" element={<LegacyClipEditRedirect />} />

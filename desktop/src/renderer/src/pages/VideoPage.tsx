@@ -11,6 +11,7 @@ import { formatDuration } from '../lib/format'
 import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import useSharedVolume from '../hooks/useSharedVolume'
 import VideoPreviewStage from '../components/VideoPreviewStage'
+import VideoUploadView from '../components/video/VideoUploadView'
 import LayoutEditorPanel from '../components/layout/LayoutEditorPanel'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
@@ -39,6 +40,26 @@ import {
   type TrimmedPlaybackGuards,
   type WindowRangeWarning
 } from '../services/preview/adjustedPreview'
+import {
+  toSeconds,
+  MIN_CLIP_GAP,
+  MIN_PREVIEW_DURATION,
+  DEFAULT_EXPAND_SECONDS,
+  DEFAULT_DURATION_GUARDRAILS,
+  normaliseMode,
+  parseGuardrailValue,
+  resolveGuardrailKey,
+  formatRelativeSeconds,
+  formatTooltipLabel,
+  createInitialSaveSteps,
+  delay,
+  DEFAULT_PLATFORM_NOTES,
+  WARNING_REVERSED_MESSAGE,
+  WARNING_OUT_OF_BOUNDS_MESSAGE,
+  type DurationGuardrails,
+  type SaveStepState,
+  type SaveStepStatus
+} from '../constants/videoPageDefaults'
 
 type VideoPageLocationState = {
   clip?: Clip
@@ -47,135 +68,16 @@ type VideoPageLocationState = {
   context?: 'job' | 'library'
 }
 
-const toSeconds = (value: number): number => Math.max(0, Number.isFinite(value) ? value : 0)
-const MIN_CLIP_GAP = 0.25
-const MIN_PREVIEW_DURATION = 0.05
-const DEFAULT_EXPAND_SECONDS = 10
-
-type DurationGuardrails = {
-  minDuration: number
-  maxDuration: number
-  sweetSpotMin: number
-  sweetSpotMax: number
-}
-
-// Keep duration guardrails aligned with the backend defaults in server/config.py.
-const DEFAULT_DURATION_GUARDRAILS: DurationGuardrails = {
-  minDuration: 10,
-  maxDuration: 85,
-  sweetSpotMin: 25,
-  sweetSpotMax: 60
-}
-
-type VideoPageMode = 'layout' | 'trim' | 'metadata' | 'upload'
+type VideoPageMode = 'layout' | 'trim' | 'upload'
 
 const VIDEO_PAGE_MODES: Array<{ id: VideoPageMode; label: string }> = [
   { id: 'layout', label: 'Layout' },
   { id: 'trim', label: 'Trim' },
-  { id: 'metadata', label: 'Metadata' },
   { id: 'upload', label: 'Upload' }
 ]
 
-const normaliseMode = (value: string | null | undefined): VideoPageMode => {
-  if (value === 'layout' || value === 'metadata' || value === 'upload') {
-    return value
-  }
-  return 'trim'
-}
-
-const parseGuardrailValue = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value
-  }
-  if (typeof value === 'string') {
-    const parsed = Number.parseFloat(value)
-    if (Number.isFinite(parsed)) {
-      return parsed
-    }
-  }
-  return null
-}
-
-const resolveGuardrailKey = (name: string): keyof DurationGuardrails | null => {
-  switch (name) {
-    case 'MIN_DURATION_SECONDS':
-      return 'minDuration'
-    case 'MAX_DURATION_SECONDS':
-      return 'maxDuration'
-    case 'SWEET_SPOT_MIN_SECONDS':
-      return 'sweetSpotMin'
-    case 'SWEET_SPOT_MAX_SECONDS':
-      return 'sweetSpotMax'
-    default:
-      return null
-  }
-}
-
 const getDefaultPreviewMode = (clip: Clip | null): 'adjusted' | 'rendered' =>
   clip && clip.previewUrl === clip.playbackUrl ? 'rendered' : 'adjusted'
-
-const formatRelativeSeconds = (value: number): string => {
-  if (!Number.isFinite(value) || value === 0) {
-    return '0'
-  }
-  const sign = value > 0 ? '+' : '-'
-  const formatted = Math.abs(value)
-    .toFixed(2)
-    .replace(/\.?0+$/, '')
-  return `${sign}${formatted}`
-}
-
-const formatTooltipLabel = (offset: string, change: string | null): string => {
-  const offsetValue = offset === '0' ? '0s' : `${offset}s`
-  if (!change) {
-    return offsetValue
-  }
-  const changeValue = change === '0' ? 'Δ 0s' : `Δ ${change}s`
-  return `${offsetValue} • ${changeValue}`
-}
-
-type SaveStepId = 'cut' | 'subtitles' | 'render'
-type SaveStepStatus = 'pending' | 'running' | 'completed' | 'failed'
-
-type SaveStepState = {
-  id: SaveStepId
-  label: string
-  description: string
-  status: SaveStepStatus
-}
-
-const SAVE_STEP_DEFINITIONS: ReadonlyArray<Omit<SaveStepState, 'status'>> = [
-  {
-    id: 'cut',
-    label: 'Cut clip',
-    description: 'Trim the source footage to the requested window'
-  },
-  {
-    id: 'subtitles',
-    label: 'Regenerate subtitles',
-    description: 'Update transcript snippets to match the new timing'
-  },
-  {
-    id: 'render',
-    label: 'Render vertical clip',
-    description: 'Apply layout and export the final short'
-  }
-]
-
-const createInitialSaveSteps = (): SaveStepState[] =>
-  SAVE_STEP_DEFINITIONS.map((step) => ({ ...step, status: 'pending' }))
-
-const delay = (ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
-
-const DEFAULT_CALL_TO_ACTION = 'Invite viewers to subscribe for more highlights.'
-const DEFAULT_TAGS = 'clips, highlights, community'
-const DEFAULT_PLATFORM_NOTES = 'Share with the community playlist and pin on the channel page.'
-const WARNING_REVERSED_MESSAGE =
-  'End time must come after the start. We reset playback to the clip start.'
-const WARNING_OUT_OF_BOUNDS_MESSAGE = 'Playback window adjusted to stay within the video length.'
 
 type AdjustedSourceState =
   | { status: 'idle' }
@@ -328,10 +230,6 @@ const VideoPage: FC = () => {
   const layoutClipIdRef = useRef<string | null>(clipState?.id ?? null)
   const layoutAppliedIdRef = useRef<string | null>(clipState?.layoutId ?? null)
   const [saveSteps, setSaveSteps] = useState<SaveStepState[]>(() => createInitialSaveSteps())
-  const [title, setTitle] = useState<string>(sourceClip?.title ?? '')
-  const [description, setDescription] = useState<string>(sourceClip?.description ?? '')
-  const [callToAction, setCallToAction] = useState<string>(DEFAULT_CALL_TO_ACTION)
-  const [tags, setTags] = useState<string>(DEFAULT_TAGS)
   const [platformNotes, setPlatformNotes] = useState<string>(DEFAULT_PLATFORM_NOTES)
   const [selectedPlatforms, setSelectedPlatforms] = useState<SupportedPlatform[]>([
     ...SUPPORTED_PLATFORMS
@@ -812,18 +710,6 @@ const VideoPage: FC = () => {
       return [...previous, platform]
     })
   }, [])
-
-  const handleSaveDetails = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault()
-      if (!title.trim()) {
-        setStatusMessage('Add a clear title so viewers instantly know why the video matters.')
-        return
-      }
-      setStatusMessage('Your video details are saved. You can keep tweaking without losing changes.')
-    },
-    [title]
-  )
 
   const handleSaveDistribution = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
@@ -2323,122 +2209,17 @@ const VideoPage: FC = () => {
               {statusMessage}
             </div>
           ) : null}
-          {activeMode === 'metadata' ? (
-            <form
-              className="space-y-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm"
-              onSubmit={handleSaveDetails}
-            >
-              <h3 className="text-base font-semibold text-[var(--fg)]">Metadata</h3>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                  Title
-                </span>
-                <input
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  placeholder="Give this clip a headline"
-                  required
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                  Description
-                </span>
-                <textarea
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                  className="min-h-[96px] w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  placeholder="Set the stage for viewers"
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                  Call to action
-                </span>
-                <input
-                  value={callToAction}
-                  onChange={(event) => setCallToAction(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  placeholder="Invite viewers to keep watching"
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                  Tags
-                </span>
-                <input
-                  value={tags}
-                  onChange={(event) => setTags(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  placeholder="Add comma-separated keywords"
-                />
-              </label>
-              <button
-                type="submit"
-                className="marble-button marble-button--primary w-full justify-center px-4 py-2 text-sm font-semibold"
-              >
-                Save details
-              </button>
-            </form>
-          ) : null}
           {activeMode === 'upload' ? (
-            <div className="space-y-5 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm">
-              <div className="space-y-2">
-                <h3 className="text-base font-semibold text-[var(--fg)]">Upload plan</h3>
-                <p className="text-xs text-[var(--muted)]">Choose destinations and let us handle the scheduling.</p>
-              </div>
-              <form className="space-y-3" onSubmit={handleSaveDistribution}>
-                <h4 className="text-sm font-semibold text-[var(--fg)]">Distribution</h4>
-                <div className="flex flex-wrap gap-2">
-                  {SUPPORTED_PLATFORMS.map((platform) => {
-                    const isActive = selectedPlatforms.includes(platform)
-                    return (
-                      <button
-                        key={platform}
-                        type="button"
-                        onClick={() => handleTogglePlatform(platform)}
-                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                          isActive
-                            ? 'border-[var(--accent)] bg-[color:color-mix(in_srgb,var(--accent)_24%,transparent)] text-[var(--fg)]'
-                            : 'border-white/10 text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--fg)]'
-                        }`}
-                      >
-                        {PLATFORM_LABELS[platform]}
-                      </button>
-                    )
-                  })}
-                </div>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                    Platform notes
-                  </span>
-                  <textarea
-                    value={platformNotes}
-                    onChange={(event) => setPlatformNotes(event.target.value)}
-                    className="min-h-[72px] w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="marble-button marble-button--secondary w-full justify-center px-4 py-2 text-sm font-semibold"
-                >
-                  Save distribution
-                </button>
-              </form>
-              <div className="h-px w-full bg-white/10" />
-              <form className="space-y-3" onSubmit={handleScheduleUpload}>
-                <h4 className="text-sm font-semibold text-[var(--fg)]">Upload schedule</h4>
-                <p className="text-xs text-[var(--muted)]">{uploadStatusLabel}</p>
-                <button
-                  type="submit"
-                  className="marble-button marble-button--primary w-full justify-center px-4 py-2 text-sm font-semibold"
-                  disabled={uploadStatus === 'scheduled'}
-                >
-                  {uploadStatus === 'scheduled' ? 'Upload scheduled' : 'Schedule upload'}
-                </button>
-              </form>
-            </div>
+            <VideoUploadView
+              selectedPlatforms={selectedPlatforms}
+              platformNotes={platformNotes}
+              uploadStatus={uploadStatus}
+              uploadStatusLabel={uploadStatusLabel}
+              onTogglePlatform={handleTogglePlatform}
+              onPlatformNotesChange={setPlatformNotes}
+              onSaveDistribution={handleSaveDistribution}
+              onScheduleUpload={handleScheduleUpload}
+            />
           ) : null}
           {activeMode === 'trim' ? (
             <>
