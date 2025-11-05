@@ -902,6 +902,102 @@ describe('Layout editor interactions', () => {
     }
   })
 
+  it('preserves the current source crop ratio when locking aspect', async () => {
+    const layoutWithSourceCrop: LayoutDefinition = {
+      ...baseLayout,
+      items: [
+        {
+          ...(baseLayout.items[0] as LayoutVideoItem),
+          crop: { x: 0.1, y: 0.1, width: 0.6, height: 0.35, units: 'fraction' },
+          sourceCrop: { x: 0.1, y: 0.1, width: 0.6, height: 0.35, units: 'fraction' }
+        }
+      ]
+    }
+    const initialCrop = layoutWithSourceCrop.items[0] as LayoutVideoItem
+    const initialRatio = initialCrop.sourceCrop
+      ? initialCrop.sourceCrop.width / Math.max(initialCrop.sourceCrop.height, 0.0001)
+      : 1
+
+    let latestLayout: LayoutDefinition | null = null
+    const onLayoutChange = vi.fn((layout: LayoutDefinition) => {
+      latestLayout = layout
+    })
+
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={sampleClip}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={layoutWithSourceCrop}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={onLayoutChange}
+        onSaveLayout={vi.fn(async () => layoutWithSourceCrop)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const sourceCanvases = await screen.findAllByLabelText('Source preview canvas')
+    const sourceCanvas = sourceCanvases[sourceCanvases.length - 1]
+    const sourceItem = await selectItemByName(sourceCanvas, /Primary/i, { pointerId: 11 })
+
+    const lockButtons = await within(sourceCanvas).findAllByRole('button', {
+      name: 'Lock crop aspect (preserve ratio)'
+    })
+    const lockButton = lockButtons[lockButtons.length - 1]
+
+    await act(async () => {
+      fireEvent.click(lockButton)
+    })
+
+    await waitFor(() => {
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.lockCropAspectRatio).toBe(true)
+    })
+
+    const southEastHandle = within(sourceItem).getByLabelText('Resize south-east')
+
+    await act(async () => {
+      pointerDown(southEastHandle, { pointerId: 12, clientX: 200, clientY: 220 })
+      pointerMove(sourceCanvas, { pointerId: 12, clientX: 230, clientY: 260 })
+    })
+
+    await act(async () => {
+      pointerUp(sourceCanvas, { pointerId: 12, clientX: 230, clientY: 260 })
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange).toHaveBeenCalled()
+    })
+
+    const captured =
+      latestLayout ?? ((onLayoutChange.mock.calls.at(-1)?.[0] as LayoutDefinition | undefined) ?? null)
+    expect(captured).not.toBeNull()
+    const video = captured?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+    expect(video).toBeTruthy()
+    const updatedCrop = video?.sourceCrop ?? video?.crop
+    expect(updatedCrop).toBeTruthy()
+    if (updatedCrop) {
+      const updatedRatio = updatedCrop.width / Math.max(updatedCrop.height, 0.0001)
+      expect(updatedRatio).toBeCloseTo(initialRatio, 3)
+    }
+  })
+
   it('renders frame aspect lock controls on the layout canvas', async () => {
     render(
       <LayoutEditorPanel
@@ -941,6 +1037,82 @@ describe('Layout editor interactions', () => {
         name: 'Lock frame aspect (preserve ratio)'
       })
     ).toBeInTheDocument()
+  })
+
+  it('keeps the layout crop unchanged when locking the frame aspect', async () => {
+    const initialCrop = { x: 0.12, y: 0.18, width: 0.5, height: 0.42, units: 'fraction' as const }
+    const layoutWithCrop: LayoutDefinition = {
+      ...baseLayout,
+      items: [
+        {
+          ...(baseLayout.items[0] as LayoutVideoItem),
+          crop: initialCrop,
+          sourceCrop: initialCrop
+        }
+      ]
+    }
+
+    let latestLayout: LayoutDefinition | null = null
+    const onLayoutChange = vi.fn((layout: LayoutDefinition) => {
+      latestLayout = layout
+    })
+
+    render(
+      <LayoutEditorPanel
+        tabNavigation={<div />}
+        clip={null}
+        layoutCollection={null}
+        isCollectionLoading={false}
+        selectedLayout={layoutWithCrop}
+        selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+        isLayoutLoading={false}
+        appliedLayoutId={null}
+        isSavingLayout={false}
+        isApplyingLayout={false}
+        statusMessage={null}
+        errorMessage={null}
+        onSelectLayout={vi.fn()}
+        onCreateBlankLayout={vi.fn()}
+        onLayoutChange={onLayoutChange}
+        onSaveLayout={vi.fn(async () => layoutWithCrop)}
+        onImportLayout={vi.fn(async () => undefined)}
+        onExportLayout={vi.fn(async () => undefined)}
+        onApplyLayout={vi.fn(async () => undefined)}
+        onRenderLayout={vi.fn(async () => undefined)}
+        renderSteps={pipelineSteps}
+        isRenderingLayout={false}
+        renderStatusMessage={null}
+        renderErrorMessage={null}
+      />
+    )
+
+    const layoutCanvases = await screen.findAllByLabelText('Layout preview canvas')
+    const layoutCanvas = findInteractiveCanvas(layoutCanvases)
+    await selectItemByName(layoutCanvas, /primary/i, { pointerId: 19 })
+
+    const lockButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Lock frame aspect (preserve ratio)'
+    })
+    const lockButton = lockButtons[lockButtons.length - 1]
+
+    await act(async () => {
+      fireEvent.click(lockButton)
+    })
+
+    await waitFor(() => {
+      expect(onLayoutChange).toHaveBeenCalled()
+    })
+
+    const captured =
+      latestLayout ?? ((onLayoutChange.mock.calls.at(-1)?.[0] as LayoutDefinition | undefined) ?? null)
+    expect(captured).not.toBeNull()
+    const video = captured?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+    expect(video).toBeTruthy()
+    if (video) {
+      expect(video.lockAspectRatio).toBe(true)
+      expect(video.crop).toEqual(initialCrop)
+      expect(video.sourceCrop).toEqual(initialCrop)
+    }
   })
 
   it('renders crop aspect lock controls on the source canvas', async () => {

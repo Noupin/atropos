@@ -613,7 +613,7 @@ const cloneLayoutItem = (item: LayoutItem): LayoutItem => {
       frameAspectRatio: resolvedFrameAspect ?? null,
       cropAspectRatio: resolvedCropAspect ?? null
     }
-    if (lockAspectRatio || lockCropAspectRatio) {
+    if (lockCropAspectRatio) {
       const alignedCrop = alignCropToFrame({ ...base, crop: normalisedCrop })
       const alignedAspect =
         alignedCrop.width > 0 && alignedCrop.height > 0
@@ -1336,12 +1336,6 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
             if (pendingFrame) {
               crop = frameToCrop(pendingFrame)
               desiredRatio = getFrameAspectRatio(pendingFrame)
-            }
-            if (desiredRatio == null && context === 'source') {
-              const frameRatio = getFrameAspectRatio(clampFrame(video.frame))
-              if (frameRatio && Number.isFinite(frameRatio) && frameRatio > 0) {
-                desiredRatio = frameRatio
-              }
             }
             if (!crop) {
               if (context === 'source') {
