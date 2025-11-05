@@ -1,182 +1,48 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Atropos</title>
-  <meta name="description" content="Atropos — Made for you, by you." />
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png">
-  <link rel="shortcut icon" href="/favicon.ico">
-  <style>
-    :root{
-      --marble-base:#f6f5f3; --marble-vein1:#ebe8e2; --marble-vein2:#e4e0d9;
-      --marble-depth:#d9d5ce; --crevice:#2b2a28; --ink:#181818; --muted:#6f6f6f;
-      --success:#2f6b3a; --info:#6b5b2f; --error:#7a2b2b;
-      --accent:var(--crevice); --ring:rgba(43,42,40,.20); --panel:#ffffffde; --edge:#e9e7e2;
-      --radius:18px; --shadow:0 26px 70px rgba(0,0,0,.14), 0 2px 10px rgba(0,0,0,.06);
-      --inner:inset 0 1px 0 rgba(255,255,255,.65), inset 0 -1px 14px rgba(0,0,0,.06);
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0; color:var(--ink);
-      font:16px/1.6 system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial,sans-serif;
-      background:
-        radial-gradient(2200px 1000px at 15% -10%, rgba(255,255,255,.85) 0%, rgba(255,255,255,.3) 45%, transparent 60%),
-        radial-gradient(1600px 800px at 85% 5%, var(--marble-vein1) 0%, transparent 55%),
-        radial-gradient(1300px 700px at 25% 95%, var(--marble-vein2) 0%, transparent 62%),
-        radial-gradient(1200px 600px at 70% 100%, rgba(0,0,0,.06) 0%, transparent 60%),
-        linear-gradient(180deg, #fff, var(--marble-base));
-      min-height:100vh; padding:32px; display:flex; align-items:center; justify-content:center;
-      box-shadow: inset 0 0 180px rgba(0,0,0,.10), inset 0 0 420px rgba(0,0,0,.06);
-    }
-    body::after{
-      content:""; position:fixed; inset:-2%; pointer-events:none; opacity:.7; mix-blend-mode:multiply;
-      background:
-        radial-gradient(1px 1px at 10% 20%, rgba(0,0,0,.03) 0, transparent 60%),
-        radial-gradient(1px 1px at 75% 35%, rgba(0,0,0,.022) 0, transparent 60%),
-        radial-gradient(1px 1px at 40% 80%, rgba(0,0,0,.028) 0, transparent 60%);
-    }
-    .frame{
-      width:min(900px, 100%); border-radius:calc(var(--radius) + 6px);
-      background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.76)) padding-box,
-                  linear-gradient(180deg, #fff, var(--edge)) border-box;
-      border:1px solid var(--edge); box-shadow:var(--shadow); padding:12px; position:relative; overflow:hidden;
-    }
-    .frame::before{
-      content:""; position:absolute; inset:0; opacity:.55; mix-blend-mode:multiply; pointer-events:none;
-      background:
-        conic-gradient(from 210deg at 20% 30%, rgba(0,0,0,.035) 0 6%, transparent 6% 18%, rgba(0,0,0,.03) 18% 25%, transparent 25% 100%),
-        conic-gradient(from 120deg at 78% 20%, rgba(0,0,0,.02) 0 8%, transparent 8% 22%, rgba(0,0,0,.025) 22% 27%, transparent 27% 100%);
-    }
-    .panel{ border-radius:var(--radius); background:var(--panel); backdrop-filter:blur(10px);
-            box-shadow:var(--inner), 0 1px 0 rgba(255,255,255,.6);
-            padding:clamp(24px, 5vw, 38px); position:relative; overflow:hidden; }
-    .panel::after{ content:""; position:absolute; inset:0 0 50% 0;
-      background:linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0)); pointer-events:none;
-    }
-    header h1{
-      margin:0 0 8px 0; font-size:clamp(34px, 6.5vw, 58px); letter-spacing:-.02em; line-height:1.05;
-      color:#1a1a1a; text-shadow:0 1px 0 rgba(255,255,255,.75), 0 -1px 0 rgba(0,0,0,.10);
-    }
-    header p.tagline{ margin:0; color:var(--muted); font-size:clamp(15px, 2.6vw, 18px); }
-    .support{ margin-top:6px; color:#4a4a4a; font-size:15px; }
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Atropos</title>
+    <meta name="description" content="Atropos — Made for you, by you." />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="stylesheet" href="/css/styles.css" />
+  </head>
+  <body>
+    <main class="frame" role="main" aria-labelledby="hero-title">
+      <section class="panel">
+        <header>
+          <h1 id="hero-title">Atropos</h1>
+          <p class="tagline">Made for you, by you.</p>
+          <p class="support">
+            Your long-form, <em>transformed</em> into clips.
+          </p>
+        </header>
 
-    form{ margin-top:clamp(18px, 3.8vw, 26px); display:flex; gap:12px; flex-wrap:wrap; }
-    input[type="email"]{
-      flex:1 1 260px; padding:14px 16px; border-radius:14px; border:1px solid #dcdad6; background:#fff;
-      font-size:16px; outline:none; box-shadow: inset 0 1px 0 rgba(255,255,255,.7);
-      transition:border-color .2s ease, box-shadow .2s ease;
-    }
-    input[type="email"]:focus{ border-color:var(--accent); box-shadow: 0 0 0 5px var(--ring), inset 0 1px 0 rgba(255,255,255,.7); }
-    button{
-      padding:14px 18px; border:none; border-radius:14px;
-      background:linear-gradient(180deg, #3a3936, var(--crevice)); color:#fff; font-weight:700; letter-spacing:.01em;
-      cursor:pointer; transition: transform .18s ease, filter .18s ease, opacity .18s;
-      box-shadow:0 10px 20px rgba(20,20,20,.25); text-shadow:0 1px 0 rgba(0,0,0,.25);
-    }
-    button:hover{ transform: translateY(-1px); filter: brightness(1.02); }
-    button:active{ transform: translateY(0); filter: brightness(.98); }
-    button[disabled]{ opacity:.6; cursor:not-allowed; }
+        <form id="signup" aria-label="Email signup">
+          <input
+            id="email"
+            name="email"
+            type="email"
+            placeholder="you@example.com"
+            autocomplete="email"
+            required
+          />
+          <button id="submitBtn" type="submit" aria-label="Join the list">
+            Claim Your Spot
+          </button>
+        </form>
 
-    /* Status: hidden by default */
-    .status{
-      display:none; width:100%; margin-top:10px; padding:10px 12px;
-      border-radius:12px; border:1px solid #e6e3de; background:#ffffffcc;
-      font-size:14px; line-height:1.4; color:var(--muted);
-    }
-    .status.show{ display:block; }
-    .status.success{ color:var(--success); border-color: color-mix(in srgb, var(--success) 25%, #e6e3de); }
-    .status.info{    color:var(--info);    border-color: color-mix(in srgb, var(--info) 25%, #e6e3de); }
-    .status.error{   color:var(--error);   border-color: color-mix(in srgb, var(--error) 25%, #e6e3de); }
+        <!-- Hidden until needed -->
+        <div class="status" id="status" aria-live="polite"></div>
 
-    .fine{ color:var(--muted); font-size:13px; margin-top:10px }
-    .tiles{ margin-top:clamp(18px, 4vw, 26px); display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; }
-    .tile{ background:#fffffff2; border:1px solid #eceae6; border-radius:12px; padding:14px;
-           box-shadow: inset 0 1px 0 rgba(255,255,255,.7); font-size:14px; color:#3a3a3a; text-align:center; }
-    footer{ margin-top:clamp(18px, 3vw, 24px); color:var(--muted); font-size:13px; display:flex; gap:10px; flex-wrap:wrap; opacity:.9; }
-    @media (max-width:640px){ .tiles{ grid-template-columns:1fr; } }
-    @media (max-width:480px){ .frame{ padding:10px } button{ width:100% } }
-  </style>
-</head>
-<body>
-  <main class="frame" role="main" aria-labelledby="hero-title">
-    <section class="panel">
-      <header>
-        <h1 id="hero-title">Atropos</h1>
-        <p class="tagline">Made for you, by you.</p>
-        <p class="support">Your long-form, <em>transformed</em> into clips.</p>
-      </header>
+        <p class="fine">Early access invites, launch info, and nothing else.</p>
+        <footer><span id="year"></span> · Atropos</footer>
+      </section>
+    </main>
 
-      <form id="signup" aria-label="Email signup">
-        <input id="email" name="email" type="email" placeholder="you@example.com" autocomplete="email" required />
-        <button id="submitBtn" type="submit" aria-label="Join the list">Claim Your Spot</button>
-      </form>
-
-      <!-- Hidden until needed -->
-      <div class="status" id="status" aria-live="polite"></div>
-
-      <p class="fine">Early access invites, launch info, and nothing else.</p>
-      <footer><span id="year"></span> · Atropos</footer>
-    </section>
-  </main>
-
-  <script>
-    document.getElementById("year").textContent = new Date().getFullYear();
-
-    const form = document.getElementById("signup");
-    const statusEl = document.getElementById("status");
-    const emailEl = document.getElementById("email");
-    const btn = document.getElementById("submitBtn");
-
-    function showStatus(kind, text){
-      statusEl.className = "status show " + (kind || "");
-      statusEl.textContent = text || "";
-    }
-    function hideStatus(){
-      statusEl.className = "status";
-      statusEl.textContent = "";
-    }
-
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      hideStatus();                 // no empty box before we have text
-
-      const email = emailEl.value.trim();
-      if (!email) return;
-
-      btn.disabled = true;
-      showStatus("", "Sending…");
-
-      try {
-        const res = await fetch("/api/subscribe", {
-          method: "POST",
-          headers: { "Content-Type":"application/json" },
-          body: JSON.stringify({ email })
-        });
-
-        let data = {};
-        try { data = await res.json(); } catch {}
-
-        if (res.ok && data && data.ok) {
-          if (data.duplicate) {
-            showStatus("info", "You’re already on the list.");
-          } else {
-            showStatus("success", "Welcome aboard — you’re on the list!");
-            form.reset();
-          }
-        } else if (res.status === 400 && data && data.error) {
-          showStatus("error", data.error);                  // validation issue (e.g., bad email)
-        } else {
-          showStatus("error", "Something went wrong on our side. Please try again shortly.");
-        }
-      } catch {
-        showStatus("error", "Network error. Check your connection and try again.");
-      } finally {
-        btn.disabled = false;
-      }
-    });
-  </script>
-</body>
+    <script src="/js/main.js"></script>
+  </body>
 </html>
