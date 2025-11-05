@@ -837,6 +837,16 @@ describe('Layout editor interactions', () => {
       expect(within(sourceCanvas).getByRole('group', { name: /Primary/i }).className).toContain('ring-2')
     })
 
+    const lockCropButtons = await within(sourceCanvas).findAllByRole('button', {
+      name: 'Lock crop aspect (preserve ratio)'
+    })
+    await act(async () => {
+      fireEvent.click(lockCropButtons[lockCropButtons.length - 1])
+    })
+    await within(sourceCanvas).findAllByRole('button', {
+      name: 'Unlock crop aspect (freeform)'
+    })
+
     const sourceItem = within(sourceCanvas).getByRole('group', { name: /Primary/i })
     const handle = within(sourceItem).getByLabelText('Resize south-east')
     await act(async () => {
@@ -868,7 +878,7 @@ describe('Layout editor interactions', () => {
     }
   })
 
-  it('does not render frame aspect lock controls on the layout canvas', async () => {
+  it('renders frame aspect lock controls on the layout canvas', async () => {
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
@@ -902,19 +912,16 @@ describe('Layout editor interactions', () => {
     const layoutCanvas = findInteractiveCanvas(layoutCanvases)
     await selectItemByName(layoutCanvas, /primary/i, { pointerId: 1 })
 
-    expect(
-      within(layoutCanvas).queryByRole('button', {
-        name: 'Unlock frame aspect (freeform)'
-      })
-    ).toBeNull()
-    expect(
-      within(layoutCanvas).queryByRole('button', {
-        name: 'Lock frame aspect (preserve ratio)'
-      })
-    ).toBeNull()
+    await waitFor(() => {
+      expect(
+        within(layoutCanvas).getByRole('button', {
+          name: 'Lock frame aspect (preserve ratio)'
+        })
+      ).toBeInTheDocument()
+    })
   })
 
-  it('does not render crop aspect lock controls on the source canvas', async () => {
+  it('renders crop aspect lock controls on the source canvas', async () => {
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
@@ -951,16 +958,13 @@ describe('Layout editor interactions', () => {
     }
     await selectItemByName(sourceCanvas, /primary/i, { pointerId: 4 })
 
-    expect(
-      within(sourceCanvas).queryByRole('button', {
-        name: 'Unlock crop aspect (freeform)'
-      })
-    ).toBeNull()
-    expect(
-      within(sourceCanvas).queryByRole('button', {
-        name: 'Lock crop aspect (preserve ratio)'
-      })
-    ).toBeNull()
+    await waitFor(() => {
+      expect(
+        within(sourceCanvas).getByRole('button', {
+          name: 'Lock crop aspect (preserve ratio)'
+        })
+      ).toBeInTheDocument()
+    })
   })
 
   it('snaps frame bounds to the source aspect ratio on demand', async () => {

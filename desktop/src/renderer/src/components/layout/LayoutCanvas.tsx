@@ -23,7 +23,9 @@ import LayoutItemToolbar, {
   RemoveIcon,
   SendBackwardIcon,
   CropModeIcon,
-  CropConfirmIcon
+  CropConfirmIcon,
+  LockIcon,
+  UnlockIcon
 } from './LayoutItemToolbar'
 import { useLayoutSelection } from './layoutSelectionStore'
 
@@ -90,6 +92,7 @@ type ActiveInteraction = {
   originFrame: LayoutFrame
   aspectLocked: boolean
   aspectRatio?: number
+  cropRatioTarget?: number
   target: 'frame' | 'crop'
   snapEnabled: boolean
   frameBounds?: LayoutFrame
@@ -137,6 +140,12 @@ type LayoutCanvasProps = {
   cropContext?: 'source' | 'layout'
   enableScaleModeMenu?: boolean
   onRequestChangeScaleMode?: (itemId: string, mode: LayoutVideoItem['scaleMode']) => void
+  onRequestChangeAspectLock?: (
+    itemId: string,
+    target: 'frame' | 'crop',
+    context: 'source' | 'layout',
+    nextLocked: boolean
+  ) => void
   getPendingCrop?: (itemId: string, context: 'source' | 'layout') => LayoutFrame | null
   onRequestFinishCrop?: () => void
 }
@@ -486,6 +495,50 @@ const overlayFrameToCrop = (
   }
 }
 
+const alignCropToRatio = (
+  crop: LayoutCrop,
+  bounds: LayoutCrop,
+  ratio: number
+): LayoutCrop => {
+  if (!Number.isFinite(ratio) || ratio <= 0) {
+    return crop
+  }
+  const base = clampCropToBounds(crop, bounds)
+  let width = clamp(base.width)
+  let height = clamp(base.height)
+  if (width <= 0 || height <= 0) {
+    return base
+  }
+  const current = width / Math.max(height, 0.0001)
+  if (Math.abs(current - ratio) < 0.0001) {
+    return base
+  }
+  if (current > ratio) {
+    width = height * ratio
+  } else {
+    height = width / ratio
+  }
+  const maxWidth = clamp(bounds.width)
+  const maxHeight = clamp(bounds.height)
+  width = Math.min(width, maxWidth)
+  height = Math.min(height, maxHeight)
+  const centerX = clamp(base.x + base.width / 2)
+  const centerY = clamp(base.y + base.height / 2)
+  const minX = clamp(bounds.x)
+  const minY = clamp(bounds.y)
+  const maxX = clamp(bounds.x + maxWidth)
+  const maxY = clamp(bounds.y + maxHeight)
+  let x = clamp(centerX - width / 2, minX, Math.max(minX, maxX - width))
+  let y = clamp(centerY - height / 2, minY, Math.max(minY, maxY - height))
+  if (x + width > maxX) {
+    x = Math.max(minX, maxX - width)
+  }
+  if (y + height > maxY) {
+    y = Math.max(minY, maxY - height)
+  }
+  return { x, y, width, height, units: 'fraction' }
+}
+
 type CropOverlayRect = { left: number; top: number; width: number; height: number }
 
 const getCropOverlayRect = (
@@ -784,6 +837,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   cropContext = 'layout',
   enableScaleModeMenu = false,
   onRequestChangeScaleMode,
+  onRequestChangeAspectLock,
   getPendingCrop,
   onRequestFinishCrop
 }) => {
@@ -1058,9 +1112,21 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       const datasetHandle = dataset.handle as ResizeHandle | undefined
       const datasetItemId = dataset.itemId as string | undefined
       if (datasetHandle && datasetItemId) {
+        const locked = Boolean(
+          layout?.items.find((candidate) => {
+            if (candidate.id !== datasetItemId) {
+              return false
+            }
+            if ((candidate as LayoutVideoItem).kind !== 'video') {
+              return false
+            }
+            const video = candidate as LayoutVideoItem
+            return transformTarget === 'crop' ? video.lockCropAspectRatio : video.lockAspectRatio
+          })
+        )
         commitHover(
           { itemId: datasetItemId, handle: datasetHandle },
-          cursorForHandle(datasetHandle)
+          cursorForHandle(datasetHandle, locked)
         )
         return
       }
@@ -1077,7 +1143,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         clearHover()
       }
     },
-    [clearHover, commitHover, getPointerPosition, hitTestAtPoint]
+    [clearHover, commitHover, getPointerPosition, hitTestAtPoint, layout, transformTarget]
   )
 
   const handlePointerDownCapture = useCallback(
@@ -1166,7 +1232,14 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         setSelectedItemId(nextSelection)
       }
       setToolbarAnchorId(nextSelection)
-      const pointerAspectLocked = false
+      const item = layout.items.find((candidate) => candidate.id === nextSelection)
+      const pointerAspectLocked = Boolean(
+        item && (item as LayoutVideoItem).kind === 'video'
+          ? transformTarget === 'crop'
+            ? (item as LayoutVideoItem).lockCropAspectRatio
+            : (item as LayoutVideoItem).lockAspectRatio
+          : false
+      )
       commitHover(
         { itemId: nextSelection, handle: handle ?? null },
         handle ? cursorForHandle(handle, pointerAspectLocked) : 'grab'
@@ -1178,7 +1251,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
       // Only start an active interaction when we are resizing or we intend to drag the selected item.
       // A simple click-to-select should NOT set interactionRef; selection must persist after pointerup.
-      const item = layout.items.find((candidate) => candidate.id === nextSelection)
       if (!item || !itemIsEditable(item)) {
         clearInteraction()
         return
@@ -1187,19 +1259,17 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       let originFrame = getDisplayFrame(item)
       let frameBounds: LayoutFrame | undefined
       let sourceBounds: LayoutCrop | undefined
-      if (
-        transformTarget === 'crop' &&
-        cropContext === 'layout' &&
-        (item as LayoutVideoItem).kind === 'video'
-      ) {
+      if (transformTarget === 'crop' && (item as LayoutVideoItem).kind === 'video') {
         const video = item as LayoutVideoItem
-        frameBounds = clampFrameToCanvas(cloneFrame(video.frame))
         sourceBounds = getVideoSourceBounds(video)
-        const pendingCrop = getPendingCrop?.(video.id, cropContext)
-        const currentCrop = pendingCrop
-          ? clampCropToBounds(clampCropFrame(pendingCrop), sourceBounds)
-          : normaliseVideoCropBounds(video.crop ?? sourceBounds)
-        originFrame = cropToOverlayFrame(frameBounds, sourceBounds, currentCrop)
+        if (cropContext === 'layout') {
+          frameBounds = clampFrameToCanvas(cloneFrame(video.frame))
+          const pendingCrop = getPendingCrop?.(video.id, cropContext)
+          const currentCrop = pendingCrop
+            ? clampCropToBounds(clampCropFrame(pendingCrop), sourceBounds)
+            : normaliseVideoCropBounds(video.crop ?? sourceBounds)
+          originFrame = cropToOverlayFrame(frameBounds, sourceBounds, currentCrop)
+        }
       }
       const snapEnabled = event.altKey || event.metaKey
       const aspectLocked = pointerAspectLocked
@@ -1212,6 +1282,31 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       }
       if (!aspectRatioValue && originFrame.width > 0 && originFrame.height > 0) {
         aspectRatioValue = originFrame.width / Math.max(originFrame.height, 0.0001)
+      }
+      if (
+        aspectLocked &&
+        aspectRatioValue &&
+        transformTarget === 'crop' &&
+        frameBounds &&
+        sourceBounds &&
+        sourceBounds.width > 0 &&
+        sourceBounds.height > 0
+      ) {
+        aspectRatioValue = aspectRatioValue * (sourceBounds.height / sourceBounds.width)
+      }
+      let cropRatioTarget: number | undefined
+      if (aspectLocked && transformTarget === 'crop') {
+        if (frameBounds) {
+          const frameRatio =
+            frameBounds.width > 0 && frameBounds.height > 0
+              ? frameBounds.width / Math.max(frameBounds.height, 0.0001)
+              : null
+          if (frameRatio && Number.isFinite(frameRatio) && frameRatio > 0) {
+            cropRatioTarget = frameRatio
+          }
+        } else if (aspectRatioValue && Number.isFinite(aspectRatioValue) && aspectRatioValue > 0) {
+          cropRatioTarget = aspectRatioValue
+        }
       }
 
       // Start interaction ONLY if we are on a handle or starting a drag (even if not selected yet).
@@ -1231,6 +1326,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           originFrame,
           aspectLocked,
           aspectRatio: aspectRatioValue,
+          cropRatioTarget,
           target: transformTarget,
           snapEnabled,
           frameBounds,
@@ -1294,21 +1390,53 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         })
         setCursor('grabbing')
       } else if (state.handle) {
-        if (state.target === 'crop' && state.frameBounds && state.sourceBounds) {
-          let resized = resizeFrame(state.originFrame, state.handle, deltaX, deltaY)
-          resized = clampFrameToBounds(resized, state.frameBounds)
-          const crop = overlayFrameToCrop(state.frameBounds, resized, state.sourceBounds)
-          const bounded = clampCropToBounds(crop, state.sourceBounds)
-          const cropFrame: LayoutFrame = {
-            x: bounded.x,
-            y: bounded.y,
-            width: bounded.width,
-            height: bounded.height
+        if (state.target === 'crop') {
+          if (state.frameBounds && state.sourceBounds) {
+            let resized = state.aspectLocked
+              ? maintainAspectResize(state.originFrame, state.handle, deltaX, deltaY, state.aspectRatio)
+              : resizeFrame(state.originFrame, state.handle, deltaX, deltaY)
+            resized = clampFrameToBounds(resized, state.frameBounds)
+            const crop = overlayFrameToCrop(state.frameBounds, resized, state.sourceBounds)
+            const bounded = clampCropToBounds(crop, state.sourceBounds)
+            const aligned =
+              state.aspectLocked && state.cropRatioTarget
+                ? alignCropToRatio(bounded, state.sourceBounds, state.cropRatioTarget)
+                : bounded
+            const cropFrame: LayoutFrame = {
+              x: aligned.x,
+              y: aligned.y,
+              width: aligned.width,
+              height: aligned.height
+            }
+            scheduleTransform([{ itemId: state.itemId, frame: cropFrame }], { commit: false })
+            setFloatingLabel(`${(aligned.width * 100).toFixed(1)} × ${(aligned.height * 100).toFixed(1)}%`)
+            setFloatingPosition({ x: event.clientX, y: event.clientY })
+            setCursor(cursorForHandle(state.handle, state.aspectLocked))
+            return
           }
-          scheduleTransform([{ itemId: state.itemId, frame: cropFrame }], { commit: false })
-          setFloatingLabel(`${(bounded.width * 100).toFixed(1)} × ${(bounded.height * 100).toFixed(1)}%`)
+
+          let resized = state.aspectLocked
+            ? maintainAspectResize(state.originFrame, state.handle, deltaX, deltaY, state.aspectRatio)
+            : resizeFrame(state.originFrame, state.handle, deltaX, deltaY)
+          const bounds = normaliseVideoCropBounds(state.sourceBounds ?? null)
+          const cropFrame = clampCropFrame(resized)
+          const bounded = clampCropToBounds(cropFrame, bounds)
+          const aligned =
+            state.aspectLocked && state.cropRatioTarget
+              ? alignCropToRatio(bounded, bounds, state.cropRatioTarget)
+              : bounded
+          scheduleTransform(
+            [
+              {
+                itemId: state.itemId,
+                frame: { x: aligned.x, y: aligned.y, width: aligned.width, height: aligned.height }
+              }
+            ],
+            { commit: false }
+          )
+          setFloatingLabel(`${(aligned.width * 100).toFixed(1)} × ${(aligned.height * 100).toFixed(1)}%`)
           setFloatingPosition({ x: event.clientX, y: event.clientY })
-          setCursor(cursorForHandle(state.handle, false))
+          setCursor(cursorForHandle(state.handle, state.aspectLocked))
           return
         }
         if (state.aspectLocked) {
@@ -1420,16 +1548,38 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       setToolbarAnchorId(state.itemId)
 
       if (frame) {
-        if (state.target === 'crop' && state.frameBounds && state.sourceBounds) {
-          const crop = overlayFrameToCrop(state.frameBounds, frame, state.sourceBounds)
-          const bounded = clampCropToBounds(crop, state.sourceBounds)
-          const cropFrame: LayoutFrame = {
-            x: bounded.x,
-            y: bounded.y,
-            width: bounded.width,
-            height: bounded.height
+        if (state.target === 'crop') {
+          if (state.frameBounds && state.sourceBounds) {
+            const crop = overlayFrameToCrop(state.frameBounds, frame, state.sourceBounds)
+            const bounded = clampCropToBounds(crop, state.sourceBounds)
+            const aligned =
+              state.aspectLocked && state.cropRatioTarget
+                ? alignCropToRatio(bounded, state.sourceBounds, state.cropRatioTarget)
+                : bounded
+            const cropFrame: LayoutFrame = {
+              x: aligned.x,
+              y: aligned.y,
+              width: aligned.width,
+              height: aligned.height
+            }
+            scheduleTransform([{ itemId: state.itemId, frame: cropFrame }], { commit: false })
+          } else {
+            const bounds = normaliseVideoCropBounds(state.sourceBounds ?? null)
+            const cropFrame = clampCropToBounds(clampCropFrame(frame), bounds)
+            const aligned =
+              state.aspectLocked && state.cropRatioTarget
+                ? alignCropToRatio(cropFrame, bounds, state.cropRatioTarget)
+                : cropFrame
+            scheduleTransform(
+              [
+                {
+                  itemId: state.itemId,
+                  frame: { x: aligned.x, y: aligned.y, width: aligned.width, height: aligned.height }
+                }
+              ],
+              { commit: true }
+            )
           }
-          scheduleTransform([{ itemId: state.itemId, frame: cropFrame }], { commit: false })
         } else {
           const snapped = applyGuides(frame, {
             snapEnabled: state.target === 'frame' && state.snapEnabled,
@@ -1492,10 +1642,13 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   const handleItemContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>, item: LayoutItem) => {
-      if (!enableScaleModeMenu || !onRequestChangeScaleMode) {
+      if ((item as LayoutVideoItem).kind !== 'video') {
         return
       }
-      if ((item as LayoutVideoItem).kind !== 'video') {
+      if (
+        !onRequestChangeAspectLock &&
+        (!enableScaleModeMenu || !onRequestChangeScaleMode)
+      ) {
         return
       }
       event.preventDefault()
@@ -1507,14 +1660,20 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 0
       const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 0
       const menuWidth = 220
-      const menuHeight = 120
+      const menuHeight = onRequestChangeScaleMode ? 160 : 120
       const safeX = viewportWidth ? Math.min(event.clientX, Math.max(0, viewportWidth - menuWidth)) : event.clientX
       const safeY = viewportHeight
         ? Math.min(event.clientY, Math.max(0, viewportHeight - menuHeight))
         : event.clientY
       setContextMenu({ x: safeX, y: safeY, itemId: video.id })
     },
-    [enableScaleModeMenu, onRequestChangeScaleMode, selectedItemId, setSelectedItemId]
+    [
+      enableScaleModeMenu,
+      onRequestChangeAspectLock,
+      onRequestChangeScaleMode,
+      selectedItemId,
+      setSelectedItemId
+    ]
   )
 
   const handles: Array<{ id: ResizeHandle; positionClass: string; label: string }> = useMemo(
@@ -1667,8 +1826,54 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   )
   const showToolbar = Boolean(activeSelection && toolbarAnchorId === activeSelection.id)
 
+  const showContextMenu = Boolean(
+    contextMenu &&
+      activeSelection &&
+      (activeSelection as LayoutVideoItem).kind === 'video' &&
+      (onRequestChangeAspectLock || (enableScaleModeMenu && onRequestChangeScaleMode))
+  )
+
+  const contextMenuVideo = showContextMenu
+    ? (activeSelection as LayoutVideoItem)
+    : null
+  const contextMenuAspectLocked = contextMenuVideo
+    ? transformTarget === 'crop'
+      ? Boolean(contextMenuVideo.lockCropAspectRatio)
+      : Boolean(contextMenuVideo.lockAspectRatio)
+    : false
+  const contextMenuAspectLabel = contextMenuAspectLocked
+    ? transformTarget === 'crop'
+      ? 'Unlock crop aspect (freeform)'
+      : 'Unlock frame aspect (freeform)'
+    : transformTarget === 'crop'
+      ? 'Lock crop aspect (preserve ratio)'
+      : 'Lock frame aspect (preserve ratio)'
+
   const toolbarActions = useMemo<LayoutItemToolbarAction[]>(() => {
     const actions: LayoutItemToolbarAction[] = []
+
+    if (primaryIsVideo && onRequestChangeAspectLock) {
+      const video = activeSelection as LayoutVideoItem
+      const isCropTarget = transformTarget === 'crop'
+      const effectiveContext = cropContext ?? 'layout'
+      const isLocked = isCropTarget
+        ? Boolean(video.lockCropAspectRatio)
+        : Boolean(video.lockAspectRatio)
+      const actionLabel = isLocked
+        ? isCropTarget
+          ? 'Unlock crop aspect (freeform)'
+          : 'Unlock frame aspect (freeform)'
+        : isCropTarget
+          ? 'Lock crop aspect (preserve ratio)'
+          : 'Lock frame aspect (preserve ratio)'
+      actions.push({
+        key: isCropTarget ? 'toggle-crop-aspect' : 'toggle-frame-aspect',
+        label: actionLabel,
+        icon: isLocked ? <LockIcon /> : <UnlockIcon />,
+        onSelect: () =>
+          onRequestChangeAspectLock(video.id, transformTarget, effectiveContext, !isLocked)
+      })
+    }
 
     if (primaryIsVideo && onRequestChangeTransformTarget) {
       if (transformTarget === 'crop') {
@@ -1732,6 +1937,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   }, [
     cropContext,
     onRequestBringForward,
+    onRequestChangeAspectLock,
     onRequestChangeTransformTarget,
     onRequestDelete,
     onRequestDuplicate,
@@ -1911,12 +2117,18 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const showHandles = isSelected || isHovered
         const label = getItemLabel(item)
         const palette = getItemAppearance(item, colorScheme)
-        const itemAspectLocked = false
+        const videoItem = (item as LayoutVideoItem).kind === 'video' ? (item as LayoutVideoItem) : null
+        const itemAspectLocked = Boolean(
+          videoItem
+            ? transformTarget === 'crop'
+              ? videoItem.lockCropAspectRatio
+              : videoItem.lockAspectRatio
+            : false
+        )
         const classes = getItemClasses ? getItemClasses(item, isSelected) : ''
         const shouldShowLabel =
           labelVisibility === 'always' || (labelVisibility === 'selected' && isSelected)
         const editable = itemIsEditable(item)
-        const videoItem = (item as LayoutVideoItem).kind === 'video' ? (item as LayoutVideoItem) : null
         const pendingCrop = videoItem ? getPendingCrop?.(videoItem.id, cropContext) : null
         const cropOverlayRect =
           isPrimarySelection && transformTarget === 'crop' && videoItem
@@ -2072,7 +2284,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                         if (!placement) {
                           return null
                         }
-                        const cursorName = cursorForHandle(handle.id, false)
+                        const cursorName = cursorForHandle(handle.id, itemAspectLocked)
                         const cursorClass = cursorName === 'default' ? 'cursor-default' : `cursor-${cursorName}`
                         return (
                           <button
@@ -2145,50 +2357,85 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           </div>
         )
       })}
-      {contextMenu && enableScaleModeMenu && activeSelection && (activeSelection as LayoutVideoItem).kind === 'video' ? (
+      {showContextMenu && contextMenu && contextMenuVideo ? (
         <div
           data-layout-context-menu="true"
           className="fixed z-[1000] min-w-[220px] rounded-lg border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--panel)_94%,transparent)] p-1 shadow-[0_12px_28px_rgba(15,23,42,0.4)]"
           style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
         >
-          <div className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-            Display mode
-          </div>
-          {(
-            [
-              { mode: 'cover' as LayoutVideoItem['scaleMode'], label: 'Auto crop to fill', description: 'Crop video to match the frame' },
-              { mode: 'fill' as LayoutVideoItem['scaleMode'], label: 'Stretch to frame', description: 'Stretch without cropping' }
-            ] as const
-          ).map((option) => {
-            const video = activeSelection as LayoutVideoItem
-            const currentMode = video.scaleMode ?? 'cover'
-            const isActive = currentMode === option.mode || (option.mode === 'cover' && currentMode == null)
-            return (
+          {onRequestChangeAspectLock ? (
+            <>
+              <div className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                Aspect ratio
+              </div>
               <button
-                key={option.mode}
                 type="button"
-                className={`flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
-                  isActive
+                className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                  contextMenuAspectLocked
                     ? 'bg-[color:color-mix(in_srgb,var(--accent-soft)_85%,transparent)] text-[var(--fg)]'
                     : 'text-[color:color-mix(in_srgb,var(--muted)_90%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--panel)_88%,transparent)]'
                 }`}
-                onClick={() => {
-                  onRequestChangeScaleMode?.(video.id, option.mode)
-                  setContextMenu(null)
-                }}
+                onClick={() =>
+                  onRequestChangeAspectLock(
+                    contextMenuVideo.id,
+                    transformTarget,
+                    cropContext ?? 'layout',
+                    !contextMenuAspectLocked
+                  )
+                }
+                aria-pressed={contextMenuAspectLocked}
               >
-                <span className="flex w-full items-center justify-between">
-                  <span>{option.label}</span>
-                  {isActive ? (
-                    <span className="text-xs font-medium text-[color:var(--ring)]">Active</span>
-                  ) : null}
+                <span className="flex h-5 w-5 items-center justify-center">
+                  {contextMenuAspectLocked ? <LockIcon /> : <UnlockIcon />}
                 </span>
-                <span className="text-[11px] text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
-                  {option.description}
-                </span>
+                <span>{contextMenuAspectLabel}</span>
               </button>
-            )
-          })}
+              {enableScaleModeMenu && onRequestChangeScaleMode ? (
+                <div className="mx-2 my-1 h-px bg-white/10" />
+              ) : null}
+            </>
+          ) : null}
+          {enableScaleModeMenu && onRequestChangeScaleMode ? (
+            <>
+              <div className="px-3 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
+                Display mode
+              </div>
+              {(
+                [
+                  { mode: 'cover' as LayoutVideoItem['scaleMode'], label: 'Auto crop to fill', description: 'Crop video to match the frame' },
+                  { mode: 'fill' as LayoutVideoItem['scaleMode'], label: 'Stretch to frame', description: 'Stretch without cropping' }
+                ] as const
+              ).map((option) => {
+                const currentMode = contextMenuVideo.scaleMode ?? 'cover'
+                const isActive = currentMode === option.mode || (option.mode === 'cover' && currentMode == null)
+                return (
+                  <button
+                    key={option.mode}
+                    type="button"
+                    className={`flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                      isActive
+                        ? 'bg-[color:color-mix(in_srgb,var(--accent-soft)_85%,transparent)] text-[var(--fg)]'
+                        : 'text-[color:color-mix(in_srgb,var(--muted)_90%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--panel)_88%,transparent)]'
+                    }`}
+                    onClick={() => {
+                      onRequestChangeScaleMode?.(contextMenuVideo.id, option.mode)
+                      setContextMenu(null)
+                    }}
+                  >
+                    <span className="flex w-full items-center justify-between">
+                      <span>{option.label}</span>
+                      {isActive ? (
+                        <span className="text-xs font-medium text-[color:var(--ring)]">Active</span>
+                      ) : null}
+                    </span>
+                    <span className="text-[11px] text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
+                      {option.description}
+                    </span>
+                  </button>
+                )
+              })}
+            </>
+          ) : null}
         </div>
       ) : null}
       {selectionBounds ? (
