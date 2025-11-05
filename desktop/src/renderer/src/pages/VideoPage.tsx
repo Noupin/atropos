@@ -11,7 +11,15 @@ import { formatDuration } from '../lib/format'
 import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import useSharedVolume from '../hooks/useSharedVolume'
 import VideoPreviewStage from '../components/VideoPreviewStage'
-import LayoutEditorPanel from '../components/layout/LayoutEditorPanel'
+import LayoutModeView from './video/LayoutModeView'
+import TrimModeView from './video/TrimModeView'
+import MetadataModeView from './video/MetadataModeView'
+import UploadModeView from './video/UploadModeView'
+import {
+  SAVE_STEP_DEFINITIONS,
+  createInitialSaveSteps,
+  type SaveStepState
+} from './video/saveSteps'
 import { adjustJobClip, fetchJobClip } from '../services/pipelineApi'
 import { adjustLibraryClip, fetchLibraryClip } from '../services/clipLibrary'
 import {
@@ -133,37 +141,6 @@ const formatTooltipLabel = (offset: string, change: string | null): string => {
   const changeValue = change === '0' ? 'Δ 0s' : `Δ ${change}s`
   return `${offsetValue} • ${changeValue}`
 }
-
-type SaveStepId = 'cut' | 'subtitles' | 'render'
-type SaveStepStatus = 'pending' | 'running' | 'completed' | 'failed'
-
-type SaveStepState = {
-  id: SaveStepId
-  label: string
-  description: string
-  status: SaveStepStatus
-}
-
-const SAVE_STEP_DEFINITIONS: ReadonlyArray<Omit<SaveStepState, 'status'>> = [
-  {
-    id: 'cut',
-    label: 'Cut clip',
-    description: 'Trim the source footage to the requested window'
-  },
-  {
-    id: 'subtitles',
-    label: 'Regenerate subtitles',
-    description: 'Update transcript snippets to match the new timing'
-  },
-  {
-    id: 'render',
-    label: 'Render vertical clip',
-    description: 'Apply layout and export the final short'
-  }
-]
-
-const createInitialSaveSteps = (): SaveStepState[] =>
-  SAVE_STEP_DEFINITIONS.map((step) => ({ ...step, status: 'pending' }))
 
 const delay = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -2128,34 +2105,32 @@ const VideoPage: FC = () => {
 
   if (activeMode === 'layout') {
     return (
-      <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
-        <LayoutEditorPanel
-          tabNavigation={tabNavigation}
-          clip={clipState}
-          layoutCollection={layoutCollection}
-          isCollectionLoading={isLayoutCollectionLoading}
-          selectedLayout={activeLayoutDefinition}
-          selectedLayoutReference={activeLayoutReference}
-          isLayoutLoading={isLayoutLoading}
-          appliedLayoutId={clipState?.layoutId ?? null}
-          isSavingLayout={isSavingLayout}
-          isApplyingLayout={isApplyingLayout}
-          statusMessage={layoutPanelStatus}
-          errorMessage={layoutPanelError}
-          onSelectLayout={handleSelectLayout}
-          onCreateBlankLayout={handleCreateBlankLayout}
-          onLayoutChange={handleLayoutChange}
-          onSaveLayout={handleSaveLayoutDefinition}
-          onImportLayout={handleImportLayoutDefinition}
-          onExportLayout={handleExportLayoutDefinition}
-          onApplyLayout={handleApplyLayoutDefinition}
-          onRenderLayout={handleRenderLayoutDefinition}
-          renderSteps={layoutRenderSteps}
-          isRenderingLayout={isLayoutRendering}
-          renderStatusMessage={layoutRenderStatusMessage}
-          renderErrorMessage={layoutRenderErrorMessage}
-        />
-      </section>
+      <LayoutModeView
+        tabNavigation={tabNavigation}
+        clip={clipState}
+        layoutCollection={layoutCollection}
+        isCollectionLoading={isLayoutCollectionLoading}
+        selectedLayout={activeLayoutDefinition}
+        selectedLayoutReference={activeLayoutReference}
+        isLayoutLoading={isLayoutLoading}
+        appliedLayoutId={clipState?.layoutId ?? null}
+        isSavingLayout={isSavingLayout}
+        isApplyingLayout={isApplyingLayout}
+        statusMessage={layoutPanelStatus}
+        errorMessage={layoutPanelError}
+        onSelectLayout={handleSelectLayout}
+        onCreateBlankLayout={handleCreateBlankLayout}
+        onLayoutChange={handleLayoutChange}
+        onSaveLayout={handleSaveLayoutDefinition}
+        onImportLayout={handleImportLayoutDefinition}
+        onExportLayout={handleExportLayoutDefinition}
+        onApplyLayout={handleApplyLayoutDefinition}
+        onRenderLayout={handleRenderLayoutDefinition}
+        renderSteps={layoutRenderSteps}
+        isRenderingLayout={isLayoutRendering}
+        renderStatusMessage={layoutRenderStatusMessage}
+        renderErrorMessage={layoutRenderErrorMessage}
+      />
     )
   }
 
@@ -2324,469 +2299,96 @@ const VideoPage: FC = () => {
             </div>
           ) : null}
           {activeMode === 'metadata' ? (
-            <form
-              className="space-y-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm"
+            <MetadataModeView
+              title={title}
+              description={description}
+              callToAction={callToAction}
+              tags={tags}
+              onTitleChange={setTitle}
+              onDescriptionChange={setDescription}
+              onCallToActionChange={setCallToAction}
+              onTagsChange={setTags}
               onSubmit={handleSaveDetails}
-            >
-              <h3 className="text-base font-semibold text-[var(--fg)]">Metadata</h3>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                  Title
-                </span>
-                <input
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  placeholder="Give this clip a headline"
-                  required
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                  Description
-                </span>
-                <textarea
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                  className="min-h-[96px] w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  placeholder="Set the stage for viewers"
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                  Call to action
-                </span>
-                <input
-                  value={callToAction}
-                  onChange={(event) => setCallToAction(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  placeholder="Invite viewers to keep watching"
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                  Tags
-                </span>
-                <input
-                  value={tags}
-                  onChange={(event) => setTags(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  placeholder="Add comma-separated keywords"
-                />
-              </label>
-              <button
-                type="submit"
-                className="marble-button marble-button--primary w-full justify-center px-4 py-2 text-sm font-semibold"
-              >
-                Save details
-              </button>
-            </form>
+            />
           ) : null}
           {activeMode === 'upload' ? (
-            <div className="space-y-5 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4 text-sm">
-              <div className="space-y-2">
-                <h3 className="text-base font-semibold text-[var(--fg)]">Upload plan</h3>
-                <p className="text-xs text-[var(--muted)]">Choose destinations and let us handle the scheduling.</p>
-              </div>
-              <form className="space-y-3" onSubmit={handleSaveDistribution}>
-                <h4 className="text-sm font-semibold text-[var(--fg)]">Distribution</h4>
-                <div className="flex flex-wrap gap-2">
-                  {SUPPORTED_PLATFORMS.map((platform) => {
-                    const isActive = selectedPlatforms.includes(platform)
-                    return (
-                      <button
-                        key={platform}
-                        type="button"
-                        onClick={() => handleTogglePlatform(platform)}
-                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                          isActive
-                            ? 'border-[var(--accent)] bg-[color:color-mix(in_srgb,var(--accent)_24%,transparent)] text-[var(--fg)]'
-                            : 'border-white/10 text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--fg)]'
-                        }`}
-                      >
-                        {PLATFORM_LABELS[platform]}
-                      </button>
-                    )
-                  })}
-                </div>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                    Platform notes
-                  </span>
-                  <textarea
-                    value={platformNotes}
-                    onChange={(event) => setPlatformNotes(event.target.value)}
-                    className="min-h-[72px] w-full rounded-lg border border-white/10 bg-[color:var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="marble-button marble-button--secondary w-full justify-center px-4 py-2 text-sm font-semibold"
-                >
-                  Save distribution
-                </button>
-              </form>
-              <div className="h-px w-full bg-white/10" />
-              <form className="space-y-3" onSubmit={handleScheduleUpload}>
-                <h4 className="text-sm font-semibold text-[var(--fg)]">Upload schedule</h4>
-                <p className="text-xs text-[var(--muted)]">{uploadStatusLabel}</p>
-                <button
-                  type="submit"
-                  className="marble-button marble-button--primary w-full justify-center px-4 py-2 text-sm font-semibold"
-                  disabled={uploadStatus === 'scheduled'}
-                >
-                  {uploadStatus === 'scheduled' ? 'Upload scheduled' : 'Schedule upload'}
-                </button>
-              </form>
-            </div>
+            <UploadModeView
+              selectedPlatforms={selectedPlatforms}
+              onTogglePlatform={handleTogglePlatform}
+              platformNotes={platformNotes}
+              onPlatformNotesChange={setPlatformNotes}
+              onSaveDistribution={handleSaveDistribution}
+              onScheduleUpload={handleScheduleUpload}
+              uploadStatus={uploadStatus}
+              uploadStatusLabel={uploadStatusLabel}
+            />
           ) : null}
           {activeMode === 'trim' ? (
-            <>
-              <div className="space-y-2">
-            <h1 className="text-2xl font-semibold text-[var(--fg)]">Refine clip boundaries</h1>
-            <p className="text-sm text-[var(--muted)]">
-              Drag the handles or enter precise timestamps to trim the clip before regenerating
-              subtitles and renders.
-            </p>
-          </div>
-          <div className="space-y-3 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)] p-4">
-            <div className="space-y-2">
-              <div className="text-xs uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                Clip window
-              </div>
-              <div
-                ref={timelineRef}
-                className="relative mt-6 h-2 rounded-full bg-[color:var(--clip-track)] shadow-inner"
-              >
-                <div
-                  className={`pointer-events-none absolute -top-1 -bottom-1 ${originalOverlayLayer} rounded-none bg-[color:color-mix(in_srgb,var(--clip-original)_65%,transparent)]`}
-                  style={{
-                    left: originalOverlayLeftInset,
-                    right: originalOverlayRightInset
-                  }}
-                  aria-hidden="true"
-                />
-                {shouldShowRenderedOverlay ? (
-                  <div
-                    className={`pointer-events-none absolute -top-1 -bottom-1 ${renderedOverlayLayer} rounded-none bg-[color:color-mix(in_srgb,var(--clip-rendered)_65%,transparent)]`}
-                    style={{
-                      left: renderedOverlayLeftInset,
-                      right: renderedOverlayRightInset
-                    }}
-                    aria-hidden="true"
-                  />
-                ) : null}
-                <div
-                  className="pointer-events-none absolute -top-3 -bottom-3 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-original-marker)]"
-                  style={{ left: `${originalStartMarkerPercent}%` }}
-                  aria-hidden="true"
-                />
-                <div
-                  className="pointer-events-none absolute -top-3 -bottom-3 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-original-marker)]"
-                  style={{ left: `${originalEndMarkerPercent}%` }}
-                  aria-hidden="true"
-                />
-                {shouldShowRenderedOverlay ? (
-                  <div
-                    className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-rendered-marker)]"
-                    style={{ left: `${renderedStartMarkerPercent}%` }}
-                    aria-hidden="true"
-                  />
-                ) : null}
-                {shouldShowRenderedOverlay ? (
-                  <div
-                    className="pointer-events-none absolute -top-2 -bottom-2 z-30 w-[6px] -translate-x-1/2 rounded-full bg-[color:var(--clip-rendered-marker)]"
-                    style={{ left: `${renderedEndMarkerPercent}%` }}
-                    aria-hidden="true"
-                  />
-                ) : null}
-                <div
-                  className="pointer-events-none absolute -top-1 -bottom-1 z-40 rounded-full bg-[color:var(--clip-current)]"
-                  style={{ left: currentOverlayLeftInset, right: currentOverlayRightInset }}
-                />
-                {showStartTooltip ? (
-                  <div
-                    className="pointer-events-none absolute -top-7 z-50 -translate-x-1/2 rounded-md bg-black/85 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--clip-tooltip-text)] shadow-lg"
-                    style={{ left: `${startPercent}%` }}
-                  >
-                    {startOffsetTooltip}
-                  </div>
-                ) : null}
-                {showEndTooltip ? (
-                  <div
-                    className="pointer-events-none absolute -top-7 z-50 -translate-x-1/2 rounded-md bg-black/85 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--clip-tooltip-text)] shadow-lg"
-                    style={{ left: `${endPercent}%` }}
-                  >
-                    {endOffsetTooltip}
-                  </div>
-                ) : null}
-                <button
-                  type="button"
-                  role="slider"
-                  aria-label="Adjust clip start"
-                  aria-valuemin={startHandleValueMin}
-                  aria-valuemax={startHandleValueMax}
-                  aria-valuenow={rangeStart}
-                  aria-valuetext={startAriaValueText}
-                  onPointerDown={(event) => handleHandlePointerDown(event, 'start')}
-                  onPointerMove={(event) => handleHandlePointerMove(event, 'start')}
-                  onPointerUp={handleHandlePointerEnd}
-                  onPointerCancel={handleHandlePointerEnd}
-                  onKeyDown={(event) => handleHandleKeyDown(event, 'start')}
-                  onBlur={handleHandleBlur}
-                  className="absolute top-1/2 z-40 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[color:var(--clip-handle-border)] bg-[color:var(--clip-handle)] shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] hover:bg-[color:var(--clip-handle-hover)]"
-                  style={{ left: `${startPercent}%` }}
-                >
-                  <span className="sr-only">Drag to adjust start</span>
-                </button>
-                <button
-                  type="button"
-                  role="slider"
-                  aria-label="Adjust clip end"
-                  aria-valuemin={endHandleValueMin}
-                  aria-valuemax={endHandleValueMax}
-                  aria-valuenow={rangeEnd}
-                  aria-valuetext={endAriaValueText}
-                  onPointerDown={(event) => handleHandlePointerDown(event, 'end')}
-                  onPointerMove={(event) => handleHandlePointerMove(event, 'end')}
-                  onPointerUp={handleHandlePointerEnd}
-                  onPointerCancel={handleHandlePointerEnd}
-                  onKeyDown={(event) => handleHandleKeyDown(event, 'end')}
-                  onBlur={handleHandleBlur}
-                  className="absolute top-1/2 z-40 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[color:var(--clip-handle-border)] bg-[color:var(--clip-handle)] shadow transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] hover:bg-[color:var(--clip-handle-hover)]"
-                  style={{ left: `${endPercent}%` }}
-                >
-                  <span className="sr-only">Drag to adjust end</span>
-                </button>
-              </div>
-              <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                <button
-                  type="button"
-                  onClick={handleSnapToOriginal}
-                  disabled={!clipState}
-                  className="flex items-center gap-2 rounded-md border border-transparent px-1.5 py-1 text-inherit transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] enabled:hover:border-white/10 enabled:hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)] enabled:hover:text-[var(--fg)] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <span
-                    className="h-2 w-6 rounded-full bg-[color:var(--clip-original)]"
-                    aria-hidden="true"
-                  />
-                  Original range
-                </button>
-                {shouldShowRenderedOverlay ? (
-                  <button
-                    type="button"
-                    onClick={handleSnapToRendered}
-                    disabled={!clipState}
-                    className="flex items-center gap-2 rounded-md border border-transparent px-1.5 py-1 text-inherit transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] enabled:hover:border-white/10 enabled:hover:bg-[color:color-mix(in_srgb,var(--muted)_20%,transparent)] enabled:hover:text-[var(--fg)] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <span
-                      className="h-2 w-6 rounded-full bg-[color:var(--clip-rendered)]"
-                      aria-hidden="true"
-                    />
-                    Rendered output
-                  </button>
-                ) : null}
-                <span className="flex items-center gap-2">
-                  <span
-                    className="h-2 w-6 rounded-full bg-[color:var(--clip-current)]"
-                    aria-hidden="true"
-                  />
-                  Current window
-                </span>
-              </div>
-              <div className="flex justify-between text-xs text-[var(--muted)]">
-                <span>{formatDuration(windowStart)}</span>
-                <span>{formatDuration(windowEnd)}</span>
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                Start offset (s)
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  pattern="[-+]?\\d*\\.?\\d*"
-                  value={formattedStartOffset}
-                  onChange={(event) => handleRangeInputChange(event, 'start')}
-                  onKeyDown={handleRangeInputKeyDown}
-                  onBlur={handleRangeInputBlur}
-                  title={`Absolute start ${formatDuration(rangeStart)}`}
-                  className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                />
-                <span className="text-[10px] font-normal uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                  Relative to the original start
-                </span>
-                <span className="text-[10px] font-normal text-[color:color-mix(in_srgb,var(--muted)_60%,transparent)]">
-                  Original {formatDuration(offsetReference.startBase)} → Current{' '}
-                  {formatDuration(rangeStart)}
-                </span>
-              </label>
-              <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                End offset (s)
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  pattern="[-+]?\\d*\\.?\\d*"
-                  value={formattedEndOffset}
-                  onChange={(event) => handleRangeInputChange(event, 'end')}
-                  onKeyDown={handleRangeInputKeyDown}
-                  onBlur={handleRangeInputBlur}
-                  title={`Absolute end ${formatDuration(rangeEnd)}`}
-                  className="rounded-lg border border-white/10 bg-[var(--card)] px-3 py-2 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                />
-                <span className="text-[10px] font-normal uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                  Relative to the original end
-                </span>
-                <span className="text-[10px] font-normal text-[color:color-mix(in_srgb,var(--muted)_60%,transparent)]">
-                  Original {formatDuration(offsetReference.endBase)} → Current{' '}
-                  {formatDuration(rangeEnd)}
-                </span>
-              </label>
-            </div>
-            <div className="flex flex-col gap-2 text-sm text-[var(--muted)]">
-              <div className="flex items-center justify-between">
-                <span>Adjusted duration</span>
-                <span className="font-semibold text-[var(--fg)]">
-                  {formatDuration(durationSeconds)}
-                </span>
-              </div>
-              {!durationWithinLimits ? (
-                <div className="flex items-start gap-2 rounded-lg border border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] px-3 py-2 text-xs text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]">
-                  <span
-                    className="mt-0.5 h-2 w-2 flex-shrink-0 rounded-full bg-[color:var(--error-strong)]"
-                    aria-hidden="true"
-                  />
-                  <div className="space-y-1">
-                    <p className="font-semibold uppercase tracking-wide">Outside clip limits</p>
-                    <p>
-                      Clips must stay between {minClipDurationSeconds.toFixed(0)}s and{' '}
-                      {maxClipDurationSeconds.toFixed(0)}s. Adjust the boundaries to bring this
-                      clip back in range. Current duration: {formatDuration(durationSeconds)}.
-                    </p>
-                  </div>
-                </div>
-              ) : null}
-              {durationWithinLimits && !durationWithinSweetSpot ? (
-                <div className="flex items-start gap-2 rounded-lg border border-[color:color-mix(in_srgb,var(--warning-strong)_45%,var(--edge))] bg-[color:var(--warning-soft)] px-3 py-2 text-xs text-[color:var(--warning-contrast)]">
-                  <span
-                    className="mt-0.5 h-2 w-2 flex-shrink-0 rounded-full bg-[color:var(--warning-strong)]"
-                    aria-hidden="true"
-                  />
-                  <div className="space-y-1">
-                    <p className="font-semibold uppercase tracking-wide">Outside sweet spot</p>
-                    <p>
-                      The recommended sweet spot is {sweetSpotMinSeconds.toFixed(0)}–
-                      {sweetSpotMaxSeconds.toFixed(0)} seconds. Tweaking the boundaries can help this
-                      clip land inside the preferred window. Current duration:{' '}
-                      {formatDuration(durationSeconds)}.
-                    </p>
-                  </div>
-                </div>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-3 text-xs font-medium uppercase tracking-wide text-[color:color-mix(in_srgb,var(--muted)_70%,transparent)]">
-                <label className="flex items-center gap-2">
-                  Expand window (seconds)
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    value={expandAmount}
-                    onChange={handleExpandAmountChange}
-                    className="w-20 rounded-lg border border-white/10 bg-[var(--card)] px-2 py-1 text-sm text-[var(--fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  />
-                </label>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleExpandLeft}
-                    className="rounded-lg border border-white/10 px-2 py-1 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  >
-                    Expand left
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleExpandRight}
-                    className="rounded-lg border border-white/10 px-2 py-1 text-xs font-semibold text-[var(--fg)] transition hover:border-[var(--ring)] hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                  >
-                    Expand right
-                  </button>
-                </div>
-              </div>
-              <p className="text-xs">
-                Expanding the window lets you pull the clip start earlier or extend the ending
-                without moving the saved boundaries.
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={isSaving || isLoadingClip}
-              className="inline-flex items-center justify-center rounded-[14px] border border-transparent bg-[color:var(--ring)] px-4 py-2 text-sm font-semibold text-[color:var(--accent-contrast)] shadow-[0_18px_36px_rgba(15,23,42,0.28)] transition hover:-translate-y-0.5 hover:bg-[color:color-mix(in_srgb,var(--ring-strong)_75%,var(--ring))] hover:shadow-[0_24px_48px_rgba(15,23,42,0.36)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSaving ? 'Saving…' : 'Save adjustments'}
-            </button>
-            <button
-              type="button"
-              onClick={handleReset}
-              className="inline-flex items-center justify-center rounded-[14px] border border-[color:var(--edge-soft)] bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--fg)] shadow-[0_12px_24px_rgba(15,23,42,0.2)] transition hover:-translate-y-0.5 hover:border-[var(--ring)] hover:bg-[color:color-mix(in_srgb,var(--panel-strong)_72%,transparent)] hover:text-[color:var(--accent)] hover:shadow-[0_18px_36px_rgba(15,23,42,0.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-strong)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--card)]"
-            >
-              Reset to original
-            </button>
-          </div>
-          {shouldShowSaveSteps ? (
-            <div className="rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_60%,transparent)] p-4 text-sm text-[var(--muted)]">
-              <h2 className="text-sm font-semibold text-[var(--fg)]">Rebuilding assets</h2>
-              <ol className="mt-3 space-y-3">
-                {saveSteps.map((step) => {
-                  const isCompleted = step.status === 'completed'
-                  const isRunning = step.status === 'running'
-                  const isFailed = step.status === 'failed'
-                  const indicatorClasses = isCompleted
-                    ? 'border-[color:color-mix(in_srgb,var(--success-strong)_45%,var(--edge))] bg-[color:var(--success-soft)] text-[color:color-mix(in_srgb,var(--success-strong)_85%,var(--accent-contrast))]'
-                    : isFailed
-                      ? 'border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]'
-                      : isRunning
-                        ? 'border-[var(--ring)] text-[var(--ring)]'
-                        : 'border-white/15 text-[var(--muted)]'
-                  return (
-                    <li key={step.id} className="flex items-start gap-3">
-                      <span
-                        className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold ${indicatorClasses}`}
-                        aria-hidden
-                      >
-                        {isRunning ? (
-                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                        ) : isCompleted ? (
-                          '✓'
-                        ) : isFailed ? (
-                          '!'
-                        ) : (
-                          '•'
-                        )}
-                      </span>
-                      <div>
-                        <p className="font-medium text-[var(--fg)]">{step.label}</p>
-                        <p className="text-xs">{step.description}</p>
-                      </div>
-                    </li>
-                  )
-                })}
-              </ol>
-            </div>
-          ) : null}
-          {saveError ? (
-            <p className="text-sm text-[color:color-mix(in_srgb,var(--error-strong)_82%,var(--accent-contrast))]">
-              {saveError}
-            </p>
-          ) : null}
-          {saveSuccess ? (
-            <p className="text-sm text-[color:color-mix(in_srgb,var(--success-strong)_82%,var(--accent-contrast))]">
-              {saveSuccess}
-            </p>
-          ) : null}
-            </>
+            <TrimModeView
+              clip={clipState}
+              timelineRef={timelineRef}
+              originalOverlayLayer={originalOverlayLayer}
+              renderedOverlayLayer={renderedOverlayLayer}
+              originalOverlayLeftInset={originalOverlayLeftInset}
+              originalOverlayRightInset={originalOverlayRightInset}
+              renderedOverlayLeftInset={renderedOverlayLeftInset}
+              renderedOverlayRightInset={renderedOverlayRightInset}
+              originalStartMarkerPercent={originalStartMarkerPercent}
+              originalEndMarkerPercent={originalEndMarkerPercent}
+              renderedStartMarkerPercent={renderedStartMarkerPercent}
+              renderedEndMarkerPercent={renderedEndMarkerPercent}
+              currentOverlayLeftInset={currentOverlayLeftInset}
+              currentOverlayRightInset={currentOverlayRightInset}
+              showStartTooltip={showStartTooltip}
+              showEndTooltip={showEndTooltip}
+              startPercent={startPercent}
+              endPercent={endPercent}
+              startOffsetTooltip={startOffsetTooltip}
+              endOffsetTooltip={endOffsetTooltip}
+              startHandleValueMin={startHandleValueMin}
+              startHandleValueMax={startHandleValueMax}
+              endHandleValueMin={endHandleValueMin}
+              endHandleValueMax={endHandleValueMax}
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+              windowStart={windowStart}
+              windowEnd={windowEnd}
+              startAriaValueText={startAriaValueText}
+              endAriaValueText={endAriaValueText}
+              onHandlePointerDown={handleHandlePointerDown}
+              onHandlePointerMove={handleHandlePointerMove}
+              onHandlePointerEnd={handleHandlePointerEnd}
+              onHandleKeyDown={handleHandleKeyDown}
+              onHandleBlur={handleHandleBlur}
+              onSnapToOriginal={handleSnapToOriginal}
+              onSnapToRendered={handleSnapToRendered}
+              shouldShowRenderedOverlay={shouldShowRenderedOverlay}
+              formattedStartOffset={formattedStartOffset}
+              formattedEndOffset={formattedEndOffset}
+              onRangeInputChange={handleRangeInputChange}
+              onRangeInputKeyDown={handleRangeInputKeyDown}
+              onRangeInputBlur={handleRangeInputBlur}
+              offsetReference={offsetReference}
+              durationSeconds={durationSeconds}
+              durationWithinLimits={durationWithinLimits}
+              minClipDurationSeconds={minClipDurationSeconds}
+              maxClipDurationSeconds={maxClipDurationSeconds}
+              durationWithinSweetSpot={durationWithinSweetSpot}
+              sweetSpotMinSeconds={sweetSpotMinSeconds}
+              sweetSpotMaxSeconds={sweetSpotMaxSeconds}
+              expandAmount={expandAmount}
+              onExpandAmountChange={handleExpandAmountChange}
+              onExpandLeft={handleExpandLeft}
+              onExpandRight={handleExpandRight}
+              onSave={handleSave}
+              onReset={handleReset}
+              isSaving={isSaving}
+              isLoadingClip={isLoadingClip}
+              shouldShowSaveSteps={shouldShowSaveSteps}
+              saveSteps={saveSteps}
+              saveError={saveError}
+              saveSuccess={saveSuccess}
+            />
           ) : null}
         </div>
       </div>
