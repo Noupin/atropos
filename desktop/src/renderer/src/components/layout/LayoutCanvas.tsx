@@ -23,7 +23,9 @@ import LayoutItemToolbar, {
   RemoveIcon,
   SendBackwardIcon,
   CropModeIcon,
-  CropConfirmIcon
+  CropConfirmIcon,
+  LockIcon,
+  UnlockIcon
 } from './LayoutItemToolbar'
 import { useLayoutSelection } from './layoutSelectionStore'
 
@@ -133,6 +135,7 @@ type LayoutCanvasProps = {
   ariaLabel?: string
   onRequestResetAspect?: (target: 'frame' | 'crop', context: 'source' | 'layout') => void
   onRequestChangeTransformTarget?: (target: 'frame' | 'crop') => void
+  onRequestToggleAspectLock?: (target: 'frame' | 'crop', context: 'source' | 'layout') => void
   getAspectRatioForItem?: (item: LayoutItem, target: 'frame' | 'crop') => number | null
   cropContext?: 'source' | 'layout'
   enableScaleModeMenu?: boolean
@@ -780,6 +783,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   ariaLabel,
   onRequestResetAspect,
   onRequestChangeTransformTarget,
+  onRequestToggleAspectLock,
   getAspectRatioForItem,
   cropContext = 'layout',
   enableScaleModeMenu = false,
@@ -998,15 +1002,32 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         return []
       }
       const hits: string[] = []
+      const epsilon = 0.0005
       for (const item of sortedItems) {
         const frame = getDisplayFrame(item)
-        if (pointWithinFrame(frame, x, y)) {
-          hits.push(item.id)
+        if (!pointWithinFrame(frame, x, y)) {
+          continue
         }
+        if (
+          transformTarget === 'crop' &&
+          cropContext === 'source' &&
+          (item as LayoutVideoItem).kind === 'video'
+        ) {
+          const video = item as LayoutVideoItem
+          const isFullWidth = Math.abs(frame.x) < epsilon && Math.abs(frame.width - 1) < epsilon
+          const isFullHeight = Math.abs(frame.y) < epsilon && Math.abs(frame.height - 1) < epsilon
+          if (isFullWidth && isFullHeight) {
+            const baseFrame = cloneFrame(video.frame)
+            if (!pointWithinFrame(baseFrame, x, y)) {
+              continue
+            }
+          }
+        }
+        hits.push(item.id)
       }
       return hits
     },
-    [getDisplayFrame, layout, sortedItems]
+    [cropContext, getDisplayFrame, layout, sortedItems, transformTarget]
   )
 
   const resolveSelectionFromStack = useCallback(
@@ -1082,12 +1103,21 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
   const handlePointerDownCapture = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      setContextMenu((current) => (current ? null : current))
+      const targetElement = event.target as HTMLElement | null
+      const inContextMenu = targetElement?.closest('[data-layout-context-menu="true"]')
+      if (contextMenu) {
+        const inToolbar = targetElement?.closest('[data-layout-item-toolbar="true"]')
+        if (!inContextMenu && !inToolbar) {
+          setContextMenu(null)
+        }
+      }
+      if (inContextMenu) {
+        return
+      }
       if (!layout) {
         return
       }
 
-      const targetElement = event.target as HTMLElement | null
       if (targetElement?.closest('[data-layout-item-toolbar="true"]')) {
         justSelectedRef.current = false
         suppressNextClickRef.current = false
@@ -1161,12 +1191,37 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       }
       persistSelectionIdRef.current = nextSelection
 
+      // Resolve the item for the selection so we can derive lock state before updating hover
+      const item = layout.items.find((candidate) => candidate.id === nextSelection)
+      let pointerAspectLocked = false
+      let presetAspectRatio: number | undefined
+
+      if ((item as LayoutVideoItem | undefined)?.kind === 'video') {
+        const video = item as LayoutVideoItem
+        if (transformTarget === 'crop') {
+          pointerAspectLocked = Boolean(video.lockCropAspectRatio)
+          if (pointerAspectLocked) {
+            const ratio = video.cropAspectRatio
+            if (ratio && Number.isFinite(ratio) && ratio > 0) {
+              presetAspectRatio = ratio
+            }
+          }
+        } else {
+          pointerAspectLocked = Boolean(video.lockAspectRatio)
+          if (pointerAspectLocked) {
+            const ratio = video.frameAspectRatio
+            if (ratio && Number.isFinite(ratio) && ratio > 0) {
+              presetAspectRatio = ratio
+            }
+          }
+        }
+      }
+
       // Select the item and show its toolbar/hover state
       if (selectedItemId !== nextSelection) {
         setSelectedItemId(nextSelection)
       }
       setToolbarAnchorId(nextSelection)
-      const pointerAspectLocked = false
       commitHover(
         { itemId: nextSelection, handle: handle ?? null },
         handle ? cursorForHandle(handle, pointerAspectLocked) : 'grab'
@@ -1178,7 +1233,6 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
       // Only start an active interaction when we are resizing or we intend to drag the selected item.
       // A simple click-to-select should NOT set interactionRef; selection must persist after pointerup.
-      const item = layout.items.find((candidate) => candidate.id === nextSelection)
       if (!item || !itemIsEditable(item)) {
         clearInteraction()
         return
@@ -1203,7 +1257,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       }
       const snapEnabled = event.altKey || event.metaKey
       const aspectLocked = pointerAspectLocked
-      let aspectRatioValue: number | undefined
+      let aspectRatioValue: number | undefined = presetAspectRatio
       if (typeof getAspectRatioForItem === 'function') {
         const ratio = getAspectRatioForItem(item, transformTarget)
         if (ratio && Number.isFinite(ratio) && ratio > 0) {
@@ -1253,6 +1307,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
       clearHover,
       clearInteraction,
       commitHover,
+      contextMenu,
       getAspectRatioForItem,
       getDisplayFrame,
       getPointerPosition,
@@ -1665,6 +1720,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
   const primaryIsVideo = Boolean(
     activeSelection && (activeSelection as LayoutVideoItem).kind === 'video'
   )
+  const primaryVideo = primaryIsVideo ? (activeSelection as LayoutVideoItem) : null
   const showToolbar = Boolean(activeSelection && toolbarAnchorId === activeSelection.id)
 
   const toolbarActions = useMemo<LayoutItemToolbarAction[]>(() => {
@@ -1688,6 +1744,27 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
           onSelect: () => onRequestChangeTransformTarget('crop')
         })
       }
+    }
+
+    if (primaryVideo && onRequestToggleAspectLock) {
+      const isCropTarget = transformTarget === 'crop'
+      const locked = isCropTarget
+        ? Boolean(primaryVideo.lockCropAspectRatio)
+        : Boolean(primaryVideo.lockAspectRatio)
+      const label = isCropTarget
+        ? locked
+          ? 'Unlock crop aspect (freeform)'
+          : 'Lock crop aspect (preserve ratio)'
+        : locked
+          ? 'Unlock frame aspect (freeform)'
+          : 'Lock frame aspect (preserve ratio)'
+      const context = cropContext ?? 'layout'
+      actions.push({
+        key: `toggle-${isCropTarget ? 'crop' : 'frame'}-aspect-lock`,
+        label,
+        icon: locked ? <LockIcon /> : <UnlockIcon />,
+        onSelect: () => onRequestToggleAspectLock(isCropTarget ? 'crop' : 'frame', context)
+      })
     }
 
     actions.push({
@@ -1737,7 +1814,9 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
     onRequestDuplicate,
     onRequestResetAspect,
     onRequestSendBackward,
+    onRequestToggleAspectLock,
     primaryIsVideo,
+    primaryVideo,
     transformTarget
   ])
 
@@ -1911,12 +1990,26 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
         const showHandles = isSelected || isHovered
         const label = getItemLabel(item)
         const palette = getItemAppearance(item, colorScheme)
-        const itemAspectLocked = false
+        const videoItem = (item as LayoutVideoItem).kind === 'video' ? (item as LayoutVideoItem) : null
+        const itemAspectLocked = videoItem
+          ? transformTarget === 'crop'
+            ? Boolean(videoItem.lockCropAspectRatio)
+            : Boolean(videoItem.lockAspectRatio)
+          : false
+        const interactiveFrame =
+          transformTarget === 'crop' && cropContext === 'source' && videoItem
+            ? cloneFrame(videoItem.frame)
+            : frame
+        const interactiveCenterX = clamp(
+          interactiveFrame.x + interactiveFrame.width / 2
+        )
+        const interactiveCenterY = clamp(
+          interactiveFrame.y + interactiveFrame.height / 2
+        )
         const classes = getItemClasses ? getItemClasses(item, isSelected) : ''
         const shouldShowLabel =
           labelVisibility === 'always' || (labelVisibility === 'selected' && isSelected)
         const editable = itemIsEditable(item)
-        const videoItem = (item as LayoutVideoItem).kind === 'video' ? (item as LayoutVideoItem) : null
         const pendingCrop = videoItem ? getPendingCrop?.(videoItem.id, cropContext) : null
         const cropOverlayRect =
           isPrimarySelection && transformTarget === 'crop' && videoItem
@@ -1994,6 +2087,10 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
             role="group"
             aria-label={label}
             data-item-id={item.id}
+            data-interactive-center-x={interactiveCenterX}
+            data-interactive-center-y={interactiveCenterY}
+            data-interactive-width={clamp(interactiveFrame.width)}
+            data-interactive-height={clamp(interactiveFrame.height)}
             onPointerDown={stopPointerPropagation}
             onContextMenu={(event) => handleItemContextMenu(event, item)}
           >
@@ -2072,7 +2169,7 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
                         if (!placement) {
                           return null
                         }
-                        const cursorName = cursorForHandle(handle.id, false)
+                        const cursorName = cursorForHandle(handle.id, itemAspectLocked)
                         const cursorClass = cursorName === 'default' ? 'cursor-default' : `cursor-${cursorName}`
                         return (
                           <button

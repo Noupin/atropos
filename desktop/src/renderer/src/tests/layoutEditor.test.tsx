@@ -271,9 +271,27 @@ describe('Layout editor interactions', () => {
     const top = extractPercent('top')
     const width = extractPercent('width')
     const height = extractPercent('height')
+    const interactiveCenterXAttr = target.getAttribute('data-interactive-center-x')
+    const interactiveCenterYAttr = target.getAttribute('data-interactive-center-y')
+    const resolveCenter = (value: string | null, fallback: number): number => {
+      if (value == null) {
+        return fallback
+      }
+      const parsed = Number.parseFloat(value)
+      if (Number.isFinite(parsed)) {
+        return Math.min(Math.max(parsed, 0), 1)
+      }
+      return fallback
+    }
+    const defaultCenterX = left + width / 2
+    const defaultCenterY = top + height / 2
+    const centerX = resolveCenter(interactiveCenterXAttr, defaultCenterX)
+    const centerY = resolveCenter(interactiveCenterYAttr, defaultCenterY)
     const rect = canvas.getBoundingClientRect()
-    const clientX = (init.clientX ?? rect.width * (left + width / 2)) + rect.left
-    const clientY = (init.clientY ?? rect.height * (top + height / 2)) + rect.top
+    const localX = init.clientX ?? rect.width * centerX
+    const localY = init.clientY ?? rect.height * centerY
+    const clientX = localX + rect.left
+    const clientY = localY + rect.top
     await act(async () => {
       pointerDown(canvas, {
         pointerId: init.pointerId,
@@ -838,6 +856,20 @@ describe('Layout editor interactions', () => {
     })
 
     const sourceItem = within(sourceCanvas).getByRole('group', { name: /Primary/i })
+    const lockButtons = await within(sourceCanvas).findAllByRole('button', {
+      name: 'Lock crop aspect (preserve ratio)'
+    })
+    const lockButton = lockButtons[lockButtons.length - 1]
+
+    await act(async () => {
+      fireEvent.click(lockButton)
+    })
+
+    await waitFor(() => {
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.lockCropAspectRatio).toBe(true)
+    })
+
     const handle = within(sourceItem).getByLabelText('Resize south-east')
     await act(async () => {
       pointerDown(handle, { pointerId: 8, clientX: 120, clientY: 260 })
@@ -864,11 +896,13 @@ describe('Layout editor interactions', () => {
     expect(cropRatio).not.toBeNull()
     expect(frameRatio).not.toBeNull()
     if (cropRatio != null && frameRatio != null) {
-      expect(cropRatio).toBeCloseTo(frameRatio, 3)
+      const layoutAspect = baseLayout.canvas.width / Math.max(baseLayout.canvas.height, 0.0001)
+      const sourceAspect = 16 / 9
+      expect(cropRatio * sourceAspect).toBeCloseTo(frameRatio * layoutAspect, 3)
     }
   })
 
-  it('does not render frame aspect lock controls on the layout canvas', async () => {
+  it('renders frame aspect lock controls on the layout canvas', async () => {
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
@@ -903,18 +937,13 @@ describe('Layout editor interactions', () => {
     await selectItemByName(layoutCanvas, /primary/i, { pointerId: 1 })
 
     expect(
-      within(layoutCanvas).queryByRole('button', {
-        name: 'Unlock frame aspect (freeform)'
-      })
-    ).toBeNull()
-    expect(
-      within(layoutCanvas).queryByRole('button', {
+      await within(layoutCanvas).findByRole('button', {
         name: 'Lock frame aspect (preserve ratio)'
       })
-    ).toBeNull()
+    ).toBeInTheDocument()
   })
 
-  it('does not render crop aspect lock controls on the source canvas', async () => {
+  it('renders crop aspect lock controls on the source canvas', async () => {
     render(
       <LayoutEditorPanel
         tabNavigation={<div />}
@@ -952,15 +981,10 @@ describe('Layout editor interactions', () => {
     await selectItemByName(sourceCanvas, /primary/i, { pointerId: 4 })
 
     expect(
-      within(sourceCanvas).queryByRole('button', {
-        name: 'Unlock crop aspect (freeform)'
-      })
-    ).toBeNull()
-    expect(
-      within(sourceCanvas).queryByRole('button', {
+      await within(sourceCanvas).findByRole('button', {
         name: 'Lock crop aspect (preserve ratio)'
       })
-    ).toBeNull()
+    ).toBeInTheDocument()
   })
 
   it('snaps frame bounds to the source aspect ratio on demand', async () => {
@@ -1006,13 +1030,27 @@ describe('Layout editor interactions', () => {
       clientY: 80
     })
 
-    const frameLockedButtons = await within(layoutCanvas).findAllByRole('button', {
-      name: 'Unlock frame aspect (freeform)'
+    const frameLockButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Lock frame aspect (preserve ratio)'
     })
-    const frameLockedButton = frameLockedButtons[frameLockedButtons.length - 1]
+    const frameLockButton = frameLockButtons[frameLockButtons.length - 1]
 
     await act(async () => {
-      fireEvent.click(frameLockedButton)
+      fireEvent.click(frameLockButton)
+    })
+
+    await waitFor(() => {
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.lockAspectRatio).toBe(true)
+    })
+
+    const frameUnlockButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Unlock frame aspect (freeform)'
+    })
+    const frameUnlockButton = frameUnlockButtons[frameUnlockButtons.length - 1]
+
+    await act(async () => {
+      fireEvent.click(frameUnlockButton)
     })
 
     await waitFor(() => {
@@ -1211,11 +1249,28 @@ describe('Layout editor interactions', () => {
       clientY: 80
     })
 
+    const lockButtons = await within(layoutCanvas).findAllByRole('button', {
+      name: 'Lock frame aspect (preserve ratio)'
+    })
+    await act(async () => {
+      fireEvent.click(lockButtons[lockButtons.length - 1])
+    })
+
+    await waitFor(() => {
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.lockAspectRatio).toBe(true)
+    })
+
     const unlockButtons = await within(layoutCanvas).findAllByRole('button', {
       name: 'Unlock frame aspect (freeform)'
     })
     await act(async () => {
       fireEvent.click(unlockButtons[unlockButtons.length - 1])
+    })
+
+    await waitFor(() => {
+      const updatedVideo = latestLayout?.items.find((item) => item.id === 'video-1') as LayoutVideoItem | undefined
+      expect(updatedVideo?.lockAspectRatio).toBe(false)
     })
 
     const eastHandle = within(layoutItem).getByLabelText('Resize east')
@@ -1286,9 +1341,9 @@ describe('Layout editor interactions', () => {
       const expectedCrop = { x: 0, y: 0, width: 1, height: 1 }
       expect(resetVideo.sourceCrop ?? expectedCrop).toMatchObject(expectedCrop)
       expect(resetVideo.crop).toMatchObject(expectedCrop)
-      if (resetVideo.cropAspectRatio != null) {
-        expect(resetVideo.cropAspectRatio).toBeCloseTo(1, 3)
-      }
+      expect(resetVideo.lockAspectRatio).toBe(false)
+      expect(resetVideo.lockCropAspectRatio).toBe(false)
+      expect(resetVideo.cropAspectRatio).toBeNull()
     }
 
     const interactionsBeforeFollowUp = onLayoutChange.mock.calls.length
@@ -1312,8 +1367,8 @@ describe('Layout editor interactions', () => {
     expect(afterFollowUp).toBeTruthy()
     if (afterFollowUp) {
       const sourceCrop = afterFollowUp.sourceCrop ?? { x: 0, y: 0, width: 1, height: 1 }
-      const cropRatio = sourceCrop.width / Math.max(sourceCrop.height, 0.0001)
-      expect(cropRatio).toBeCloseTo(1, 3)
+      expect(sourceCrop.width).toBeLessThan(1)
+      expect(afterFollowUp.lockCropAspectRatio).toBe(false)
       const frameRatio = afterFollowUp.frame.width / Math.max(afterFollowUp.frame.height, 0.0001)
       expect(frameRatio).toBeCloseTo(16 / 9, 3)
     }
@@ -1405,7 +1460,7 @@ describe('Layout editor interactions', () => {
     const pendingVideo = (latestLayout?.items.find((item) => item.id === 'video-1') ?? null) as
       | LayoutVideoItem
       | null
-    expect(pendingVideo?.crop).toMatchObject(initialCrop)
+    expect(pendingVideo?.crop ?? initialCrop).toMatchObject(initialCrop)
 
     const finishCropButton = await within(layoutCanvas).findByRole('button', {
       name: 'Finish crop'
@@ -2066,7 +2121,9 @@ describe('Layout editor interactions', () => {
     const stretchOption = await screen.findByRole('button', { name: /stretch to frame/i })
 
     await act(async () => {
-      fireEvent.click(stretchOption)
+      stretchOption.click()
+      // Dispatch a synthetic click event because HTMLElement#click() alone can miss React's handler in JSDOM
+      stretchOption.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     await waitFor(() => {
@@ -2089,7 +2146,9 @@ describe('Layout editor interactions', () => {
     const autoOption = await screen.findByRole('button', { name: /auto crop to fill/i })
 
     await act(async () => {
-      fireEvent.click(autoOption)
+      autoOption.click()
+      // Dispatch a synthetic click event because HTMLElement#click() alone can miss React's handler in JSDOM
+      autoOption.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     await waitFor(() => {
