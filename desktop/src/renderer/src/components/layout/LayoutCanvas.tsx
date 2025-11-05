@@ -1935,12 +1935,14 @@ const LayoutCanvas: FC<LayoutCanvasProps> = ({
 
     return actions
   }, [
+    activeSelection,
     cropContext,
     onRequestBringForward,
     onRequestChangeAspectLock,
     onRequestChangeTransformTarget,
     onRequestDelete,
     onRequestDuplicate,
+    onRequestFinishCrop,
     onRequestResetAspect,
     onRequestSendBackward,
     primaryIsVideo,
