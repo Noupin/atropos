@@ -35,3 +35,6 @@ crash.log
 *.tfvars
 *.pem
 **/cookies.txt
+
+/atropos-data-backup
+deploy-maddie.sh
