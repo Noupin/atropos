@@ -365,7 +365,8 @@ body::after {
 .hero__intro {
   display: flex;
   flex-wrap: wrap;
-  gap: clamp(12px, 3vw, 24px);
+  column-gap: clamp(12px, 3vw, 24px);
+  row-gap: clamp(4px, 1.2vw, 10px);
   align-items: center;
 }
 .hero__intro-text {
