@@ -12,16 +12,24 @@ const sentinel = document.getElementById("signupScrollSentinel");
 const phraseRotator = document.getElementById("phraseRotator");
 const phraseAnnouncer = document.getElementById("phraseAnnouncer");
 const metricsEl = document.getElementById("socialMetrics");
-const youtubeMetricEl = document.getElementById("youtubeMetric");
-const instagramMetricEl = document.getElementById("instagramMetric");
+
+const ENABLE_SOCIAL_PLATFORMS = {
+  youtube: true,
+  instagram: true,
+  tiktok: false,
+  facebook: false,
+};
 
 function moveSignup(toNav) {
   if (!signupWrapper || !nav || !navTarget || !heroSlot) return;
 
-  const destination = toNav ? navTarget : heroSlot;
-  if (destination.contains(signupWrapper)) return;
+  heroSlot.classList.toggle("signup-slot--empty", toNav);
 
-  destination.appendChild(signupWrapper);
+  const destination = toNav ? navTarget : heroSlot;
+  if (!destination.contains(signupWrapper)) {
+    destination.appendChild(signupWrapper);
+  }
+
   if (toNav) {
     nav.classList.add("compact");
     document.body.classList.add("nav-compact");
@@ -270,13 +278,53 @@ function formatCount(value) {
   return Math.round(num).toLocaleString();
 }
 
-function applyMetric(el, value, fallback) {
-  if (!el) return;
-  const formatted = formatCount(value);
+function setMetricState(metric, { count, isMock = false, accountCount, note } = {}) {
+  if (!metric || !metric.valueEl) return;
+
+  const numeric = Number(count);
+  const fallbackCount = Number(metric.fallbackCount);
+  let formatted = Number.isFinite(numeric) ? formatCount(numeric) : null;
+
+  if (!formatted && Number.isFinite(fallbackCount)) {
+    formatted = formatCount(fallbackCount);
+    isMock = true;
+  }
+
   if (formatted) {
-    el.textContent = formatted;
-  } else if (fallback) {
-    el.textContent = fallback;
+    metric.valueEl.textContent = formatted;
+  }
+
+  const fallbackNote = metric.fallbackNote || "";
+  const fallbackAccounts = Number(metric.fallbackAccounts) || 0;
+  let resolvedNote = note;
+  if (!resolvedNote) {
+    if (Number.isFinite(accountCount) && accountCount > 0) {
+      const label = accountCount === 1 ? "account" : "accounts";
+      resolvedNote = `Across ${accountCount} ${label}`;
+    } else if (fallbackNote) {
+      resolvedNote = fallbackNote;
+    } else if (fallbackAccounts > 0) {
+      const fallbackLabel = fallbackAccounts === 1 ? "account" : "accounts";
+      resolvedNote = `Across ${fallbackAccounts} ${fallbackLabel}`;
+    }
+  }
+
+  if (metric.noteEl) {
+    if (resolvedNote) {
+      metric.noteEl.textContent = resolvedNote;
+      metric.noteEl.hidden = false;
+    } else {
+      metric.noteEl.textContent = "";
+      metric.noteEl.hidden = true;
+    }
+  }
+
+  if (isMock) {
+    metric.element.classList.add("hero__metric--placeholder");
+    metric.valueEl.classList.add("hero__metric-value--placeholder");
+  } else {
+    metric.element.classList.remove("hero__metric--placeholder");
+    metric.valueEl.classList.remove("hero__metric-value--placeholder");
   }
 }
 
@@ -314,66 +362,374 @@ async function fetchInstagramFollowers(userId, accessToken) {
   return data ? Number(data.followers_count) : null;
 }
 
-if (metricsEl) {
-  const youtubeFallback = metricsEl.dataset.youtubeFallback;
-  const instagramFallback = metricsEl.dataset.instagramFallback;
-  if (youtubeFallback && youtubeMetricEl) {
-    applyMetric(youtubeMetricEl, Number(youtubeFallback), youtubeFallback);
+async function fetchFacebookFollowers(pageId, accessToken) {
+  const params = new URLSearchParams({
+    fields: "fan_count",
+    access_token: accessToken,
+  });
+
+  const res = await fetch(
+    `https://graph.facebook.com/v17.0/${pageId}?${params.toString()}`
+  );
+  if (!res.ok) {
+    throw new Error(`Facebook API request failed with ${res.status}`);
   }
-  if (instagramFallback && instagramMetricEl) {
-    applyMetric(
-      instagramMetricEl,
-      Number(instagramFallback),
-      instagramFallback
-    );
+  const data = await res.json();
+  return data ? Number(data.fan_count) : null;
+}
+
+function extractCountFromPath(data, path) {
+  if (typeof path === "string" && path.trim()) {
+    const segments = path.split(".").filter(Boolean);
+    let current = data;
+    for (const segment of segments) {
+      if (current == null || typeof current !== "object") {
+        return null;
+      }
+      current = current[segment];
+    }
+    const value = Number(current);
+    return Number.isFinite(value) ? value : null;
   }
 
+  const candidates = [
+    data,
+    data?.count,
+    data?.followers,
+    data?.followers_count,
+    data?.fan_count,
+    data?.subscriberCount,
+  ];
+
+  for (const candidate of candidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
+async function fetchGenericCount(url, jsonPath) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Request failed with ${res.status}`);
+  }
+  const data = await res.json();
+  const value = extractCountFromPath(data, jsonPath);
+  if (!Number.isFinite(value)) {
+    throw new Error("Follower count missing in response");
+  }
+  return value;
+}
+
+function getYouTubeAccounts(config) {
+  if (!config) return [];
+  const raw = Array.isArray(config.accounts)
+    ? config.accounts
+    : config.channelId
+    ? [config.channelId]
+    : [];
+  return raw
+    .map((entry) => {
+      if (typeof entry === "string" && entry.trim()) {
+        return { channelId: entry.trim() };
+      }
+      if (entry && typeof entry.channelId === "string" && entry.channelId.trim()) {
+        return { channelId: entry.channelId.trim() };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function getInstagramAccounts(config) {
+  if (!config) return [];
+  const baseToken =
+    typeof config.accessToken === "string" && config.accessToken.trim()
+      ? config.accessToken.trim()
+      : "";
+  const raw = Array.isArray(config.accounts)
+    ? config.accounts
+    : config.userId
+    ? [config.userId]
+    : [];
+  return raw
+    .map((entry) => {
+      if (typeof entry === "string" && entry.trim()) {
+        return baseToken
+          ? { userId: entry.trim(), accessToken: baseToken }
+          : null;
+      }
+      if (entry && typeof entry.userId === "string" && entry.userId.trim()) {
+        const token =
+          typeof entry.accessToken === "string" && entry.accessToken.trim()
+            ? entry.accessToken.trim()
+            : baseToken;
+        if (!token) {
+          return null;
+        }
+        return { userId: entry.userId.trim(), accessToken: token };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function getFacebookAccounts(config) {
+  if (!config) return [];
+  const baseToken =
+    typeof config.accessToken === "string" && config.accessToken.trim()
+      ? config.accessToken.trim()
+      : "";
+  const raw = Array.isArray(config.accounts)
+    ? config.accounts
+    : config.pageId
+    ? [config.pageId]
+    : [];
+  return raw
+    .map((entry) => {
+      if (typeof entry === "string" && entry.trim()) {
+        return baseToken
+          ? { pageId: entry.trim(), accessToken: baseToken }
+          : null;
+      }
+      if (entry && typeof entry.pageId === "string" && entry.pageId.trim()) {
+        const token =
+          typeof entry.accessToken === "string" && entry.accessToken.trim()
+            ? entry.accessToken.trim()
+            : baseToken;
+        if (!token) {
+          return null;
+        }
+        return { pageId: entry.pageId.trim(), accessToken: token };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function getTikTokAccounts(config) {
+  if (!config) return [];
+  const raw = Array.isArray(config.accounts) ? config.accounts : [];
+  return raw
+    .map((entry) => {
+      if (entry == null) return null;
+      if (typeof entry === "number" && Number.isFinite(entry)) {
+        return { followerCount: entry };
+      }
+      if (typeof entry === "string" && entry.trim()) {
+        const num = Number(entry.trim());
+        return Number.isFinite(num) ? { followerCount: num } : null;
+      }
+      if (typeof entry.followerCount === "number" && Number.isFinite(entry.followerCount)) {
+        return { followerCount: entry.followerCount };
+      }
+      if (typeof entry.followers === "number" && Number.isFinite(entry.followers)) {
+        return { followerCount: entry.followers };
+      }
+      if (typeof entry.fetchUrl === "string" && entry.fetchUrl.trim()) {
+        return {
+          fetchUrl: entry.fetchUrl.trim(),
+          jsonPath:
+            typeof entry.jsonPath === "string" && entry.jsonPath.trim()
+              ? entry.jsonPath.trim()
+              : typeof entry.countPath === "string" && entry.countPath.trim()
+              ? entry.countPath.trim()
+              : "",
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function canLoadPlatform(platform, config) {
+  switch (platform) {
+    case "youtube": {
+      return (
+        config &&
+        typeof config.apiKey === "string" &&
+        config.apiKey.trim() &&
+        getYouTubeAccounts(config).length > 0
+      );
+    }
+    case "instagram": {
+      return getInstagramAccounts(config).length > 0;
+    }
+    case "tiktok": {
+      return getTikTokAccounts(config).length > 0;
+    }
+    case "facebook": {
+      return getFacebookAccounts(config).length > 0;
+    }
+    default:
+      return false;
+  }
+}
+
+const PLATFORM_LOADERS = {
+  youtube: async (metric, config) => {
+    const accounts = getYouTubeAccounts(config);
+    if (!accounts.length) {
+      throw new Error("No YouTube accounts configured");
+    }
+    const apiKey = config.apiKey && config.apiKey.trim();
+    if (!apiKey) {
+      throw new Error("Missing YouTube API key");
+    }
+    let total = 0;
+    for (const account of accounts) {
+      const count = await fetchYouTubeSubscribers(account.channelId, apiKey);
+      if (!Number.isFinite(count)) {
+        throw new Error(`Invalid count for YouTube channel ${account.channelId}`);
+      }
+      total += count;
+    }
+    return { count: total, accountCount: accounts.length };
+  },
+  instagram: async (metric, config) => {
+    const accounts = getInstagramAccounts(config);
+    if (!accounts.length) {
+      throw new Error("No Instagram accounts configured");
+    }
+    let total = 0;
+    for (const account of accounts) {
+      const count = await fetchInstagramFollowers(
+        account.userId,
+        account.accessToken
+      );
+      if (!Number.isFinite(count)) {
+        throw new Error(`Invalid count for Instagram user ${account.userId}`);
+      }
+      total += count;
+    }
+    return { count: total, accountCount: accounts.length };
+  },
+  tiktok: async (metric, config) => {
+    const accounts = getTikTokAccounts(config);
+    if (!accounts.length) {
+      throw new Error("No TikTok accounts configured");
+    }
+    let total = 0;
+    for (const account of accounts) {
+      if (Number.isFinite(account.followerCount)) {
+        total += account.followerCount;
+      } else if (account.fetchUrl) {
+        const count = await fetchGenericCount(account.fetchUrl, account.jsonPath);
+        total += count;
+      } else {
+        throw new Error("TikTok account missing follower information");
+      }
+    }
+    return { count: total, accountCount: accounts.length };
+  },
+  facebook: async (metric, config) => {
+    const accounts = getFacebookAccounts(config);
+    if (!accounts.length) {
+      throw new Error("No Facebook pages configured");
+    }
+    let total = 0;
+    for (const account of accounts) {
+      const count = await fetchFacebookFollowers(account.pageId, account.accessToken);
+      if (!Number.isFinite(count)) {
+        throw new Error(`Invalid count for Facebook page ${account.pageId}`);
+      }
+      total += count;
+    }
+    const countLabel = accounts.length === 1 ? "page" : "pages";
+    return {
+      count: total,
+      accountCount: accounts.length,
+      note: `Across ${accounts.length} ${countLabel}`,
+    };
+  },
+};
+
+if (metricsEl) {
+  const metrics = new Map();
+  metricsEl.querySelectorAll(".hero__metric").forEach((el) => {
+    const platform = el.dataset.platform;
+    if (!platform) return;
+    const valueEl = el.querySelector(".hero__metric-value");
+    if (!valueEl) return;
+    const noteEl = el.querySelector(".hero__metric-note");
+    const fallbackCount = Number(el.dataset.fallbackCount);
+    const fallbackAccounts = Number(el.dataset.fallbackAccounts);
+    const metric = {
+      platform,
+      element: el,
+      valueEl,
+      noteEl,
+      fallbackCount: Number.isFinite(fallbackCount) ? fallbackCount : null,
+      fallbackNote: el.dataset.fallbackNote || "",
+      fallbackAccounts: Number.isFinite(fallbackAccounts) ? fallbackAccounts : 0,
+    };
+    metrics.set(platform, metric);
+  });
+
   const socialConfig = window.atroposSocialConfig || {};
-  const youtubeConfig = socialConfig.youtube || {};
-  const instagramConfig = socialConfig.instagram || {};
   const refreshInterval = Math.max(
     0,
     Number(socialConfig.refreshIntervalMs || 0)
   );
 
-  const loadMetrics = async () => {
-    try {
-      if (youtubeConfig.channelId && youtubeConfig.apiKey && youtubeMetricEl) {
-        const count = await fetchYouTubeSubscribers(
-          youtubeConfig.channelId,
-          youtubeConfig.apiKey
-        );
-        applyMetric(youtubeMetricEl, count, youtubeMetricEl.textContent);
-      }
-    } catch (err) {
-      console.warn("YouTube metrics unavailable", err);
+  const enabledPlatforms = [];
+  metrics.forEach((metric, platform) => {
+    const enabled = ENABLE_SOCIAL_PLATFORMS[platform] !== false;
+    metric.element.hidden = !enabled;
+    if (!enabled) {
+      return;
     }
+    enabledPlatforms.push(platform);
+    setMetricState(metric, {
+      count: metric.fallbackCount,
+      isMock: true,
+      accountCount: metric.fallbackAccounts,
+      note: metric.fallbackNote,
+    });
+  });
 
-    try {
-      if (
-        instagramConfig.userId &&
-        instagramConfig.accessToken &&
-        instagramMetricEl
-      ) {
-        const count = await fetchInstagramFollowers(
-          instagramConfig.userId,
-          instagramConfig.accessToken
-        );
-        applyMetric(
-          instagramMetricEl,
-          count,
-          instagramMetricEl.textContent
-        );
-      }
-    } catch (err) {
-      console.warn("Instagram metrics unavailable", err);
-    }
-  };
+  const activePlatforms = enabledPlatforms.filter((platform) =>
+    canLoadPlatform(platform, socialConfig[platform])
+  );
 
-  if (youtubeConfig.channelId || instagramConfig.userId) {
-    loadMetrics();
+  if (activePlatforms.length) {
+    const loadAll = async () => {
+      await Promise.all(
+        activePlatforms.map(async (platform) => {
+          const metric = metrics.get(platform);
+          const loader = PLATFORM_LOADERS[platform];
+          const config = socialConfig[platform];
+          if (!metric || !loader || !config) {
+            return;
+          }
+          try {
+            const result = await loader(metric, config);
+            if (result && Number.isFinite(result.count)) {
+              setMetricState(metric, {
+                count: result.count,
+                isMock: Boolean(result.isMock),
+                accountCount: result.accountCount,
+                note: result.note,
+              });
+            }
+          } catch (err) {
+            console.warn(`${platform} metrics unavailable`, err);
+            setMetricState(metric, {
+              count: metric.fallbackCount,
+              isMock: true,
+              accountCount: metric.fallbackAccounts,
+              note: metric.fallbackNote,
+            });
+          }
+        })
+      );
+    };
+
+    loadAll();
     if (refreshInterval) {
-      setInterval(loadMetrics, refreshInterval);
+      setInterval(loadAll, refreshInterval);
     }
   }
 }

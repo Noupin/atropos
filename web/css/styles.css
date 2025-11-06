@@ -153,9 +153,12 @@ body::after {
   justify-content: flex-end;
 }
 .signup-slot {
-  margin-top: clamp(18px, 3.8vw, 28px);
+  margin-top: 0;
   display: flex;
   width: 100%;
+}
+.signup-slot.signup-slot--empty {
+  display: none;
 }
 #signupScrollSentinel {
   width: 100%;
@@ -362,8 +365,54 @@ body::after {
   flex: 1 1 clamp(520px, 58vw, 680px);
 }
 .hero__signup {
-  flex: 0 1 clamp(280px, 32vw, 360px);
+  flex: 1 1 clamp(360px, 42vw, 520px);
+  align-items: stretch;
 }
+.signup-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: clamp(12px, 3vw, 20px);
+  width: 100%;
+}
+.signup-strip__text {
+  flex: 0 1 auto;
+  font-size: clamp(14px, 2.6vw, 16px);
+  color: var(--muted);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.signup-strip__text--tagline {
+  color: var(--crevice);
+  font-weight: 600;
+}
+.signup-strip__text--support {
+  color: #4a4a4a;
+  font-weight: 500;
+}
+.signup-strip__form {
+  flex: 1 1 280px;
+  display: flex;
+  align-items: stretch;
+  min-width: min(280px, 100%);
+}
+.signup-strip__form .signup-wrapper {
+  width: 100%;
+}
+.signup-strip__form form {
+  margin-top: 0;
+  width: 100%;
+}
+.hero__disclaimer {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+  align-self: flex-end;
+}
+
 .hero__intro {
   display: flex;
   flex-direction: column;
@@ -503,6 +552,26 @@ body::after {
   font-size: 14px;
   color: #4f4c46;
 }
+.hero__metric-note {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.hero__metric--placeholder .hero__metric-value,
+.hero__metric-value--placeholder {
+  color: #b3261e;
+  font-weight: 700;
+  text-decoration: underline;
+  font-style: italic;
+}
+.hero__metric--placeholder .hero__metric-note {
+  color: #b3261e;
+  font-weight: 600;
+  text-decoration: underline;
+  font-style: italic;
+}
+
 .hero__subbanner {
   display: flex;
   flex-wrap: wrap;
@@ -627,11 +696,6 @@ button[disabled] {
   border-color: color-mix(in srgb, var(--error) 25%, #e6e3de);
 }
 
-.fine {
-  color: var(--muted);
-  font-size: 13px;
-  margin-top: 10px;
-}
 .tiles {
   margin-top: clamp(18px, 4vw, 26px);
   display: flex;

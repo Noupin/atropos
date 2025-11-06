@@ -38,28 +38,65 @@
 
         <div class="hero__body">
           <div class="hero__content">
-            <header class="hero__intro">
-              <p class="tagline">Made for you, by you.</p>
-              <p class="support">
-                Your long-form, <em>transformed</em> into clips.
-              </p>
-            </header>
-
             <div
               class="hero__metrics"
               id="socialMetrics"
-              data-youtube-fallback="12800"
-              data-instagram-fallback="8600"
             >
-              <div class="hero__metric" data-platform="youtube">
+              <div
+                class="hero__metric hero__metric--placeholder"
+                data-platform="youtube"
+                data-fallback-count="123000"
+                data-fallback-accounts="3"
+                data-fallback-note="Across 3 accounts"
+              >
                 <span class="hero__metric-label">YouTube</span>
-                <span class="hero__metric-value" id="youtubeMetric">12.8K</span>
-                <span class="hero__metric-caption">Subscribers</span>
+                <span class="hero__metric-value hero__metric-value--placeholder" id="youtubeMetric">123K</span>
+                <span class="hero__metric-caption">
+                  Subscribers
+                  <span class="hero__metric-note" id="youtubeMetricNote">Across 3 accounts</span>
+                </span>
               </div>
-              <div class="hero__metric" data-platform="instagram">
+              <div
+                class="hero__metric hero__metric--placeholder"
+                data-platform="instagram"
+                data-fallback-count="86500"
+                data-fallback-accounts="4"
+                data-fallback-note="Across 4 accounts"
+              >
                 <span class="hero__metric-label">Instagram</span>
-                <span class="hero__metric-value" id="instagramMetric">8.6K</span>
-                <span class="hero__metric-caption">Followers</span>
+                <span class="hero__metric-value hero__metric-value--placeholder" id="instagramMetric">86.5K</span>
+                <span class="hero__metric-caption">
+                  Followers
+                  <span class="hero__metric-note" id="instagramMetricNote">Across 4 accounts</span>
+                </span>
+              </div>
+              <div
+                class="hero__metric hero__metric--placeholder"
+                data-platform="tiktok"
+                data-fallback-count="98000"
+                data-fallback-accounts="4"
+                data-fallback-note="Across 4 accounts"
+              >
+                <span class="hero__metric-label">TikTok</span>
+                <span class="hero__metric-value hero__metric-value--placeholder" id="tiktokMetric">98K</span>
+                <span class="hero__metric-caption">
+                  Followers
+                  <span class="hero__metric-note" id="tiktokMetricNote">Across 4 accounts</span>
+                </span>
+              </div>
+              <div
+                class="hero__metric hero__metric--placeholder"
+                data-platform="facebook"
+                data-fallback-count="45200"
+                data-fallback-accounts="2"
+                data-fallback-note="Across 2 pages"
+              >
+                <span class="hero__metric-label">Facebook</span>
+                <span class="hero__metric-value hero__metric-value--placeholder" id="facebookMetric">45.2K</span>
+                <span class="hero__metric-caption">
+                  Subscribers
+                  <span class="hero__metric-note" id="facebookMetricNote">Across 2 pages</span>
+                </span>
               </div>
             </div>
 
@@ -78,28 +115,38 @@
 
           <div class="hero__signup">
             <div id="signupScrollSentinel" aria-hidden="true"></div>
-            <div class="signup-slot" id="heroSignupSlot">
-              <div class="signup-wrapper" id="signupWrapper">
-                <form id="signup" aria-label="Email signup">
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    placeholder="you@example.com"
-                    autocomplete="email"
-                    required
-                  />
-                  <button id="submitBtn" type="submit" aria-label="Join the list">
-                    Claim Your Spot
-                  </button>
-                </form>
+            <div class="signup-strip">
+              <span class="signup-strip__text signup-strip__text--tagline">
+                Made for you, by you
+              </span>
+              <span class="signup-strip__text signup-strip__text--support">
+                Your long-form, <em>transformed</em> into clips.
+              </span>
+              <div class="signup-strip__form">
+                <div class="signup-slot" id="heroSignupSlot">
+                  <div class="signup-wrapper" id="signupWrapper">
+                    <form id="signup" aria-label="Email signup">
+                      <input
+                        id="email"
+                        name="email"
+                        type="email"
+                        placeholder="you@example.com"
+                        autocomplete="email"
+                        required
+                      />
+                      <button id="submitBtn" type="submit" aria-label="Join the list">
+                        Claim Your Spot
+                      </button>
+                    </form>
 
-                <!-- Hidden until needed -->
-                <div class="status" id="status" aria-live="polite"></div>
+                    <!-- Hidden until needed -->
+                    <div class="status" id="status" aria-live="polite"></div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <p class="fine">Early access invites, launch info, and nothing else.</p>
+            <p class="hero__disclaimer">Early access only.</p>
           </div>
         </div>
       </section>
