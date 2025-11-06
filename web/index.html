@@ -20,27 +20,28 @@
       <section class="panel hero">
         <div class="hero__content">
           <header>
-            <h1 id="hero-title">Atropos</h1>
+            <div class="hero__heading">
+              <h1 id="hero-title">Atropos</h1>
+              <div class="hero__rotator" aria-live="polite" aria-atomic="true">
+                <span
+                  class="hero__rotator-track"
+                  id="phraseRotator"
+                  data-initial-phrase="Turn long-form into shorts"
+                >
+                  <span class="hero__rotator-phrase hero__rotator-phrase--current">
+                    Turn long-form into shorts
+                  </span>
+                </span>
+                <span class="sr-only" id="phraseAnnouncer">
+                  Marketing phrase: Turn long-form into shorts.
+                </span>
+              </div>
+            </div>
             <p class="tagline">Made for you, by you.</p>
             <p class="support">
               Your long-form, <em>transformed</em> into clips.
             </p>
           </header>
-
-          <div class="hero__rotator" aria-live="polite" aria-atomic="true">
-            <span
-              class="hero__rotator-track"
-              id="phraseRotator"
-              data-initial-phrase="Turn long-form into shorts"
-            >
-              <span class="hero__rotator-phrase hero__rotator-phrase--current">
-                Turn long-form into shorts
-              </span>
-            </span>
-            <span class="sr-only" id="phraseAnnouncer">
-              Marketing phrase: Turn long-form into shorts.
-            </span>
-          </div>
 
           <div
             class="hero__metrics"
