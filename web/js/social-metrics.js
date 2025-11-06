@@ -778,6 +778,16 @@
     metrics.set(platform, metric);
   });
 
+  const markMetricPending = (metric) => {
+    if (!metric || !metric.valueEl) {
+      return;
+    }
+    metric.valueEl.textContent = "-";
+    metric.element.classList.add("hero__metric--placeholder");
+    metric.valueEl.classList.add("hero__metric-value--placeholder");
+    metric.currentAccountCount = 0;
+  };
+
   const refreshInterval = Math.max(
     0,
     Number(socialConfig.refreshIntervalMs || 0)
@@ -819,11 +829,7 @@
       return;
     }
     enabledPlatforms.push(platform);
-    setMetricState(metric, {
-      count: metric.fallbackCount,
-      isMock: true,
-      accountCount: metric.fallbackAccounts,
-    });
+    markMetricPending(metric);
   });
 
   updateTotalAccounts();
