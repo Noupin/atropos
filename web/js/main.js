@@ -112,130 +112,56 @@ const marketingPhrases = [
   "Clip channels 24/7",
 ];
 const rotationInterval = 5000;
-const tileFlipDuration = 800;
-const tileFaces = new WeakMap();
-
-const displayChar = (char) => {
-  if (char === " ") return "\u00A0";
-  if (char === undefined || char === null) return "\u00A0";
-  return char;
-};
-
-function setSpaceState(tile, char) {
-  if (!tile) return;
-  if (!char || char.trim() === "") {
-    tile.classList.add("flipboard__tile--space");
-  } else {
-    tile.classList.remove("flipboard__tile--space");
-  }
+function setPhraseImmediate(phrase) {
+  if (!phraseRotator) return;
+  phraseRotator.innerHTML = "";
+  const span = document.createElement("span");
+  span.className = "hero__rotator-phrase hero__rotator-phrase--current";
+  span.textContent = phrase;
+  phraseRotator.appendChild(span);
 }
 
-function createFace(tile, className, char) {
-  const face = document.createElement("span");
-  face.className = `flipboard__tile-face ${className}`;
-  const letter = document.createElement("span");
-  letter.className = "flipboard__tile-letter";
-  letter.textContent = displayChar(char);
-  face.appendChild(letter);
-  tile.appendChild(face);
-  return face;
-}
+function animateToPhrase(phrase) {
+  if (!phraseRotator) return;
 
-function createTile(char) {
-  const tile = document.createElement("span");
-  tile.className = "flipboard__tile";
-  const normalized = char ?? " ";
-  const faces = {
-    upper: createFace(tile, "flipboard__tile-face--upper", normalized),
-    lower: createFace(tile, "flipboard__tile-face--lower", normalized),
-    upperNext: createFace(tile, "flipboard__tile-face--upper-next", normalized),
-    lowerNext: createFace(tile, "flipboard__tile-face--lower-next", normalized),
-  };
-  tile.dataset.char = normalized;
-  setSpaceState(tile, normalized);
-  tileFaces.set(tile, faces);
-  return tile;
-}
+  const current = phraseRotator.querySelector(
+    ".hero__rotator-phrase--current"
+  );
 
-function setFaceLetter(face, char) {
-  const letter = face?.querySelector?.(".flipboard__tile-letter");
-  if (letter) {
-    letter.textContent = displayChar(char);
-  }
-}
-
-function setTileImmediate(tile, char) {
-  const targetChar = char ?? " ";
-  const faces = tileFaces.get(tile);
-  if (!faces) return;
-  setFaceLetter(faces.upper, targetChar);
-  setFaceLetter(faces.lower, targetChar);
-  setFaceLetter(faces.upperNext, targetChar);
-  setFaceLetter(faces.lowerNext, targetChar);
-  tile.dataset.char = targetChar;
-  setSpaceState(tile, targetChar);
-}
-
-function flipTileTo(tile, char) {
-  const targetChar = char ?? " ";
-  const currentChar = tile.dataset.char ?? " ";
-  if (currentChar === targetChar) {
-    setSpaceState(tile, targetChar);
+  if (!current) {
+    setPhraseImmediate(phrase);
     return;
   }
 
-  const faces = tileFaces.get(tile);
-  if (!faces) return;
-
-  setFaceLetter(faces.upperNext, targetChar);
-  setFaceLetter(faces.lowerNext, targetChar);
-  setSpaceState(tile, targetChar);
-  tile.classList.add("flipboard__tile--flip");
-
-  setTimeout(() => {
-    setFaceLetter(faces.upper, targetChar);
-    setFaceLetter(faces.lower, targetChar);
-    setFaceLetter(faces.upperNext, targetChar);
-    setFaceLetter(faces.lowerNext, targetChar);
-    tile.dataset.char = targetChar;
-    tile.classList.remove("flipboard__tile--flip");
-  }, tileFlipDuration);
-}
-
-function updatePhraseBoard(nextPhrase, { immediate = false } = {}) {
-  if (!phraseRotator) return;
-
-  const letters = Array.from(nextPhrase);
-  const fallback = phraseRotator.querySelector(".flipboard__fallback");
-  if (fallback) {
-    fallback.remove();
-  }
-  phraseRotator.setAttribute("data-ready", "true");
-
-  let tiles = Array.from(phraseRotator.querySelectorAll(".flipboard__tile"));
-
-  while (tiles.length < letters.length) {
-    const tile = createTile(letters[tiles.length] ?? " ");
-    phraseRotator.appendChild(tile);
-    tiles.push(tile);
+  if (current.textContent === phrase) {
+    return;
   }
 
-  while (tiles.length > letters.length) {
-    const tile = tiles.pop();
-    tile?.remove();
-  }
+  current.classList.remove("hero__rotator-phrase--enter");
+  current.classList.add("hero__rotator-phrase--leave");
+  current.classList.remove("hero__rotator-phrase--current");
 
-  tiles = Array.from(phraseRotator.querySelectorAll(".flipboard__tile"));
+  const next = document.createElement("span");
+  next.className = "hero__rotator-phrase hero__rotator-phrase--enter";
+  next.textContent = phrase;
+  phraseRotator.appendChild(next);
 
-  letters.forEach((char, index) => {
-    const tile = tiles[index];
-    if (!tile) return;
-    if (immediate) {
-      setTileImmediate(tile, char);
-    } else {
-      flipTileTo(tile, char);
-    }
-  });
+  current.addEventListener(
+    "animationend",
+    () => {
+      current.remove();
+    },
+    { once: true }
+  );
+
+  next.addEventListener(
+    "animationend",
+    () => {
+      next.classList.remove("hero__rotator-phrase--enter");
+      next.classList.add("hero__rotator-phrase--current");
+    },
+    { once: true }
+  );
 }
 
 function announcePhrase(text) {
@@ -252,14 +178,14 @@ if (phraseRotator && marketingPhrases.length) {
     0
   );
 
-  updatePhraseBoard(initialPhrase, { immediate: true });
+  setPhraseImmediate(initialPhrase);
   announcePhrase(initialPhrase);
 
   if (marketingPhrases.length > 1) {
     const rotatePhrase = () => {
       const nextIndex = (currentIndex + 1) % marketingPhrases.length;
       const phrase = marketingPhrases[nextIndex];
-      updatePhraseBoard(phrase);
+      animateToPhrase(phrase);
       announcePhrase(phrase);
       currentIndex = nextIndex;
     };
