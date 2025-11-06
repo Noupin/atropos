@@ -38,11 +38,37 @@
 
         <div class="hero__body">
           <div class="hero__content">
+            <div id="signupScrollSentinel" aria-hidden="true"></div>
             <header class="hero__intro">
-              <p class="tagline">Made for you, by you.</p>
-              <p class="support">
-                Your long-form, <em>transformed</em> into clips.
-              </p>
+              <div class="hero__intro-copy">
+                <p class="tagline">Made for you, by you.</p>
+                <p class="support">
+                  Your long-form, <em>transformed</em> into clips.
+                </p>
+              </div>
+              <div class="hero__intro-signup">
+                <div class="signup-slot" id="heroSignupSlot">
+                  <div class="signup-wrapper" id="signupWrapper">
+                    <form id="signup" aria-label="Email signup">
+                      <input
+                        id="email"
+                        name="email"
+                        type="email"
+                        placeholder="you@example.com"
+                        autocomplete="email"
+                        required
+                      />
+                      <button id="submitBtn" type="submit" aria-label="Join the list">
+                        Claim Your Spot
+                      </button>
+                    </form>
+                    <p class="fine fine--inline">
+                      Early access invites, launch info, and nothing else.
+                    </p>
+                    <div class="status" id="status" aria-live="polite"></div>
+                  </div>
+                </div>
+              </div>
             </header>
 
             <div
@@ -88,31 +114,6 @@
             </div>
           </div>
 
-          <div class="hero__signup">
-            <div id="signupScrollSentinel" aria-hidden="true"></div>
-            <div class="signup-slot" id="heroSignupSlot">
-              <div class="signup-wrapper" id="signupWrapper">
-                <form id="signup" aria-label="Email signup">
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    placeholder="you@example.com"
-                    autocomplete="email"
-                    required
-                  />
-                  <button id="submitBtn" type="submit" aria-label="Join the list">
-                    Claim Your Spot
-                  </button>
-                </form>
-
-                <!-- Hidden until needed -->
-                <div class="status" id="status" aria-live="polite"></div>
-              </div>
-            </div>
-
-            <p class="fine">Early access invites, launch info, and nothing else.</p>
-          </div>
         </div>
       </section>
 

@@ -153,7 +153,7 @@ body::after {
   justify-content: flex-end;
 }
 .signup-slot {
-  margin-top: clamp(18px, 3.8vw, 28px);
+  margin-top: 0;
   display: flex;
   width: 100%;
 }
@@ -199,6 +199,9 @@ body::after {
 }
 .nav-compact .top-nav__cta .status {
   text-align: right;
+}
+.nav-compact .hero__intro-signup {
+  display: none;
 }
 .story {
   display: flex;
@@ -352,22 +355,39 @@ body::after {
   justify-content: space-between;
   width: 100%;
 }
-.hero__content,
-.hero__signup {
+.hero__content {
   display: flex;
   flex-direction: column;
   gap: clamp(14px, 3vw, 22px);
-}
-.hero__content {
   flex: 1 1 clamp(520px, 58vw, 680px);
-}
-.hero__signup {
-  flex: 0 1 clamp(280px, 32vw, 360px);
 }
 .hero__intro {
   display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: clamp(18px, 4vw, 32px);
+}
+.hero__intro-copy {
+  flex: 1 1 clamp(320px, 42vw, 520px);
+  display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.hero__intro-signup {
+  flex: 1 1 clamp(280px, 32vw, 360px);
+  display: flex;
+  justify-content: flex-end;
+}
+.hero__intro-signup .signup-slot {
+  max-width: min(480px, 100%);
+}
+.hero__intro form {
+  margin-top: 0;
+  flex-wrap: nowrap;
+}
+.hero__intro button {
+  align-self: stretch;
 }
 .hero__heading {
   display: flex;
@@ -521,15 +541,6 @@ body::after {
   letter-spacing: -0.015em;
   color: var(--crevice);
 }
-.hero__signup {
-  align-items: flex-start;
-}
-.hero__signup .signup-slot {
-  max-width: min(560px, 100%);
-}
-.hero__signup form {
-  justify-content: flex-start;
-}
 .hero__heading h1 {
   margin: 0;
   font-size: clamp(34px, 6.5vw, 58px);
@@ -632,6 +643,9 @@ button[disabled] {
   font-size: 13px;
   margin-top: 10px;
 }
+.fine.fine--inline {
+  margin-top: 8px;
+}
 .tiles {
   margin-top: clamp(18px, 4vw, 26px);
   display: flex;
@@ -669,6 +683,20 @@ footer {
     flex-direction: column;
     gap: 24px;
   }
+  .hero__intro {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .hero__intro-signup {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .hero__intro form {
+    flex-wrap: wrap;
+  }
+  .hero__intro button {
+    width: 100%;
+  }
   .hero__heading {
     flex-direction: column;
     align-items: flex-start;
@@ -682,13 +710,6 @@ footer {
   }
   .hero__content {
     flex: 1 1 100%;
-  }
-  .hero__signup {
-    flex: 1 1 100%;
-    align-items: stretch;
-  }
-  .hero__signup .signup-slot {
-    max-width: 100%;
   }
   .top-nav {
     flex-direction: column;
