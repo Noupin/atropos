@@ -7,9 +7,63 @@ from flask import Flask, request, jsonify
 
 from api.social_metrics import social_metrics_bp
 
+LOGGER = logging.getLogger(__name__)
+
+LOCAL_STORAGE_ROOT = Path(__file__).resolve().parent / ".localdata"
+
+
+def _prepare_storage_path(
+    candidate: Path,
+    *,
+    default_contents: str,
+    allow_fallback: bool,
+) -> Path:
+    """Ensure the storage file exists, optionally falling back to a local path."""
+
+    def _initialize(target: Path) -> Path:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists():
+            target.write_text(default_contents, encoding="utf-8")
+        return target
+
+    try:
+        return _initialize(candidate)
+    except OSError as error:
+        if not allow_fallback:
+            raise
+        fallback_dir = LOCAL_STORAGE_ROOT
+        fallback_dir.mkdir(parents=True, exist_ok=True)
+        fallback_path = fallback_dir / candidate.name
+        LOGGER.warning(
+            "Storage path %s is not writable (%s); using fallback %s",
+            candidate,
+            error,
+            fallback_path,
+        )
+        return _initialize(fallback_path)
+
+
+def _resolve_storage(
+    env_var: str,
+    default_filename: str,
+    *,
+    default_contents: str,
+) -> Path:
+    override = os.environ.get(env_var)
+    if override:
+        return _prepare_storage_path(Path(override), default_contents=default_contents, allow_fallback=False)
+
+    candidate = Path("/data") / default_filename
+    return _prepare_storage_path(
+        candidate,
+        default_contents=default_contents,
+        allow_fallback=True,
+    )
+
+
 # ---------- config / storage ----------
-SUBSCRIBERS = Path(os.environ.get("SUBSCRIBERS_FILE", "/data/subscribers.json"))
-UNSUB_TOKENS = Path(os.environ.get("UNSUB_TOKENS_FILE", "/data/unsub_tokens.json"))
+SUBSCRIBERS = _resolve_storage("SUBSCRIBERS_FILE", "subscribers.json", default_contents="[]")
+UNSUB_TOKENS = _resolve_storage("UNSUB_TOKENS_FILE", "unsub_tokens.json", default_contents="{}")
 BASE_URL      = os.environ.get("PUBLIC_BASE_URL", "https://atropos-video.com")
 
 SMTP_HOST     = os.environ.get("SMTP_HOST", "")
@@ -22,13 +76,6 @@ SMTP_USE_TLS  = os.environ.get("SMTP_USE_TLS", "true").lower() in ("1","true","y
 # simple in-memory rate limit (per-IP)
 WINDOW        = int(os.environ.get("RATE_WINDOW_SECONDS", "60"))
 MAX_REQ       = int(os.environ.get("RATE_MAX_REQUESTS", "10"))
-
-for p in (SUBSCRIBERS.parent, UNSUB_TOKENS.parent):
-    p.mkdir(parents=True, exist_ok=True)
-if not SUBSCRIBERS.exists():
-    SUBSCRIBERS.write_text("[]", encoding="utf-8")
-if not UNSUB_TOKENS.exists():
-    UNSUB_TOKENS.write_text("{}", encoding="utf-8")
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 

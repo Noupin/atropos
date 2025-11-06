@@ -22,6 +22,11 @@ fallbacks.
    The server listens on `http://127.0.0.1:5001` by default. Adjust
    `FLASK_RUN_PORT` if that port is in use.
 
+   When `/data` isn't writable (common on macOS), the app automatically falls
+   back to storing subscriber data under `api/.localdata/`. Set
+   `SUBSCRIBERS_FILE` or `UNSUB_TOKENS_FILE` to point at explicit storage
+   locations if you need to override the defaults.
+
 ## Hooking up the marketing site
 
 When developing the static site under `web/`, set

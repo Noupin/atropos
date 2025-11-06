@@ -89,7 +89,7 @@
 
   const setMetricState = (
     metric,
-    { count, isMock = false, accountCount } = {}
+    { count, isMock = false, accountCount, allowFallback = true } = {}
   ) => {
     if (!metric || !metric.valueEl) {
       return { accountCount: 0, isMock: true };
@@ -101,7 +101,7 @@
     let usedFallback = false;
     let markUnavailable = false;
 
-    if (!formatted && Number.isFinite(fallbackCount)) {
+    if (!formatted && allowFallback && Number.isFinite(fallbackCount)) {
       formatted = formatCount(fallbackCount);
       usedFallback = true;
     }
@@ -114,9 +114,12 @@
     }
 
     let resolvedAccounts;
+    const canUseFallbackCounts = allowFallback !== false;
+
     if (Number.isFinite(accountCount) && accountCount > 0) {
       resolvedAccounts = accountCount;
     } else if (
+      canUseFallbackCounts &&
       Number.isFinite(metric.fallbackAccounts) &&
       metric.fallbackAccounts > 0
     ) {
@@ -614,14 +617,24 @@
       console.warn(`${platform} scrape fallback reported issues`, data.errors);
     }
 
-    const numericCount = Number(data?.count);
-    const finalCount = Number.isFinite(numericCount) ? numericCount : Number.NaN;
-    const numericAccounts = Number(data?.accountCount);
-    const accountCount = Number.isFinite(numericAccounts)
-      ? numericAccounts
-      : payload.accounts.length;
+    const rawCount =
+      data && typeof data.count === "number" ? data.count : null;
+    const hasValidCount = Number.isFinite(rawCount);
+    const finalCount = hasValidCount ? rawCount : Number.NaN;
+    const rawAccountCount =
+      data && typeof data.accountCount === "number" ? data.accountCount : null;
+    const accountCount = Number.isFinite(rawAccountCount)
+      ? rawAccountCount
+      : hasValidCount
+      ? payload.accounts.length
+      : 0;
 
-    return { count: finalCount, accountCount, isMock: true };
+    return {
+      count: finalCount,
+      accountCount,
+      isMock: true,
+      allowFallback: hasValidCount,
+    };
   };
 
   const canLoadPlatform = (platform, config) => {
@@ -854,9 +867,10 @@
 
           if (!resolved) {
             setMetricState(metric, {
-              count: metric.fallbackCount,
+              count: Number.NaN,
               isMock: true,
-              accountCount: metric.fallbackAccounts,
+              accountCount: 0,
+              allowFallback: false,
             });
           }
 
