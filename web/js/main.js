@@ -9,6 +9,11 @@ const navTarget = document.getElementById("navSignupTarget");
 const heroSlot = document.getElementById("heroSignupSlot");
 const signupWrapper = document.getElementById("signupWrapper");
 const sentinel = document.getElementById("signupScrollSentinel");
+const phraseRotator = document.getElementById("phraseRotator");
+const phraseAnnouncer = document.getElementById("phraseAnnouncer");
+const metricsEl = document.getElementById("socialMetrics");
+const youtubeMetricEl = document.getElementById("youtubeMetric");
+const instagramMetricEl = document.getElementById("instagramMetric");
 
 function moveSignup(toNav) {
   if (!signupWrapper || !nav || !navTarget || !heroSlot) return;
@@ -100,3 +105,275 @@ form.addEventListener("submit", async (e) => {
     btn.disabled = false;
   }
 });
+
+const marketingPhrases = [
+  "Turn long-form into shorts",
+  "Repurpose live streams",
+  "Clip channels 24/7",
+];
+const rotationInterval = 5000;
+
+function ensureRotatorSize() {
+  if (!phraseRotator) return;
+
+  const host = phraseRotator.closest(".hero__rotator");
+  if (!host) return;
+
+  const phrases = new Set(marketingPhrases);
+  const initial = phraseRotator.dataset.initialPhrase;
+  if (initial) {
+    phrases.add(initial);
+  }
+
+  if (!phrases.size) return;
+
+  let maxWidth = 0;
+  let maxHeight = 0;
+  const measurer = document.createElement("span");
+  measurer.className = "hero__rotator-measure";
+  host.appendChild(measurer);
+
+  for (const text of phrases) {
+    measurer.textContent = text;
+    const rect = measurer.getBoundingClientRect();
+    maxWidth = Math.max(maxWidth, rect.width);
+    maxHeight = Math.max(maxHeight, rect.height);
+  }
+
+  measurer.remove();
+
+  if (maxWidth) {
+    const width = Math.ceil(maxWidth) + 2;
+    host.style.setProperty("--hero-rotator-max-width", `${width}px`);
+  }
+
+  if (maxHeight) {
+    const height = Math.ceil(maxHeight) + 2;
+    host.style.setProperty("--hero-rotator-max-height", `${height}px`);
+    phraseRotator.style.setProperty("--hero-rotator-max-height", `${height}px`);
+  }
+}
+function setPhraseImmediate(phrase) {
+  if (!phraseRotator) return;
+  phraseRotator.innerHTML = "";
+  const span = document.createElement("span");
+  span.className = "hero__rotator-phrase hero__rotator-phrase--current";
+  span.textContent = phrase;
+  phraseRotator.appendChild(span);
+}
+
+function animateToPhrase(phrase) {
+  if (!phraseRotator) return;
+
+  const current = phraseRotator.querySelector(
+    ".hero__rotator-phrase--current"
+  );
+
+  if (!current) {
+    setPhraseImmediate(phrase);
+    return;
+  }
+
+  if (current.textContent === phrase) {
+    return;
+  }
+
+  current.classList.remove("hero__rotator-phrase--enter");
+  current.classList.add("hero__rotator-phrase--leave");
+  current.classList.remove("hero__rotator-phrase--current");
+
+  const next = document.createElement("span");
+  next.className = "hero__rotator-phrase hero__rotator-phrase--enter";
+  next.textContent = phrase;
+  phraseRotator.appendChild(next);
+
+  current.addEventListener(
+    "animationend",
+    () => {
+      current.remove();
+    },
+    { once: true }
+  );
+
+  next.addEventListener(
+    "animationend",
+    () => {
+      next.classList.remove("hero__rotator-phrase--enter");
+      next.classList.add("hero__rotator-phrase--current");
+    },
+    { once: true }
+  );
+}
+
+function announcePhrase(text) {
+  if (phraseAnnouncer) {
+    phraseAnnouncer.textContent = `Marketing phrase: ${text}.`;
+  }
+}
+
+if (phraseRotator && marketingPhrases.length) {
+  ensureRotatorSize();
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready
+      .then(() => {
+        ensureRotatorSize();
+      })
+      .catch(() => {});
+  }
+  let sizeRaf = null;
+  window.addEventListener("resize", () => {
+    if (sizeRaf) return;
+    sizeRaf = window.requestAnimationFrame(() => {
+      sizeRaf = null;
+      ensureRotatorSize();
+    });
+  });
+
+  const initialPhrase =
+    phraseRotator.dataset.initialPhrase || marketingPhrases[0];
+  let currentIndex = Math.max(
+    marketingPhrases.indexOf(initialPhrase),
+    0
+  );
+
+  setPhraseImmediate(initialPhrase);
+  announcePhrase(initialPhrase);
+
+  if (marketingPhrases.length > 1) {
+    const rotatePhrase = () => {
+      const nextIndex = (currentIndex + 1) % marketingPhrases.length;
+      const phrase = marketingPhrases[nextIndex];
+      animateToPhrase(phrase);
+      announcePhrase(phrase);
+      currentIndex = nextIndex;
+    };
+
+    setInterval(rotatePhrase, rotationInterval);
+  }
+}
+
+function formatCount(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return null;
+  const thresholds = [
+    { limit: 1e9, suffix: "B" },
+    { limit: 1e6, suffix: "M" },
+    { limit: 1e3, suffix: "K" },
+  ];
+
+  for (const { limit, suffix } of thresholds) {
+    if (num >= limit) {
+      const scaled = (num / limit).toFixed(1);
+      return `${parseFloat(scaled).toString()}${suffix}`;
+    }
+  }
+  return Math.round(num).toLocaleString();
+}
+
+function applyMetric(el, value, fallback) {
+  if (!el) return;
+  const formatted = formatCount(value);
+  if (formatted) {
+    el.textContent = formatted;
+  } else if (fallback) {
+    el.textContent = fallback;
+  }
+}
+
+async function fetchYouTubeSubscribers(channelId, apiKey) {
+  const params = new URLSearchParams({
+    part: "statistics",
+    id: channelId,
+    key: apiKey,
+  });
+
+  const res = await fetch(
+    `https://www.googleapis.com/youtube/v3/channels?${params.toString()}`
+  );
+  if (!res.ok) {
+    throw new Error(`YouTube API request failed with ${res.status}`);
+  }
+  const data = await res.json();
+  const stats = data?.items?.[0]?.statistics;
+  return stats ? Number(stats.subscriberCount) : null;
+}
+
+async function fetchInstagramFollowers(userId, accessToken) {
+  const params = new URLSearchParams({
+    fields: "followers_count",
+    access_token: accessToken,
+  });
+
+  const res = await fetch(
+    `https://graph.facebook.com/v17.0/${userId}?${params.toString()}`
+  );
+  if (!res.ok) {
+    throw new Error(`Instagram API request failed with ${res.status}`);
+  }
+  const data = await res.json();
+  return data ? Number(data.followers_count) : null;
+}
+
+if (metricsEl) {
+  const youtubeFallback = metricsEl.dataset.youtubeFallback;
+  const instagramFallback = metricsEl.dataset.instagramFallback;
+  if (youtubeFallback && youtubeMetricEl) {
+    applyMetric(youtubeMetricEl, Number(youtubeFallback), youtubeFallback);
+  }
+  if (instagramFallback && instagramMetricEl) {
+    applyMetric(
+      instagramMetricEl,
+      Number(instagramFallback),
+      instagramFallback
+    );
+  }
+
+  const socialConfig = window.atroposSocialConfig || {};
+  const youtubeConfig = socialConfig.youtube || {};
+  const instagramConfig = socialConfig.instagram || {};
+  const refreshInterval = Math.max(
+    0,
+    Number(socialConfig.refreshIntervalMs || 0)
+  );
+
+  const loadMetrics = async () => {
+    try {
+      if (youtubeConfig.channelId && youtubeConfig.apiKey && youtubeMetricEl) {
+        const count = await fetchYouTubeSubscribers(
+          youtubeConfig.channelId,
+          youtubeConfig.apiKey
+        );
+        applyMetric(youtubeMetricEl, count, youtubeMetricEl.textContent);
+      }
+    } catch (err) {
+      console.warn("YouTube metrics unavailable", err);
+    }
+
+    try {
+      if (
+        instagramConfig.userId &&
+        instagramConfig.accessToken &&
+        instagramMetricEl
+      ) {
+        const count = await fetchInstagramFollowers(
+          instagramConfig.userId,
+          instagramConfig.accessToken
+        );
+        applyMetric(
+          instagramMetricEl,
+          count,
+          instagramMetricEl.textContent
+        );
+      }
+    } catch (err) {
+      console.warn("Instagram metrics unavailable", err);
+    }
+  };
+
+  if (youtubeConfig.channelId || instagramConfig.userId) {
+    loadMetrics();
+    if (refreshInterval) {
+      setInterval(loadMetrics, refreshInterval);
+    }
+  }
+}

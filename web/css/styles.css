@@ -76,6 +76,17 @@ body::after {
     radial-gradient(1px 1px at 75% 35%, rgba(0, 0, 0, 0.022) 0, transparent 60%),
     radial-gradient(1px 1px at 40% 80%, rgba(0, 0, 0, 0.028) 0, transparent 60%);
 }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .frame {
   width: 100%;
   display: flex;
@@ -327,23 +338,188 @@ body::after {
   pointer-events: none;
 }
 .hero {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(28px, 5vw, 48px);
+  width: 100%;
+}
+.hero__body {
+  display: flex;
   flex-direction: row;
   flex-wrap: wrap;
   gap: clamp(32px, 6vw, 72px);
   align-items: flex-start;
   justify-content: space-between;
+  width: 100%;
 }
 .hero__content,
 .hero__signup {
-  flex: 1 1 320px;
   display: flex;
   flex-direction: column;
   gap: clamp(14px, 3vw, 22px);
 }
-.hero__content header {
+.hero__content {
+  flex: 1 1 clamp(520px, 58vw, 680px);
+}
+.hero__signup {
+  flex: 0 1 clamp(280px, 32vw, 360px);
+}
+.hero__intro {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.hero__heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: clamp(12px, 3vw, 24px);
+}
+.hero__rotator {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+  text-align: right;
+  font-size: clamp(28px, 6vw, 46px);
+  line-height: 1.18;
+  font-weight: 500;
+  color: var(--crevice);
+  text-shadow: none;
+  mix-blend-mode: normal;
+  z-index: 1;
+  min-width: var(--hero-rotator-max-width, 180px);
+  width: var(--hero-rotator-max-width, auto);
+  max-width: 100%;
+}
+.hero__rotator-track {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: var(--hero-rotator-max-height, 1.25em);
+  height: var(--hero-rotator-max-height, auto);
+  overflow: hidden;
+  color: inherit;
+  text-shadow: none;
+  mix-blend-mode: normal;
+}
+
+.hero__rotator-phrase {
+  display: block;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  text-align: inherit;
+  line-height: inherit;
+  color: inherit;
+  text-shadow: none;
+  transform: translateY(0);
+  will-change: opacity, transform;
+}
+
+.hero__rotator-measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  font: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  color: var(--crevice);
+  text-shadow: none;
+}
+
+.hero__rotator-phrase--enter {
+  animation: hero-rotator-enter var(--hero-rotator-duration, 500ms) ease forwards;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  z-index: 2;
+  color: inherit;
+  text-shadow: none;
+}
+
+.hero__rotator-phrase--leave {
+  animation: hero-rotator-leave var(--hero-rotator-duration, 500ms) ease forwards;
+  z-index: 1;
+  color: inherit;
+  text-shadow: none;
+}
+
+@keyframes hero-rotator-enter {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hero-rotator-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+}
+.hero__metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: clamp(12px, 3vw, 20px);
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 18px;
+  border: 1px solid rgba(216, 212, 204, 0.8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  padding: clamp(14px, 4vw, 20px);
+}
+.hero__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+.hero__metric-label {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.hero__metric-value {
+  font-size: clamp(24px, 5vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--crevice);
+}
+.hero__metric-caption {
+  font-size: 14px;
+  color: #4f4c46;
+}
+.hero__subbanner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px clamp(12px, 3vw, 24px);
+  align-items: center;
+  padding: clamp(12px, 3vw, 18px) clamp(16px, 4vw, 24px);
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(45, 44, 41, 0.08), rgba(45, 44, 41, 0));
+  border: 1px solid rgba(43, 42, 40, 0.12);
+  font-size: clamp(15px, 2.6vw, 17px);
+  color: #3a3732;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+.hero__subbanner-highlight {
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--crevice);
 }
 .hero__signup {
   align-items: flex-start;
@@ -354,15 +530,15 @@ body::after {
 .hero__signup form {
   justify-content: flex-start;
 }
-header h1 {
-  margin: 0 0 8px 0;
+.hero__heading h1 {
+  margin: 0;
   font-size: clamp(34px, 6.5vw, 58px);
   letter-spacing: -0.02em;
   line-height: 1.05;
   color: #1a1a1a;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.75), 0 -1px 0 rgba(0, 0, 0, 0.1);
 }
-header p.tagline {
+.hero__intro .tagline {
   margin: 0;
   color: var(--muted);
   font-size: clamp(15px, 2.6vw, 18px);
@@ -489,11 +665,26 @@ footer {
   .hero {
     gap: 24px;
   }
-  .hero__content,
-  .hero__signup {
+  .hero__body {
+    flex-direction: column;
+    gap: 24px;
+  }
+  .hero__heading {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .hero__rotator {
+    align-items: flex-start;
+    text-align: left;
+    min-width: 0;
+    width: 100%;
+  }
+  .hero__content {
     flex: 1 1 100%;
   }
   .hero__signup {
+    flex: 1 1 100%;
     align-items: stretch;
   }
   .hero__signup .signup-slot {
