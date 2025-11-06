@@ -39,11 +39,17 @@ window.atroposSocialConfig = {
   tiktok: {
     // Provide follower totals directly or point to your own endpoint that
     // returns a JSON object containing the count (optionally specify `jsonPath`).
+    // Add `scrapeUrl` (and optionally `scrapePattern`) to enable the HTML
+    // fallback scraper when the JSON source is unavailable.
     accounts: [
-      { followerCount: 125000 },
+      {
+        followerCount: 125000,
+        scrapeUrl: "https://www.tiktok.com/@atroposstudio",
+      },
       {
         fetchUrl: "https://example.com/api/tiktok/team",
         jsonPath: "data.followers",
+        scrapeUrl: "https://www.tiktok.com/@teamatropos",
       },
     ],
   },

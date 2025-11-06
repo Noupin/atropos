@@ -74,6 +74,36 @@ def test_scrape_failure_returns_502(client):
     assert data["errors"]
 
 
+@pytest.mark.parametrize(
+    "platform, html_snippet",
+    [
+        (
+            "youtube",
+            '<span class="yt-core-attributed-string__literal-value">1,234 subscribers</span>',
+        ),
+        (
+            "instagram",
+            '<script type="application/ld+json">{"edge_followed_by":{"count":54321}}</script>',
+        ),
+        ("facebook", "<div>\"fan_count\":9876</div>"),
+        ("tiktok", '<div data-e2e="followers-count">4,321 Followers</div>'),
+    ],
+)
+def test_scrape_handles_all_supported_platforms(client, platform, html_snippet):
+    with patch(
+        "api.social_metrics.requests.get",
+        return_value=_mock_response(html_snippet),
+    ):
+        payload = {"platform": platform, "accounts": [{"url": f"https://example.com/{platform}"}]}
+        response = client.post("/social-metrics/scrape", json=payload)
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["ok"] is True
+    assert data["count"] is not None and data["count"] > 0
+    assert data["accountCount"] == 1
+
+
 def test_scrape_payload_validation(client):
     response = client.post("/social-metrics/scrape", json={"accounts": []})
     assert response.status_code == 400

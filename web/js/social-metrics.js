@@ -12,8 +12,8 @@
   const ENABLE_SOCIAL_PLATFORMS = {
     youtube: true,
     instagram: true,
-    tiktok: false,
-    facebook: false,
+    tiktok: true,
+    facebook: true,
   };
 
   const LOCAL_API_DEFAULT_PORT = 5001;
@@ -425,57 +425,68 @@
     return raw
       .map((entry) => {
         if (entry == null) return null;
+
+        const normalized = {};
+
         if (typeof entry === "number" && Number.isFinite(entry)) {
-          return { followerCount: entry };
-        }
-        if (typeof entry === "string" && entry.trim()) {
+          normalized.followerCount = entry;
+        } else if (typeof entry === "string" && entry.trim()) {
           const trimmed = entry.trim();
           const num = Number(trimmed);
           if (Number.isFinite(num)) {
-            return { followerCount: num };
+            normalized.followerCount = num;
+          } else {
+            normalized.scrapeUrl = trimmed;
           }
-          return {
-            scrapeUrl: trimmed,
-            scrapePattern:
-              typeof config.scrapePattern === "string" && config.scrapePattern.trim()
-                ? config.scrapePattern.trim()
-                : null,
-          };
+        } else if (typeof entry === "object") {
+          if (
+            typeof entry.followerCount === "number" &&
+            Number.isFinite(entry.followerCount)
+          ) {
+            normalized.followerCount = entry.followerCount;
+          }
+
+          if (
+            typeof entry.followers === "number" &&
+            Number.isFinite(entry.followers)
+          ) {
+            normalized.followerCount = entry.followers;
+          }
+
+          if (typeof entry.fetchUrl === "string" && entry.fetchUrl.trim()) {
+            normalized.fetchUrl = entry.fetchUrl.trim();
+            const pathCandidate =
+              (typeof entry.jsonPath === "string" && entry.jsonPath.trim()) ||
+              (typeof entry.countPath === "string" && entry.countPath.trim()) ||
+              "";
+            normalized.jsonPath = pathCandidate;
+          }
+
+          if (typeof entry.scrapeUrl === "string" && entry.scrapeUrl.trim()) {
+            normalized.scrapeUrl = entry.scrapeUrl.trim();
+          }
+
+          if (
+            typeof entry.scrapePattern === "string" &&
+            entry.scrapePattern.trim()
+          ) {
+            normalized.scrapePattern = entry.scrapePattern.trim();
+          }
         }
+
         if (
-          typeof entry.followerCount === "number" &&
-          Number.isFinite(entry.followerCount)
+          normalized.scrapePattern == null &&
+          typeof config.scrapePattern === "string" &&
+          config.scrapePattern.trim()
         ) {
-          return { followerCount: entry.followerCount };
+          normalized.scrapePattern = config.scrapePattern.trim();
         }
-        if (
-          typeof entry.followers === "number" && Number.isFinite(entry.followers)
-        ) {
-          return { followerCount: entry.followers };
+
+        if (Object.keys(normalized).length === 0) {
+          return null;
         }
-        if (typeof entry.fetchUrl === "string" && entry.fetchUrl.trim()) {
-          return {
-            fetchUrl: entry.fetchUrl.trim(),
-            jsonPath:
-              typeof entry.jsonPath === "string" && entry.jsonPath.trim()
-                ? entry.jsonPath.trim()
-                : typeof entry.countPath === "string" && entry.countPath.trim()
-                ? entry.countPath.trim()
-                : "",
-          };
-        }
-        if (typeof entry.scrapeUrl === "string" && entry.scrapeUrl.trim()) {
-          return {
-            scrapeUrl: entry.scrapeUrl.trim(),
-            scrapePattern:
-              typeof entry.scrapePattern === "string" && entry.scrapePattern.trim()
-                ? entry.scrapePattern.trim()
-                : typeof config.scrapePattern === "string" && config.scrapePattern.trim()
-                ? config.scrapePattern.trim()
-                : null,
-          };
-        }
-        return null;
+
+        return normalized;
       })
       .filter(Boolean);
   };
@@ -571,10 +582,10 @@
       case "tiktok": {
         const accounts = getTikTokAccounts(config)
           .map((account) => {
-            if (account.fetchUrl || Number.isFinite(account.followerCount)) {
-              return null;
-            }
-            const url = ensureAbsoluteUrl(account.scrapeUrl || "", "https://www.tiktok.com");
+            const url = ensureAbsoluteUrl(
+              account.scrapeUrl || "",
+              "https://www.tiktok.com"
+            );
             if (!url) {
               return null;
             }
