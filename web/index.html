@@ -38,91 +38,15 @@
 
         <div class="hero__body">
           <div class="hero__content">
-            <div
-              class="hero__metrics"
-              id="socialMetrics"
-            >
-              <div
-                class="hero__metric hero__metric--placeholder"
-                data-platform="youtube"
-                data-fallback-count="123000"
-                data-fallback-accounts="3"
-                data-fallback-note="Across 3 accounts"
-              >
-                <span class="hero__metric-label">YouTube</span>
-                <span class="hero__metric-value hero__metric-value--placeholder" id="youtubeMetric">123K</span>
-                <span class="hero__metric-caption">
-                  Subscribers
-                  <span class="hero__metric-note" id="youtubeMetricNote">Across 3 accounts</span>
-                </span>
-              </div>
-              <div
-                class="hero__metric hero__metric--placeholder"
-                data-platform="instagram"
-                data-fallback-count="86500"
-                data-fallback-accounts="4"
-                data-fallback-note="Across 4 accounts"
-              >
-                <span class="hero__metric-label">Instagram</span>
-                <span class="hero__metric-value hero__metric-value--placeholder" id="instagramMetric">86.5K</span>
-                <span class="hero__metric-caption">
-                  Followers
-                  <span class="hero__metric-note" id="instagramMetricNote">Across 4 accounts</span>
-                </span>
-              </div>
-              <div
-                class="hero__metric hero__metric--placeholder"
-                data-platform="tiktok"
-                data-fallback-count="98000"
-                data-fallback-accounts="4"
-                data-fallback-note="Across 4 accounts"
-              >
-                <span class="hero__metric-label">TikTok</span>
-                <span class="hero__metric-value hero__metric-value--placeholder" id="tiktokMetric">98K</span>
-                <span class="hero__metric-caption">
-                  Followers
-                  <span class="hero__metric-note" id="tiktokMetricNote">Across 4 accounts</span>
-                </span>
-              </div>
-              <div
-                class="hero__metric hero__metric--placeholder"
-                data-platform="facebook"
-                data-fallback-count="45200"
-                data-fallback-accounts="2"
-                data-fallback-note="Across 2 pages"
-              >
-                <span class="hero__metric-label">Facebook</span>
-                <span class="hero__metric-value hero__metric-value--placeholder" id="facebookMetric">45.2K</span>
-                <span class="hero__metric-caption">
-                  Subscribers
-                  <span class="hero__metric-note" id="facebookMetricNote">Across 2 pages</span>
-                </span>
-              </div>
-            </div>
-
-            <div class="hero__subbanner" role="status" aria-live="polite">
-              <span>
-                Over
-                <strong class="hero__subbanner-highlight">4,800 clips</strong>
-                created so far
-              </span>
-              <span>
-                in under
-                <strong class="hero__subbanner-highlight">7 months</strong>
-              </span>
-            </div>
-          </div>
-
-          <div class="hero__signup">
             <div id="signupScrollSentinel" aria-hidden="true"></div>
-            <div class="signup-strip">
-              <span class="signup-strip__text signup-strip__text--tagline">
-                Made for you, by you
-              </span>
-              <span class="signup-strip__text signup-strip__text--support">
-                Your long-form, <em>transformed</em> into clips.
-              </span>
-              <div class="signup-strip__form">
+            <header class="hero__intro">
+              <div class="hero__intro-text">
+                <p class="tagline">Made for you, by you.</p>
+                <p class="support">
+                  Your long-form, <em>transformed</em> into clips.
+                </p>
+              </div>
+              <div class="hero__intro-form">
                 <div class="signup-slot" id="heroSignupSlot">
                   <div class="signup-wrapper" id="signupWrapper">
                     <form id="signup" aria-label="Email signup">
@@ -144,9 +68,73 @@
                   </div>
                 </div>
               </div>
+            </header>
+
+            <div
+              class="hero__metrics"
+              id="socialMetrics"
+            >
+              <div
+                class="hero__metric hero__metric--placeholder"
+                data-platform="youtube"
+                data-fallback-count="123000"
+                data-fallback-accounts="3"
+              >
+                <span class="hero__metric-label">YouTube</span>
+                <span class="hero__metric-value" id="youtubeMetric">123K</span>
+                <span class="hero__metric-caption">Subscribers</span>
+              </div>
+              <div
+                class="hero__metric hero__metric--placeholder"
+                data-platform="instagram"
+                data-fallback-count="86500"
+                data-fallback-accounts="4"
+              >
+                <span class="hero__metric-label">Instagram</span>
+                <span class="hero__metric-value" id="instagramMetric">86.5K</span>
+                <span class="hero__metric-caption">Followers</span>
+              </div>
+              <div
+                class="hero__metric hero__metric--placeholder"
+                data-platform="tiktok"
+                data-fallback-count="98000"
+                data-fallback-accounts="4"
+              >
+                <span class="hero__metric-label">TikTok</span>
+                <span class="hero__metric-value" id="tiktokMetric">98K</span>
+                <span class="hero__metric-caption">Followers</span>
+              </div>
+              <div
+                class="hero__metric hero__metric--placeholder"
+                data-platform="facebook"
+                data-fallback-count="45200"
+                data-fallback-accounts="2"
+              >
+                <span class="hero__metric-label">Facebook</span>
+                <span class="hero__metric-value" id="facebookMetric">45.2K</span>
+                <span class="hero__metric-caption">Subscribers</span>
+              </div>
             </div>
 
-            <p class="hero__disclaimer">Early access only.</p>
+            <div class="hero__subbanner" role="status" aria-live="polite">
+              <span>
+                Over
+                <strong class="hero__subbanner-highlight">4,800 clips</strong>
+                created so far
+              </span>
+              <span>
+                in under
+                <strong class="hero__subbanner-highlight">7 months</strong>
+              </span>
+              <span id="totalAccountsStat" hidden>
+                Managing
+                <strong class="hero__subbanner-highlight" id="totalAccountsValue"></strong>
+              </span>
+            </div>
+
+            <p class="hero__disclaimer fine">
+              Early access invites, launch info, and nothing else.
+            </p>
           </div>
         </div>
       </section>

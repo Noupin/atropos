@@ -12,6 +12,8 @@ const sentinel = document.getElementById("signupScrollSentinel");
 const phraseRotator = document.getElementById("phraseRotator");
 const phraseAnnouncer = document.getElementById("phraseAnnouncer");
 const metricsEl = document.getElementById("socialMetrics");
+const totalAccountsStat = document.getElementById("totalAccountsStat");
+const totalAccountsValue = document.getElementById("totalAccountsValue");
 
 const ENABLE_SOCIAL_PLATFORMS = {
   youtube: true,
@@ -278,54 +280,47 @@ function formatCount(value) {
   return Math.round(num).toLocaleString();
 }
 
-function setMetricState(metric, { count, isMock = false, accountCount, note } = {}) {
+function setMetricState(metric, { count, isMock = false, accountCount } = {}) {
   if (!metric || !metric.valueEl) return;
 
   const numeric = Number(count);
   const fallbackCount = Number(metric.fallbackCount);
   let formatted = Number.isFinite(numeric) ? formatCount(numeric) : null;
+  let usedFallback = false;
 
   if (!formatted && Number.isFinite(fallbackCount)) {
     formatted = formatCount(fallbackCount);
-    isMock = true;
+    usedFallback = true;
   }
 
   if (formatted) {
     metric.valueEl.textContent = formatted;
   }
 
-  const fallbackNote = metric.fallbackNote || "";
-  const fallbackAccounts = Number(metric.fallbackAccounts) || 0;
-  let resolvedNote = note;
-  if (!resolvedNote) {
-    if (Number.isFinite(accountCount) && accountCount > 0) {
-      const label = accountCount === 1 ? "account" : "accounts";
-      resolvedNote = `Across ${accountCount} ${label}`;
-    } else if (fallbackNote) {
-      resolvedNote = fallbackNote;
-    } else if (fallbackAccounts > 0) {
-      const fallbackLabel = fallbackAccounts === 1 ? "account" : "accounts";
-      resolvedNote = `Across ${fallbackAccounts} ${fallbackLabel}`;
-    }
+  let resolvedAccounts;
+  if (Number.isFinite(accountCount) && accountCount > 0) {
+    resolvedAccounts = accountCount;
+  } else if (
+    Number.isFinite(metric.fallbackAccounts) &&
+    metric.fallbackAccounts > 0
+  ) {
+    resolvedAccounts = metric.fallbackAccounts;
+  } else {
+    resolvedAccounts = 0;
   }
+  metric.currentAccountCount = resolvedAccounts;
 
-  if (metric.noteEl) {
-    if (resolvedNote) {
-      metric.noteEl.textContent = resolvedNote;
-      metric.noteEl.hidden = false;
-    } else {
-      metric.noteEl.textContent = "";
-      metric.noteEl.hidden = true;
-    }
-  }
+  const shouldMarkMock = usedFallback || Boolean(isMock);
 
-  if (isMock) {
+  if (shouldMarkMock) {
     metric.element.classList.add("hero__metric--placeholder");
     metric.valueEl.classList.add("hero__metric-value--placeholder");
   } else {
     metric.element.classList.remove("hero__metric--placeholder");
     metric.valueEl.classList.remove("hero__metric-value--placeholder");
   }
+
+  return { accountCount: resolvedAccounts, isMock: shouldMarkMock };
 }
 
 async function fetchYouTubeSubscribers(channelId, apiKey) {
@@ -637,12 +632,7 @@ const PLATFORM_LOADERS = {
       }
       total += count;
     }
-    const countLabel = accounts.length === 1 ? "page" : "pages";
-    return {
-      count: total,
-      accountCount: accounts.length,
-      note: `Across ${accounts.length} ${countLabel}`,
-    };
+    return { count: total, accountCount: accounts.length };
   },
 };
 
@@ -653,17 +643,15 @@ if (metricsEl) {
     if (!platform) return;
     const valueEl = el.querySelector(".hero__metric-value");
     if (!valueEl) return;
-    const noteEl = el.querySelector(".hero__metric-note");
     const fallbackCount = Number(el.dataset.fallbackCount);
     const fallbackAccounts = Number(el.dataset.fallbackAccounts);
     const metric = {
       platform,
       element: el,
       valueEl,
-      noteEl,
       fallbackCount: Number.isFinite(fallbackCount) ? fallbackCount : null,
-      fallbackNote: el.dataset.fallbackNote || "",
       fallbackAccounts: Number.isFinite(fallbackAccounts) ? fallbackAccounts : 0,
+      currentAccountCount: 0,
     };
     metrics.set(platform, metric);
   });
@@ -674,11 +662,39 @@ if (metricsEl) {
     Number(socialConfig.refreshIntervalMs || 0)
   );
 
+  const updateTotalAccounts = () => {
+    if (!totalAccountsStat || !totalAccountsValue) {
+      return;
+    }
+
+    let total = 0;
+    metrics.forEach((metric) => {
+      if (metric.element.hidden) return;
+      const value = Number(metric.currentAccountCount);
+      if (Number.isFinite(value) && value > 0) {
+        total += value;
+      }
+    });
+
+    if (total > 0) {
+      const label =
+        total === 1
+          ? "1 total account"
+          : `${total.toLocaleString()} total accounts`;
+      totalAccountsValue.textContent = label;
+      totalAccountsStat.hidden = false;
+    } else {
+      totalAccountsValue.textContent = "";
+      totalAccountsStat.hidden = true;
+    }
+  };
+
   const enabledPlatforms = [];
   metrics.forEach((metric, platform) => {
     const enabled = ENABLE_SOCIAL_PLATFORMS[platform] !== false;
     metric.element.hidden = !enabled;
     if (!enabled) {
+      metric.currentAccountCount = 0;
       return;
     }
     enabledPlatforms.push(platform);
@@ -686,9 +702,10 @@ if (metricsEl) {
       count: metric.fallbackCount,
       isMock: true,
       accountCount: metric.fallbackAccounts,
-      note: metric.fallbackNote,
     });
   });
+
+  updateTotalAccounts();
 
   const activePlatforms = enabledPlatforms.filter((platform) =>
     canLoadPlatform(platform, socialConfig[platform])
@@ -711,7 +728,6 @@ if (metricsEl) {
                 count: result.count,
                 isMock: Boolean(result.isMock),
                 accountCount: result.accountCount,
-                note: result.note,
               });
             }
           } catch (err) {
@@ -720,9 +736,9 @@ if (metricsEl) {
               count: metric.fallbackCount,
               isMock: true,
               accountCount: metric.fallbackAccounts,
-              note: metric.fallbackNote,
             });
           }
+          updateTotalAccounts();
         })
       );
     };
