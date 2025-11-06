@@ -165,6 +165,8 @@ body::after {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
+  align-items: stretch;
 }
 .top-nav__cta .signup-wrapper {
   width: 100%;
@@ -200,8 +202,10 @@ body::after {
 .nav-compact .top-nav__cta .status {
   text-align: right;
 }
-.nav-compact .hero__intro-signup {
-  display: none;
+.fine--inline {
+  margin: 0;
+  width: 100%;
+  text-align: right;
 }
 .story {
   display: flex;
@@ -364,27 +368,45 @@ body::after {
 .hero__intro {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: space-between;
   gap: clamp(18px, 4vw, 32px);
+  width: 100%;
 }
 .hero__intro-copy {
-  flex: 1 1 clamp(320px, 42vw, 520px);
+  flex: 0 1 clamp(320px, 42vw, 520px);
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 260px;
 }
 .hero__intro-signup {
-  flex: 1 1 clamp(280px, 32vw, 360px);
+  flex: 1 1 360px;
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-width: clamp(280px, 38vw, 420px);
+  position: relative;
 }
 .hero__intro-signup .signup-slot {
-  max-width: min(480px, 100%);
+  width: 100%;
+  max-width: none;
+}
+.hero__intro-signup #signupScrollSentinel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  pointer-events: none;
+  opacity: 0;
 }
 .hero__intro form {
   margin-top: 0;
+  width: 100%;
   flex-wrap: nowrap;
+  align-items: stretch;
 }
 .hero__intro button {
   align-self: stretch;
@@ -410,8 +432,9 @@ body::after {
   text-shadow: none;
   mix-blend-mode: normal;
   z-index: 1;
-  min-width: var(--hero-rotator-max-width, 180px);
-  width: var(--hero-rotator-max-width, auto);
+  min-width: var(--hero-rotator-max-width, 320px);
+  width: var(--hero-rotator-max-width, 320px);
+  flex: 0 0 var(--hero-rotator-max-width, 320px);
   max-width: 100%;
 }
 .hero__rotator-track {
@@ -421,6 +444,7 @@ body::after {
   min-height: var(--hero-rotator-max-height, 1.25em);
   height: var(--hero-rotator-max-height, auto);
   overflow: hidden;
+  white-space: nowrap;
   color: inherit;
   text-shadow: none;
   mix-blend-mode: normal;
@@ -433,6 +457,7 @@ body::after {
   left: 0;
   width: 100%;
   text-align: inherit;
+  white-space: nowrap;
   line-height: inherit;
   color: inherit;
   text-shadow: none;
@@ -567,7 +592,8 @@ form {
   flex-wrap: wrap;
 }
 input[type="email"] {
-  flex: 1 1 260px;
+  flex: 1 1 280px;
+  min-width: 0;
   padding: 14px 16px;
   border-radius: 14px;
   border: 1px solid #dcdad6;
@@ -707,6 +733,7 @@ footer {
     text-align: left;
     min-width: 0;
     width: 100%;
+    flex: 1 1 100%;
   }
   .hero__content {
     flex: 1 1 100%;
