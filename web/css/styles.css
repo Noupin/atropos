@@ -386,7 +386,7 @@ body::after {
   font-size: clamp(28px, 6vw, 46px);
   line-height: 1.18;
   font-weight: 500;
-  color: var(--crevice);
+  color: #2b2a28;
   min-width: var(--hero-rotator-max-width, 180px);
   width: var(--hero-rotator-max-width, auto);
   max-width: 100%;
@@ -403,12 +403,13 @@ body::after {
 .hero__rotator-phrase {
   display: block;
   position: absolute;
-  top: 0;
+  bottom: 0;
   left: 0;
   width: 100%;
   text-align: inherit;
   line-height: inherit;
-  will-change: opacity;
+  transform: translateY(0);
+  will-change: opacity, transform;
 }
 
 .hero__rotator-measure {
@@ -425,7 +426,7 @@ body::after {
   animation: hero-rotator-enter var(--hero-rotator-duration, 500ms) ease forwards;
   position: absolute;
   left: 0;
-  top: 0;
+  bottom: 0;
   width: 100%;
   z-index: 2;
 }
@@ -438,18 +439,22 @@ body::after {
 @keyframes hero-rotator-enter {
   from {
     opacity: 0;
+    transform: translateY(100%);
   }
   to {
     opacity: 1;
+    transform: translateY(0);
   }
 }
 
 @keyframes hero-rotator-leave {
   from {
     opacity: 1;
+    transform: translateY(0);
   }
   to {
     opacity: 0;
+    transform: translateY(-100%);
   }
 }
 .hero__metrics {
