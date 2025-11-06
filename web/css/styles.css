@@ -394,13 +394,12 @@ body::after {
   max-width: none;
 }
 .hero__intro-signup #signupScrollSentinel {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  position: relative;
+  display: block;
   height: 1px;
   pointer-events: none;
   opacity: 0;
+  margin-bottom: -1px;
 }
 .hero__intro form {
   margin-top: 0;
@@ -432,10 +431,10 @@ body::after {
   text-shadow: none;
   mix-blend-mode: normal;
   z-index: 1;
-  min-width: var(--hero-rotator-max-width, 320px);
-  width: var(--hero-rotator-max-width, 320px);
-  flex: 0 0 var(--hero-rotator-max-width, 320px);
-  max-width: 100%;
+  min-width: min(100%, var(--hero-rotator-max-width, 420px));
+  width: min(100%, var(--hero-rotator-max-width, 420px));
+  flex: 1 1 var(--hero-rotator-max-width, 420px);
+  max-width: min(100%, var(--hero-rotator-max-width, 420px));
 }
 .hero__rotator-track {
   position: relative;

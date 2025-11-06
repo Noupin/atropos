@@ -17,11 +17,29 @@ const instagramMetricEl = document.getElementById("instagramMetric");
 const tiktokMetricEl = document.getElementById("tiktokMetric");
 const facebookMetricEl = document.getElementById("facebookMetric");
 
+function preserveHeroSlotHeight() {
+  if (!heroSlot || !signupWrapper) return;
+  const rect = signupWrapper.getBoundingClientRect();
+  if (!rect || !rect.height) return;
+  heroSlot.style.minHeight = `${Math.ceil(rect.height)}px`;
+}
+
+function clearHeroSlotHeight() {
+  if (!heroSlot) return;
+  heroSlot.style.minHeight = "";
+}
+
 function moveSignup(toNav) {
   if (!signupWrapper || !nav || !navTarget || !heroSlot) return;
 
   const destination = toNav ? navTarget : heroSlot;
   if (destination.contains(signupWrapper)) return;
+
+  if (toNav) {
+    preserveHeroSlotHeight();
+  } else {
+    clearHeroSlotHeight();
+  }
 
   destination.appendChild(signupWrapper);
   if (toNav) {
