@@ -112,6 +112,47 @@ const marketingPhrases = [
   "Clip channels 24/7",
 ];
 const rotationInterval = 5000;
+
+function ensureRotatorSize() {
+  if (!phraseRotator) return;
+
+  const host = phraseRotator.closest(".hero__rotator");
+  if (!host) return;
+
+  const phrases = new Set(marketingPhrases);
+  const initial = phraseRotator.dataset.initialPhrase;
+  if (initial) {
+    phrases.add(initial);
+  }
+
+  if (!phrases.size) return;
+
+  let maxWidth = 0;
+  let maxHeight = 0;
+  const measurer = document.createElement("span");
+  measurer.className = "hero__rotator-measure";
+  host.appendChild(measurer);
+
+  for (const text of phrases) {
+    measurer.textContent = text;
+    const rect = measurer.getBoundingClientRect();
+    maxWidth = Math.max(maxWidth, rect.width);
+    maxHeight = Math.max(maxHeight, rect.height);
+  }
+
+  measurer.remove();
+
+  if (maxWidth) {
+    const width = Math.ceil(maxWidth) + 2;
+    host.style.setProperty("--hero-rotator-max-width", `${width}px`);
+  }
+
+  if (maxHeight) {
+    const height = Math.ceil(maxHeight) + 2;
+    host.style.setProperty("--hero-rotator-max-height", `${height}px`);
+    phraseRotator.style.setProperty("--hero-rotator-max-height", `${height}px`);
+  }
+}
 function setPhraseImmediate(phrase) {
   if (!phraseRotator) return;
   phraseRotator.innerHTML = "";
@@ -171,6 +212,23 @@ function announcePhrase(text) {
 }
 
 if (phraseRotator && marketingPhrases.length) {
+  ensureRotatorSize();
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready
+      .then(() => {
+        ensureRotatorSize();
+      })
+      .catch(() => {});
+  }
+  let sizeRaf = null;
+  window.addEventListener("resize", () => {
+    if (sizeRaf) return;
+    sizeRaf = window.requestAnimationFrame(() => {
+      sizeRaf = null;
+      ensureRotatorSize();
+    });
+  });
+
   const initialPhrase =
     phraseRotator.dataset.initialPhrase || marketingPhrases[0];
   let currentIndex = Math.max(

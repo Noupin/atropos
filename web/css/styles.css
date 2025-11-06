@@ -377,6 +377,7 @@ body::after {
   gap: clamp(12px, 3vw, 24px);
 }
 .hero__rotator {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -385,22 +386,38 @@ body::after {
   font-size: clamp(28px, 6vw, 46px);
   line-height: 1.18;
   font-weight: 500;
-  min-width: 180px;
+  min-width: var(--hero-rotator-max-width, 180px);
+  width: var(--hero-rotator-max-width, auto);
+  max-width: 100%;
 }
 .hero__rotator-track {
   position: relative;
   display: block;
   width: 100%;
-  min-height: 1.25em;
-  padding-block: 0.1em;
+  min-height: var(--hero-rotator-max-height, 1.25em);
+  height: var(--hero-rotator-max-height, auto);
   overflow: hidden;
 }
 
 .hero__rotator-phrase {
   display: block;
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  text-align: inherit;
   line-height: inherit;
   will-change: transform, opacity;
+}
+
+.hero__rotator-measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  font: inherit;
+  font-weight: inherit;
+  line-height: inherit;
 }
 
 .hero__rotator-phrase--enter {
