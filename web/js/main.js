@@ -14,6 +14,8 @@ const phraseAnnouncer = document.getElementById("phraseAnnouncer");
 const metricsEl = document.getElementById("socialMetrics");
 const youtubeMetricEl = document.getElementById("youtubeMetric");
 const instagramMetricEl = document.getElementById("instagramMetric");
+const tiktokMetricEl = document.getElementById("tiktokMetric");
+const facebookMetricEl = document.getElementById("facebookMetric");
 
 function moveSignup(toNav) {
   if (!signupWrapper || !nav || !navTarget || !heroSlot) return;
@@ -252,9 +254,15 @@ if (phraseRotator && marketingPhrases.length) {
   }
 }
 
-function formatCount(value) {
+function coerceCount(value) {
   const num = Number(value);
   if (!Number.isFinite(num) || num < 0) return null;
+  return num;
+}
+
+function formatCount(value) {
+  const num = coerceCount(value);
+  if (num === null) return null;
   const thresholds = [
     { limit: 1e9, suffix: "B" },
     { limit: 1e6, suffix: "M" },
@@ -275,12 +283,18 @@ function applyMetric(el, value, fallback) {
   const formatted = formatCount(value);
   if (formatted) {
     el.textContent = formatted;
-  } else if (fallback) {
+  } else if (fallback !== undefined && fallback !== null && fallback !== "") {
     el.textContent = fallback;
   }
 }
 
-async function fetchYouTubeSubscribers(channelId, apiKey) {
+async function fetchYouTubeSubscribers(account = {}, options = {}) {
+  const { channelId, apiKey, mockCount } = account;
+  const fallback = coerceCount(mockCount ?? options.mockCount);
+  if (!channelId || !apiKey) {
+    return fallback;
+  }
+
   const params = new URLSearchParams({
     part: "statistics",
     id: channelId,
@@ -295,10 +309,17 @@ async function fetchYouTubeSubscribers(channelId, apiKey) {
   }
   const data = await res.json();
   const stats = data?.items?.[0]?.statistics;
-  return stats ? Number(stats.subscriberCount) : null;
+  const count = coerceCount(stats?.subscriberCount);
+  return count ?? fallback;
 }
 
-async function fetchInstagramFollowers(userId, accessToken) {
+async function fetchInstagramFollowers(account = {}, options = {}) {
+  const { userId, accessToken, mockCount } = account;
+  const fallback = coerceCount(mockCount ?? options.mockCount);
+  if (!userId || !accessToken) {
+    return fallback;
+  }
+
   const params = new URLSearchParams({
     fields: "followers_count",
     access_token: accessToken,
@@ -311,69 +332,240 @@ async function fetchInstagramFollowers(userId, accessToken) {
     throw new Error(`Instagram API request failed with ${res.status}`);
   }
   const data = await res.json();
-  return data ? Number(data.followers_count) : null;
+  const count = coerceCount(data?.followers_count);
+  return count ?? fallback;
+}
+
+async function fetchTikTokFollowers(account = {}, options = {}) {
+  const { openId, accessToken, mockCount } = account;
+  const fallback = coerceCount(mockCount ?? options.mockCount);
+  if (!openId || !accessToken) {
+    return fallback;
+  }
+
+  const params = new URLSearchParams({ fields: "follower_count" });
+  const res = await fetch(
+    `https://open.tiktokapis.com/v2/user/info/?${params.toString()}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ open_id: openId }),
+    }
+  );
+  if (!res.ok) {
+    throw new Error(`TikTok API request failed with ${res.status}`);
+  }
+
+  const data = await res.json();
+  const count = coerceCount(data?.data?.user?.follower_count);
+  return count ?? fallback;
+}
+
+async function fetchFacebookFollowers(account = {}, options = {}) {
+  const { pageId, accessToken, mockCount } = account;
+  const fallback = coerceCount(mockCount ?? options.mockCount);
+  if (!pageId || !accessToken) {
+    return fallback;
+  }
+
+  const params = new URLSearchParams({
+    fields: "followers_count",
+    access_token: accessToken,
+  });
+
+  const res = await fetch(
+    `https://graph.facebook.com/v17.0/${pageId}?${params.toString()}`
+  );
+  if (!res.ok) {
+    throw new Error(`Facebook API request failed with ${res.status}`);
+  }
+
+  const data = await res.json();
+  const count = coerceCount(data?.followers_count);
+  return count ?? fallback;
+}
+
+function normalizePlatformConfig(rawConfig) {
+  if (!rawConfig || typeof rawConfig !== "object") {
+    return { accounts: [], mockCount: null };
+  }
+
+  const accounts = [];
+  if (Array.isArray(rawConfig.accounts)) {
+    for (const account of rawConfig.accounts) {
+      if (account && typeof account === "object") {
+        accounts.push(account);
+      }
+    }
+  } else {
+    const candidate = rawConfig;
+    const accountKeys = [
+      "channelId",
+      "apiKey",
+      "userId",
+      "accessToken",
+      "openId",
+      "pageId",
+    ];
+    const hasAccountField = accountKeys.some(
+      (key) => key in candidate && candidate[key]
+    );
+    if (hasAccountField) {
+      accounts.push(candidate);
+    }
+  }
+
+  const mockCount =
+    rawConfig.mockCount !== undefined ? rawConfig.mockCount : null;
+
+  return {
+    accounts,
+    mockCount,
+  };
+}
+
+async function fetchPlatformTotal(
+  platformKey,
+  platformConfig,
+  fetcher,
+  fallbackValue
+) {
+  const fallback = coerceCount(
+    platformConfig.mockCount !== null && platformConfig.mockCount !== undefined
+      ? platformConfig.mockCount
+      : fallbackValue
+  );
+
+  const accounts = Array.isArray(platformConfig.accounts)
+    ? platformConfig.accounts.filter((account) => account && typeof account === "object")
+    : [];
+
+  if (!accounts.length) {
+    return fallback;
+  }
+
+  let total = 0;
+  let hasValue = false;
+
+  for (const account of accounts) {
+    try {
+      const value = await fetcher(account, {
+        mockCount:
+          account?.mockCount !== undefined && account?.mockCount !== null
+            ? account.mockCount
+            : platformConfig.mockCount !== null &&
+              platformConfig.mockCount !== undefined
+            ? platformConfig.mockCount
+            : fallback,
+      });
+      const count = coerceCount(value);
+      if (count !== null) {
+        total += count;
+        hasValue = true;
+      }
+    } catch (err) {
+      console.warn(`${platformKey} metrics unavailable`, err);
+    }
+  }
+
+  if (hasValue) {
+    return total;
+  }
+
+  return fallback;
 }
 
 if (metricsEl) {
-  const youtubeFallback = metricsEl.dataset.youtubeFallback;
-  const instagramFallback = metricsEl.dataset.instagramFallback;
-  if (youtubeFallback && youtubeMetricEl) {
-    applyMetric(youtubeMetricEl, Number(youtubeFallback), youtubeFallback);
-  }
-  if (instagramFallback && instagramMetricEl) {
-    applyMetric(
-      instagramMetricEl,
-      Number(instagramFallback),
-      instagramFallback
-    );
+  const dataset = metricsEl.dataset || {};
+  const metricElements = {
+    youtube: youtubeMetricEl,
+    instagram: instagramMetricEl,
+    tiktok: tiktokMetricEl,
+    facebook: facebookMetricEl,
+  };
+
+  for (const [key, element] of Object.entries(metricElements)) {
+    if (!element) continue;
+    const fallbackValue = dataset[`${key}Fallback`];
+    if (fallbackValue !== undefined && fallbackValue !== "") {
+      applyMetric(element, coerceCount(fallbackValue), fallbackValue);
+    }
   }
 
   const socialConfig = window.atroposSocialConfig || {};
-  const youtubeConfig = socialConfig.youtube || {};
-  const instagramConfig = socialConfig.instagram || {};
+  const metricsFeatureEnabled = socialConfig.metricsFeatureEnabled !== false;
+
+  if (!metricsFeatureEnabled) {
+    metricsEl.hidden = true;
+    return;
+  }
+
+  metricsEl.hidden = false;
+
   const refreshInterval = Math.max(
     0,
     Number(socialConfig.refreshIntervalMs || 0)
   );
 
-  const loadMetrics = async () => {
-    try {
-      if (youtubeConfig.channelId && youtubeConfig.apiKey && youtubeMetricEl) {
-        const count = await fetchYouTubeSubscribers(
-          youtubeConfig.channelId,
-          youtubeConfig.apiKey
-        );
-        applyMetric(youtubeMetricEl, count, youtubeMetricEl.textContent);
-      }
-    } catch (err) {
-      console.warn("YouTube metrics unavailable", err);
-    }
+  const platforms = [
+    {
+      key: "youtube",
+      config: normalizePlatformConfig(socialConfig.youtube),
+      element: youtubeMetricEl,
+      fetcher: fetchYouTubeSubscribers,
+    },
+    {
+      key: "instagram",
+      config: normalizePlatformConfig(socialConfig.instagram),
+      element: instagramMetricEl,
+      fetcher: fetchInstagramFollowers,
+    },
+    {
+      key: "tiktok",
+      config: normalizePlatformConfig(socialConfig.tiktok),
+      element: tiktokMetricEl,
+      fetcher: fetchTikTokFollowers,
+    },
+    {
+      key: "facebook",
+      config: normalizePlatformConfig(socialConfig.facebook),
+      element: facebookMetricEl,
+      fetcher: fetchFacebookFollowers,
+    },
+  ];
 
-    try {
-      if (
-        instagramConfig.userId &&
-        instagramConfig.accessToken &&
-        instagramMetricEl
-      ) {
-        const count = await fetchInstagramFollowers(
-          instagramConfig.userId,
-          instagramConfig.accessToken
-        );
-        applyMetric(
-          instagramMetricEl,
-          count,
-          instagramMetricEl.textContent
-        );
-      }
-    } catch (err) {
-      console.warn("Instagram metrics unavailable", err);
+  const shouldLoad = platforms.some(({ config }) => {
+    if (!config) return false;
+    const hasAccounts = Array.isArray(config.accounts) && config.accounts.length > 0;
+    const hasMock = coerceCount(config.mockCount) !== null;
+    return hasAccounts || hasMock;
+  });
+
+  if (!shouldLoad) {
+    return;
+  }
+
+  const loadMetrics = async () => {
+    for (const platform of platforms) {
+      const { key, config, element, fetcher } = platform;
+      if (!element || !config) continue;
+
+      const fallbackValue = dataset[`${key}Fallback`];
+      const count = await fetchPlatformTotal(
+        key,
+        config,
+        fetcher,
+        fallbackValue
+      );
+      applyMetric(element, count, element.textContent);
     }
   };
 
-  if (youtubeConfig.channelId || instagramConfig.userId) {
-    loadMetrics();
-    if (refreshInterval) {
-      setInterval(loadMetrics, refreshInterval);
-    }
+  loadMetrics();
+  if (refreshInterval) {
+    setInterval(loadMetrics, refreshInterval);
   }
 }
