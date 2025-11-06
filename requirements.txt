@@ -16,6 +16,7 @@ filetype==1.0.5
 flatbuffers==25.2.10
 fsspec==2025.7.0
 fastapi==0.115.6
+Flask==3.1.0
 google-api-core==2.25.1
 google-api-python-client==2.181.0
 google-auth==2.40.3

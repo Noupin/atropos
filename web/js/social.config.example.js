@@ -1,6 +1,11 @@
 // Copy this file to social.config.js and fill in your own credentials.
 // The config is optional; if omitted the marketing site will fall back to
 // the static values in the markup.
+//
+// New in this release: you may specify `scrapeUrl` (and optional
+// `scrapePattern`) per account. When the official APIs fail, the frontend
+// will call `/api/social-metrics/scrape` to attempt parsing the provided
+// page as a last resort before showing "N/A".
 window.atroposSocialConfig = {
   youtube: {
     // Visit https://console.cloud.google.com/apis/library/youtube.googleapis.com
@@ -8,7 +13,11 @@ window.atroposSocialConfig = {
     // via the Credentials tab. Provide the channel ID you want to display.
     apiKey: "YOUR_YOUTUBE_DATA_API_KEY",
     accounts: [
-      { channelId: "YOUR_CHANNEL_ID_1" },
+      {
+        channelId: "YOUR_CHANNEL_ID_1",
+        // Optional HTML fallback: omit to disable scraping.
+        scrapeUrl: "https://www.youtube.com/channel/YOUR_CHANNEL_ID_1/about",
+      },
       { channelId: "YOUR_CHANNEL_ID_2" },
     ],
   },
@@ -19,7 +28,11 @@ window.atroposSocialConfig = {
     // API Explorer once the account is connected.
     accessToken: "YOUR_INSTAGRAM_ACCESS_TOKEN",
     accounts: [
-      { userId: "YOUR_INSTAGRAM_USER_ID_1" },
+      {
+        userId: "YOUR_INSTAGRAM_USER_ID_1",
+        // Optional fallback: provide the username to enable scraping.
+        username: "atropos", // or add scrapeUrl: "https://instagram.com/atropos/"
+      },
       { userId: "YOUR_INSTAGRAM_USER_ID_2" },
     ],
   },
@@ -39,7 +52,11 @@ window.atroposSocialConfig = {
     // access token can be shared or defined per account.
     accessToken: "YOUR_FACEBOOK_ACCESS_TOKEN",
     accounts: [
-      { pageId: "YOUR_FACEBOOK_PAGE_ID_1" },
+      {
+        pageId: "YOUR_FACEBOOK_PAGE_ID_1",
+        // Optional fallback scraper: customize the URL if you use vanity routes.
+        scrapeUrl: "https://www.facebook.com/YOUR_FACEBOOK_PAGE_ID_1/",
+      },
       { pageId: "YOUR_FACEBOOK_PAGE_ID_2" },
     ],
   },

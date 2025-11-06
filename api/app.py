@@ -5,6 +5,8 @@ from email.utils import formataddr
 from pathlib import Path
 from flask import Flask, request, jsonify
 
+from api.social_metrics import social_metrics_bp
+
 # ---------- config / storage ----------
 SUBSCRIBERS = Path(os.environ.get("SUBSCRIBERS_FILE", "/data/subscribers.json"))
 UNSUB_TOKENS = Path(os.environ.get("UNSUB_TOKENS_FILE", "/data/unsub_tokens.json"))
@@ -183,6 +185,7 @@ Unsubscribe: {unsub_link}
 
 # ---------- app ----------
 app = Flask(__name__)
+app.register_blueprint(social_metrics_bp)
 
 # log to stdout (visible in `docker compose logs -f atropos-video-api`)
 handler = logging.StreamHandler()

@@ -46,6 +46,7 @@
     const fallbackCount = Number(metric.fallbackCount);
     let formatted = Number.isFinite(numeric) ? formatCount(numeric) : null;
     let usedFallback = false;
+    let markUnavailable = false;
 
     if (!formatted && Number.isFinite(fallbackCount)) {
       formatted = formatCount(fallbackCount);
@@ -54,6 +55,9 @@
 
     if (formatted) {
       metric.valueEl.textContent = formatted;
+    } else {
+      metric.valueEl.textContent = "N/A";
+      markUnavailable = true;
     }
 
     let resolvedAccounts;
@@ -69,7 +73,7 @@
     }
     metric.currentAccountCount = resolvedAccounts;
 
-    const shouldMarkMock = usedFallback || Boolean(isMock);
+    const shouldMarkMock = markUnavailable || usedFallback || Boolean(isMock);
 
     if (shouldMarkMock) {
       metric.element.classList.add("hero__metric--placeholder");
@@ -187,10 +191,39 @@
     return raw
       .map((entry) => {
         if (typeof entry === "string" && entry.trim()) {
-          return { channelId: entry.trim() };
+          const channelId = entry.trim();
+          const defaultPattern =
+            typeof config.scrapePattern === "string" && config.scrapePattern.trim()
+              ? config.scrapePattern.trim()
+              : null;
+          return {
+            channelId,
+            scrapeUrl: `https://www.youtube.com/channel/${channelId}/about`,
+            scrapePattern: defaultPattern,
+          };
         }
         if (entry && typeof entry.channelId === "string" && entry.channelId.trim()) {
-          return { channelId: entry.channelId.trim() };
+          const channelId = entry.channelId.trim();
+          const explicitUrl =
+            typeof entry.scrapeUrl === "string" && entry.scrapeUrl.trim()
+              ? entry.scrapeUrl.trim()
+              : typeof entry.channelUrl === "string" && entry.channelUrl.trim()
+              ? entry.channelUrl.trim()
+              : "";
+          const defaultUrl = channelId
+            ? `https://www.youtube.com/channel/${channelId}/about`
+            : "";
+          const pattern =
+            typeof entry.scrapePattern === "string" && entry.scrapePattern.trim()
+              ? entry.scrapePattern.trim()
+              : typeof config.scrapePattern === "string" && config.scrapePattern.trim()
+              ? config.scrapePattern.trim()
+              : null;
+          return {
+            channelId,
+            scrapeUrl: explicitUrl || defaultUrl,
+            scrapePattern: pattern,
+          };
         }
         return null;
       })
@@ -211,8 +244,21 @@
     return raw
       .map((entry) => {
         if (typeof entry === "string" && entry.trim()) {
+          const trimmed = entry.trim();
+          const isNumericId = /^[0-9]+$/.test(trimmed);
           return baseToken
-            ? { userId: entry.trim(), accessToken: baseToken }
+            ? {
+                userId: trimmed,
+                username: isNumericId ? "" : trimmed,
+                accessToken: baseToken,
+                scrapeUrl: isNumericId
+                  ? ""
+                  : `https://www.instagram.com/${trimmed.replace(/^@/, "")}/`,
+                scrapePattern:
+                  typeof config.scrapePattern === "string" && config.scrapePattern.trim()
+                    ? config.scrapePattern.trim()
+                    : null,
+              }
             : null;
         }
         if (entry && typeof entry.userId === "string" && entry.userId.trim()) {
@@ -223,7 +269,34 @@
           if (!token) {
             return null;
           }
-          return { userId: entry.userId.trim(), accessToken: token };
+          const username =
+            typeof entry.username === "string" && entry.username.trim()
+              ? entry.username.trim().replace(/^@/, "")
+              : "";
+          const profileUrl =
+            typeof entry.profileUrl === "string" && entry.profileUrl.trim()
+              ? entry.profileUrl.trim()
+              : "";
+          const scrapePattern =
+            typeof entry.scrapePattern === "string" && entry.scrapePattern.trim()
+              ? entry.scrapePattern.trim()
+              : typeof config.scrapePattern === "string" && config.scrapePattern.trim()
+              ? config.scrapePattern.trim()
+              : null;
+          return {
+            userId: entry.userId.trim(),
+            username,
+            accessToken: token,
+            scrapeUrl:
+              typeof entry.scrapeUrl === "string" && entry.scrapeUrl.trim()
+                ? entry.scrapeUrl.trim()
+                : profileUrl
+                ? profileUrl
+                : username
+                ? `https://www.instagram.com/${username}/`
+                : "",
+            scrapePattern,
+          };
         }
         return null;
       })
@@ -244,8 +317,17 @@
     return raw
       .map((entry) => {
         if (typeof entry === "string" && entry.trim()) {
+          const pageId = entry.trim();
           return baseToken
-            ? { pageId: entry.trim(), accessToken: baseToken }
+            ? {
+                pageId,
+                accessToken: baseToken,
+                scrapeUrl: `https://www.facebook.com/${pageId}/`,
+                scrapePattern:
+                  typeof config.scrapePattern === "string" && config.scrapePattern.trim()
+                    ? config.scrapePattern.trim()
+                    : null,
+              }
             : null;
         }
         if (entry && typeof entry.pageId === "string" && entry.pageId.trim()) {
@@ -256,7 +338,25 @@
           if (!token) {
             return null;
           }
-          return { pageId: entry.pageId.trim(), accessToken: token };
+          const pageId = entry.pageId.trim();
+          const scrapePattern =
+            typeof entry.scrapePattern === "string" && entry.scrapePattern.trim()
+              ? entry.scrapePattern.trim()
+              : typeof config.scrapePattern === "string" && config.scrapePattern.trim()
+              ? config.scrapePattern.trim()
+              : null;
+          const scrapeUrl =
+            typeof entry.scrapeUrl === "string" && entry.scrapeUrl.trim()
+              ? entry.scrapeUrl.trim()
+              : typeof entry.pageUrl === "string" && entry.pageUrl.trim()
+              ? entry.pageUrl.trim()
+              : `https://www.facebook.com/${pageId}/`;
+          return {
+            pageId,
+            accessToken: token,
+            scrapeUrl,
+            scrapePattern,
+          };
         }
         return null;
       })
@@ -273,8 +373,18 @@
           return { followerCount: entry };
         }
         if (typeof entry === "string" && entry.trim()) {
-          const num = Number(entry.trim());
-          return Number.isFinite(num) ? { followerCount: num } : null;
+          const trimmed = entry.trim();
+          const num = Number(trimmed);
+          if (Number.isFinite(num)) {
+            return { followerCount: num };
+          }
+          return {
+            scrapeUrl: trimmed,
+            scrapePattern:
+              typeof config.scrapePattern === "string" && config.scrapePattern.trim()
+                ? config.scrapePattern.trim()
+                : null,
+          };
         }
         if (
           typeof entry.followerCount === "number" &&
@@ -298,9 +408,162 @@
                 : "",
           };
         }
+        if (typeof entry.scrapeUrl === "string" && entry.scrapeUrl.trim()) {
+          return {
+            scrapeUrl: entry.scrapeUrl.trim(),
+            scrapePattern:
+              typeof entry.scrapePattern === "string" && entry.scrapePattern.trim()
+                ? entry.scrapePattern.trim()
+                : typeof config.scrapePattern === "string" && config.scrapePattern.trim()
+                ? config.scrapePattern.trim()
+                : null,
+          };
+        }
         return null;
       })
       .filter(Boolean);
+  };
+
+  const sanitizePattern = (value) =>
+    typeof value === "string" && value.trim() ? value.trim() : null;
+
+  const ensureAbsoluteUrl = (url, domainHint) => {
+    if (!url) return "";
+    if (/^https?:\/\//i.test(url)) {
+      return url;
+    }
+    if (domainHint) {
+      const prefix = domainHint.endsWith("/") ? domainHint : `${domainHint}/`;
+      return `${prefix}${url.replace(/^\/+/, "")}`;
+    }
+    return url;
+  };
+
+  const ensureSuffix = (url, suffix) => {
+    if (!url) return "";
+    const normalized = url.endsWith("/") ? url.slice(0, -1) : url;
+    const suffixValue = suffix.startsWith("/") ? suffix : `/${suffix}`;
+    if (normalized.endsWith(suffixValue)) {
+      return normalized;
+    }
+    return `${normalized}${suffixValue}`;
+  };
+
+  const DEFAULT_SCRAPE_PATTERNS = {
+    youtube: "(?P<count>[0-9.,KMB]+)\\s+subscribers",
+    instagram: '"edge_followed_by"\\s*:\\s*\\{"count"\\s*:\\s*(?P<count>[0-9]+)\\}',
+    facebook: '"fan_count"\\s*:\\s*(?P<count>[0-9]+)',
+    tiktok: "(?P<count>[0-9.,KMB]+)\\s+Followers",
+  };
+
+  const buildScrapePayload = (platform, config) => {
+    switch (platform) {
+      case "youtube": {
+        const accounts = getYouTubeAccounts(config)
+          .map((account) => {
+            const url = ensureSuffix(
+              ensureAbsoluteUrl(account.scrapeUrl, "https://www.youtube.com"),
+              "about"
+            );
+            if (!url) {
+              return null;
+            }
+            const pattern =
+              sanitizePattern(account.scrapePattern) || DEFAULT_SCRAPE_PATTERNS.youtube;
+            return { url, pattern };
+          })
+          .filter(Boolean);
+        return accounts.length ? { platform, accounts } : null;
+      }
+      case "instagram": {
+        const accounts = getInstagramAccounts(config)
+          .map((account) => {
+            const url = ensureAbsoluteUrl(
+              account.scrapeUrl ||
+                (account.username
+                  ? `https://www.instagram.com/${account.username}/`
+                  : ""),
+              "https://www.instagram.com"
+            );
+            if (!url) {
+              return null;
+            }
+            const pattern =
+              sanitizePattern(account.scrapePattern) || DEFAULT_SCRAPE_PATTERNS.instagram;
+            return { url, pattern };
+          })
+          .filter(Boolean);
+        return accounts.length ? { platform, accounts } : null;
+      }
+      case "facebook": {
+        const accounts = getFacebookAccounts(config)
+          .map((account) => {
+            const url = ensureAbsoluteUrl(
+              account.scrapeUrl || account.pageUrl || "",
+              "https://www.facebook.com"
+            );
+            if (!url) {
+              return null;
+            }
+            const pattern =
+              sanitizePattern(account.scrapePattern) || DEFAULT_SCRAPE_PATTERNS.facebook;
+            return { url, pattern };
+          })
+          .filter(Boolean);
+        return accounts.length ? { platform, accounts } : null;
+      }
+      case "tiktok": {
+        const accounts = getTikTokAccounts(config)
+          .map((account) => {
+            if (account.fetchUrl || Number.isFinite(account.followerCount)) {
+              return null;
+            }
+            const url = ensureAbsoluteUrl(account.scrapeUrl || "", "https://www.tiktok.com");
+            if (!url) {
+              return null;
+            }
+            const pattern =
+              sanitizePattern(account.scrapePattern) || DEFAULT_SCRAPE_PATTERNS.tiktok;
+            return { url, pattern };
+          })
+          .filter(Boolean);
+        return accounts.length ? { platform, accounts } : null;
+      }
+      default:
+        return null;
+    }
+  };
+
+  const tryScrapeFallback = async (platform, config) => {
+    const payload = buildScrapePayload(platform, config);
+    if (!payload) {
+      return null;
+    }
+
+    const res = await fetch("/api/social-metrics/scrape", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      const message = data?.error || `Scrape fallback failed with ${res.status}`;
+      throw new Error(message);
+    }
+
+    if (Array.isArray(data?.errors) && data.errors.length) {
+      console.warn(`${platform} scrape fallback reported issues`, data.errors);
+    }
+
+    const numericCount = Number(data?.count);
+    const finalCount = Number.isFinite(numericCount) ? numericCount : Number.NaN;
+    const numericAccounts = Number(data?.accountCount);
+    const accountCount = Number.isFinite(numericAccounts)
+      ? numericAccounts
+      : payload.accounts.length;
+
+    return { count: finalCount, accountCount, isMock: true };
   };
 
   const canLoadPlatform = (platform, config) => {
@@ -498,6 +761,9 @@
           if (!metric || !loader || !config) {
             return;
           }
+
+          let resolved = false;
+
           try {
             const result = await loader(metric, config);
             if (result && Number.isFinite(result.count)) {
@@ -506,15 +772,37 @@
                 isMock: Boolean(result.isMock),
                 accountCount: result.accountCount,
               });
+              resolved = true;
+            } else if (result) {
+              console.warn(
+                `${platform} metrics invalid`,
+                result
+              );
             }
           } catch (error) {
             console.warn(`${platform} metrics unavailable`, error);
+          }
+
+          if (!resolved) {
+            try {
+              const fallbackResult = await tryScrapeFallback(platform, config);
+              if (fallbackResult) {
+                setMetricState(metric, fallbackResult);
+                resolved = true;
+              }
+            } catch (scrapeError) {
+              console.warn(`${platform} scrape fallback failed`, scrapeError);
+            }
+          }
+
+          if (!resolved) {
             setMetricState(metric, {
               count: metric.fallbackCount,
               isMock: true,
               accountCount: metric.fallbackAccounts,
             });
           }
+
           updateTotalAccounts();
         })
       );
