@@ -119,7 +119,7 @@ function ensureRotatorSize() {
   if (!phraseRotator) return;
 
   const host = phraseRotator.closest(".hero__rotator");
-  if (!host) return;
+  if (!host || !document.body) return;
 
   const phrases = new Set(marketingPhrases);
   const initial = phraseRotator.dataset.initialPhrase;
@@ -129,11 +129,17 @@ function ensureRotatorSize() {
 
   if (!phrases.size) return;
 
+  const hostStyle = window.getComputedStyle(host);
   let maxWidth = 0;
   let maxHeight = 0;
   const measurer = document.createElement("span");
   measurer.className = "hero__rotator-measure";
-  host.appendChild(measurer);
+  measurer.style.font = hostStyle.font;
+  measurer.style.fontWeight = hostStyle.fontWeight;
+  measurer.style.letterSpacing = hostStyle.letterSpacing;
+  measurer.style.textTransform = hostStyle.textTransform;
+  measurer.style.lineHeight = hostStyle.lineHeight;
+  document.body.appendChild(measurer);
 
   for (const text of phrases) {
     measurer.textContent = text;
@@ -145,12 +151,13 @@ function ensureRotatorSize() {
   measurer.remove();
 
   if (maxWidth) {
-    const width = Math.ceil(maxWidth) + 2;
+    const width = Math.ceil(maxWidth) + 6;
     host.style.setProperty("--hero-rotator-max-width", `${width}px`);
+    phraseRotator.style.setProperty("--hero-rotator-max-width", `${width}px`);
   }
 
   if (maxHeight) {
-    const height = Math.ceil(maxHeight) + 2;
+    const height = Math.ceil(maxHeight) + 4;
     host.style.setProperty("--hero-rotator-max-height", `${height}px`);
     phraseRotator.style.setProperty("--hero-rotator-max-height", `${height}px`);
   }
@@ -207,10 +214,22 @@ function animateToPhrase(phrase) {
   );
 }
 
+let announceRaf = null;
+
 function announcePhrase(text) {
-  if (phraseAnnouncer) {
-    phraseAnnouncer.textContent = `Marketing phrase: ${text}.`;
+  if (!phraseAnnouncer) return;
+
+  if (announceRaf) {
+    cancelAnimationFrame(announceRaf);
+    announceRaf = null;
   }
+
+  phraseAnnouncer.textContent = "";
+
+  announceRaf = window.requestAnimationFrame(() => {
+    phraseAnnouncer.textContent = `Marketing phrase: ${text}.`;
+    announceRaf = null;
+  });
 }
 
 if (phraseRotator && marketingPhrases.length) {
