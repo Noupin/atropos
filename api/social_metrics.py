@@ -5,9 +5,10 @@ import math
 import re
 from dataclasses import dataclass
 from typing import Iterable, Optional
+from urllib.parse import urlparse
 
 import requests
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, jsonify, request, current_app, make_response
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -24,6 +25,48 @@ class ScrapeTask:
     pattern: Optional[str]
 
 social_metrics_bp = Blueprint("social_metrics", __name__, url_prefix="/social-metrics")
+
+
+def _is_local_origin(origin: Optional[str]) -> bool:
+    if not origin:
+        return False
+    try:
+        parsed = urlparse(origin)
+    except ValueError:
+        return False
+
+    hostname = (parsed.hostname or "").strip().lower()
+    if not hostname:
+        return False
+
+    if hostname in {"localhost", "::1"}:
+        return True
+
+    if hostname.startswith("127."):
+        return True
+
+    return False
+
+
+def _apply_cors_headers(response):
+    origin = request.headers.get("Origin")
+    if _is_local_origin(origin):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        response.headers["Vary"] = "Origin"
+    return response
+
+
+@social_metrics_bp.after_request
+def social_metrics_after_request(response):
+    return _apply_cors_headers(response)
+
+
+@social_metrics_bp.route("/scrape", methods=["OPTIONS"])
+def social_metrics_options():
+    response = make_response("", 204)
+    return _apply_cors_headers(response)
 
 
 def _normalize_count(raw: str) -> Optional[int]:

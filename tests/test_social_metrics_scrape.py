@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from unittest.mock import ANY, MagicMock, patch
-
 import sys
 from pathlib import Path
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -81,3 +80,49 @@ def test_scrape_payload_validation(client):
     data = response.get_json()
     assert data["ok"] is False
     assert "platform" in data["error"].lower()
+
+
+def test_scrape_includes_cors_headers_for_local_origin(client):
+    html = "<html><body>Followers 1,234</body></html>"
+    with patch("api.social_metrics.requests.get", return_value=_mock_response(html)):
+        payload = {
+            "platform": "youtube",
+            "accounts": [{"url": "https://www.youtube.com/channel/UC123/about"}],
+        }
+        response = client.post(
+            "/social-metrics/scrape",
+            json=payload,
+            headers={"Origin": "http://127.0.0.1:8000"},
+        )
+
+    assert response.status_code in (200, 502)
+    assert response.headers["Access-Control-Allow-Origin"] == "http://127.0.0.1:8000"
+    assert "POST" in response.headers["Access-Control-Allow-Methods"]
+    assert "Content-Type" in response.headers["Access-Control-Allow-Headers"]
+
+
+def test_scrape_options_request_returns_preflight_headers(client):
+    response = client.options(
+        "/social-metrics/scrape",
+        headers={"Origin": "http://127.0.0.1:9000"},
+    )
+
+    assert response.status_code == 204
+    assert response.headers["Access-Control-Allow-Origin"] == "http://127.0.0.1:9000"
+    assert "OPTIONS" in response.headers["Access-Control-Allow-Methods"]
+
+
+def test_scrape_omits_cors_headers_for_remote_origin(client):
+    html = "<html><body>Followers 1,234</body></html>"
+    with patch("api.social_metrics.requests.get", return_value=_mock_response(html)):
+        payload = {
+            "platform": "youtube",
+            "accounts": [{"url": "https://www.youtube.com/channel/UC123/about"}],
+        }
+        response = client.post(
+            "/social-metrics/scrape",
+            json=payload,
+            headers={"Origin": "https://atropos-video.com"},
+        )
+
+    assert "Access-Control-Allow-Origin" not in response.headers

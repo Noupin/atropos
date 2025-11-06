@@ -7,11 +7,64 @@
     return;
   }
 
+  const socialConfig = window.atroposSocialConfig || {};
+
   const ENABLE_SOCIAL_PLATFORMS = {
     youtube: true,
     instagram: true,
     tiktok: false,
     facebook: false,
+  };
+
+  const LOCAL_API_DEFAULT_PORT = 5001;
+
+  const isLocalEnvironment = () => {
+    const { protocol, hostname } = window.location;
+    if (protocol === "file:") {
+      return true;
+    }
+    if (!hostname) {
+      return false;
+    }
+    const normalized = hostname.trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    if (normalized === "localhost" || normalized === "::1") {
+      return true;
+    }
+    if (normalized.endsWith(".local")) {
+      return true;
+    }
+    return /^127(?:\.[0-9]{1,3}){3}$/.test(normalized);
+  };
+
+  const resolveLocalScrapeEndpoint = () => {
+    if (!isLocalEnvironment()) {
+      return null;
+    }
+
+    const override =
+      typeof socialConfig.localApiBaseUrl === "string"
+        ? socialConfig.localApiBaseUrl.trim()
+        : "";
+    if (override) {
+      const normalized = override.replace(/\/+$/, "");
+      if (/^https?:\/\//i.test(normalized)) {
+        return `${normalized}/social-metrics/scrape`;
+      }
+    }
+
+    const portValue = Number(socialConfig.localApiPort);
+    const port = Number.isFinite(portValue)
+      ? portValue
+      : LOCAL_API_DEFAULT_PORT;
+    const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+    const hostname =
+      (window.location.hostname && window.location.hostname.trim()) ||
+      "127.0.0.1";
+    const portSegment = port > 0 ? `:${port}` : "";
+    return `${protocol}//${hostname}${portSegment}/social-metrics/scrape`;
   };
 
   const formatCount = (value) => {
@@ -540,7 +593,12 @@
       return null;
     }
 
-    const res = await fetch("/api/social-metrics/scrape", {
+    const endpoint = resolveLocalScrapeEndpoint();
+    if (!endpoint) {
+      return null;
+    }
+
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -696,7 +754,6 @@
     metrics.set(platform, metric);
   });
 
-  const socialConfig = window.atroposSocialConfig || {};
   const refreshInterval = Math.max(
     0,
     Number(socialConfig.refreshIntervalMs || 0)

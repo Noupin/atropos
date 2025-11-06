@@ -38,3 +38,12 @@ The marketing site under [`web/`](web/) can display live follower counts from Yo
 4. Optionally adjust `refreshIntervalMs` (milliseconds) to refresh counts on a cadence; omit it to load counts only once per visit.
 
 Without credentials, the hero falls back to the static figures baked into the markup so the layout remains consistent.
+
+### Local scrape fallback (development only)
+
+If you need to exercise the HTML scraping fallback while developing locally:
+
+1. Start the Flask API using the commands in [api/README.md](api/README.md). By default it listens on `http://127.0.0.1:5001`.
+2. Add `localApiBaseUrl: "http://127.0.0.1:5001"` (or the host/port you chose) to your local `web/js/social.config.js` file.
+
+The marketing site only attempts to call the scrape fallback when loaded from a local hostname or `file://` URL. Production deployments continue to rely solely on the official platform APIs.

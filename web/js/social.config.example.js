@@ -4,8 +4,8 @@
 //
 // New in this release: you may specify `scrapeUrl` (and optional
 // `scrapePattern`) per account. When the official APIs fail, the frontend
-// will call `/api/social-metrics/scrape` to attempt parsing the provided
-// page as a last resort before showing "N/A".
+// will attempt to call a local API fallback (see `localApiBaseUrl` below)
+// to parse the provided page before showing "N/A".
 window.atroposSocialConfig = {
   youtube: {
     // Visit https://console.cloud.google.com/apis/library/youtube.googleapis.com
@@ -62,4 +62,9 @@ window.atroposSocialConfig = {
   },
   // Optional: how frequently to refresh counts (defaults to once per page load).
   refreshIntervalMs: 3600000,
+  // Optional: when developing locally, point the hero metrics script at your
+  // locally running Flask API. Provide either a full base URL (recommended)
+  // or omit it and adjust `localApiPort` if you use a different port.
+  // localApiBaseUrl: "http://127.0.0.1:5001",
+  // localApiPort: 5001,
 };
