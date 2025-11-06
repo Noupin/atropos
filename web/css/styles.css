@@ -387,6 +387,9 @@ body::after {
   line-height: 1.18;
   font-weight: 500;
   color: var(--crevice);
+  text-shadow: none;
+  mix-blend-mode: normal;
+  z-index: 1;
   min-width: var(--hero-rotator-max-width, 180px);
   width: var(--hero-rotator-max-width, auto);
   max-width: 100%;
@@ -399,6 +402,8 @@ body::after {
   height: var(--hero-rotator-max-height, auto);
   overflow: hidden;
   color: inherit;
+  text-shadow: none;
+  mix-blend-mode: normal;
 }
 
 .hero__rotator-phrase {
@@ -410,6 +415,7 @@ body::after {
   text-align: inherit;
   line-height: inherit;
   color: inherit;
+  text-shadow: none;
   transform: translateY(0);
   will-change: opacity, transform;
 }
@@ -423,6 +429,7 @@ body::after {
   font-weight: inherit;
   line-height: inherit;
   color: var(--crevice);
+  text-shadow: none;
 }
 
 .hero__rotator-phrase--enter {
@@ -433,12 +440,14 @@ body::after {
   width: 100%;
   z-index: 2;
   color: inherit;
+  text-shadow: none;
 }
 
 .hero__rotator-phrase--leave {
   animation: hero-rotator-leave var(--hero-rotator-duration, 500ms) ease forwards;
   z-index: 1;
   color: inherit;
+  text-shadow: none;
 }
 
 @keyframes hero-rotator-enter {
