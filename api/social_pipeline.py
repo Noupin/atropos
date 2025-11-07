@@ -10,6 +10,7 @@ import threading
 import time
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
+from urllib.parse import urlencode, urlparse
 
 import requests
 
@@ -165,7 +166,7 @@ def _get_cache(key: str) -> Optional[SocialStatsResponse]:
 def _format_number_from_text(value: str) -> Optional[int]:
     if not value:
         return None
-    text = value.strip().replace(",", "")
+    text = value.strip().replace(",", "").replace("\u00a0", "")
     match = re.match(r"^(~)?([0-9]+(?:\.[0-9]+)?)([KMB]?)", text, re.IGNORECASE)
     if not match:
         digits = re.findall(r"[0-9]+", text)
@@ -264,6 +265,24 @@ def _http_get(
     raise RuntimeError(f"Failed to fetch {url}")
 
 
+def _fetch_text(url: str) -> str:
+    """Fetch ``url`` via the text proxy to capture server-rendered markup."""
+
+    parsed = urlparse(url)
+    host = parsed.netloc
+    path = parsed.path or "/"
+    proxy_url = f"https://r.jina.ai/http://{host}{path}"
+    if parsed.query:
+        proxy_url = f"{proxy_url}?{parsed.query}"
+    logger.debug("Fetching text proxy for %s via %s", url, proxy_url)
+    response = _http_get(proxy_url)
+    text = response.text or ""
+    logger.info(
+        "Fetched text proxy for %s via %s (%s chars)", url, proxy_url, len(text)
+    )
+    return text
+
+
 def _fetch_youtube_api(handle: str) -> Optional[int]:
     if not (ENABLE_SOCIAL_APIS and ENABLE_YT_API and YOUTUBE_API_KEY):
         return None
@@ -314,70 +333,190 @@ def _first_text_run(payload: dict) -> Optional[str]:
     return None
 
 
-def _fetch_youtube_scrape(handle: str) -> Optional[int]:
-    cleaned = handle.strip()
-    if cleaned.startswith("UC"):
-        url = f"https://www.youtube.com/channel/{cleaned}/about"
-    else:
-        url = f"https://www.youtube.com/@{cleaned.lstrip('@')}/about"
-    params = {"hl": "en", "gl": "US", "persist_hl": "1", "persist_gl": "1"}
-    try:
-        html = _http_get(url, params=params).text
-    except Exception as exc:  # pragma: no cover - network variability
-        logger.warning("YouTube scrape failed for %s: %s", handle, exc)
-        return None
-    logger.info("Fetched YouTube about page for %s (%s chars)", handle, len(html))
+def _youtube_text_candidates(value) -> List[str]:
+    texts: List[str] = []
+    if value is None:
+        return texts
+    if isinstance(value, str):
+        texts.append(value)
+    elif isinstance(value, dict):
+        simple = value.get("simpleText")
+        if simple:
+            texts.append(str(simple))
+        run = _first_text_run(value)
+        if run:
+            texts.append(run)
+        runs = value.get("runs")
+        if isinstance(runs, list):
+            for entry in runs:
+                if isinstance(entry, dict) and entry.get("text"):
+                    texts.append(str(entry["text"]))
+    elif isinstance(value, list):
+        for item in value:
+            texts.extend(_youtube_text_candidates(item))
+    return texts
+
+
+def _search_youtube_count(blob: dict, source_label: str) -> Tuple[Optional[int], Optional[str]]:
+    stack: List[Tuple[str, object]] = [("", blob)]
+    while stack:
+        path, current = stack.pop()
+        if isinstance(current, dict):
+            for key in (
+                "subscriberCountText",
+                "approximateSubscriberCountText",
+                "subscribersText",
+            ):
+                if key in current:
+                    for candidate in _youtube_text_candidates(current[key]):
+                        parsed = _format_number_from_text(candidate)
+                        if parsed is not None:
+                            label = (
+                                f"{source_label}{'.' if path else ''}{path}.{key}"
+                                if path
+                                else f"{source_label}.{key}"
+                            )
+                            return parsed, label
+            for key, value in current.items():
+                next_path = f"{path}.{key}" if path else key
+                stack.append((next_path, value))
+        elif isinstance(current, list):
+            for idx, value in enumerate(current):
+                next_path = f"{path}[{idx}]" if path else f"[{idx}]"
+                stack.append((next_path, value))
+    return None, None
+
+
+def _parse_youtube_html(html: str) -> Tuple[Optional[int], Dict[str, int], Optional[str]]:
+    if not html:
+        return None, {}, None
+    html_normalized = html.replace("\u00a0", " ")
+    extras: Dict[str, int] = {}
 
     data_candidates = [
-        _extract_json_object(html, "ytInitialData"),
-        _extract_json_object(html, "ytInitialPlayerResponse"),
+        ("ytInitialData", _extract_json_object(html, "ytInitialData")),
+        ("ytcfg", _extract_json_object(html, "ytcfg.set")),
+        ("ytInitialPlayerResponse", _extract_json_object(html, "ytInitialPlayerResponse")),
     ]
-    for data in data_candidates:
-        if not isinstance(data, dict):
+    count: Optional[int] = None
+    detail: Optional[str] = None
+    for label, blob in data_candidates:
+        if not isinstance(blob, dict):
             continue
-        header = data.get("header", {}).get("c4TabbedHeaderRenderer", {})
-        metadata = data.get("metadata", {}).get("channelMetadataRenderer", {})
-        candidates = [
-            header.get("subscriberCountText", {}).get("simpleText"),
-            _first_text_run(header.get("subscriberCountText", {})),
-            metadata.get("subscriberCountText"),
-            metadata.get("approximateSubscriberCountText"),
-        ]
-        for candidate in candidates:
-            parsed = _format_number_from_text(str(candidate)) if candidate else None
-            if parsed is not None:
-                logger.info(
-                    "YouTube JSON scrape succeeded for %s with count=%s", handle, parsed
-                )
-                return parsed
+        count, detail = _search_youtube_count(blob, label)
+        if count is not None:
+            break
 
-    patterns: List[str | Tuple[str, str]] = [
-        (
-            r"\"subscriberCountText\"\s*:\s*{",
-            r"\"text\"\s*:\s*\"([^\"]+)\"",
-        ),
-        r"\"approximateSubscriberCountText\"\s*:\s*\{.*?\"simpleText\"\s*:\s*\"([^\"]+)\"",
-        r"\"subscribersText\"\s*:\s*\{.*?\"simpleText\"\s*:\s*\"([^\"]+)\"",
-        r"([0-9.,]+)\s+subscribers",
-    ]
-    for pattern in patterns:
-        if isinstance(pattern, tuple):
-            block_match = re.search(pattern[0], html, re.IGNORECASE | re.DOTALL)
-            if not block_match:
+    if count is None:
+        patterns = [
+            ("regex:subscribers", r"([0-9.,]+)\s+subscribers"),
+        ]
+        for pattern_label, pattern in patterns:
+            match = re.search(pattern, html_normalized, re.IGNORECASE)
+            if not match:
                 continue
-            match = re.search(pattern[1], block_match.group(0), re.IGNORECASE | re.DOTALL)
-        else:
-            match = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
+            parsed = _format_number_from_text(match.group(1))
+            if parsed is not None:
+                count = parsed
+                detail = pattern_label
+                break
+
+    for extra_label, pattern in (
+        ("videos", r"([0-9.,]+)\s+videos"),
+        ("views", r"([0-9.,]+)\s+views"),
+    ):
+        match = re.search(pattern, html_normalized, re.IGNORECASE)
         if not match:
             continue
-        parsed = _format_number_from_text(match.group(1))
-        if parsed:
-            logger.info(
-                "YouTube regex scrape succeeded for %s with count=%s", handle, parsed
+        parsed_extra = _format_number_from_text(match.group(1))
+        if parsed_extra is not None:
+            extras[extra_label] = parsed_extra
+
+    return count, extras, detail
+
+
+
+def _fetch_youtube_scrape(handle: str) -> Optional[int]:
+    cleaned = handle.strip()
+    is_channel_id = cleaned.startswith("UC")
+    if is_channel_id:
+        base_path = f"https://www.youtube.com/channel/{cleaned}"
+    else:
+        base_path = f"https://www.youtube.com/@{cleaned.lstrip('@')}"
+    params = {"hl": "en", "gl": "US", "persist_hl": "1", "persist_gl": "1"}
+    query = urlencode(params)
+    about_base = f"{base_path}/about"
+    root_base = base_path
+    about_full = f"{about_base}?{query}"
+    root_full = f"{root_base}?{query}"
+
+    attempts: List[Tuple[str, str, bool, Optional[Dict[str, str]], str]] = [
+        ("direct", about_base, False, params, about_full),
+        ("text-proxy", about_full, True, None, about_full),
+        ("text-proxy-root", root_full, True, None, root_full),
+    ]
+
+    for attempt_label, request_url, use_text_proxy, request_params, log_url in attempts:
+        html = ""
+        try:
+            if use_text_proxy:
+                html = _fetch_text(request_url)
+                logger.info(
+                    "Fetched YouTube page for %s via %s (%s chars) [%s]",
+                    handle,
+                    log_url,
+                    len(html),
+                    attempt_label,
+                )
+            else:
+                response = _http_get(request_url, params=request_params)
+                html = response.text or ""
+                logger.info(
+                    "Fetched YouTube page for %s via %s (%s chars)",
+                    handle,
+                    log_url,
+                    len(html),
+                )
+        except Exception as exc:  # pragma: no cover - network variability
+            logger.warning(
+                "YouTube %s fetch failed for %s via %s: %s",
+                attempt_label,
+                handle,
+                log_url,
+                exc,
             )
-            return parsed
+            continue
+
+        count, extras, detail = _parse_youtube_html(html)
+        if count is None:
+            logger.warning(
+                "YouTube %s parse missing subscriber pattern for %s via %s",
+                attempt_label,
+                handle,
+                log_url,
+            )
+            continue
+
+        if extras:
+            logger.info(
+                "YouTube %s parse extras for %s: %s",
+                attempt_label,
+                handle,
+                extras,
+            )
+        logger.info(
+            "YouTube scrape succeeded for %s via %s (%s) count=%s detail=%s",
+            handle,
+            attempt_label,
+            log_url,
+            count,
+            detail,
+        )
+        return count
+
     logger.warning("YouTube scrape could not locate subscriber pattern for %s", handle)
     return None
+
 
 
 def _fetch_instagram_api(handle: str) -> Optional[int]:
@@ -492,71 +631,132 @@ def _fetch_tiktok_api(handle: str) -> Optional[int]:
 
 
 def _fetch_tiktok_scrape(handle: str) -> Optional[int]:
-    username = handle.strip("@")
+    username = handle.strip('@')
     url = f"https://www.tiktok.com/@{username}"
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        'User-Agent': (
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+            '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36)'
         ),
-        "Referer": "https://www.tiktok.com/",
+        'Referer': 'https://www.tiktok.com/',
     }
+
+    html_direct = ''
     try:
-        html = _http_get(url, headers=headers).text
-    except Exception as exc:  # pragma: no cover
-        logger.warning("TikTok scrape failed for %s: %s", handle, exc)
-        return None
-    logger.info("Fetched TikTok profile page for %s (%s chars)", handle, len(html))
+        response = _http_get(url, headers=headers)
+        html_direct = response.text or ''
+        logger.info(
+            'Fetched TikTok profile page for %s via direct url=%s length=%s',
+            handle,
+            url,
+            len(html_direct),
+        )
+    except Exception as exc:  # pragma: no cover - network variability
+        logger.warning('TikTok direct fetch failed for %s via %s: %s', handle, url, exc)
 
-    data = _extract_json_object(html, "SIGI_STATE")
-    if isinstance(data, dict):
-        user_module = data.get("UserModule", {})
-        users = user_module.get("users", {}) if isinstance(user_module, dict) else {}
-        stats = user_module.get("stats", {}) if isinstance(user_module, dict) else {}
-        username_lower = username.lower()
-        for key, info in users.items():
-            if not isinstance(info, dict):
+    def parse_markup(markup: str) -> Tuple[Optional[int], Optional[str]]:
+        if not markup:
+            return None, None
+        script_match = re.search(
+            r'<script[^>]+id="SIGI_STATE"[^>]*>(.*?)</script>',
+            markup,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if script_match:
+            try:
+                data = json.loads(script_match.group(1))
+            except json.JSONDecodeError:
+                data = None
+            if isinstance(data, dict):
+                user_module = data.get('UserModule', {})
+                users = user_module.get('users', {}) if isinstance(user_module, dict) else {}
+                stats = user_module.get('stats', {}) if isinstance(user_module, dict) else {}
+                username_lower = username.lower()
+                if isinstance(users, dict):
+                    for key, info in users.items():
+                        if not isinstance(info, dict):
+                            continue
+                        unique_id = str(info.get('uniqueId', '')).lower()
+                        if key.lower() != username_lower and unique_id != username_lower:
+                            continue
+                        follower_value = info.get('followerCount')
+                        if isinstance(follower_value, (int, float)):
+                            return int(follower_value), 'json:users'
+                        candidate_ids = []
+                        for key_name in ('id', 'userId', 'uid'):
+                            ident = info.get(key_name)
+                            if ident:
+                                candidate_ids.append(str(ident))
+                        candidate_ids.extend([key, unique_id])
+                        for candidate_id in candidate_ids:
+                            if not candidate_id:
+                                continue
+                            stat_blob = stats.get(candidate_id) if isinstance(stats, dict) else None
+                            if isinstance(stat_blob, dict):
+                                follower_value = stat_blob.get('followerCount')
+                                if isinstance(follower_value, (int, float)):
+                                    return int(follower_value), 'json:stats'
+                if isinstance(stats, dict):
+                    for key, info in stats.items():
+                        if not isinstance(info, dict):
+                            continue
+                        follower_value = info.get('followerCount')
+                        if isinstance(follower_value, (int, float)):
+                            return int(follower_value), 'json:stats-any'
+        patterns = [
+            ('json:followerCount', r'\"followerCount\"\s*:\s*([0-9]+)'),
+            ('regex:followers', r'([0-9.,]+)\s+Followers'),
+        ]
+        for label, pattern in patterns:
+            match = re.search(pattern, markup, re.IGNORECASE)
+            if not match:
                 continue
-            unique_id = str(info.get("uniqueId", "")).lower()
-            if key.lower() != username_lower and unique_id != username_lower:
-                continue
-            candidate_ids = [info.get("id")]
-            for candidate_id in candidate_ids:
-                if candidate_id and candidate_id in stats:
-                    stat_blob = stats[candidate_id]
-                    follower_count = stat_blob.get("followerCount")
-                    if isinstance(follower_count, (int, float)):
-                        logger.info(
-                            "TikTok JSON scrape succeeded for %s with count=%s",
-                            handle,
-                            int(follower_count),
-                        )
-                        return int(follower_count)
-            follower_count = info.get("followerCount")
-            if isinstance(follower_count, (int, float)):
-                logger.info(
-                    "TikTok JSON scrape succeeded for %s with count=%s",
-                    handle,
-                    int(follower_count),
-                )
-                return int(follower_count)
-
-    patterns = [
-        r"\"followerCount\"\s*:\s*([0-9]+)",
-        r"\"fans\"\s*:\s*([0-9]+)",
-        r"([0-9.,]+)\s+Followers",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, html, re.IGNORECASE)
-        if match:
             parsed = _format_number_from_text(match.group(1))
-            if parsed:
-                logger.info(
-                    "TikTok regex scrape succeeded for %s with count=%s", handle, parsed
-                )
-                return parsed
-    logger.warning("TikTok scrape could not locate follower pattern for %s", handle)
+            if parsed is not None:
+                return parsed, label
+        return None, None
+
+    if html_direct:
+        count, detail = parse_markup(html_direct)
+        if count is not None:
+            logger.info(
+                'TikTok scrape succeeded for %s via direct (%s) count=%s detail=%s',
+                handle,
+                url,
+                count,
+                detail,
+            )
+            return count
+        logger.warning('TikTok direct parse missing follower pattern for %s via %s', handle, url)
+
+    proxy_html = ''
+    try:
+        proxy_html = _fetch_text(url)
+        logger.info(
+            'Fetched TikTok profile page via text proxy for %s url=%s length=%s',
+            handle,
+            url,
+            len(proxy_html),
+        )
+    except Exception as exc:  # pragma: no cover - network variability
+        logger.warning('TikTok text proxy fetch failed for %s via %s: %s', handle, url, exc)
+
+    if proxy_html:
+        count, detail = parse_markup(proxy_html)
+        if count is not None:
+            logger.info(
+                'TikTok scrape succeeded for %s via text-proxy (%s) count=%s detail=%s',
+                handle,
+                url,
+                count,
+                detail,
+            )
+            return count
+        logger.warning('TikTok text-proxy parse missing follower pattern for %s via %s', handle, url)
+
+    logger.warning('TikTok scrape could not locate follower pattern for %s', handle)
     return None
+
 
 
 def _fetch_facebook_api(handle: str) -> Optional[int]:
@@ -585,65 +785,72 @@ def _fetch_facebook_api(handle: str) -> Optional[int]:
 
 
 def _fetch_facebook_scrape(handle: str) -> Optional[int]:
-    username = handle.strip("@")
+    username = handle.strip('@')
+
+    def _direct_headers(url: str) -> Dict[str, str]:
+        if 'mbasic.facebook.com' in url:
+            return {
+                'User-Agent': (
+                    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) '
+                    'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 '
+                    'Mobile/15E148 Safari/604.1'
+                ),
+                'Referer': 'https://mbasic.facebook.com/',
+            }
+        return {
+            'User-Agent': USER_AGENT,
+            'Referer': 'https://www.facebook.com/',
+        }
+
     attempts = [
-        (
-            f"https://m.facebook.com/{username}",
-            {
-                "User-Agent": (
-                    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) "
-                    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 "
-                    "Mobile/15E148 Safari/604.1"
-                ),
-                "Referer": "https://m.facebook.com/",
-            },
-        ),
-        (
-            f"https://m.facebook.com/{username}/about",
-            {
-                "User-Agent": (
-                    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) "
-                    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 "
-                    "Mobile/15E148 Safari/604.1"
-                ),
-                "Referer": "https://m.facebook.com/",
-            },
-        ),
-        (
-            f"https://www.facebook.com/{username}",
-            {
-                "User-Agent": USER_AGENT,
-                "Referer": "https://www.facebook.com/",
-            },
-        ),
+        ('mbasic-direct', f'https://mbasic.facebook.com/{username}', False),
+        ('mbasic-text-proxy', f'https://mbasic.facebook.com/{username}', True),
+        ('www-direct', f'https://www.facebook.com/{username}', False),
+        ('www-text-proxy', f'https://www.facebook.com/{username}', True),
     ]
-    last_html = ""
-    for url, headers in attempts:
+
+    for label, url, use_text_proxy in attempts:
+        html = ''
         try:
-            response = _http_get(url, headers=headers)
-            html = response.text or ""
-        except Exception as exc:  # pragma: no cover
-            logger.warning(
-                "Facebook scrape attempt failed for %s via %s: %s", handle, url, exc
-            )
+            if use_text_proxy:
+                html = _fetch_text(url)
+                logger.info(
+                    'Fetched Facebook page for %s via %s (%s chars) [%s]',
+                    handle,
+                    url,
+                    len(html),
+                    label,
+                )
+            else:
+                response = _http_get(url, headers=_direct_headers(url))
+                html = response.text or ''
+                logger.info(
+                    'Fetched Facebook page for %s via %s (%s chars)',
+                    handle,
+                    url,
+                    len(html),
+                )
+        except Exception as exc:  # pragma: no cover - network variability
+            logger.warning('Facebook %s fetch failed for %s via %s: %s', label, handle, url, exc)
             continue
         if not html:
+            logger.warning('Facebook %s fetch returned empty content for %s via %s', label, handle, url)
             continue
-        last_html = html
-        logger.info(
-            "Fetched Facebook page for %s via %s (%s chars)",
-            handle,
-            url,
-            len(html),
-        )
         parsed = _parse_facebook_followers(html)
         if parsed is not None:
-            logger.info("Facebook scrape succeeded for %s with count=%s", handle, parsed)
+            logger.info(
+                'Facebook scrape succeeded for %s via %s (%s) count=%s',
+                handle,
+                label,
+                url,
+                parsed,
+            )
             return parsed
+        logger.warning('Facebook %s parse missing follower pattern for %s via %s', label, handle, url)
 
-    if last_html:
-        logger.warning("Facebook scrape could not locate follower pattern for %s", handle)
+    logger.warning('Facebook scrape could not locate follower pattern for %s', handle)
     return None
+
 
 
 def _parse_facebook_followers(html: str) -> Optional[int]:
