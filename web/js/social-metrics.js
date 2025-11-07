@@ -25,7 +25,7 @@
     if (typeof window !== "undefined") {
       const host = window.location.hostname;
       if (host === "localhost" || host === "127.0.0.1") {
-        return "http://127.0.0.1:5001";
+        return "http://127.0.0.1:5001/api";
       }
     }
     return "/api";
