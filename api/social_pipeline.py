@@ -1110,11 +1110,45 @@ class SocialPipeline:
 
     def _fetch_facebook_scrape(self, handle: str) -> AccountStats:
         slug = handle.lstrip("@")
-        urls = [
-            f"https://mbasic.facebook.com/{slug}",
-            f"https://mbasic.facebook.com/{slug}?v=info",
-            f"https://www.facebook.com/{slug}",
-        ]
+
+        def build_urls(path: str) -> List[str]:
+            local_urls: List[str] = []
+            seen_local: set[str] = set()
+
+            def add(url: str) -> None:
+                if url not in seen_local:
+                    seen_local.add(url)
+                    local_urls.append(url)
+
+            if path.startswith("http://") or path.startswith("https://"):
+                add(path)
+                return local_urls
+
+            add(f"https://mbasic.facebook.com/{path}")
+
+            info_suffix = "&v=info" if "?" in path else "?v=info"
+            info_path = f"{path}{info_suffix}"
+            if info_path != path:
+                add(f"https://mbasic.facebook.com/{info_path}")
+
+            add(f"https://www.facebook.com/{path}")
+            return local_urls
+
+        urls: List[str] = []
+        seen_urls: set[str] = set()
+
+        def extend_urls(path: str) -> None:
+            for candidate in build_urls(path):
+                if candidate not in seen_urls:
+                    seen_urls.add(candidate)
+                    urls.append(candidate)
+
+        extend_urls(slug)
+
+        if slug.isdigit():
+            extend_urls(f"profile.php?id={slug}")
+        elif slug.startswith("profile.php?id="):
+            extend_urls(slug)
         for url in urls:
             response = self._request(url, "facebook", handle, "direct")
             html = response.text if response and response.ok else ""
