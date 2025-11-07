@@ -3,7 +3,7 @@ import os, json, re, time, threading, hmac, hashlib, base64, secrets, logging, s
 from email.message import EmailMessage
 from email.utils import formataddr
 from pathlib import Path
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, has_request_context
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,6 @@ DATA_DIR = resolve_data_dir()
 
 SUBSCRIBERS = Path(os.environ.get("SUBSCRIBERS_FILE") or DATA_DIR / "subscribers.json")
 UNSUB_TOKENS = Path(os.environ.get("UNSUB_TOKENS_FILE") or DATA_DIR / "unsub_tokens.json")
-BASE_URL      = os.environ.get("PUBLIC_BASE_URL", "https://atropos-video.com")
 
 SMTP_HOST     = os.environ.get("SMTP_HOST", "")
 SMTP_PORT     = int(os.environ.get("SMTP_PORT", "587"))           # 587 STARTTLS (recommended)
@@ -98,6 +97,21 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 BUCKET: dict[str, list[float]] = {}
 LOCK = threading.Lock()
 
+DEFAULT_PUBLIC_BASE_URL = "https://atropos-video.com"
+
+
+def resolve_public_base_url() -> str:
+    """Return the external base URL for links exposed to subscribers."""
+
+    configured = os.environ.get("PUBLIC_BASE_URL")
+    if configured:
+        return configured.rstrip("/")
+
+    if has_request_context():
+        return request.url_root.rstrip("/")
+
+    return DEFAULT_PUBLIC_BASE_URL
+
 def ratelimit(ip: str) -> bool:
     now = time.time()
     with LOCK:
@@ -128,7 +142,7 @@ def gen_unsub_token(email: str) -> str:
     # random, URL-safe token per email; store mapping token -> email
     return base64.urlsafe_b64encode(secrets.token_bytes(24)).rstrip(b"=").decode("ascii")
 
-def send_welcome_email(to_email: str, unsub_link: str) -> None:
+def send_welcome_email(to_email: str, unsub_link: str, base_url: str) -> None:
     if not (SMTP_HOST and SMTP_FROM):
         app.logger.warning("SMTP not configured (missing SMTP_HOST/SMTP_FROM) — skipping email send.")
         return
@@ -203,7 +217,7 @@ Unsubscribe: {unsub_link}
 
             <tr>
               <td style="padding:6px 24px 28px 24px;" align="center">
-                <a href="{BASE_URL}" target="_blank"
+                <a href="{base_url}" target="_blank"
                    style="display:inline-block;padding:12px 18px;border-radius:12px;
                           background:linear-gradient(180deg,#3a3936,#201f1d);color:#fff;text-decoration:none;
                           font:600 14px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Inter,system-ui,sans-serif;
@@ -288,9 +302,10 @@ def subscribe():
     tokens[token] = email
     save_tokens(tokens)
 
-    unsub_link = f"{BASE_URL}/api/unsubscribe?token={token}"
+    public_base_url = resolve_public_base_url()
+    unsub_link = f"{public_base_url}/api/unsubscribe?token={token}"
     try:
-        send_welcome_email(email, unsub_link)
+        send_welcome_email(email, unsub_link, public_base_url)
     except Exception as e:
         app.logger.exception(f"Failed to send email to {email}: {e}")
 

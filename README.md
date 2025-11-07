@@ -63,6 +63,8 @@ The static marketing site under [`web/`](web/) renders follower and subscriber c
 - `SCRAPER_TIMEOUT_SECONDS` / `SCRAPER_RETRIES` — tune scraper request timeouts and retry count.
 - `DATA_DIR` — optional directory for subscriber data when running the Flask app locally. Defaults to `/data` in
   Docker and falls back to `<repo>/data` when `/data` is read-only.
+- `PUBLIC_BASE_URL` — optional override for unsubscribe and welcome email links. When unset, the app derives the
+  host from the active Flask request, so local runs generate working URLs automatically.
 
 When API access is disabled or fails, the scraper provides approximate counts and the UI labels them with a `~` badge plus tooltip. If both API and scraping fail, the UI renders an em dash and marks the element with `data-status="unavailable"`.
 
