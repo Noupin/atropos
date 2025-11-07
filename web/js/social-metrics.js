@@ -145,9 +145,20 @@
   const applyMetricState = (metric, data) => {
     if (!metric) return;
 
-    const source = data?.source;
-    const countValue = Number(data?.totals?.count);
-    const hasCount = Number.isFinite(countValue) && countValue >= 0;
+    const source = data?.source || "none";
+    const rawCount = data?.totals?.count;
+    let countValue = null;
+
+    if (typeof rawCount === "number" && Number.isFinite(rawCount)) {
+      countValue = rawCount;
+    } else if (typeof rawCount === "string" && rawCount.trim() !== "") {
+      const parsed = Number(rawCount);
+      if (Number.isFinite(parsed)) {
+        countValue = parsed;
+      }
+    }
+
+    const hasCount = typeof countValue === "number" && countValue >= 0;
 
     if (!hasCount) {
       setMetricUnavailable(metric);
