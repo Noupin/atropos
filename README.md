@@ -68,3 +68,12 @@ modification.
   outside Docker. In containers it still uses `/data`. Override with
   `DATA_DIR=/your/path` if you need a different location; setting
   `IN_DOCKER=1` forces Docker semantics for custom environments.
+
+### Configure social handles
+
+- Edit [`api/social_handles.json`](api/social_handles.json) to control which
+  accounts the marketing API fetches. The JSON maps each platform name to an
+  array of handles.
+- Override the file location with the `SOCIAL_CONFIG_FILE` environment
+  variable or inject a full configuration via `SOCIAL_OVERVIEW_HANDLES`
+  (JSON string) when deploying.

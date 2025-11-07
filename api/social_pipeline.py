@@ -221,8 +221,9 @@ class SocialPipeline:
         self.session = _build_session()
         self.cache_ttl = max(DEFAULT_CACHE_SECONDS, 0)
         self.cache: Dict[Tuple[str, str], CacheEntry] = {}
+        default_config = Path(__file__).resolve().parent / "social_handles.json"
         self.config_path = Path(
-            os.environ.get("SOCIAL_CONFIG_FILE", self.data_dir / "social_handles.json")
+            os.environ.get("SOCIAL_CONFIG_FILE", str(default_config))
         )
         self._config_mtime: Optional[float] = None
         self._config: Dict[str, List[str]] = {}

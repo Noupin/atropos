@@ -59,6 +59,10 @@ Atropos is composed of three cooperating runtimes:
   marketing requests (defaults to `*`). Optional
   `API_CORS_ALLOW_METHODS`, `API_CORS_ALLOW_HEADERS`, and
   `API_CORS_MAX_AGE` override the response metadata.
+- `SOCIAL_CONFIG_FILE` → API → override the default
+  [`api/social_handles.json`](../api/social_handles.json) mapping of platforms
+  to handles. Set `SOCIAL_OVERVIEW_HANDLES` (JSON string) to bypass file reads
+  entirely.
 - Stripe integration on the worker reads `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` plus the deep-link URLs `SUBSCRIPTION_SUCCESS_URL` and `SUBSCRIPTION_CANCEL_URL`. The desktop registers the matching protocol handler (`atropos://subscription/...`).
 
 ### Cloudflare worker environments
