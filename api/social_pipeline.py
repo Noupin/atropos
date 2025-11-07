@@ -195,12 +195,29 @@ def _http_get(url: str, params: Optional[Dict[str, str]] = None) -> requests.Res
     last_exc: Optional[Exception] = None
     for attempt in range(1, SCRAPER_RETRIES + 2):
         try:
+            logger.debug(
+                "Fetching URL %s (attempt %s, params=%s, trust_env=%s)",
+                url,
+                attempt,
+                params,
+                session.trust_env,
+            )
             response = session.get(
                 url,
                 params=params,
                 timeout=SCRAPER_TIMEOUT_SECONDS,
             )
             response.raise_for_status()
+            status_code = getattr(response, "status_code", "unknown")
+            if hasattr(response, "content") and getattr(response, "content") is not None:
+                body_length = len(response.content)  # type: ignore[arg-type]
+            elif hasattr(response, "text") and getattr(response, "text") is not None:
+                body_length = len(response.text)  # type: ignore[arg-type]
+            else:
+                body_length = 0
+            logger.debug(
+                "Fetched %s status=%s length=%s", url, status_code, body_length
+            )
             return response
         except Exception as exc:  # pragma: no cover - network variability
             last_exc = exc
@@ -262,6 +279,7 @@ def _fetch_youtube_scrape(handle: str) -> Optional[int]:
     except Exception as exc:  # pragma: no cover - network variability
         logger.warning("YouTube scrape failed for %s: %s", handle, exc)
         return None
+    logger.info("Fetched YouTube about page for %s (%s chars)", handle, len(html))
     patterns = [
         (
             r"\"subscriberCountText\"\s*:\s*{.*?\"simpleText\""
@@ -315,6 +333,7 @@ def _fetch_instagram_scrape(handle: str) -> Optional[int]:
     except Exception as exc:  # pragma: no cover - network variability
         logger.warning("Instagram scrape failed for %s: %s", handle, exc)
         return None
+    logger.info("Fetched Instagram profile page for %s (%s chars)", handle, len(html))
     patterns = [
         r"\"edge_followed_by\"\s*:\s*\{.*?\"count\"\s*:\s*([0-9.,KMB]+)",
         r"\"follower_count\"\s*:\s*([0-9.,KMB]+)",
@@ -348,6 +367,7 @@ def _fetch_tiktok_scrape(handle: str) -> Optional[int]:
     except Exception as exc:  # pragma: no cover
         logger.warning("TikTok scrape failed for %s: %s", handle, exc)
         return None
+    logger.info("Fetched TikTok profile page for %s (%s chars)", handle, len(html))
     patterns = [
         r"\"followerCount\"\s*:\s*([0-9]+)",
         r"\"fans\"\s*:\s*([0-9]+)",
@@ -405,6 +425,7 @@ def _fetch_facebook_scrape(handle: str) -> Optional[int]:
             logger.warning("Facebook scrape attempt failed for %s via %s: %s", handle, url, exc)
     if not html:
         return None
+    logger.info("Fetched Facebook mobile page for %s (%s chars)", handle, len(html))
     match = re.search(r"([0-9.,]+)\s+(?:people\s+)?follow", html, re.IGNORECASE)
     if match:
         parsed = _format_number_from_text(match.group(1))
@@ -428,12 +449,25 @@ def _run_stage(fetcher, handles: List[str]) -> Tuple[Dict[str, int], Dict[str, s
         try:
             count = fetcher(handle)
         except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("Fetcher raised for %s: %s", handle, exc)
-            count = None
+            logger.warning(
+                "Fetcher %s raised for %s: %s", getattr(fetcher, "__name__", fetcher), handle, exc,
+                exc_info=True,
+            )
+            errors[handle] = "exception"
+            continue
         if isinstance(count, int) and count >= 0:
             results[handle] = count
+            logger.info(
+                "Fetcher %s succeeded for %s with count %s",
+                getattr(fetcher, "__name__", fetcher),
+                handle,
+                count,
+            )
         else:
             errors[handle] = "missing"
+            logger.info(
+                "Fetcher %s returned no data for %s", getattr(fetcher, "__name__", fetcher), handle
+            )
     return results, errors
 
 
@@ -453,6 +487,13 @@ def get_social_stats(
     cache_key = _format_cache_key(platform, resolved_handles or config_handles)
     cached = _get_cache(cache_key)
     if cached:
+        logger.info(
+            "Cache hit for %s handles=%s source=%s total=%s",
+            platform,
+            cached.handles,
+            cached.source,
+            cached.totals.get("count"),
+        )
         return cached
 
     api_fetcher, scrape_fetcher = FETCHERS[platform]
@@ -463,11 +504,26 @@ def get_social_stats(
     handles_to_query = resolved_handles or config_handles
     handles_to_query = _normalise_handles(handles_to_query)
 
+    logger.info(
+        "Resolving social stats for %s with handles=%s (apis_enabled=%s scraper_enabled=%s)",
+        platform,
+        handles_to_query,
+        ENABLE_SOCIAL_APIS,
+        ENABLE_SOCIAL_SCRAPER,
+    )
+
     api_results: Dict[str, int] = {}
     if ENABLE_SOCIAL_APIS:
         api_results, api_errors = _run_stage(api_fetcher, handles_to_query)
     else:
         api_errors = {handle: "disabled" for handle in handles_to_query}
+
+    logger.info(
+        "API stage finished for %s: successes=%s errors=%s",
+        platform,
+        list(api_results.items()),
+        api_errors,
+    )
 
     missing_handles = [h for h in handles_to_query if h not in api_results]
 
@@ -475,6 +531,13 @@ def get_social_stats(
     scrape_errors: Dict[str, str] = {}
     if missing_handles and ENABLE_SOCIAL_SCRAPER:
         scrape_results, scrape_errors = _run_stage(scrape_fetcher, missing_handles)
+
+    logger.info(
+        "Scrape stage finished for %s: successes=%s errors=%s",
+        platform,
+        list(scrape_results.items()),
+        scrape_errors,
+    )
 
     for handle in handles_to_query:
         if handle in api_results:
@@ -526,6 +589,13 @@ def get_social_stats(
     )
 
     _store_cache(cache_key, response)
+    logger.info(
+        "Resolved social stats for %s handles=%s source=%s total=%s",
+        platform,
+        handles_to_query,
+        overall_source,
+        total_count,
+    )
     return response
 
 
