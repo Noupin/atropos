@@ -18,7 +18,7 @@ from typing import Iterable, List
 
 from flask import Flask, jsonify, request
 
-from social_pipeline import SocialPipeline, UnsupportedPlatformError
+from .social_pipeline import SocialPipeline, UnsupportedPlatformError
 
 # ---------- config / storage ----------
 
