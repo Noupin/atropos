@@ -215,9 +215,9 @@ def _search_for_subscriber_count(node: object) -> Optional[int]:
 class SocialPipeline:
     """Fetch and cache social follower counts across providers."""
 
-    def __init__(self, data_dir: Path, logger_obj: Optional[logging.Logger] = None):
+    def __init__(self, data_dir: Path, logger: Optional[logging.Logger] = None):
         self.data_dir = data_dir
-        self.logger = logger_obj or logger
+        self.logger = logger or logging.getLogger(__name__)
         self.session = _build_session()
         self.cache_ttl = max(DEFAULT_CACHE_SECONDS, 0)
         self.cache: Dict[Tuple[str, str], CacheEntry] = {}
