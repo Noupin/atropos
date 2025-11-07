@@ -264,117 +264,91 @@
     recomputePlatformMetric(platform);
   };
 
-  const queueHandleFetch = (platform, handle) => {
-    const trimmed = typeof handle === "string" ? handle.trim() : "";
-    if (!trimmed) {
-      return;
+  const normalizeHandles = (handles) => {
+    if (!Array.isArray(handles)) {
+      return [];
     }
-    const state = getOrCreatePlatformState(platform);
-    if (state.pending.has(trimmed)) {
-      return;
-    }
-    state.pending.add(trimmed);
-    state.attempted = true;
-    requestStats(platform, [trimmed])
-      .then((payload) => {
-        applyStatsResult(platform, payload);
-      })
-      .catch((error) => {
-        console.warn(`${platform} stats for ${trimmed} unavailable`, error);
-      })
-      .finally(() => {
-        state.pending.delete(trimmed);
-        recomputePlatformMetric(platform);
-      });
+    return handles
+      .map((handle) => (typeof handle === "string" ? handle.trim() : ""))
+      .filter(Boolean);
   };
 
-  const applyOverviewTotals = (platform, payload) => {
-    const metric = metrics.get(platform);
-    if (!metric || !payload) {
-      return;
+  const addHandlesToState = (platform, handles) => {
+    const normalized = normalizeHandles(handles);
+    if (!normalized.length) {
+      return [];
     }
-
     const state = getOrCreatePlatformState(platform);
-    const perAccount = Array.isArray(payload.per_account)
-      ? payload.per_account
-      : [];
-    const handles = perAccount
-      .map((entry) =>
-        entry && typeof entry.handle === "string" ? entry.handle.trim() : ""
-      )
-      .filter(Boolean);
-
-    if (!handles.length && state.handles.size) {
-      handles.push(...state.handles.keys());
-    }
-
-    handles.forEach((handle) => {
+    normalized.forEach((handle) => {
       if (!state.handles.has(handle)) {
         state.handles.set(handle, { count: null, isMock: true });
       }
     });
-
-    const totals = payload.totals || {};
-    const totalCount = Number(totals.count);
-    const accountCount = Number(totals.accounts);
-    const hasReal = perAccount.some((entry) => {
-      const numeric = Number(entry && entry.count);
-      return Number.isFinite(numeric) && !entry?.is_mock;
-    });
-
-    if (Number.isFinite(totalCount) && totalCount >= 0) {
-      setMetricState(metric, {
-        count: totalCount,
-        accountCount: Number.isFinite(accountCount)
-          ? accountCount
-          : handles.length,
-        isMock: !hasReal,
-        useFallback: false,
-      });
-      state.attempted = true;
-    } else if (ENABLE_MOCKS) {
-      setMetricState(metric, {
-        count: metric.fallbackCount,
-        accountCount: metric.fallbackAccounts,
-        isMock: true,
-        useFallback: true,
-      });
-    } else {
-      setMetricState(metric, {
-        count: null,
-        accountCount: handles.length || 0,
-        isMock: true,
-        useFallback: false,
-      });
-    }
-
-    applyStatsResult(platform, payload);
-
-    handles.forEach((handle) => {
-      queueHandleFetch(platform, handle);
-    });
+    return normalized;
   };
 
-  const processOverview = (payload) => {
+  const refreshPlatformStats = (platform) => {
+    const metric = metrics.get(platform);
+    if (!metric || metric.element.hidden) {
+      return;
+    }
+
+    const state = getOrCreatePlatformState(platform);
+    const handles = Array.from(state.handles.keys());
+    if (!handles.length) {
+      return;
+    }
+
+    state.attempted = true;
+    return requestStats(platform, handles)
+      .then((payload) => {
+        applyStatsResult(platform, payload);
+      })
+      .catch((error) => {
+        console.warn(`${platform} stats unavailable`, error);
+      })
+      .finally(() => {
+        recomputePlatformMetric(platform);
+      });
+  };
+
+  const processConfigPayload = (payload) => {
     if (!payload || typeof payload !== "object") {
       return;
     }
-    const platforms = payload.platforms || {};
-    const seen = new Set();
-    Object.entries(platforms).forEach(([platformKey, platformPayload]) => {
-      if (typeof platformKey !== "string") return;
-      const platform = platformKey.toLowerCase();
-      seen.add(platform);
-      applyOverviewTotals(platform, platformPayload);
-    });
 
-    platformState.forEach((state, platform) => {
-      if (!seen.has(platform)) {
-        state.handles.forEach((_, handle) => {
-          queueHandleFetch(platform, handle);
-        });
+    const platforms = payload.platforms || {};
+    const legacyHandles = payload.handles || {};
+
+    Object.entries(platforms).forEach(([platformKey, platformConfig]) => {
+      if (typeof platformKey !== "string") {
+        return;
       }
+      const platform = platformKey.toLowerCase();
+      if (!metrics.has(platform)) {
+        return;
+      }
+
+      const directHandles = normalizeHandles(platformConfig?.handles);
+      const fallbackHandles = normalizeHandles(legacyHandles[platformKey]);
+      const handlesToUse = directHandles.length ? directHandles : fallbackHandles;
+
+      if (!handlesToUse.length) {
+        return;
+      }
+
+      addHandlesToState(platform, handlesToUse);
+      refreshPlatformStats(platform);
     });
+  };
+
+  const loadConfig = async () => {
+    try {
+      const payload = await requestJson("/social/config");
+      processConfigPayload(payload);
+    } catch (error) {
+      console.warn("social config unavailable", error);
+    }
   };
 
   const configureHandlesFromRuntime = () => {
@@ -387,25 +361,20 @@
         return;
       }
       const platform = rawPlatform.toLowerCase();
-      const state = getOrCreatePlatformState(platform);
-      handles.forEach((handle) => {
-        if (typeof handle !== "string") return;
-        const trimmed = handle.trim();
-        if (!trimmed) return;
-        if (!state.handles.has(trimmed)) {
-          state.handles.set(trimmed, { count: null, isMock: true });
-        }
-      });
+      if (!metrics.has(platform)) {
+        return;
+      }
+      addHandlesToState(platform, handles);
     });
   };
 
-  const loadOverview = async () => {
-    try {
-      const payload = await requestJson("/social/overview");
-      processOverview(payload);
-    } catch (error) {
-      console.warn("social overview unavailable", error);
-    }
+  const refreshAllPlatforms = () => {
+    metrics.forEach((metric, platform) => {
+      if (metric.element.hidden) {
+        return;
+      }
+      void refreshPlatformStats(platform);
+    });
   };
 
   metricsEl.querySelectorAll(".hero__metric").forEach((el) => {
@@ -453,8 +422,9 @@
 
   configureHandlesFromRuntime();
 
-  loadOverview();
+  refreshAllPlatforms();
+  void loadConfig();
   if (refreshInterval) {
-    setInterval(loadOverview, refreshInterval);
+    setInterval(refreshAllPlatforms, refreshInterval);
   }
 })();
