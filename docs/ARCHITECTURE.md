@@ -48,6 +48,13 @@ Atropos is composed of three cooperating runtimes:
 - `VITE_LICENSE_API_BASE_URL` → Desktop → Cloudflare Worker host (dev: `https://licensing.dev.atropos.workers.dev`, prod: `https://licensing.atropos.app`).
 - `SERVER_ENV` / `ENVIRONMENT` → Python services → selects credentials in `server/config.py` and toggles webhook hosts.
 - `LICENSING_ENV` → Worker → selects Stripe keys and KV namespace bindings.
+- `WEB_API_BASE` → Marketing site → override the social metrics API origin. Defaults to
+  `http://127.0.0.1:5001` when served from localhost and falls back to `/api`
+  elsewhere.
+- `WEB_ENABLE_MOCKS` → Marketing site → render the static hero counts when every
+  scrape stage fails (disabled by default).
+- `DATA_DIR` / `IN_DOCKER` → API → control where JSON artifacts are stored. The
+  API uses `./data/` when not in Docker and `/data` inside containers.
 - Stripe integration on the worker reads `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` plus the deep-link URLs `SUBSCRIPTION_SUCCESS_URL` and `SUBSCRIPTION_CANCEL_URL`. The desktop registers the matching protocol handler (`atropos://subscription/...`).
 
 ### Cloudflare worker environments

@@ -1,14 +1,53 @@
 from __future__ import annotations
-import os, json, re, time, threading, hmac, hashlib, base64, secrets, logging, smtplib
+
+import base64
+import hashlib
+import hmac
+import json
+import logging
+import os
+import re
+import secrets
+import smtplib
+import threading
+import time
 from email.message import EmailMessage
 from email.utils import formataddr
 from pathlib import Path
-from flask import Flask, request, jsonify
+from typing import Iterable, List
+
+from flask import Flask, jsonify, request
+
+from social_pipeline import SocialPipeline, UnsupportedPlatformError
 
 # ---------- config / storage ----------
-SUBSCRIBERS = Path(os.environ.get("SUBSCRIBERS_FILE", "/data/subscribers.json"))
-UNSUB_TOKENS = Path(os.environ.get("UNSUB_TOKENS_FILE", "/data/unsub_tokens.json"))
-BASE_URL      = os.environ.get("PUBLIC_BASE_URL", "https://atropos-video.com")
+
+
+def _resolve_data_dir() -> Path:
+    """Return the writable data directory based on the runtime environment."""
+
+    override = os.environ.get("DATA_DIR")
+    if override:
+        data_dir = Path(override)
+    else:
+        in_docker = os.environ.get("IN_DOCKER") == "1" or Path("/.dockerenv").exists()
+        if in_docker:
+            data_dir = Path("/data")
+        else:
+            data_dir = Path(__file__).resolve().parents[1] / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
+
+
+DATA_DIR = _resolve_data_dir()
+
+SUBSCRIBERS = Path(
+    os.environ.get("SUBSCRIBERS_FILE", str(DATA_DIR / "subscribers.json"))
+)
+UNSUB_TOKENS = Path(
+    os.environ.get("UNSUB_TOKENS_FILE", str(DATA_DIR / "unsub_tokens.json"))
+)
+BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://atropos-video.com")
 
 SMTP_HOST     = os.environ.get("SMTP_HOST", "")
 SMTP_PORT     = int(os.environ.get("SMTP_PORT", "587"))           # 587 STARTTLS (recommended)
@@ -189,10 +228,67 @@ handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s"))
 app.logger.setLevel(logging.INFO)
 app.logger.addHandler(handler)
+app.logger.info("Using data directory at %s", DATA_DIR)
+
+social_pipeline = SocialPipeline(data_dir=DATA_DIR, logger=app.logger)
+
+
+def _normalize_handles(raw: Iterable[str]) -> List[str]:
+    handles: List[str] = []
+    for value in raw:
+        if not value:
+            continue
+        handle = value.strip()
+        if not handle:
+            continue
+        if handle not in handles:
+            handles.append(handle)
+    return handles
 
 @app.get("/health")
 def health():
     return jsonify({"status": "ok"}), 200
+
+
+@app.get("/api/social/overview")
+def social_overview():
+    payload = social_pipeline.get_overview()
+    return jsonify(payload), 200
+
+
+@app.get("/api/social/stats")
+def social_stats():
+    platform = (request.args.get("platform") or "").strip().lower()
+    handle = (request.args.get("handle") or "").strip()
+    if not platform or not handle:
+        return jsonify({"error": "platform and handle are required"}), 400
+    try:
+        payload = social_pipeline.get_platform_stats(platform, [handle])
+    except UnsupportedPlatformError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(payload), 200
+
+
+@app.get("/api/social/stats/batch")
+def social_stats_batch():
+    platform = (request.args.get("platform") or "").strip().lower()
+    if not platform:
+        return jsonify({"error": "platform is required"}), 400
+
+    handles_param = request.args.get("handles") or ""
+    split_handles = [value for value in handles_param.split(",") if value]
+    handles = _normalize_handles(request.args.getlist("handle"))
+    handles.extend(split_handles)
+    normalized = _normalize_handles(handles)
+    if not normalized:
+        return jsonify({"error": "at least one handle must be provided"}), 400
+
+    try:
+        payload = social_pipeline.get_platform_stats(platform, normalized)
+    except UnsupportedPlatformError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(payload), 200
+
 
 @app.post("/subscribe")
 def subscribe():

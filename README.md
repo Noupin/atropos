@@ -30,11 +30,37 @@ For additional background on historical workflows, see [server/README.md](server
 
 ## Marketing site hero metrics
 
-The marketing site under [`web/`](web/) can display live follower counts from YouTube and Instagram in the homepage hero.
+The marketing site under [`web/`](web/) now reads follower counts from the Flask
+API served out of [`api/app.py`](api/app.py). The backend scrapes each platform
+with resilient fallbacks, caches the results, and exposes incremental endpoints
+that the homepage uses to update the UI as soon as each handle resolves.
 
-1. Copy [`web/js/social.config.example.js`](web/js/social.config.example.js) to `web/js/social.config.js` and fill in your credentials. The example file is ignored by Git so secrets stay local.
-2. **YouTube:** Enable the YouTube Data API v3 for your Google Cloud project, then create an API key under **APIs & Services → Credentials**. Locate your channel ID from the YouTube Studio advanced settings.
-3. **Instagram:** Create a Meta app and connect your Instagram Business or Creator account to the Instagram Graph API. Generate a User Access Token with the `instagram_basic` permission and capture the Instagram user ID from the Graph API Explorer.
-4. Optionally adjust `refreshIntervalMs` (milliseconds) to refresh counts on a cadence; omit it to load counts only once per visit.
+### Run the API locally
 
-Without credentials, the hero falls back to the static figures baked into the markup so the layout remains consistent.
+**Local (macOS):**
+
+```bash
+python3 -m venv env && source env/bin/activate
+pip install -r requirements.txt
+export FLASK_APP=api.app:app FLASK_RUN_PORT=5001
+flask run --reload
+```
+
+**Docker:** the existing `docker-compose.yml` continues to work without
+modification.
+
+### Frontend wiring
+
+- When the marketing site runs on `localhost` or `127.0.0.1`, the JavaScript
+  automatically targets `http://127.0.0.1:5001`. In production it falls back to
+  the relative `/api` prefix so the site works behind the same host.
+- Set the optional `WEB_API_BASE` environment variable to override the API
+  origin, and `WEB_ENABLE_MOCKS=true` if you want to keep showing the baked-in
+  numbers when every fetch stage fails.
+
+### Data directory
+
+- The API now writes to a project-local `./data/` directory when running
+  outside Docker. In containers it still uses `/data`. Override with
+  `DATA_DIR=/your/path` if you need a different location; setting
+  `IN_DOCKER=1` forces Docker semantics for custom environments.
