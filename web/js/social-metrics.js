@@ -10,6 +10,73 @@
   const summaryValueEl = document.getElementById("socialMetricsTotal");
   const footnoteEl = document.getElementById("socialMetricsFootnote");
 
+  const API_ENDPOINTS = {
+    config: "config",
+    overview: "overview",
+  };
+
+  const normaliseApiRoot = (value) => {
+    if (!value) return null;
+    try {
+      const url = new URL(value, window.location.href);
+      url.search = "";
+      url.hash = "";
+      const path = url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/`;
+      url.pathname = path;
+      return url;
+    } catch (error) {
+      console.warn("Ignoring invalid social API base", value, error);
+      return null;
+    }
+  };
+
+  const buildApiRootCandidates = () => {
+    const candidates = [];
+    const seen = new Set();
+
+    const addCandidate = (url) => {
+      if (!url) return;
+      const href = url.toString();
+      if (seen.has(href)) return;
+      seen.add(href);
+      candidates.push({ href, origin: url.origin });
+    };
+
+    const meta = document.querySelector('meta[name="marketing-api-base-url"]');
+    if (meta?.content) {
+      addCandidate(normaliseApiRoot(meta.content));
+    }
+
+    addCandidate(normaliseApiRoot(`${window.location.origin}/api/social/`));
+
+    const localHosts = new Set(["localhost", "127.0.0.1"]);
+    const isLocalHost = localHosts.has(window.location.hostname);
+    const isFileProtocol = window.location.protocol === "file:";
+
+    if (isLocalHost || isFileProtocol) {
+      addCandidate(normaliseApiRoot("http://127.0.0.1:5001/api/social/"));
+      addCandidate(normaliseApiRoot("http://localhost:5001/api/social/"));
+    }
+
+    return candidates;
+  };
+
+  const API_ROOT_CANDIDATES = buildApiRootCandidates();
+  let resolvedApiRoot = null;
+
+  const resolveApiRootsInPriorityOrder = () => {
+    const ordered = [];
+    if (resolvedApiRoot) {
+      ordered.push(resolvedApiRoot);
+    }
+    API_ROOT_CANDIDATES.forEach((candidate) => {
+      if (!resolvedApiRoot || candidate.href !== resolvedApiRoot.href) {
+        ordered.push(candidate);
+      }
+    });
+    return ordered;
+  };
+
   const PLATFORM_ORDER = ["youtube", "instagram", "tiktok", "facebook"];
   const metrics = new Map();
   metricsEl.querySelectorAll(".hero__metric").forEach((element) => {
@@ -147,12 +214,43 @@
     updateFootnote(anyUnavailable);
   };
 
-  const fetchJson = async (url) => {
-    const response = await fetch(url, { credentials: "same-origin" });
-    if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}`);
+  const fetchApi = async (endpoint) => {
+    const segment = typeof endpoint === "string" ? endpoint.replace(/^\/+/, "") : "";
+    const candidates = resolveApiRootsInPriorityOrder();
+    let lastError = null;
+
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      let requestUrl;
+      try {
+        requestUrl = new URL(segment, candidate.href).toString();
+      } catch (error) {
+        lastError = error;
+        continue;
+      }
+
+      const sameOrigin = candidate.origin === window.location.origin;
+      try {
+        const response = await fetch(requestUrl, {
+          credentials: sameOrigin ? "same-origin" : "omit",
+        });
+        if (!response.ok) {
+          lastError = new Error(
+            `Request failed with status ${response.status} for ${requestUrl}`,
+          );
+          continue;
+        }
+        resolvedApiRoot = candidate;
+        return response.json();
+      } catch (error) {
+        lastError = error;
+      }
     }
-    return response.json();
+
+    const error =
+      lastError || new Error(`Unable to reach social metrics API (${segment || ""})`);
+    error.endpoint = segment;
+    throw error;
   };
 
   const applyConfig = (config) => {
@@ -206,7 +304,7 @@
 
   const initialise = async () => {
     try {
-      const config = await fetchJson("/api/social/config");
+      const config = await fetchApi(API_ENDPOINTS.config);
       applyConfig(config);
     } catch (error) {
       console.warn("Failed to load social config", error);
@@ -214,7 +312,7 @@
 
     let overview;
     try {
-      overview = await fetchJson("/api/social/overview");
+      overview = await fetchApi(API_ENDPOINTS.overview);
     } catch (error) {
       console.warn("Failed to load social stats", error);
       markAllUnavailable();

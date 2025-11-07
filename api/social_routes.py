@@ -109,3 +109,22 @@ def social_overview():
         }
     )
 
+
+@blueprint.after_request
+def _add_local_dev_cors_headers(response):
+    origin = request.headers.get("Origin")
+    if not origin:
+        return response
+
+    allowed_prefixes = ("http://localhost", "http://127.0.0.1")
+    if origin.startswith(allowed_prefixes):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        existing_vary = response.headers.get("Vary")
+        if existing_vary:
+            vary_values = {segment.strip() for segment in existing_vary.split(",") if segment.strip()}
+            if "Origin" not in vary_values:
+                response.headers["Vary"] = f"{existing_vary}, Origin"
+        else:
+            response.headers["Vary"] = "Origin"
+    return response
+
