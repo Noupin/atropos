@@ -181,6 +181,31 @@ def _format_number_from_text(value: str) -> Optional[int]:
     return int(number * multiplier)
 
 
+def _extract_json_object(source: str, marker: str) -> Optional[dict]:
+    """Extract a JSON object following ``marker`` inside a HTML/JS payload."""
+
+    index = source.find(marker)
+    if index == -1:
+        return None
+    start = source.find("{", index)
+    if start == -1:
+        return None
+    depth = 0
+    for pos in range(start, len(source)):
+        char = source[pos]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                snippet = source[start : pos + 1]
+                try:
+                    return json.loads(snippet)
+                except json.JSONDecodeError:
+                    return None
+    return None
+
+
 def _http_get(
     url: str,
     params: Optional[Dict[str, str]] = None,
@@ -277,36 +302,78 @@ def _fetch_youtube_api(handle: str) -> Optional[int]:
         return None
 
 
+def _first_text_run(payload: dict) -> Optional[str]:
+    runs = payload.get("runs") if isinstance(payload, dict) else None
+    if not isinstance(runs, list):
+        return None
+    for run in runs:
+        if isinstance(run, dict) and run.get("text"):
+            return str(run["text"])
+    return None
+
+
 def _fetch_youtube_scrape(handle: str) -> Optional[int]:
     cleaned = handle.strip()
     if cleaned.startswith("UC"):
-        url = f"https://www.youtube.com/channel/{cleaned}/about?hl=en"
+        url = f"https://www.youtube.com/channel/{cleaned}/about"
     else:
-        url = f"https://www.youtube.com/@{cleaned.lstrip('@')}/about?hl=en"
+        url = f"https://www.youtube.com/@{cleaned.lstrip('@')}/about"
+    params = {"hl": "en", "gl": "US", "persist_hl": "1", "persist_gl": "1"}
     try:
-        html = _http_get(url).text
+        html = _http_get(url, params=params).text
     except Exception as exc:  # pragma: no cover - network variability
         logger.warning("YouTube scrape failed for %s: %s", handle, exc)
         return None
     logger.info("Fetched YouTube about page for %s (%s chars)", handle, len(html))
-    patterns = [
+
+    data_candidates = [
+        _extract_json_object(html, "ytInitialData"),
+        _extract_json_object(html, "ytInitialPlayerResponse"),
+    ]
+    for data in data_candidates:
+        if not isinstance(data, dict):
+            continue
+        header = data.get("header", {}).get("c4TabbedHeaderRenderer", {})
+        metadata = data.get("metadata", {}).get("channelMetadataRenderer", {})
+        candidates = [
+            header.get("subscriberCountText", {}).get("simpleText"),
+            _first_text_run(header.get("subscriberCountText", {})),
+            metadata.get("subscriberCountText"),
+            metadata.get("approximateSubscriberCountText"),
+        ]
+        for candidate in candidates:
+            parsed = _format_number_from_text(str(candidate)) if candidate else None
+            if parsed is not None:
+                logger.info(
+                    "YouTube JSON scrape succeeded for %s with count=%s", handle, parsed
+                )
+                return parsed
+
+    patterns: List[str | Tuple[str, str]] = [
         (
-            r"\"subscriberCountText\"\s*:\s*{.*?\"simpleText\""
-            r"\s*:\s*\"([^\"]+)\""
-        ),
-        (
-            r"\"subscriberCountText\"\s*:\s*{.*?\"runs\"\s*:\s*\["
-            r".*?\"text\"\s*:\s*\"([^\"]+)\""
+            r"\"subscriberCountText\"\s*:\s*{",
+            r"\"text\"\s*:\s*\"([^\"]+)\"",
         ),
         r"\"approximateSubscriberCountText\"\s*:\s*\{.*?\"simpleText\"\s*:\s*\"([^\"]+)\"",
         r"\"subscribersText\"\s*:\s*\{.*?\"simpleText\"\s*:\s*\"([^\"]+)\"",
+        r"([0-9.,]+)\s+subscribers",
     ]
     for pattern in patterns:
-        match = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
-        if match:
-            parsed = _format_number_from_text(match.group(1))
-            if parsed:
-                return parsed
+        if isinstance(pattern, tuple):
+            block_match = re.search(pattern[0], html, re.IGNORECASE | re.DOTALL)
+            if not block_match:
+                continue
+            match = re.search(pattern[1], block_match.group(0), re.IGNORECASE | re.DOTALL)
+        else:
+            match = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
+        if not match:
+            continue
+        parsed = _format_number_from_text(match.group(1))
+        if parsed:
+            logger.info(
+                "YouTube regex scrape succeeded for %s with count=%s", handle, parsed
+            )
+            return parsed
     logger.info("YouTube scrape could not locate subscriber pattern for %s", handle)
     return None
 
@@ -423,26 +490,69 @@ def _fetch_tiktok_api(handle: str) -> Optional[int]:
 
 
 def _fetch_tiktok_scrape(handle: str) -> Optional[int]:
-    url = f"https://www.tiktok.com/@{handle.strip('@')}"
+    username = handle.strip("@")
+    url = f"https://www.tiktok.com/@{username}"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://www.tiktok.com/",
+    }
     try:
-        html = _http_get(url).text
+        html = _http_get(url, headers=headers).text
     except Exception as exc:  # pragma: no cover
         logger.warning("TikTok scrape failed for %s: %s", handle, exc)
         return None
     logger.info("Fetched TikTok profile page for %s (%s chars)", handle, len(html))
+
+    data = _extract_json_object(html, "SIGI_STATE")
+    if isinstance(data, dict):
+        user_module = data.get("UserModule", {})
+        users = user_module.get("users", {}) if isinstance(user_module, dict) else {}
+        stats = user_module.get("stats", {}) if isinstance(user_module, dict) else {}
+        username_lower = username.lower()
+        for key, info in users.items():
+            if not isinstance(info, dict):
+                continue
+            unique_id = str(info.get("uniqueId", "")).lower()
+            if key.lower() != username_lower and unique_id != username_lower:
+                continue
+            candidate_ids = [info.get("id")]
+            for candidate_id in candidate_ids:
+                if candidate_id and candidate_id in stats:
+                    stat_blob = stats[candidate_id]
+                    follower_count = stat_blob.get("followerCount")
+                    if isinstance(follower_count, (int, float)):
+                        logger.info(
+                            "TikTok JSON scrape succeeded for %s with count=%s",
+                            handle,
+                            int(follower_count),
+                        )
+                        return int(follower_count)
+            follower_count = info.get("followerCount")
+            if isinstance(follower_count, (int, float)):
+                logger.info(
+                    "TikTok JSON scrape succeeded for %s with count=%s",
+                    handle,
+                    int(follower_count),
+                )
+                return int(follower_count)
+
     patterns = [
         r"\"followerCount\"\s*:\s*([0-9]+)",
         r"\"fans\"\s*:\s*([0-9]+)",
+        r"([0-9.,]+)\s+Followers",
     ]
     for pattern in patterns:
-        match = re.search(pattern, html)
+        match = re.search(pattern, html, re.IGNORECASE)
         if match:
-            return int(match.group(1))
-    text_match = re.search(r"([0-9.,]+)\s+Followers", html, re.IGNORECASE)
-    if text_match:
-        parsed = _format_number_from_text(text_match.group(1))
-        if parsed:
-            return parsed
+            parsed = _format_number_from_text(match.group(1))
+            if parsed:
+                logger.info(
+                    "TikTok regex scrape succeeded for %s with count=%s", handle, parsed
+                )
+                return parsed
     logger.info("TikTok scrape could not locate follower pattern for %s", handle)
     return None
 
@@ -473,26 +583,80 @@ def _fetch_facebook_api(handle: str) -> Optional[int]:
 
 
 def _fetch_facebook_scrape(handle: str) -> Optional[int]:
-    slug = handle.strip('@')
-    urls = [
-        f"https://m.facebook.com/{slug}",
-        f"https://m.facebook.com/{slug}/about",  # fallback view
+    username = handle.strip("@")
+    attempts = [
+        (
+            f"https://m.facebook.com/{username}",
+            {
+                "User-Agent": (
+                    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) "
+                    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 "
+                    "Mobile/15E148 Safari/604.1"
+                ),
+                "Referer": "https://m.facebook.com/",
+            },
+        ),
+        (
+            f"https://m.facebook.com/{username}/about",
+            {
+                "User-Agent": (
+                    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) "
+                    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 "
+                    "Mobile/15E148 Safari/604.1"
+                ),
+                "Referer": "https://m.facebook.com/",
+            },
+        ),
+        (
+            f"https://www.facebook.com/{username}",
+            {
+                "User-Agent": USER_AGENT,
+                "Referer": "https://www.facebook.com/",
+            },
+        ),
     ]
-    html = ""
-    for url in urls:
+    last_html = ""
+    for url, headers in attempts:
         try:
-            html = _http_get(url).text
-            if html:
-                break
+            response = _http_get(url, headers=headers)
+            html = response.text or ""
         except Exception as exc:  # pragma: no cover
-            logger.warning("Facebook scrape attempt failed for %s via %s: %s", handle, url, exc)
-    if not html:
-        return None
-    logger.info("Fetched Facebook mobile page for %s (%s chars)", handle, len(html))
-    match = re.search(r"([0-9.,]+)\s+(?:people\s+)?follow", html, re.IGNORECASE)
-    if match:
+            logger.warning(
+                "Facebook scrape attempt failed for %s via %s: %s", handle, url, exc
+            )
+            continue
+        if not html:
+            continue
+        last_html = html
+        logger.info(
+            "Fetched Facebook page for %s via %s (%s chars)",
+            handle,
+            url,
+            len(html),
+        )
+        parsed = _parse_facebook_followers(html)
+        if parsed is not None:
+            logger.info("Facebook scrape succeeded for %s with count=%s", handle, parsed)
+            return parsed
+
+    if last_html:
+        logger.info("Facebook scrape could not locate follower pattern for %s", handle)
+    return None
+
+
+def _parse_facebook_followers(html: str) -> Optional[int]:
+    patterns = [
+        r"([0-9.,]+)\s+(?:people\s+)?follow this",
+        r"([0-9.,]+)\s+followers",
+        r"\"fan_count\"\s*:\s*([0-9]+)",
+        r"page_fans\"\s*:\s*\{[^}]*?\"count\"\s*:\s*([0-9]+)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
+        if not match:
+            continue
         parsed = _format_number_from_text(match.group(1))
-        if parsed:
+        if parsed is not None:
             return parsed
     return None
 

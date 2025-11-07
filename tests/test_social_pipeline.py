@@ -94,15 +94,20 @@ def test_social_stats_missing_data(monkeypatch, _reset_pipeline):
 def test_youtube_scraper_handles_multiline_json(monkeypatch):
     html = """
     <script>
-    var ytInitialData = {"subscriberCountText": {
-        "runs": [
-            {"text": "123K subscribers"}
-        ]
-    }};
+    var ytInitialData = {"header": {"c4TabbedHeaderRenderer": {
+        "subscriberCountText": {
+            "runs": [
+                {"text": "123K subscribers"}
+            ]
+        }
+    }}};
     </script>
     """
 
+    captured = {}
+
     def fake_get(url, params=None, headers=None, allow_redirects=True):
+        captured["params"] = params
         assert allow_redirects is True
         return SimpleNamespace(text=html)
 
@@ -110,6 +115,19 @@ def test_youtube_scraper_handles_multiline_json(monkeypatch):
 
     count = sp._fetch_youtube_scrape("example")
     assert count == 123_000
+    assert captured["params"]["hl"] == "en"
+
+
+def test_youtube_scraper_regex_fallback(monkeypatch):
+    html = "<span>42,100 subscribers</span>"
+
+    def fake_get(url, params=None, headers=None, allow_redirects=True):
+        return SimpleNamespace(text=html)
+
+    monkeypatch.setattr(sp, "_http_get", fake_get)
+
+    count = sp._fetch_youtube_scrape("example")
+    assert count == 42_100
 
 
 def test_instagram_scraper_parses_meta_description(monkeypatch):
@@ -150,6 +168,40 @@ def test_instagram_scraper_prefers_json(monkeypatch):
 
     count = sp._fetch_instagram_scrape("example")
     assert count == 4321
+
+
+def test_tiktok_scraper_reads_sigi_state(monkeypatch):
+    html = """
+    <script>
+    window['SIGI_STATE'] = {"UserModule": {"users": {"sniply": {
+        "id": "123", "uniqueId": "Sniply", "followerCount": 9876
+    }}, "stats": {"123": {"followerCount": 9876}}}};
+    </script>
+    """
+
+    def fake_get(url, params=None, headers=None, allow_redirects=True):
+        return SimpleNamespace(text=html)
+
+    monkeypatch.setattr(sp, "_http_get", fake_get)
+
+    count = sp._fetch_tiktok_scrape("Sniply")
+    assert count == 9876
+
+
+def test_facebook_scraper_accepts_multiple_patterns(monkeypatch):
+    responses = [
+        SimpleNamespace(text=""),
+        SimpleNamespace(text="Followers"),
+        SimpleNamespace(text="12,345 people follow this"),
+    ]
+
+    def fake_get(url, params=None, headers=None, allow_redirects=True):
+        return responses.pop(0)
+
+    monkeypatch.setattr(sp, "_http_get", fake_get)
+
+    count = sp._fetch_facebook_scrape("ExamplePage")
+    assert count == 12_345
 
 
 def test_http_get_respects_proxy_flag(monkeypatch):
