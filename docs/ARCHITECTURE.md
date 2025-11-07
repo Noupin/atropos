@@ -55,6 +55,10 @@ Atropos is composed of three cooperating runtimes:
   scrape stage fails (disabled by default).
 - `DATA_DIR` / `IN_DOCKER` → API → control where JSON artifacts are stored. The
   API uses `./data/` when not in Docker and `/data` inside containers.
+- `API_CORS_ALLOW_ORIGINS` → API → comma-delimited allow-list for cross-origin
+  marketing requests (defaults to `*`). Optional
+  `API_CORS_ALLOW_METHODS`, `API_CORS_ALLOW_HEADERS`, and
+  `API_CORS_MAX_AGE` override the response metadata.
 - Stripe integration on the worker reads `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` plus the deep-link URLs `SUBSCRIPTION_SUCCESS_URL` and `SUBSCRIPTION_CANCEL_URL`. The desktop registers the matching protocol handler (`atropos://subscription/...`).
 
 ### Cloudflare worker environments

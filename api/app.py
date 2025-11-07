@@ -16,7 +16,7 @@ from email.utils import formataddr
 from pathlib import Path
 from typing import Iterable, List
 
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request
 
 from .social_pipeline import SocialPipeline, UnsupportedPlatformError
 
@@ -48,6 +48,22 @@ UNSUB_TOKENS = Path(
     os.environ.get("UNSUB_TOKENS_FILE", str(DATA_DIR / "unsub_tokens.json"))
 )
 BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://atropos-video.com")
+
+
+def _parse_csv(name: str, default: Iterable[str]) -> list[str]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return list(default)
+    values = [item.strip() for item in raw.split(",") if item.strip()]
+    return values or list(default)
+
+
+CORS_ALLOW_ORIGINS = _parse_csv("API_CORS_ALLOW_ORIGINS", ["*"])
+CORS_ALLOW_METHODS = _parse_csv("API_CORS_ALLOW_METHODS", ["GET", "POST", "OPTIONS"])
+CORS_ALLOW_HEADERS = _parse_csv(
+    "API_CORS_ALLOW_HEADERS", ["Authorization", "Content-Type"]
+)
+CORS_MAX_AGE = int(os.environ.get("API_CORS_MAX_AGE", "600"))
 
 SMTP_HOST     = os.environ.get("SMTP_HOST", "")
 SMTP_PORT     = int(os.environ.get("SMTP_PORT", "587"))           # 587 STARTTLS (recommended)
@@ -231,6 +247,55 @@ app.logger.addHandler(handler)
 app.logger.info("Using data directory at %s", DATA_DIR)
 
 social_pipeline = SocialPipeline(data_dir=DATA_DIR, logger=app.logger)
+
+
+def _origin_allowed(origin: str | None) -> bool:
+    if not origin:
+        return False
+    if "*" in CORS_ALLOW_ORIGINS:
+        return True
+    return origin in CORS_ALLOW_ORIGINS
+
+
+def _apply_cors_headers(response: Response) -> Response:
+    origin = request.headers.get("Origin")
+    if not _origin_allowed(origin):
+        return response
+
+    allow_all = "*" in CORS_ALLOW_ORIGINS
+    response.headers["Access-Control-Allow-Origin"] = "*" if allow_all else origin
+    if not allow_all:
+        vary = response.headers.get("Vary")
+        if vary:
+            vary_parts = [part.strip() for part in vary.split(",") if part.strip()]
+            if "Origin" not in vary_parts:
+                vary_parts.append("Origin")
+            response.headers["Vary"] = ", ".join(vary_parts)
+        else:
+            response.headers["Vary"] = "Origin"
+
+    response.headers["Access-Control-Allow-Methods"] = ", ".join(CORS_ALLOW_METHODS)
+
+    requested_headers = request.headers.get("Access-Control-Request-Headers")
+    if requested_headers:
+        response.headers["Access-Control-Allow-Headers"] = requested_headers
+    elif CORS_ALLOW_HEADERS:
+        response.headers["Access-Control-Allow-Headers"] = ", ".join(CORS_ALLOW_HEADERS)
+
+    response.headers["Access-Control-Max-Age"] = str(CORS_MAX_AGE)
+    return response
+
+
+@app.before_request
+def _handle_preflight():
+    if request.method == "OPTIONS":
+        response = app.make_response(("", 204))
+        return _apply_cors_headers(response)
+
+
+@app.after_request
+def _add_cors(response):
+    return _apply_cors_headers(response)
 
 
 def _normalize_handles(raw: Iterable[str]) -> List[str]:

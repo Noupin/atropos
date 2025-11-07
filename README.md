@@ -57,6 +57,10 @@ modification.
 - Set the optional `WEB_API_BASE` environment variable to override the API
   origin, and `WEB_ENABLE_MOCKS=true` if you want to keep showing the baked-in
   numbers when every fetch stage fails.
+- Configure marketing/API cross-origin access with `API_CORS_ALLOW_ORIGINS`
+  (comma-delimited; defaults to `*`). Optional knobs
+  `API_CORS_ALLOW_METHODS`, `API_CORS_ALLOW_HEADERS`, and
+  `API_CORS_MAX_AGE` adjust the response headers.
 
 ### Data directory
 
