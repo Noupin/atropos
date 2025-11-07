@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Dict, List
 
 import pathlib
@@ -88,3 +89,38 @@ def test_social_stats_missing_data(monkeypatch, _reset_pipeline):
     assert stats.source == "none"
     assert stats.totals["count"] is None
     assert stats.per_account[0].count is None
+
+
+def test_youtube_scraper_handles_multiline_json(monkeypatch):
+    html = """
+    <script>
+    var ytInitialData = {"subscriberCountText": {
+        "runs": [
+            {"text": "123K subscribers"}
+        ]
+    }};
+    </script>
+    """
+
+    def fake_get(url, params=None):
+        return SimpleNamespace(text=html)
+
+    monkeypatch.setattr(sp, "_http_get", fake_get)
+
+    count = sp._fetch_youtube_scrape("example")
+    assert count == 123_000
+
+
+def test_instagram_scraper_parses_meta_description(monkeypatch):
+    html = (
+        '<meta property="og:description" '
+        'content="8,901 followers, 23 following, 114 posts" />'
+    )
+
+    def fake_get(url, params=None):
+        return SimpleNamespace(text=html)
+
+    monkeypatch.setattr(sp, "_http_get", fake_get)
+
+    count = sp._fetch_instagram_scrape("example")
+    assert count == 8_901

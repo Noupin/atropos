@@ -182,11 +182,15 @@ def _format_number_from_text(value: str) -> Optional[int]:
 
 def _http_get(url: str, params: Optional[Dict[str, str]] = None) -> requests.Response:
     session = requests.Session()
-    session.headers.update({
-        "User-Agent": USER_AGENT,
-        "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.8",
-    })
+    session.trust_env = False
+    session.headers.update(
+        {
+            "User-Agent": USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+        }
+    )
     last_exc: Optional[Exception] = None
     for attempt in range(1, SCRAPER_RETRIES + 2):
         try:
@@ -259,16 +263,18 @@ def _fetch_youtube_scrape(handle: str) -> Optional[int]:
         return None
     patterns = [
         (
-            r"\"subscriberCountText\"\s*:\s*{[^}]*\"simpleText\""
+            r"\"subscriberCountText\"\s*:\s*{.*?\"simpleText\""
             r"\s*:\s*\"([^\"]+)\""
         ),
         (
-            r"\"subscriberCountText\"\s*:\s*{[^}]*\"runs\"\s*:\s*\["
-            r"\s*{[^}]*\"text\"\s*:\s*\"([^\"]+)\""
+            r"\"subscriberCountText\"\s*:\s*{.*?\"runs\"\s*:\s*\["
+            r".*?\"text\"\s*:\s*\"([^\"]+)\""
         ),
+        r"\"approximateSubscriberCountText\"\s*:\s*\{.*?\"simpleText\"\s*:\s*\"([^\"]+)\"",
+        r"\"subscribersText\"\s*:\s*\{.*?\"simpleText\"\s*:\s*\"([^\"]+)\"",
     ]
     for pattern in patterns:
-        match = re.search(pattern, html)
+        match = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
         if match:
             parsed = _format_number_from_text(match.group(1))
             if parsed:
@@ -308,14 +314,23 @@ def _fetch_instagram_scrape(handle: str) -> Optional[int]:
     except Exception as exc:  # pragma: no cover - network variability
         logger.warning("Instagram scrape failed for %s: %s", handle, exc)
         return None
-    match = re.search(r"\"edge_followed_by\"\s*:\s*{\s*\"count\"\s*:\s*([0-9]+)\s*}", html)
-    if match:
-        return int(match.group(1))
-    meta_match = re.search(r"content=\"([0-9.,]+) followers", html)
-    if meta_match:
-        parsed = _format_number_from_text(meta_match.group(1))
-        if parsed:
+    patterns = [
+        r"\"edge_followed_by\"\s*:\s*\{.*?\"count\"\s*:\s*([0-9.,KMB]+)",
+        r"\"follower_count\"\s*:\s*([0-9.,KMB]+)",
+        r"content=\"([0-9.,]+) followers",
+        r"followers_count\"\s*:\s*([0-9.,KMB]+)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
+        if not match:
+            continue
+        parsed = _format_number_from_text(match.group(1))
+        if parsed is not None:
             return parsed
+        try:
+            return int(match.group(1))
+        except ValueError:
+            continue
     return None
 
 
