@@ -181,7 +181,13 @@ def _format_number_from_text(value: str) -> Optional[int]:
     return int(number * multiplier)
 
 
-def _http_get(url: str, params: Optional[Dict[str, str]] = None) -> requests.Response:
+def _http_get(
+    url: str,
+    params: Optional[Dict[str, str]] = None,
+    *,
+    headers: Optional[Dict[str, str]] = None,
+    allow_redirects: bool = True,
+) -> requests.Response:
     session = requests.Session()
     session.trust_env = SCRAPER_RESPECT_PROXIES
     session.headers.update(
@@ -192,6 +198,8 @@ def _http_get(url: str, params: Optional[Dict[str, str]] = None) -> requests.Res
             "Accept-Encoding": "gzip, deflate, br",
         }
     )
+    if headers:
+        session.headers.update(headers)
     last_exc: Optional[Exception] = None
     for attempt in range(1, SCRAPER_RETRIES + 2):
         try:
@@ -206,6 +214,7 @@ def _http_get(url: str, params: Optional[Dict[str, str]] = None) -> requests.Res
                 url,
                 params=params,
                 timeout=SCRAPER_TIMEOUT_SECONDS,
+                allow_redirects=allow_redirects,
             )
             response.raise_for_status()
             status_code = getattr(response, "status_code", "unknown")
@@ -271,9 +280,9 @@ def _fetch_youtube_api(handle: str) -> Optional[int]:
 def _fetch_youtube_scrape(handle: str) -> Optional[int]:
     cleaned = handle.strip()
     if cleaned.startswith("UC"):
-        url = f"https://www.youtube.com/channel/{cleaned}/about"
+        url = f"https://www.youtube.com/channel/{cleaned}/about?hl=en"
     else:
-        url = f"https://www.youtube.com/@{cleaned.lstrip('@')}/about"
+        url = f"https://www.youtube.com/@{cleaned.lstrip('@')}/about?hl=en"
     try:
         html = _http_get(url).text
     except Exception as exc:  # pragma: no cover - network variability
@@ -298,6 +307,7 @@ def _fetch_youtube_scrape(handle: str) -> Optional[int]:
             parsed = _format_number_from_text(match.group(1))
             if parsed:
                 return parsed
+    logger.info("YouTube scrape could not locate subscriber pattern for %s", handle)
     return None
 
 
@@ -327,13 +337,64 @@ def _fetch_instagram_api(handle: str) -> Optional[int]:
 
 
 def _fetch_instagram_scrape(handle: str) -> Optional[int]:
-    url = f"https://www.instagram.com/{handle.strip('@')}/"
+    username = handle.strip("@")
+    json_headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 "
+            "Mobile/15E148 Safari/604.1"
+        ),
+        "Referer": f"https://www.instagram.com/{username}/",
+        "x-ig-app-id": "936619743392459",
+        "Accept": "application/json",
+    }
     try:
-        html = _http_get(url).text
+        response = _http_get(
+            "https://www.instagram.com/api/v1/users/web_profile_info/",
+            params={"username": username},
+            headers=json_headers,
+        )
+        data = response.json()
+        keys = list(data.keys()) if isinstance(data, dict) else "<non-dict>"
+        logger.debug("Instagram JSON payload for %s: keys=%s", handle, keys)
+        user = data.get("data", {}).get("user")
+        if isinstance(user, dict):
+            candidates = [
+                user.get("edge_followed_by", {}).get("count"),
+                user.get("follower_count"),
+                user.get("followers_count"),
+            ]
+            for candidate in candidates:
+                if candidate is None:
+                    continue
+                try:
+                    parsed = int(str(candidate).replace(",", ""))
+                except (TypeError, ValueError):
+                    parsed = _format_number_from_text(str(candidate))
+                if parsed is not None:
+                    logger.info(
+                        "Instagram JSON scrape succeeded for %s with count=%s",
+                        handle,
+                        parsed,
+                    )
+                    return parsed
+        logger.info("Instagram JSON scrape missing count fields for %s", handle)
     except Exception as exc:  # pragma: no cover - network variability
-        logger.warning("Instagram scrape failed for %s: %s", handle, exc)
+        logger.warning("Instagram JSON scrape failed for %s: %s", handle, exc)
+
+    url = f"https://www.instagram.com/{username}/?__a=1&__d=dis"
+    try:
+        html = _http_get(
+            url,
+            headers={
+                "Accept": "application/json",
+                "Referer": f"https://www.instagram.com/{username}/",
+            },
+        ).text
+    except Exception as exc:  # pragma: no cover - network variability
+        logger.warning("Instagram fallback scrape failed for %s: %s", handle, exc)
         return None
-    logger.info("Fetched Instagram profile page for %s (%s chars)", handle, len(html))
+    logger.info("Fetched Instagram fallback payload for %s (%s chars)", handle, len(html))
     patterns = [
         r"\"edge_followed_by\"\s*:\s*\{.*?\"count\"\s*:\s*([0-9.,KMB]+)",
         r"\"follower_count\"\s*:\s*([0-9.,KMB]+)",
@@ -351,6 +412,7 @@ def _fetch_instagram_scrape(handle: str) -> Optional[int]:
             return int(match.group(1))
         except ValueError:
             continue
+    logger.info("Instagram scrape could not locate follower pattern for %s", handle)
     return None
 
 
@@ -381,6 +443,7 @@ def _fetch_tiktok_scrape(handle: str) -> Optional[int]:
         parsed = _format_number_from_text(text_match.group(1))
         if parsed:
             return parsed
+    logger.info("TikTok scrape could not locate follower pattern for %s", handle)
     return None
 
 

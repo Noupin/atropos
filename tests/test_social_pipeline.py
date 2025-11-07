@@ -102,7 +102,8 @@ def test_youtube_scraper_handles_multiline_json(monkeypatch):
     </script>
     """
 
-    def fake_get(url, params=None):
+    def fake_get(url, params=None, headers=None, allow_redirects=True):
+        assert allow_redirects is True
         return SimpleNamespace(text=html)
 
     monkeypatch.setattr(sp, "_http_get", fake_get)
@@ -117,13 +118,38 @@ def test_instagram_scraper_parses_meta_description(monkeypatch):
         'content="8,901 followers, 23 following, 114 posts" />'
     )
 
-    def fake_get(url, params=None):
+    def fake_get(url, params=None, headers=None, allow_redirects=True):
+        if "web_profile_info" in url:
+            raise RuntimeError("json disabled")
         return SimpleNamespace(text=html)
 
     monkeypatch.setattr(sp, "_http_get", fake_get)
 
     count = sp._fetch_instagram_scrape("example")
     assert count == 8_901
+
+
+def test_instagram_scraper_prefers_json(monkeypatch):
+    payload = {
+        "data": {
+            "user": {
+                "edge_followed_by": {"count": 4321},
+            }
+        }
+    }
+
+    class DummyResponse:
+        def json(self):
+            return payload
+
+    def fake_get(url, params=None, headers=None, allow_redirects=True):
+        assert params == {"username": "example"}
+        return DummyResponse()
+
+    monkeypatch.setattr(sp, "_http_get", fake_get)
+
+    count = sp._fetch_instagram_scrape("example")
+    assert count == 4321
 
 
 def test_http_get_respects_proxy_flag(monkeypatch):
@@ -140,10 +166,11 @@ def test_http_get_respects_proxy_flag(monkeypatch):
             self.trust_env = True
             self.headers = {}
 
-        def get(self, url, params=None, timeout=None):
+        def get(self, url, params=None, timeout=None, allow_redirects=True):
             captured["url"] = url
             captured["params"] = params
             captured["timeout"] = timeout
+            captured["allow_redirects"] = allow_redirects
             captured["trust_env"] = self.trust_env
             return DummyResponse()
 
@@ -155,5 +182,6 @@ def test_http_get_respects_proxy_flag(monkeypatch):
     assert isinstance(response, DummyResponse)
     assert captured["url"] == "https://example.test"
     assert captured["timeout"] == sp.SCRAPER_TIMEOUT_SECONDS
+    assert captured["allow_redirects"] is True
     # When the flag is False, the session should skip inherited proxy settings.
     assert captured["trust_env"] is False
