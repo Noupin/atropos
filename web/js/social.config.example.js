@@ -5,8 +5,25 @@
 // New in this release: you may specify `scrapeUrl` (and optional
 // `scrapePattern`) per account. When the official APIs fail, the frontend
 // will attempt to call a local API fallback (see `localApiBaseUrl` below)
-// to parse the provided page before showing "N/A".
+// to parse the provided page before showing "N/A". Set `scrapeDisabled: true`
+// (or `scrapeEnabled: false`) on any account to opt out of scraping entirely.
 window.atroposSocialConfig = {
+  // Optional shared account definitions. Each entry can include platform keys
+  // (`youtube`, `instagram`, `tiktok`, `facebook`) to avoid repeating metadata
+  // across platform sections. Per-platform account lists still work and will be
+  // merged with any shared accounts.
+  accounts: [
+    {
+      label: "Atropos Studio",
+      youtube: { channelId: "YOUR_CHANNEL_ID_1", scrapeDisabled: true },
+      instagram: { userId: "YOUR_INSTAGRAM_USER_ID_1", username: "atropos" },
+      tiktok: {
+        scrapeUrl: "https://www.tiktok.com/@atroposstudio",
+        scrapePattern: "(?P<count>[0-9.,KMB]+)\\s+Followers",
+      },
+      facebook: { pageId: "YOUR_FACEBOOK_PAGE_ID_1" },
+    },
+  ],
   youtube: {
     // Visit https://console.cloud.google.com/apis/library/youtube.googleapis.com
     // to enable the YouTube Data API v3 for your project, then create an API key
@@ -15,7 +32,7 @@ window.atroposSocialConfig = {
     accounts: [
       {
         channelId: "YOUR_CHANNEL_ID_1",
-        // Optional HTML fallback: omit to disable scraping.
+        // Optional HTML fallback: omit (or set scrapeDisabled: true) to disable scraping.
         scrapeUrl: "https://www.youtube.com/channel/YOUR_CHANNEL_ID_1/about",
       },
       { channelId: "YOUR_CHANNEL_ID_2" },
@@ -45,6 +62,8 @@ window.atroposSocialConfig = {
       {
         followerCount: 125000,
         scrapeUrl: "https://www.tiktok.com/@atroposstudio",
+        // Disable scraping and rely solely on the static number if desired.
+        // scrapeDisabled: true,
       },
       {
         fetchUrl: "https://example.com/api/tiktok/team",

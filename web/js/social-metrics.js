@@ -8,6 +8,53 @@
   }
 
   const socialConfig = window.atroposSocialConfig || {};
+  const globalAccountConfigs = Array.isArray(socialConfig.accounts)
+    ? socialConfig.accounts
+    : [];
+
+  const extractTopLevelAccounts = (platform) => {
+    if (!globalAccountConfigs.length) {
+      return [];
+    }
+
+    const accounts = [];
+    for (const entry of globalAccountConfigs) {
+      if (!entry || typeof entry !== "object") {
+        continue;
+      }
+      const value = entry[platform];
+      if (value == null) {
+        continue;
+      }
+      if (Array.isArray(value)) {
+        accounts.push(...value);
+      } else {
+        accounts.push(value);
+      }
+    }
+    return accounts;
+  };
+
+  const isScrapeDisabled = (entryConfig, platformConfig) => {
+    const entry = entryConfig && typeof entryConfig === "object" ? entryConfig : {};
+    const platform =
+      platformConfig && typeof platformConfig === "object" ? platformConfig : {};
+
+    const disabledFlags = [
+      entry.scrapeDisabled,
+      entry.disableScrape,
+      entry.scrape === false,
+      entry.scrapeEnabled === false,
+      entry.enableScrape === false,
+      platform.scrapeDisabled,
+      platform.disableScrape,
+      platform.scrape === false,
+      platform.scrapeEnabled === false,
+      platform.enableScrape === false,
+    ];
+
+    return disabledFlags.some((flag) => flag === true);
+  };
 
   const ENABLE_SOCIAL_PLATFORMS = {
     youtube: true,
@@ -238,47 +285,71 @@
   };
 
   const getYouTubeAccounts = (config) => {
-    if (!config) return [];
-    const raw = Array.isArray(config.accounts)
-      ? config.accounts
-      : config.channelId
-      ? [config.channelId]
-      : [];
+    const platformConfig = config && typeof config === "object" ? config : {};
+    const raw = [];
+
+    if (Array.isArray(platformConfig.accounts)) {
+      raw.push(...platformConfig.accounts);
+    } else if (
+      typeof platformConfig.channelId === "string" &&
+      platformConfig.channelId.trim()
+    ) {
+      raw.push(platformConfig.channelId.trim());
+    }
+
+    const shared = extractTopLevelAccounts("youtube");
+    if (shared.length) {
+      raw.push(...shared);
+    }
+
     return raw
       .map((entry) => {
+        const source = entry && typeof entry === "object" ? entry : {};
         if (typeof entry === "string" && entry.trim()) {
           const channelId = entry.trim();
           const defaultPattern =
-            typeof config.scrapePattern === "string" && config.scrapePattern.trim()
-              ? config.scrapePattern.trim()
+            typeof platformConfig.scrapePattern === "string" &&
+            platformConfig.scrapePattern.trim()
+              ? platformConfig.scrapePattern.trim()
               : null;
           return {
             channelId,
             scrapeUrl: `https://www.youtube.com/channel/${channelId}/about`,
             scrapePattern: defaultPattern,
+            scrapeDisabled: isScrapeDisabled({}, platformConfig),
           };
         }
-        if (entry && typeof entry.channelId === "string" && entry.channelId.trim()) {
-          const channelId = entry.channelId.trim();
+        const channelIdCandidate =
+          typeof source.channelId === "string" && source.channelId.trim()
+            ? source.channelId.trim()
+            : typeof source.youtubeChannelId === "string" &&
+              source.youtubeChannelId.trim()
+            ? source.youtubeChannelId.trim()
+            : typeof source.id === "string" && source.id.trim()
+            ? source.id.trim()
+            : "";
+        if (channelIdCandidate) {
           const explicitUrl =
-            typeof entry.scrapeUrl === "string" && entry.scrapeUrl.trim()
-              ? entry.scrapeUrl.trim()
-              : typeof entry.channelUrl === "string" && entry.channelUrl.trim()
-              ? entry.channelUrl.trim()
+            typeof source.scrapeUrl === "string" && source.scrapeUrl.trim()
+              ? source.scrapeUrl.trim()
+              : typeof source.channelUrl === "string" && source.channelUrl.trim()
+              ? source.channelUrl.trim()
               : "";
-          const defaultUrl = channelId
-            ? `https://www.youtube.com/channel/${channelId}/about`
+          const defaultUrl = channelIdCandidate
+            ? `https://www.youtube.com/channel/${channelIdCandidate}/about`
             : "";
           const pattern =
-            typeof entry.scrapePattern === "string" && entry.scrapePattern.trim()
-              ? entry.scrapePattern.trim()
-              : typeof config.scrapePattern === "string" && config.scrapePattern.trim()
-              ? config.scrapePattern.trim()
+            typeof source.scrapePattern === "string" && source.scrapePattern.trim()
+              ? source.scrapePattern.trim()
+              : typeof platformConfig.scrapePattern === "string" &&
+                platformConfig.scrapePattern.trim()
+              ? platformConfig.scrapePattern.trim()
               : null;
           return {
-            channelId,
+            channelId: channelIdCandidate,
             scrapeUrl: explicitUrl || defaultUrl,
             scrapePattern: pattern,
+            scrapeDisabled: isScrapeDisabled(source, platformConfig),
           };
         }
         return null;
@@ -287,18 +358,30 @@
   };
 
   const getInstagramAccounts = (config) => {
-    if (!config) return [];
+    const platformConfig = config && typeof config === "object" ? config : {};
     const baseToken =
-      typeof config.accessToken === "string" && config.accessToken.trim()
-        ? config.accessToken.trim()
+      typeof platformConfig.accessToken === "string" &&
+      platformConfig.accessToken.trim()
+        ? platformConfig.accessToken.trim()
         : "";
-    const raw = Array.isArray(config.accounts)
-      ? config.accounts
-      : config.userId
-      ? [config.userId]
-      : [];
+    const raw = [];
+
+    if (Array.isArray(platformConfig.accounts)) {
+      raw.push(...platformConfig.accounts);
+    } else if (
+      typeof platformConfig.userId === "string" && platformConfig.userId.trim()
+    ) {
+      raw.push(platformConfig.userId.trim());
+    }
+
+    const shared = extractTopLevelAccounts("instagram");
+    if (shared.length) {
+      raw.push(...shared);
+    }
+
     return raw
       .map((entry) => {
+        const source = entry && typeof entry === "object" ? entry : {};
         if (typeof entry === "string" && entry.trim()) {
           const trimmed = entry.trim();
           const isNumericId = /^[0-9]+$/.test(trimmed);
@@ -311,47 +394,60 @@
                   ? ""
                   : `https://www.instagram.com/${trimmed.replace(/^@/, "")}/`,
                 scrapePattern:
-                  typeof config.scrapePattern === "string" && config.scrapePattern.trim()
-                    ? config.scrapePattern.trim()
+                  typeof platformConfig.scrapePattern === "string" &&
+                  platformConfig.scrapePattern.trim()
+                    ? platformConfig.scrapePattern.trim()
                     : null,
+                scrapeDisabled: isScrapeDisabled({}, platformConfig),
               }
             : null;
         }
-        if (entry && typeof entry.userId === "string" && entry.userId.trim()) {
+        const userIdCandidate =
+          typeof source.userId === "string" && source.userId.trim()
+            ? source.userId.trim()
+            : typeof source.instagramUserId === "string" &&
+              source.instagramUserId.trim()
+            ? source.instagramUserId.trim()
+            : typeof source.id === "string" && source.id.trim()
+            ? source.id.trim()
+            : "";
+        if (userIdCandidate) {
           const token =
-            typeof entry.accessToken === "string" && entry.accessToken.trim()
-              ? entry.accessToken.trim()
+            typeof source.accessToken === "string" && source.accessToken.trim()
+              ? source.accessToken.trim()
               : baseToken;
           if (!token) {
             return null;
           }
           const username =
-            typeof entry.username === "string" && entry.username.trim()
-              ? entry.username.trim().replace(/^@/, "")
+            typeof source.username === "string" && source.username.trim()
+              ? source.username.trim().replace(/^@/, "")
               : "";
           const profileUrl =
-            typeof entry.profileUrl === "string" && entry.profileUrl.trim()
-              ? entry.profileUrl.trim()
+            typeof source.profileUrl === "string" && source.profileUrl.trim()
+              ? source.profileUrl.trim()
               : "";
           const scrapePattern =
-            typeof entry.scrapePattern === "string" && entry.scrapePattern.trim()
-              ? entry.scrapePattern.trim()
-              : typeof config.scrapePattern === "string" && config.scrapePattern.trim()
-              ? config.scrapePattern.trim()
+            typeof source.scrapePattern === "string" && source.scrapePattern.trim()
+              ? source.scrapePattern.trim()
+              : typeof platformConfig.scrapePattern === "string" &&
+                platformConfig.scrapePattern.trim()
+              ? platformConfig.scrapePattern.trim()
               : null;
           return {
-            userId: entry.userId.trim(),
+            userId: userIdCandidate,
             username,
             accessToken: token,
             scrapeUrl:
-              typeof entry.scrapeUrl === "string" && entry.scrapeUrl.trim()
-                ? entry.scrapeUrl.trim()
+              typeof source.scrapeUrl === "string" && source.scrapeUrl.trim()
+                ? source.scrapeUrl.trim()
                 : profileUrl
                 ? profileUrl
                 : username
                 ? `https://www.instagram.com/${username}/`
                 : "",
             scrapePattern,
+            scrapeDisabled: isScrapeDisabled(source, platformConfig),
           };
         }
         return null;
@@ -360,18 +456,30 @@
   };
 
   const getFacebookAccounts = (config) => {
-    if (!config) return [];
+    const platformConfig = config && typeof config === "object" ? config : {};
     const baseToken =
-      typeof config.accessToken === "string" && config.accessToken.trim()
-        ? config.accessToken.trim()
+      typeof platformConfig.accessToken === "string" &&
+      platformConfig.accessToken.trim()
+        ? platformConfig.accessToken.trim()
         : "";
-    const raw = Array.isArray(config.accounts)
-      ? config.accounts
-      : config.pageId
-      ? [config.pageId]
-      : [];
+    const raw = [];
+
+    if (Array.isArray(platformConfig.accounts)) {
+      raw.push(...platformConfig.accounts);
+    } else if (
+      typeof platformConfig.pageId === "string" && platformConfig.pageId.trim()
+    ) {
+      raw.push(platformConfig.pageId.trim());
+    }
+
+    const shared = extractTopLevelAccounts("facebook");
+    if (shared.length) {
+      raw.push(...shared);
+    }
+
     return raw
       .map((entry) => {
+        const source = entry && typeof entry === "object" ? entry : {};
         if (typeof entry === "string" && entry.trim()) {
           const pageId = entry.trim();
           return baseToken
@@ -380,38 +488,50 @@
                 accessToken: baseToken,
                 scrapeUrl: `https://www.facebook.com/${pageId}/`,
                 scrapePattern:
-                  typeof config.scrapePattern === "string" && config.scrapePattern.trim()
-                    ? config.scrapePattern.trim()
+                  typeof platformConfig.scrapePattern === "string" &&
+                  platformConfig.scrapePattern.trim()
+                    ? platformConfig.scrapePattern.trim()
                     : null,
+                scrapeDisabled: isScrapeDisabled({}, platformConfig),
               }
             : null;
         }
-        if (entry && typeof entry.pageId === "string" && entry.pageId.trim()) {
+        const pageIdCandidate =
+          typeof source.pageId === "string" && source.pageId.trim()
+            ? source.pageId.trim()
+            : typeof source.facebookPageId === "string" &&
+              source.facebookPageId.trim()
+            ? source.facebookPageId.trim()
+            : typeof source.id === "string" && source.id.trim()
+            ? source.id.trim()
+            : "";
+        if (pageIdCandidate) {
           const token =
-            typeof entry.accessToken === "string" && entry.accessToken.trim()
-              ? entry.accessToken.trim()
+            typeof source.accessToken === "string" && source.accessToken.trim()
+              ? source.accessToken.trim()
               : baseToken;
           if (!token) {
             return null;
           }
-          const pageId = entry.pageId.trim();
           const scrapePattern =
-            typeof entry.scrapePattern === "string" && entry.scrapePattern.trim()
-              ? entry.scrapePattern.trim()
-              : typeof config.scrapePattern === "string" && config.scrapePattern.trim()
-              ? config.scrapePattern.trim()
+            typeof source.scrapePattern === "string" && source.scrapePattern.trim()
+              ? source.scrapePattern.trim()
+              : typeof platformConfig.scrapePattern === "string" &&
+                platformConfig.scrapePattern.trim()
+              ? platformConfig.scrapePattern.trim()
               : null;
           const scrapeUrl =
-            typeof entry.scrapeUrl === "string" && entry.scrapeUrl.trim()
-              ? entry.scrapeUrl.trim()
-              : typeof entry.pageUrl === "string" && entry.pageUrl.trim()
-              ? entry.pageUrl.trim()
-              : `https://www.facebook.com/${pageId}/`;
+            typeof source.scrapeUrl === "string" && source.scrapeUrl.trim()
+              ? source.scrapeUrl.trim()
+              : typeof source.pageUrl === "string" && source.pageUrl.trim()
+              ? source.pageUrl.trim()
+              : `https://www.facebook.com/${pageIdCandidate}/`;
           return {
-            pageId,
+            pageId: pageIdCandidate,
             accessToken: token,
             scrapeUrl,
             scrapePattern,
+            scrapeDisabled: isScrapeDisabled(source, platformConfig),
           };
         }
         return null;
@@ -420,12 +540,23 @@
   };
 
   const getTikTokAccounts = (config) => {
-    if (!config) return [];
-    const raw = Array.isArray(config.accounts) ? config.accounts : [];
+    const platformConfig = config && typeof config === "object" ? config : {};
+    const raw = [];
+
+    if (Array.isArray(platformConfig.accounts)) {
+      raw.push(...platformConfig.accounts);
+    }
+
+    const shared = extractTopLevelAccounts("tiktok");
+    if (shared.length) {
+      raw.push(...shared);
+    }
+
     return raw
       .map((entry) => {
         if (entry == null) return null;
 
+        const source = entry && typeof entry === "object" ? entry : {};
         const normalized = {};
 
         if (typeof entry === "number" && Number.isFinite(entry)) {
@@ -440,46 +571,50 @@
           }
         } else if (typeof entry === "object") {
           if (
-            typeof entry.followerCount === "number" &&
-            Number.isFinite(entry.followerCount)
+            typeof source.followerCount === "number" &&
+            Number.isFinite(source.followerCount)
           ) {
-            normalized.followerCount = entry.followerCount;
+            normalized.followerCount = source.followerCount;
           }
 
           if (
-            typeof entry.followers === "number" &&
-            Number.isFinite(entry.followers)
+            typeof source.followers === "number" &&
+            Number.isFinite(source.followers)
           ) {
-            normalized.followerCount = entry.followers;
+            normalized.followerCount = source.followers;
           }
 
-          if (typeof entry.fetchUrl === "string" && entry.fetchUrl.trim()) {
-            normalized.fetchUrl = entry.fetchUrl.trim();
+          if (typeof source.fetchUrl === "string" && source.fetchUrl.trim()) {
+            normalized.fetchUrl = source.fetchUrl.trim();
             const pathCandidate =
-              (typeof entry.jsonPath === "string" && entry.jsonPath.trim()) ||
-              (typeof entry.countPath === "string" && entry.countPath.trim()) ||
+              (typeof source.jsonPath === "string" && source.jsonPath.trim()) ||
+              (typeof source.countPath === "string" && source.countPath.trim()) ||
               "";
             normalized.jsonPath = pathCandidate;
           }
 
-          if (typeof entry.scrapeUrl === "string" && entry.scrapeUrl.trim()) {
-            normalized.scrapeUrl = entry.scrapeUrl.trim();
+          if (typeof source.scrapeUrl === "string" && source.scrapeUrl.trim()) {
+            normalized.scrapeUrl = source.scrapeUrl.trim();
           }
 
           if (
-            typeof entry.scrapePattern === "string" &&
-            entry.scrapePattern.trim()
+            typeof source.scrapePattern === "string" &&
+            source.scrapePattern.trim()
           ) {
-            normalized.scrapePattern = entry.scrapePattern.trim();
+            normalized.scrapePattern = source.scrapePattern.trim();
           }
         }
 
         if (
           normalized.scrapePattern == null &&
-          typeof config.scrapePattern === "string" &&
-          config.scrapePattern.trim()
+          typeof platformConfig.scrapePattern === "string" &&
+          platformConfig.scrapePattern.trim()
         ) {
-          normalized.scrapePattern = config.scrapePattern.trim();
+          normalized.scrapePattern = platformConfig.scrapePattern.trim();
+        }
+
+        if (!Object.prototype.hasOwnProperty.call(normalized, "scrapeDisabled")) {
+          normalized.scrapeDisabled = isScrapeDisabled(source, platformConfig);
         }
 
         if (Object.keys(normalized).length === 0) {
@@ -527,6 +662,7 @@
     switch (platform) {
       case "youtube": {
         const accounts = getYouTubeAccounts(config)
+          .filter((account) => !account.scrapeDisabled)
           .map((account) => {
             const url = ensureSuffix(
               ensureAbsoluteUrl(account.scrapeUrl, "https://www.youtube.com"),
@@ -544,6 +680,7 @@
       }
       case "instagram": {
         const accounts = getInstagramAccounts(config)
+          .filter((account) => !account.scrapeDisabled)
           .map((account) => {
             const url = ensureAbsoluteUrl(
               account.scrapeUrl ||
@@ -564,6 +701,7 @@
       }
       case "facebook": {
         const accounts = getFacebookAccounts(config)
+          .filter((account) => !account.scrapeDisabled)
           .map((account) => {
             const url = ensureAbsoluteUrl(
               account.scrapeUrl || account.pageUrl || "",
@@ -581,6 +719,7 @@
       }
       case "tiktok": {
         const accounts = getTikTokAccounts(config)
+          .filter((account) => !account.scrapeDisabled)
           .map((account) => {
             const url = ensureAbsoluteUrl(
               account.scrapeUrl || "",
