@@ -19,7 +19,9 @@ except ImportError:  # pragma: no cover - fallback for script execution
     from social_config import get_platform_flags, get_social_handles
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("atropos.social")
+if logger.level == logging.NOTSET:
+    logger.setLevel(logging.INFO)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -374,7 +376,7 @@ def _fetch_youtube_scrape(handle: str) -> Optional[int]:
                 "YouTube regex scrape succeeded for %s with count=%s", handle, parsed
             )
             return parsed
-    logger.info("YouTube scrape could not locate subscriber pattern for %s", handle)
+    logger.warning("YouTube scrape could not locate subscriber pattern for %s", handle)
     return None
 
 
@@ -553,7 +555,7 @@ def _fetch_tiktok_scrape(handle: str) -> Optional[int]:
                     "TikTok regex scrape succeeded for %s with count=%s", handle, parsed
                 )
                 return parsed
-    logger.info("TikTok scrape could not locate follower pattern for %s", handle)
+    logger.warning("TikTok scrape could not locate follower pattern for %s", handle)
     return None
 
 
@@ -640,7 +642,7 @@ def _fetch_facebook_scrape(handle: str) -> Optional[int]:
             return parsed
 
     if last_html:
-        logger.info("Facebook scrape could not locate follower pattern for %s", handle)
+        logger.warning("Facebook scrape could not locate follower pattern for %s", handle)
     return None
 
 
@@ -669,7 +671,12 @@ FETCHERS = {
 }
 
 
-def _run_stage(fetcher, handles: List[str]) -> Tuple[Dict[str, int], Dict[str, str]]:
+def _run_stage(
+    fetcher,
+    handles: List[str],
+    *,
+    stage: str,
+) -> Tuple[Dict[str, int], Dict[str, str]]:
     results: Dict[str, int] = {}
     errors: Dict[str, str] = {}
     for handle in handles:
@@ -677,7 +684,11 @@ def _run_stage(fetcher, handles: List[str]) -> Tuple[Dict[str, int], Dict[str, s
             count = fetcher(handle)
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning(
-                "Fetcher %s raised for %s: %s", getattr(fetcher, "__name__", fetcher), handle, exc,
+                "%s stage fetcher %s raised for %s: %s",
+                stage,
+                getattr(fetcher, "__name__", fetcher),
+                handle,
+                exc,
                 exc_info=True,
             )
             errors[handle] = "exception"
@@ -685,15 +696,19 @@ def _run_stage(fetcher, handles: List[str]) -> Tuple[Dict[str, int], Dict[str, s
         if isinstance(count, int) and count >= 0:
             results[handle] = count
             logger.info(
-                "Fetcher %s succeeded for %s with count %s",
+                "%s stage fetcher %s succeeded for %s with count %s",
+                stage,
                 getattr(fetcher, "__name__", fetcher),
                 handle,
                 count,
             )
         else:
             errors[handle] = "missing"
-            logger.info(
-                "Fetcher %s returned no data for %s", getattr(fetcher, "__name__", fetcher), handle
+            logger.warning(
+                "%s stage fetcher %s returned no data for %s",
+                stage,
+                getattr(fetcher, "__name__", fetcher),
+                handle,
             )
     return results, errors
 
@@ -741,9 +756,18 @@ def get_social_stats(
 
     api_results: Dict[str, int] = {}
     if ENABLE_SOCIAL_APIS:
-        api_results, api_errors = _run_stage(api_fetcher, handles_to_query)
+        api_results, api_errors = _run_stage(
+            api_fetcher,
+            handles_to_query,
+            stage="api",
+        )
     else:
         api_errors = {handle: "disabled" for handle in handles_to_query}
+        logger.warning(
+            "API stage disabled for %s; marking handles as unavailable: %s",
+            platform,
+            handles_to_query,
+        )
 
     logger.info(
         "API stage finished for %s: successes=%s errors=%s",
@@ -751,13 +775,30 @@ def get_social_stats(
         list(api_results.items()),
         api_errors,
     )
+    if api_errors:
+        logger.warning(
+            "API stage reported errors for %s: %s",
+            platform,
+            api_errors,
+        )
 
     missing_handles = [h for h in handles_to_query if h not in api_results]
 
     scrape_results: Dict[str, int] = {}
     scrape_errors: Dict[str, str] = {}
     if missing_handles and ENABLE_SOCIAL_SCRAPER:
-        scrape_results, scrape_errors = _run_stage(scrape_fetcher, missing_handles)
+        scrape_results, scrape_errors = _run_stage(
+            scrape_fetcher,
+            missing_handles,
+            stage="scrape",
+        )
+    elif missing_handles:
+        scrape_errors = {handle: "disabled" for handle in missing_handles}
+        logger.warning(
+            "Scrape stage disabled for %s; remaining handles=%s",
+            platform,
+            missing_handles,
+        )
 
     logger.info(
         "Scrape stage finished for %s: successes=%s errors=%s",
@@ -765,6 +806,12 @@ def get_social_stats(
         list(scrape_results.items()),
         scrape_errors,
     )
+    if scrape_errors:
+        logger.warning(
+            "Scrape stage reported errors for %s: %s",
+            platform,
+            scrape_errors,
+        )
 
     for handle in handles_to_query:
         if handle in api_results:
@@ -789,6 +836,13 @@ def get_social_stats(
                 error_reason = "scrape-failed"
             elif handle in api_errors:
                 error_reason = api_errors[handle]
+            logger.warning(
+                "No data resolved for %s handle %s (api=%s scrape=%s)",
+                platform,
+                handle,
+                api_errors.get(handle),
+                scrape_errors.get(handle),
+            )
             per_account.append(
                 AccountStat(
                     handle=handle,
