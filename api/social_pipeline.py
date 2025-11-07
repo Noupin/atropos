@@ -78,6 +78,7 @@ except Exception:  # pragma: no cover - fail soft
 CACHE_TTL_SECONDS = int(os.environ.get("CACHE_TTL_SECONDS", "300") or "300")
 SCRAPER_TIMEOUT_SECONDS = float(os.environ.get("SCRAPER_TIMEOUT_SECONDS", "6") or "6")
 SCRAPER_RETRIES = int(os.environ.get("SCRAPER_RETRIES", "2") or "2")
+SCRAPER_RESPECT_PROXIES = _env_flag("SOCIAL_SCRAPER_RESPECT_PROXIES", True)
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -182,7 +183,7 @@ def _format_number_from_text(value: str) -> Optional[int]:
 
 def _http_get(url: str, params: Optional[Dict[str, str]] = None) -> requests.Response:
     session = requests.Session()
-    session.trust_env = False
+    session.trust_env = SCRAPER_RESPECT_PROXIES
     session.headers.update(
         {
             "User-Agent": USER_AGENT,

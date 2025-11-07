@@ -124,3 +124,36 @@ def test_instagram_scraper_parses_meta_description(monkeypatch):
 
     count = sp._fetch_instagram_scrape("example")
     assert count == 8_901
+
+
+def test_http_get_respects_proxy_flag(monkeypatch):
+    class DummyResponse:
+        text = ""
+
+        def raise_for_status(self):
+            return None
+
+    captured = {}
+
+    class DummySession:
+        def __init__(self):
+            self.trust_env = True
+            self.headers = {}
+
+        def get(self, url, params=None, timeout=None):
+            captured["url"] = url
+            captured["params"] = params
+            captured["timeout"] = timeout
+            captured["trust_env"] = self.trust_env
+            return DummyResponse()
+
+    monkeypatch.setattr(sp, "SCRAPER_RESPECT_PROXIES", False)
+    monkeypatch.setattr(sp.requests, "Session", DummySession)
+
+    response = sp._http_get("https://example.test")
+
+    assert isinstance(response, DummyResponse)
+    assert captured["url"] == "https://example.test"
+    assert captured["timeout"] == sp.SCRAPER_TIMEOUT_SECONDS
+    # When the flag is False, the session should skip inherited proxy settings.
+    assert captured["trust_env"] is False

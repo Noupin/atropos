@@ -61,6 +61,8 @@ The static marketing site under [`web/`](web/) renders follower and subscriber c
 - `ENABLE_SOCIAL_SCRAPER` — enables the HTML scraping fallback (default: `true`).
 - `CACHE_TTL_SECONDS` — TTL for in-memory stats cache (default: `300`).
 - `SCRAPER_TIMEOUT_SECONDS` / `SCRAPER_RETRIES` — tune scraper request timeouts and retry count.
+- `SOCIAL_SCRAPER_RESPECT_PROXIES` — when `true` (default) inherit `HTTP(S)_PROXY` settings; set to
+  `false` to bypass corporate/system proxies that block public network calls.
 - `DATA_DIR` — optional directory for subscriber data when running the Flask app locally. Defaults to `/data` in
   Docker and falls back to `<repo>/data` when `/data` is read-only.
 - `PUBLIC_BASE_URL` — optional override for unsubscribe and welcome email links. When unset, the app derives the

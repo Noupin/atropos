@@ -87,5 +87,7 @@ By following these boundaries the repository stays modular, predictable, and saf
 - Configure handles with the `SOCIAL_HANDLES` JSON environment variable (per-platform arrays). Toggle visibility with `ENABLE_SOCIAL_PLATFORMS`.
 - Control the staged pipeline via `ENABLE_SOCIAL_APIS`, `ENABLE_SOCIAL_SCRAPER`, and the per-platform toggles `ENABLE_YT_API`, `ENABLE_IG_API`, `ENABLE_TT_API`, `ENABLE_FB_API`.
 - Provide credentials through `YOUTUBE_API_KEY`, `INSTAGRAM_ACCESS_TOKEN`, and `FACEBOOK_ACCESS_TOKEN`. Map user/page identifiers with `INSTAGRAM_ID_MAP` and `FACEBOOK_ID_MAP` when handles differ from API IDs.
-- Tune caching and network behaviour with `CACHE_TTL_SECONDS`, `SCRAPER_TIMEOUT_SECONDS`, and `SCRAPER_RETRIES`.
+- Tune caching and network behaviour with `CACHE_TTL_SECONDS`, `SCRAPER_TIMEOUT_SECONDS`,
+  `SCRAPER_RETRIES`, and `SOCIAL_SCRAPER_RESPECT_PROXIES` (set to `false` when corporate proxies
+  block outbound scraping).
 - Persist subscriber/unsubscribe state via `DATA_DIR` (defaults to `/data` in Docker and to `<repo>/data` on local filesystems).
