@@ -226,6 +226,7 @@ class SocialPipeline:
         )
         self._config_mtime: Optional[float] = None
         self._config: Dict[str, List[str]] = {}
+        self._config_source: str = "empty"
         self._load_config()
 
     # ------------------------------------------------------------------
@@ -234,11 +235,13 @@ class SocialPipeline:
     def _load_config(self) -> None:
         env_config = os.environ.get("SOCIAL_OVERVIEW_HANDLES")
         loaded: Dict[str, List[str]] = {}
+        source = "empty"
         if env_config:
             try:
                 parsed = json.loads(env_config)
                 if isinstance(parsed, dict):
                     loaded = self._normalize_config(parsed)
+                    source = "env"
             except json.JSONDecodeError:
                 self.logger.warning("Invalid SOCIAL_OVERVIEW_HANDLES JSON")
         elif self.config_path.exists():
@@ -247,9 +250,11 @@ class SocialPipeline:
                     parsed = json.load(handle)
                 if isinstance(parsed, dict):
                     loaded = self._normalize_config(parsed)
+                    source = "file"
             except (OSError, json.JSONDecodeError) as exc:
                 self.logger.warning("Failed to load social config: %s", exc)
         self._config = loaded
+        self._config_source = source
         if self.config_path.exists():
             try:
                 self._config_mtime = self.config_path.stat().st_mtime
@@ -306,6 +311,27 @@ class SocialPipeline:
             "meta": {
                 "generated_at": _now_iso(),
                 "cache_ttl_seconds": self.cache_ttl,
+            },
+        }
+
+    def get_config(self) -> Dict[str, object]:
+        """Return the configured handles for each supported platform."""
+
+        self._reload_config_if_needed()
+        handles = {
+            platform: list(platform_handles)
+            for platform, platform_handles in self._config.items()
+            if platform in SUPPORTED_PLATFORMS
+        }
+        return {
+            "platforms": {
+                platform: {"handles": list(values)}
+                for platform, values in handles.items()
+            },
+            "handles": handles,
+            "meta": {
+                "generated_at": _now_iso(),
+                "source": self._config_source,
             },
         }
 

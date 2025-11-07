@@ -256,6 +256,12 @@ def social_overview():
     return jsonify(payload), 200
 
 
+@app.get("/api/social/config")
+def social_config():
+    payload = social_pipeline.get_config()
+    return jsonify(payload), 200
+
+
 @app.get("/api/social/stats")
 def social_stats():
     platform = (request.args.get("platform") or "").strip().lower()
