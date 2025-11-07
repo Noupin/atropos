@@ -61,5 +61,35 @@ The static marketing site under [`web/`](web/) renders follower and subscriber c
 - `ENABLE_SOCIAL_SCRAPER` — enables the HTML scraping fallback (default: `true`).
 - `CACHE_TTL_SECONDS` — TTL for in-memory stats cache (default: `300`).
 - `SCRAPER_TIMEOUT_SECONDS` / `SCRAPER_RETRIES` — tune scraper request timeouts and retry count.
+- `DATA_DIR` — optional directory for subscriber data when running the Flask app locally. Defaults to `/data` in
+  Docker and falls back to `<repo>/data` when `/data` is read-only.
 
 When API access is disabled or fails, the scraper provides approximate counts and the UI labels them with a `~` badge plus tooltip. If both API and scraping fail, the UI renders an em dash and marks the element with `data-status="unavailable"`.
+
+### Running the marketing API locally
+
+The Flask app mirrors the Docker image defaults and now works on macOS without mounting `/data`. A minimal local
+workflow:
+
+1. Create and activate a virtual environment:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   ```
+2. Install the lightweight dependencies used by the Docker image:
+   ```bash
+   pip install flask requests
+   ```
+3. Point the app at a writable data directory (optional — defaults to `<repo>/data` when `/data` is unavailable):
+   ```bash
+   export DATA_DIR="$(pwd)/data"
+   ```
+4. Start the development server on port 5001:
+   ```bash
+   export FLASK_APP=api.app:app
+   export FLASK_RUN_PORT=5001
+   flask run --reload
+   ```
+
+The first run will create `data/subscribers.json` and `data/unsub_tokens.json`. Docker Compose keeps writing to
+`/data` as before, so the container workflow remains unchanged.

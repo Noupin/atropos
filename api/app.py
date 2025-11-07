@@ -1,9 +1,53 @@
 from __future__ import annotations
-import os, json, re, time, threading, hmac, hashlib, base64, secrets, logging, smtplib
+import os, json, re, time, threading, hmac, hashlib, base64, secrets, logging, smtplib, tempfile
 from email.message import EmailMessage
 from email.utils import formataddr
 from pathlib import Path
 from flask import Flask, request, jsonify
+
+logger = logging.getLogger(__name__)
+
+
+def resolve_data_dir() -> Path:
+    """Return a writable directory for subscriber data."""
+
+    candidates: list[Path] = []
+
+    data_dir_override = os.environ.get("DATA_DIR")
+    if data_dir_override:
+        candidates.append(Path(data_dir_override))
+
+    candidates.append(Path("/data"))
+
+    repo_root = Path(__file__).resolve().parents[1]
+    repo_data = repo_root / "data"
+    candidates.append(repo_data)
+
+    cwd_data = Path.cwd() / "data"
+    if cwd_data != repo_data:
+        candidates.append(cwd_data)
+
+    seen: set[Path] = set()
+    for candidate in candidates:
+        candidate = candidate.expanduser()
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            logger.debug("Unable to prepare data dir %s: %s", candidate, exc)
+            continue
+        else:
+            return candidate
+
+    fallback = Path(tempfile.gettempdir()) / "atropos"
+    fallback.mkdir(parents=True, exist_ok=True)
+    logger.warning(
+        "Falling back to temporary data dir %s; set DATA_DIR for persistent storage.",
+        fallback,
+    )
+    return fallback
 
 try:  # pragma: no cover - import resolution for script vs package
     from .social_routes import blueprint as social_blueprint
@@ -15,8 +59,10 @@ except ImportError:  # pragma: no cover - fallback when executed as script
     from social_routes import blueprint as social_blueprint
 
 # ---------- config / storage ----------
-SUBSCRIBERS = Path(os.environ.get("SUBSCRIBERS_FILE", "/data/subscribers.json"))
-UNSUB_TOKENS = Path(os.environ.get("UNSUB_TOKENS_FILE", "/data/unsub_tokens.json"))
+DATA_DIR = resolve_data_dir()
+
+SUBSCRIBERS = Path(os.environ.get("SUBSCRIBERS_FILE") or DATA_DIR / "subscribers.json")
+UNSUB_TOKENS = Path(os.environ.get("UNSUB_TOKENS_FILE") or DATA_DIR / "unsub_tokens.json")
 BASE_URL      = os.environ.get("PUBLIC_BASE_URL", "https://atropos-video.com")
 
 SMTP_HOST     = os.environ.get("SMTP_HOST", "")
@@ -30,12 +76,22 @@ SMTP_USE_TLS  = os.environ.get("SMTP_USE_TLS", "true").lower() in ("1","true","y
 WINDOW        = int(os.environ.get("RATE_WINDOW_SECONDS", "60"))
 MAX_REQ       = int(os.environ.get("RATE_MAX_REQUESTS", "10"))
 
-for p in (SUBSCRIBERS.parent, UNSUB_TOKENS.parent):
-    p.mkdir(parents=True, exist_ok=True)
+for p in {SUBSCRIBERS.parent, UNSUB_TOKENS.parent}:
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.warning("Unable to ensure data directory %s: %s", p, exc)
+
 if not SUBSCRIBERS.exists():
-    SUBSCRIBERS.write_text("[]", encoding="utf-8")
+    try:
+        SUBSCRIBERS.write_text("[]", encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Unable to initialize subscribers file %s: %s", SUBSCRIBERS, exc)
 if not UNSUB_TOKENS.exists():
-    UNSUB_TOKENS.write_text("{}", encoding="utf-8")
+    try:
+        UNSUB_TOKENS.write_text("{}", encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Unable to initialize unsubscribe token file %s: %s", UNSUB_TOKENS, exc)
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
