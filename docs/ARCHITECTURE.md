@@ -80,3 +80,11 @@ Atropos is composed of three cooperating runtimes:
 | Modifying device fingerprinting | Update the dedicated helper under `desktop/src/renderer/src/services/device.ts` and document in an ADR. |
 
 By following these boundaries the repository stays modular, predictable, and safe for automated agents to evolve.
+
+## Marketing site social metrics
+
+- The Flask app in [`api/app.py`](../api/app.py) exposes `/api/social/config`, `/api/social/stats`, and `/api/social/overview` for follower/subscriber data.
+- Configure handles with the `SOCIAL_HANDLES` JSON environment variable (per-platform arrays). Toggle visibility with `ENABLE_SOCIAL_PLATFORMS`.
+- Control the staged pipeline via `ENABLE_SOCIAL_APIS`, `ENABLE_SOCIAL_SCRAPER`, and the per-platform toggles `ENABLE_YT_API`, `ENABLE_IG_API`, `ENABLE_TT_API`, `ENABLE_FB_API`.
+- Provide credentials through `YOUTUBE_API_KEY`, `INSTAGRAM_ACCESS_TOKEN`, and `FACEBOOK_ACCESS_TOKEN`. Map user/page identifiers with `INSTAGRAM_ID_MAP` and `FACEBOOK_ID_MAP` when handles differ from API IDs.
+- Tune caching and network behaviour with `CACHE_TTL_SECONDS`, `SCRAPER_TIMEOUT_SECONDS`, and `SCRAPER_RETRIES`.

@@ -30,11 +30,36 @@ For additional background on historical workflows, see [server/README.md](server
 
 ## Marketing site hero metrics
 
-The marketing site under [`web/`](web/) can display live follower counts from YouTube and Instagram in the homepage hero.
+The static marketing site under [`web/`](web/) renders follower and subscriber counts through the Python API in [`api/`](api/). The pipeline supports official APIs with a server-side scraping fallback and exposes three endpoints:
 
-1. Copy [`web/js/social.config.example.js`](web/js/social.config.example.js) to `web/js/social.config.js` and fill in your credentials. The example file is ignored by Git so secrets stay local.
-2. **YouTube:** Enable the YouTube Data API v3 for your Google Cloud project, then create an API key under **APIs & Services → Credentials**. Locate your channel ID from the YouTube Studio advanced settings.
-3. **Instagram:** Create a Meta app and connect your Instagram Business or Creator account to the Instagram Graph API. Generate a User Access Token with the `instagram_basic` permission and capture the Instagram user ID from the Graph API Explorer.
-4. Optionally adjust `refreshIntervalMs` (milliseconds) to refresh counts on a cadence; omit it to load counts only once per visit.
+- `GET /api/social/config` — returns the configured handles per platform and the client-facing enable flags.
+- `GET /api/social/stats?platform=<yt|ig|tt|fb>&handles=<comma-separated>` — returns per-account results, totals, and the active data source.
+- `GET /api/social/overview` — aggregates enabled platforms and includes a grand-total audience count.
 
-Without credentials, the hero falls back to the static figures baked into the markup so the layout remains consistent.
+### Configuration & feature flags
+
+- `SOCIAL_HANDLES` — optional JSON object overriding the default handle list per platform. Example:
+  ```json
+  {
+    "youtube": ["ExampleChannel"],
+    "instagram": ["example.ig"],
+    "tiktok": [],
+    "facebook": []
+  }
+  ```
+- `ENABLE_SOCIAL_PLATFORMS` — optional JSON object toggling platform visibility on the web surface (default: YouTube/Instagram enabled, TikTok/Facebook hidden).
+
+### Data sources & fallbacks
+
+- `ENABLE_SOCIAL_APIS` — master switch for first-party API integrations (default: `false`).
+- `ENABLE_YT_API`, `ENABLE_IG_API`, `ENABLE_TT_API`, `ENABLE_FB_API` — per-platform API toggles.
+- `YOUTUBE_API_KEY` — API key for the YouTube Data API v3 (`ENABLE_YT_API` must be enabled).
+- `INSTAGRAM_ACCESS_TOKEN` — long-lived token for the Instagram Graph API.
+- `INSTAGRAM_ID_MAP` — optional JSON mapping of Instagram handles to Graph API user IDs.
+- `FACEBOOK_ACCESS_TOKEN` — token for the Facebook Graph API.
+- `FACEBOOK_ID_MAP` — optional JSON mapping of Facebook page slugs to numeric page IDs.
+- `ENABLE_SOCIAL_SCRAPER` — enables the HTML scraping fallback (default: `true`).
+- `CACHE_TTL_SECONDS` — TTL for in-memory stats cache (default: `300`).
+- `SCRAPER_TIMEOUT_SECONDS` / `SCRAPER_RETRIES` — tune scraper request timeouts and retry count.
+
+When API access is disabled or fails, the scraper provides approximate counts and the UI labels them with a `~` badge plus tooltip. If both API and scraping fail, the UI renders an em dash and marks the element with `data-status="unavailable"`.

@@ -5,6 +5,15 @@ from email.utils import formataddr
 from pathlib import Path
 from flask import Flask, request, jsonify
 
+try:  # pragma: no cover - import resolution for script vs package
+    from .social_routes import blueprint as social_blueprint
+except ImportError:  # pragma: no cover - fallback when executed as script
+    import os
+    import sys
+
+    sys.path.append(os.path.dirname(__file__))
+    from social_routes import blueprint as social_blueprint
+
 # ---------- config / storage ----------
 SUBSCRIBERS = Path(os.environ.get("SUBSCRIBERS_FILE", "/data/subscribers.json"))
 UNSUB_TOKENS = Path(os.environ.get("UNSUB_TOKENS_FILE", "/data/unsub_tokens.json"))
@@ -183,6 +192,7 @@ Unsubscribe: {unsub_link}
 
 # ---------- app ----------
 app = Flask(__name__)
+app.register_blueprint(social_blueprint)
 
 # log to stdout (visible in `docker compose logs -f atropos-video-api`)
 handler = logging.StreamHandler()

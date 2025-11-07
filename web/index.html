@@ -73,50 +73,48 @@
               </p>
             </header>
 
-            <div
-              class="hero__metrics"
-              id="socialMetrics"
-            >
-              <div
-                class="hero__metric hero__metric--placeholder"
-                data-platform="youtube"
-                data-fallback-count="123000"
-                data-fallback-accounts="3"
-              >
-                <span class="hero__metric-label">YouTube</span>
-                <span class="hero__metric-value" id="youtubeMetric">123K</span>
-                <span class="hero__metric-caption">Subscribers</span>
+            <div class="hero__metrics-block">
+              <div class="hero__metrics" id="socialMetrics" aria-live="polite">
+                <div class="hero__metric" data-platform="youtube" data-status="loading">
+                  <span class="hero__metric-label">YouTube</span>
+                  <span class="hero__metric-value-row">
+                    <span class="hero__metric-value">—</span>
+                    <span class="hero__metric-badge" aria-hidden="true" hidden>~</span>
+                  </span>
+                  <span class="hero__metric-caption">Subscribers</span>
+                </div>
+                <div class="hero__metric" data-platform="instagram" data-status="loading">
+                  <span class="hero__metric-label">Instagram</span>
+                  <span class="hero__metric-value-row">
+                    <span class="hero__metric-value">—</span>
+                    <span class="hero__metric-badge" aria-hidden="true" hidden>~</span>
+                  </span>
+                  <span class="hero__metric-caption">Followers</span>
+                </div>
+                <div class="hero__metric" data-platform="tiktok" data-status="loading">
+                  <span class="hero__metric-label">TikTok</span>
+                  <span class="hero__metric-value-row">
+                    <span class="hero__metric-value">—</span>
+                    <span class="hero__metric-badge" aria-hidden="true" hidden>~</span>
+                  </span>
+                  <span class="hero__metric-caption">Followers</span>
+                </div>
+                <div class="hero__metric" data-platform="facebook" data-status="loading">
+                  <span class="hero__metric-label">Facebook</span>
+                  <span class="hero__metric-value-row">
+                    <span class="hero__metric-value">—</span>
+                    <span class="hero__metric-badge" aria-hidden="true" hidden>~</span>
+                  </span>
+                  <span class="hero__metric-caption">Followers</span>
+                </div>
               </div>
-              <div
-                class="hero__metric hero__metric--placeholder"
-                data-platform="instagram"
-                data-fallback-count="86500"
-                data-fallback-accounts="4"
-              >
-                <span class="hero__metric-label">Instagram</span>
-                <span class="hero__metric-value" id="instagramMetric">86.5K</span>
-                <span class="hero__metric-caption">Followers</span>
+              <div class="hero__metrics-summary" id="socialMetricsSummary" hidden>
+                <span class="hero__metrics-summary-label">All platforms</span>
+                <span class="hero__metrics-summary-value" id="socialMetricsTotal">—</span>
               </div>
-              <div
-                class="hero__metric hero__metric--placeholder"
-                data-platform="tiktok"
-                data-fallback-count="98000"
-                data-fallback-accounts="4"
-              >
-                <span class="hero__metric-label">TikTok</span>
-                <span class="hero__metric-value" id="tiktokMetric">98K</span>
-                <span class="hero__metric-caption">Followers</span>
-              </div>
-              <div
-                class="hero__metric hero__metric--placeholder"
-                data-platform="facebook"
-                data-fallback-count="45200"
-                data-fallback-accounts="2"
-              >
-                <span class="hero__metric-label">Facebook</span>
-                <span class="hero__metric-value" id="facebookMetric">45.2K</span>
-                <span class="hero__metric-caption">Subscribers</span>
-              </div>
+              <p class="hero__metrics-footnote" id="socialMetricsFootnote" hidden>
+                Counts are approximate when marked. Data may be delayed.
+              </p>
             </div>
 
             <div class="hero__subbanner" role="status" aria-live="polite">
@@ -247,7 +245,6 @@
       <footer><span id="year"></span> · Atropos</footer>
     </main>
 
-    <script src="/js/social.config.js" defer></script>
     <script src="/js/footer-year.js" defer></script>
     <script src="/js/signup.js" defer></script>
     <script src="/js/phrase-rotator.js" defer></script>

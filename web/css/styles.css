@@ -510,9 +510,14 @@ body::after {
     transform: translateY(-100%);
   }
 }
+.hero__metrics-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 .hero__metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: clamp(12px, 3vw, 20px);
   background: rgba(255, 255, 255, 0.85);
   border-radius: 18px;
@@ -525,6 +530,8 @@ body::after {
   flex-direction: column;
   gap: 4px;
   align-items: flex-start;
+  min-width: 140px;
+  flex: 1 1 140px;
 }
 .hero__metric-label {
   font-size: 13px;
@@ -532,23 +539,74 @@ body::after {
   text-transform: uppercase;
   color: var(--muted);
 }
+.hero__metric-value-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .hero__metric-value {
   font-size: clamp(24px, 5vw, 34px);
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--crevice);
 }
+.hero__metric-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--crevice);
+  background: rgba(45, 44, 42, 0.08);
+  border: 1px solid rgba(45, 44, 42, 0.2);
+}
 .hero__metric-caption {
   font-size: 14px;
   color: #4f4c46;
 }
-.hero__metric--placeholder .hero__metric-value,
-.hero__metric-value--placeholder {
-  opacity: 0.75;
+.hero__metric[data-status="loading"] .hero__metric-value,
+.hero__metric[data-status="unavailable"] .hero__metric-value {
+  opacity: 0.7;
   font-style: italic;
 }
-.hero__metric--placeholder .hero__metric-caption {
+.hero__metric[data-status="unavailable"] .hero__metric-caption,
+.hero__metric[data-status="loading"] .hero__metric-caption {
   opacity: 0.8;
+}
+.hero__metric[data-status="unavailable"] {
+  opacity: 0.8;
+}
+.hero__metric--approximate .hero__metric-badge {
+  display: inline-flex;
+}
+.hero__metric--approximate .hero__metric-badge[hidden] {
+  display: none;
+}
+.hero__metrics-summary {
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 15px;
+  color: var(--crevice);
+}
+.hero__metrics-summary-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+  color: var(--muted);
+}
+.hero__metrics-summary-value {
+  font-size: 18px;
+  font-weight: 600;
+}
+.hero__metrics-footnote {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
 }
 
 .hero__subbanner {
