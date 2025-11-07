@@ -96,8 +96,9 @@ workflow:
 The first run will create `data/subscribers.json` and `data/unsub_tokens.json`. Docker Compose keeps writing to
 `/data` as before, so the container workflow remains unchanged.
 
-When you open `web/index.html` from another local static server (e.g. `http://localhost:8080`), the
-marketing JavaScript first tries the page's origin and then automatically falls back to
-`http://127.0.0.1:5001/api/social/` so a standalone Flask app keeps serving metrics without an extra proxy.
+When you open `web/index.html` from another local or private static host (e.g. `http://localhost:8080` or
+`http://192.168.1.10:3000`), the marketing JavaScript first tries the page's origin and then automatically
+falls back to `http://127.0.0.1:5001/api/social/` so a standalone Flask app keeps serving metrics without
+an extra proxy. Public deployments continue using the page origin unless you provide a manual override.
 To point the site at a different API host, add a `<meta name="marketing-api-base-url" ...>` tag in
 `index.html` with the full base URL (including `/api/social/`).

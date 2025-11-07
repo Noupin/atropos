@@ -49,11 +49,23 @@
 
     addCandidate(normaliseApiRoot(`${window.location.origin}/api/social/`));
 
-    const localHosts = new Set(["localhost", "127.0.0.1"]);
-    const isLocalHost = localHosts.has(window.location.hostname);
-    const isFileProtocol = window.location.protocol === "file:";
+    const { hostname, protocol } = window.location;
+    const isFileProtocol = protocol === "file:";
 
-    if (isLocalHost || isFileProtocol) {
+    const isLocalHostname = (() => {
+      if (!hostname) return false;
+      if (hostname === "localhost" || hostname === "0.0.0.0") return true;
+      if (hostname === "::1" || hostname === "[::1]") return true;
+      if (/^127(?:\.\d{1,3}){3}$/.test(hostname)) return true;
+      if (/^10(?:\.\d{1,3}){3}$/.test(hostname)) return true;
+      if (/^192\.168(?:\.\d{1,3}){2}$/.test(hostname)) return true;
+      if (/^172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}$/.test(hostname)) return true;
+      if (hostname.endsWith(".localhost") || hostname.endsWith(".local")) return true;
+      if (hostname.endsWith(".test")) return true;
+      return false;
+    })();
+
+    if (isFileProtocol || isLocalHostname) {
       addCandidate(normaliseApiRoot("http://127.0.0.1:5001/api/social/"));
       addCandidate(normaliseApiRoot("http://localhost:5001/api/social/"));
     }
