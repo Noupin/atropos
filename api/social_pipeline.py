@@ -1175,6 +1175,13 @@ class SocialPipeline:
             if normalized:
                 text_variants.append((normalized, f"{attempt}-text"))
 
+        markdown = re.sub(r"\[(.*?)\]\((.*?)\)", r"\1", html)
+        markdown = re.sub(r"[\[\]*_`]", "", markdown)
+        markdown = markdown.replace("•", " ")
+        markdown = re.sub(r"\s+", " ", unescape(markdown)).strip()
+        if markdown and markdown != html:
+            text_variants.append((markdown, f"{attempt}-markdown"))
+
         for candidate, label in text_variants:
             match = FACEBOOK_FOLLOW_RE.search(candidate)
             if match:
