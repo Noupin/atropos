@@ -23,6 +23,9 @@ SCRAPER_TIMEOUT_SECONDS = float(os.environ.get("SCRAPER_TIMEOUT_SECONDS", "6"))
 SCRAPER_RETRIES = int(os.environ.get("SCRAPER_RETRIES", "2"))
 DEFAULT_CACHE_SECONDS = int(os.environ.get("SOCIAL_CACHE_SECONDS", "900"))
 TEXT_PROXY_PREFIX = "https://r.jina.ai/"
+INSTAGRAM_WEB_APP_ID = os.environ.get(
+    "INSTAGRAM_WEB_APP_ID", "936619743392459"
+)
 
 YT_INITIAL_DATA_RE = re.compile(r"ytInitialData\s*=\s*(\{.+?\})\s*;", re.DOTALL)
 YT_INITIAL_PLAYER_RE = re.compile(
@@ -434,11 +437,18 @@ class SocialPipeline:
     # HTTP helpers
     # ------------------------------------------------------------------
     def _request(
-        self, url: str, platform: str, handle: str, attempt: str
+        self,
+        url: str,
+        platform: str,
+        handle: str,
+        attempt: str,
+        headers: Optional[Dict[str, str]] = None,
     ) -> Optional[Response]:
         start = time.perf_counter()
         try:
-            response = self.session.get(url, timeout=SCRAPER_TIMEOUT_SECONDS)
+            response = self.session.get(
+                url, timeout=SCRAPER_TIMEOUT_SECONDS, headers=headers
+            )
         except requests.RequestException as exc:
             elapsed = time.perf_counter() - start
             self.logger.info(
@@ -782,14 +792,29 @@ class SocialPipeline:
 
     def _fetch_instagram_scrape(self, handle: str) -> AccountStats:
         slug = handle.lstrip("@")
-        urls = [
-            f"https://www.instagram.com/{slug}/?__a=1&__d=1",
-            f"https://www.instagram.com/{slug}/",
+        attempts = [
+            (
+                "json",
+                f"https://www.instagram.com/api/v1/users/web_profile_info/?username={slug}",
+            ),
+            (
+                "json",
+                f"https://i.instagram.com/api/v1/users/web_profile_info/?username={slug}",
+            ),
+            ("direct", f"https://www.instagram.com/{slug}/?__a=1&__d=1"),
+            ("direct", f"https://www.instagram.com/{slug}/"),
         ]
-        for url in urls:
-            response = self._request(url, "instagram", handle, "direct")
+        for attempt, url in attempts:
+            headers = None
+            if attempt == "json":
+                headers = {
+                    "Accept": "application/json",
+                    "X-IG-App-ID": INSTAGRAM_WEB_APP_ID,
+                    "Referer": "https://www.instagram.com/",
+                }
+            response = self._request(url, "instagram", handle, attempt, headers=headers)
             body = response.text if response and response.ok else ""
-            count, source = self._parse_instagram_payload(body, handle, "direct", url)
+            count, source = self._parse_instagram_payload(body, handle, attempt, url)
             if count is not None:
                 return AccountStats(
                     handle=handle,
@@ -797,17 +822,18 @@ class SocialPipeline:
                     fetched_at=_now(),
                     source=f"scrape:{source}",
                 )
-            proxy_body = self._fetch_text(url, "instagram", handle)
-            count, source = self._parse_instagram_payload(
-                proxy_body or "", handle, "text-proxy", url
-            )
-            if count is not None:
-                return AccountStats(
-                    handle=handle,
-                    count=count,
-                    fetched_at=_now(),
-                    source=f"scrape:{source}",
+            if attempt == "direct":
+                proxy_body = self._fetch_text(url, "instagram", handle)
+                count, source = self._parse_instagram_payload(
+                    proxy_body or "", handle, "text-proxy", url
                 )
+                if count is not None:
+                    return AccountStats(
+                        handle=handle,
+                        count=count,
+                        fetched_at=_now(),
+                        source=f"scrape:{source}",
+                    )
         return AccountStats(
             handle=handle,
             count=None,
@@ -832,18 +858,50 @@ class SocialPipeline:
         except json.JSONDecodeError:
             data = None
         if isinstance(data, dict):
-            graphql = data.get("graphql", {})
-            user = graphql.get("user") if isinstance(graphql, dict) else None
-            if isinstance(user, dict):
-                count = user.get("edge_followed_by", {}).get("count")
+            containers = [
+                ("data", data.get("data")),
+                ("graphql", data.get("graphql")),
+            ]
+            for label, container in containers:
+                if not isinstance(container, dict):
+                    continue
+                user = container.get("user")
+                if not isinstance(user, dict):
+                    continue
+                edge_followed_by = user.get("edge_followed_by", {})
+                if isinstance(edge_followed_by, dict):
+                    count = edge_followed_by.get("count")
+                elif isinstance(edge_followed_by, int):
+                    count = edge_followed_by
+                else:
+                    count = None
                 if isinstance(count, int):
+                    parse_label = (
+                        "graphql" if label == "graphql" else f"{label}_edge_followed_by"
+                    )
                     self.logger.info(
-                        "instagram handle=%s attempt=%s parse=graphql count=%s",
+                        "instagram handle=%s attempt=%s parse=%s count=%s",
                         handle,
                         attempt,
+                        parse_label,
                         count,
                     )
-                    return count, f"{attempt}:graphql"
+                    return count, f"{attempt}:{parse_label}"
+                follower_count = user.get("follower_count")
+                if isinstance(follower_count, int):
+                    parse_label = (
+                        "graphql_follower_count"
+                        if label == "graphql"
+                        else f"{label}_follower_count"
+                    )
+                    self.logger.info(
+                        "instagram handle=%s attempt=%s parse=%s count=%s",
+                        handle,
+                        attempt,
+                        parse_label,
+                        follower_count,
+                    )
+                    return follower_count, f"{attempt}:{parse_label}"
         ld_match = INSTAGRAM_LD_JSON_RE.search(payload)
         if ld_match:
             try:
