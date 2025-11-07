@@ -12,6 +12,34 @@
     ? socialConfig.accounts
     : [];
 
+  const getTrimmedString = (value) =>
+    typeof value === "string" && value.trim() ? value.trim() : "";
+
+  const getHandleString = (value) => {
+    const trimmed = getTrimmedString(value);
+    return trimmed ? trimmed.replace(/^@+/, "") : "";
+  };
+
+  const pickFirstString = (...values) => {
+    for (const value of values) {
+      const trimmed = getTrimmedString(value);
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+    return "";
+  };
+
+  const pickFirstHandle = (...values) => {
+    for (const value of values) {
+      const handle = getHandleString(value);
+      if (handle) {
+        return handle;
+      }
+    }
+    return "";
+  };
+
   const extractTopLevelAccounts = (platform) => {
     if (!globalAccountConfigs.length) {
       return [];
@@ -22,15 +50,82 @@
       if (!entry || typeof entry !== "object") {
         continue;
       }
+
       const value = entry[platform];
       if (value == null) {
         continue;
       }
-      if (Array.isArray(value)) {
-        accounts.push(...value);
-      } else {
-        accounts.push(value);
+
+      const sharedMeta = {};
+      const genericHandle = getHandleString(entry.handle);
+      if (genericHandle) {
+        sharedMeta.handle = genericHandle;
+        sharedMeta.username = sharedMeta.username || genericHandle;
       }
+
+      const genericUsername = getHandleString(entry.username);
+      if (genericUsername) {
+        if (!sharedMeta.handle) {
+          sharedMeta.handle = genericUsername;
+        }
+        sharedMeta.username = sharedMeta.username || genericUsername;
+      }
+
+      const platformHandleKey = `${platform}Handle`;
+      const platformUsernameKey = `${platform}Username`;
+      const platformSlugKey = `${platform}Slug`;
+
+      const platformHandle = getHandleString(entry[platformHandleKey]);
+      if (platformHandle) {
+        sharedMeta.handle = platformHandle;
+        sharedMeta.username = sharedMeta.username || platformHandle;
+      }
+
+      const platformUsername = getHandleString(entry[platformUsernameKey]);
+      if (platformUsername) {
+        sharedMeta.username = platformUsername;
+        if (!sharedMeta.handle) {
+          sharedMeta.handle = platformUsername;
+        }
+      }
+
+      const platformSlug = getHandleString(entry[platformSlugKey]);
+      if (platformSlug) {
+        sharedMeta.slug = platformSlug;
+        if (!sharedMeta.handle) {
+          sharedMeta.handle = platformSlug;
+        }
+        if (!sharedMeta.username) {
+          sharedMeta.username = platformSlug;
+        }
+      }
+
+      if (typeof entry.label === "string" && entry.label.trim()) {
+        sharedMeta.label = entry.label.trim();
+      }
+
+      const hasSharedMeta = Object.keys(sharedMeta).length > 0;
+
+      const pushAccount = (rawValue) => {
+        if (rawValue == null) {
+          return;
+        }
+        if (Array.isArray(rawValue)) {
+          rawValue.forEach((item) => pushAccount(item));
+          return;
+        }
+        if (rawValue && typeof rawValue === "object") {
+          accounts.push(hasSharedMeta ? { ...sharedMeta, ...rawValue } : rawValue);
+          return;
+        }
+        if (typeof rawValue === "string" && hasSharedMeta) {
+          accounts.push({ ...sharedMeta, id: rawValue });
+          return;
+        }
+        accounts.push(rawValue);
+      };
+
+      pushAccount(value);
     }
     return accounts;
   };
@@ -302,56 +397,66 @@
       raw.push(...shared);
     }
 
+    const platformHandle = pickFirstHandle(
+      platformConfig.youtubeHandle,
+      platformConfig.channelHandle,
+      platformConfig.handle,
+      platformConfig.username,
+      platformConfig.slug,
+      platformConfig.profileHandle
+    );
+
+    const basePattern = getTrimmedString(platformConfig.scrapePattern) || null;
+
     return raw
       .map((entry) => {
         const source = entry && typeof entry === "object" ? entry : {};
+        const resolvedPattern =
+          (typeof source.scrapePattern === "string" && source.scrapePattern.trim()) ||
+          basePattern;
+
+        const resolvedHandle = pickFirstHandle(
+          source.youtubeHandle,
+          source.channelHandle,
+          source.handle,
+          source.username,
+          source.slug,
+          source.profileHandle,
+          platformHandle
+        );
+
         if (typeof entry === "string" && entry.trim()) {
           const channelId = entry.trim();
-          const defaultPattern =
-            typeof platformConfig.scrapePattern === "string" &&
-            platformConfig.scrapePattern.trim()
-              ? platformConfig.scrapePattern.trim()
-              : null;
           return {
             channelId,
-            scrapeUrl: `https://www.youtube.com/channel/${channelId}/about`,
-            scrapePattern: defaultPattern,
+            handle: resolvedHandle,
+            scrapePattern: resolvedPattern,
             scrapeDisabled: isScrapeDisabled({}, platformConfig),
           };
         }
-        const channelIdCandidate =
-          typeof source.channelId === "string" && source.channelId.trim()
-            ? source.channelId.trim()
-            : typeof source.youtubeChannelId === "string" &&
-              source.youtubeChannelId.trim()
-            ? source.youtubeChannelId.trim()
-            : typeof source.id === "string" && source.id.trim()
-            ? source.id.trim()
-            : "";
+
+        const channelIdCandidate = pickFirstString(
+          source.channelId,
+          source.youtubeChannelId,
+          source.id
+        );
+
         if (channelIdCandidate) {
-          const explicitUrl =
-            typeof source.scrapeUrl === "string" && source.scrapeUrl.trim()
-              ? source.scrapeUrl.trim()
-              : typeof source.channelUrl === "string" && source.channelUrl.trim()
-              ? source.channelUrl.trim()
-              : "";
-          const defaultUrl = channelIdCandidate
-            ? `https://www.youtube.com/channel/${channelIdCandidate}/about`
-            : "";
-          const pattern =
-            typeof source.scrapePattern === "string" && source.scrapePattern.trim()
-              ? source.scrapePattern.trim()
-              : typeof platformConfig.scrapePattern === "string" &&
-                platformConfig.scrapePattern.trim()
-              ? platformConfig.scrapePattern.trim()
-              : null;
+          const channelUrl = pickFirstString(
+            source.channelUrl,
+            source.profileUrl,
+            source.url
+          );
+
           return {
             channelId: channelIdCandidate,
-            scrapeUrl: explicitUrl || defaultUrl,
-            scrapePattern: pattern,
+            handle: resolvedHandle,
+            channelUrl,
+            scrapePattern: resolvedPattern,
             scrapeDisabled: isScrapeDisabled(source, platformConfig),
           };
         }
+
         return null;
       })
       .filter(Boolean);
@@ -379,6 +484,16 @@
       raw.push(...shared);
     }
 
+    const platformUsername = pickFirstHandle(
+      platformConfig.instagramHandle,
+      platformConfig.username,
+      platformConfig.handle,
+      platformConfig.slug,
+      platformConfig.profileHandle
+    );
+
+    const basePattern = getTrimmedString(platformConfig.scrapePattern) || null;
+
     return raw
       .map((entry) => {
         const source = entry && typeof entry === "object" ? entry : {};
@@ -388,16 +503,11 @@
           return baseToken
             ? {
                 userId: trimmed,
-                username: isNumericId ? "" : trimmed,
+                username: isNumericId
+                  ? pickFirstHandle(platformUsername, source.username)
+                  : trimmed.replace(/^@/, ""),
                 accessToken: baseToken,
-                scrapeUrl: isNumericId
-                  ? ""
-                  : `https://www.instagram.com/${trimmed.replace(/^@/, "")}/`,
-                scrapePattern:
-                  typeof platformConfig.scrapePattern === "string" &&
-                  platformConfig.scrapePattern.trim()
-                    ? platformConfig.scrapePattern.trim()
-                    : null,
+                scrapePattern: basePattern,
                 scrapeDisabled: isScrapeDisabled({}, platformConfig),
               }
             : null;
@@ -419,33 +529,20 @@
           if (!token) {
             return null;
           }
-          const username =
-            typeof source.username === "string" && source.username.trim()
-              ? source.username.trim().replace(/^@/, "")
-              : "";
-          const profileUrl =
-            typeof source.profileUrl === "string" && source.profileUrl.trim()
-              ? source.profileUrl.trim()
-              : "";
+          const username = pickFirstHandle(
+            source.username,
+            source.handle,
+            source.slug,
+            source.profileHandle,
+            platformUsername
+          );
           const scrapePattern =
-            typeof source.scrapePattern === "string" && source.scrapePattern.trim()
-              ? source.scrapePattern.trim()
-              : typeof platformConfig.scrapePattern === "string" &&
-                platformConfig.scrapePattern.trim()
-              ? platformConfig.scrapePattern.trim()
-              : null;
+            (typeof source.scrapePattern === "string" && source.scrapePattern.trim()) ||
+            basePattern;
           return {
             userId: userIdCandidate,
             username,
             accessToken: token,
-            scrapeUrl:
-              typeof source.scrapeUrl === "string" && source.scrapeUrl.trim()
-                ? source.scrapeUrl.trim()
-                : profileUrl
-                ? profileUrl
-                : username
-                ? `https://www.instagram.com/${username}/`
-                : "",
             scrapePattern,
             scrapeDisabled: isScrapeDisabled(source, platformConfig),
           };
@@ -477,6 +574,17 @@
       raw.push(...shared);
     }
 
+    const platformHandle = pickFirstHandle(
+      platformConfig.facebookHandle,
+      platformConfig.pageHandle,
+      platformConfig.username,
+      platformConfig.handle,
+      platformConfig.slug,
+      platformConfig.profileHandle
+    );
+
+    const basePattern = getTrimmedString(platformConfig.scrapePattern) || null;
+
     return raw
       .map((entry) => {
         const source = entry && typeof entry === "object" ? entry : {};
@@ -486,12 +594,8 @@
             ? {
                 pageId,
                 accessToken: baseToken,
-                scrapeUrl: `https://www.facebook.com/${pageId}/`,
-                scrapePattern:
-                  typeof platformConfig.scrapePattern === "string" &&
-                  platformConfig.scrapePattern.trim()
-                    ? platformConfig.scrapePattern.trim()
-                    : null,
+                slug: pickFirstHandle(platformHandle, source.slug),
+                scrapePattern: basePattern,
                 scrapeDisabled: isScrapeDisabled({}, platformConfig),
               }
             : null;
@@ -513,23 +617,24 @@
           if (!token) {
             return null;
           }
+          const slug = pickFirstHandle(
+            source.slug,
+            source.handle,
+            source.pageHandle,
+            source.username,
+            platformHandle
+          );
           const scrapePattern =
-            typeof source.scrapePattern === "string" && source.scrapePattern.trim()
-              ? source.scrapePattern.trim()
-              : typeof platformConfig.scrapePattern === "string" &&
-                platformConfig.scrapePattern.trim()
-              ? platformConfig.scrapePattern.trim()
-              : null;
-          const scrapeUrl =
-            typeof source.scrapeUrl === "string" && source.scrapeUrl.trim()
-              ? source.scrapeUrl.trim()
-              : typeof source.pageUrl === "string" && source.pageUrl.trim()
-              ? source.pageUrl.trim()
-              : `https://www.facebook.com/${pageIdCandidate}/`;
+            (typeof source.scrapePattern === "string" && source.scrapePattern.trim()) ||
+            basePattern;
           return {
             pageId: pageIdCandidate,
             accessToken: token,
-            scrapeUrl,
+            slug,
+            pageUrl:
+              typeof source.pageUrl === "string" && source.pageUrl.trim()
+                ? source.pageUrl.trim()
+                : "",
             scrapePattern,
             scrapeDisabled: isScrapeDisabled(source, platformConfig),
           };
@@ -552,6 +657,16 @@
       raw.push(...shared);
     }
 
+    const platformHandle = pickFirstHandle(
+      platformConfig.tiktokHandle,
+      platformConfig.handle,
+      platformConfig.username,
+      platformConfig.slug,
+      platformConfig.profileHandle
+    );
+
+    const basePattern = getTrimmedString(platformConfig.scrapePattern) || null;
+
     return raw
       .map((entry) => {
         if (entry == null) return null;
@@ -566,8 +681,10 @@
           const num = Number(trimmed);
           if (Number.isFinite(num)) {
             normalized.followerCount = num;
+          } else if (/^https?:\/\//i.test(trimmed)) {
+            normalized.profileUrl = trimmed;
           } else {
-            normalized.scrapeUrl = trimmed;
+            normalized.handle = getHandleString(trimmed);
           }
         } else if (typeof entry === "object") {
           if (
@@ -593,8 +710,20 @@
             normalized.jsonPath = pathCandidate;
           }
 
-          if (typeof source.scrapeUrl === "string" && source.scrapeUrl.trim()) {
-            normalized.scrapeUrl = source.scrapeUrl.trim();
+          if (typeof source.profileUrl === "string" && source.profileUrl.trim()) {
+            normalized.profileUrl = source.profileUrl.trim();
+          }
+
+          const resolvedHandle = pickFirstHandle(
+            source.handle,
+            source.username,
+            source.slug,
+            source.id,
+            source.profileHandle,
+            platformHandle
+          );
+          if (resolvedHandle) {
+            normalized.handle = resolvedHandle;
           }
 
           if (
@@ -607,14 +736,21 @@
 
         if (
           normalized.scrapePattern == null &&
-          typeof platformConfig.scrapePattern === "string" &&
-          platformConfig.scrapePattern.trim()
+          basePattern
         ) {
-          normalized.scrapePattern = platformConfig.scrapePattern.trim();
+          normalized.scrapePattern = basePattern;
         }
 
         if (!Object.prototype.hasOwnProperty.call(normalized, "scrapeDisabled")) {
           normalized.scrapeDisabled = isScrapeDisabled(source, platformConfig);
+        }
+
+        if (
+          !normalized.handle &&
+          typeof platformHandle === "string" &&
+          platformHandle
+        ) {
+          normalized.handle = platformHandle;
         }
 
         if (Object.keys(normalized).length === 0) {
@@ -651,6 +787,132 @@
     return `${normalized}${suffixValue}`;
   };
 
+  const ensureTrailingSlash = (url) => {
+    if (!url) return "";
+    return url.endsWith("/") ? url : `${url}/`;
+  };
+
+  const buildYouTubeScrapeUrl = (account) => {
+    const explicit = getTrimmedString(account.scrapeUrl);
+    if (explicit) {
+      return ensureSuffix(
+        ensureAbsoluteUrl(explicit, "https://www.youtube.com"),
+        "about"
+      );
+    }
+
+    const channelUrl = getTrimmedString(
+      account.channelUrl || account.profileUrl || account.url
+    );
+    if (channelUrl) {
+      return ensureSuffix(
+        ensureAbsoluteUrl(channelUrl, "https://www.youtube.com"),
+        "about"
+      );
+    }
+
+    const handle = pickFirstHandle(
+      account.youtubeHandle,
+      account.channelHandle,
+      account.handle,
+      account.username,
+      account.slug,
+      account.profileHandle
+    );
+    if (handle) {
+      return `https://www.youtube.com/@${handle}/about`;
+    }
+
+    const channelId = pickFirstString(
+      account.channelId,
+      account.youtubeChannelId,
+      account.id
+    );
+    if (channelId) {
+      return `https://www.youtube.com/channel/${channelId}/about`;
+    }
+
+    return "";
+  };
+
+  const buildInstagramScrapeUrl = (account) => {
+    const explicit = getTrimmedString(
+      account.scrapeUrl || account.profileUrl || account.url
+    );
+    if (explicit) {
+      return ensureTrailingSlash(
+        ensureAbsoluteUrl(explicit, "https://www.instagram.com")
+      );
+    }
+
+    const username = pickFirstHandle(
+      account.username,
+      account.handle,
+      account.slug,
+      account.profileHandle
+    );
+    if (username) {
+      return `https://www.instagram.com/${username}/`;
+    }
+
+    return "";
+  };
+
+  const buildFacebookScrapeUrl = (account) => {
+    const explicit = getTrimmedString(
+      account.scrapeUrl || account.pageUrl || account.url
+    );
+    if (explicit) {
+      return ensureTrailingSlash(
+        ensureAbsoluteUrl(explicit, "https://www.facebook.com")
+      );
+    }
+
+    const slug = pickFirstHandle(
+      account.slug,
+      account.handle,
+      account.pageHandle,
+      account.username,
+      account.profileHandle
+    );
+    if (slug) {
+      return `https://www.facebook.com/${slug}/`;
+    }
+
+    const pageId = pickFirstString(
+      account.pageId,
+      account.facebookPageId,
+      account.id
+    );
+    if (pageId) {
+      return `https://www.facebook.com/${pageId}/`;
+    }
+
+    return "";
+  };
+
+  const buildTikTokScrapeUrl = (account) => {
+    const explicit = getTrimmedString(
+      account.scrapeUrl || account.profileUrl || account.url
+    );
+    if (explicit) {
+      return ensureAbsoluteUrl(explicit, "https://www.tiktok.com");
+    }
+
+    const handle = pickFirstHandle(
+      account.handle,
+      account.username,
+      account.slug,
+      account.profileHandle,
+      account.id
+    );
+    if (handle) {
+      return `https://www.tiktok.com/@${handle}`;
+    }
+
+    return "";
+  };
+
   const DEFAULT_SCRAPE_PATTERNS = {
     youtube: "(?P<count>[0-9.,KMB]+)\\s+subscribers",
     instagram: '"edge_followed_by"\\s*:\\s*\\{"count"\\s*:\\s*(?P<count>[0-9]+)\\}',
@@ -664,10 +926,7 @@
         const accounts = getYouTubeAccounts(config)
           .filter((account) => !account.scrapeDisabled)
           .map((account) => {
-            const url = ensureSuffix(
-              ensureAbsoluteUrl(account.scrapeUrl, "https://www.youtube.com"),
-              "about"
-            );
+            const url = buildYouTubeScrapeUrl(account);
             if (!url) {
               return null;
             }
@@ -682,13 +941,7 @@
         const accounts = getInstagramAccounts(config)
           .filter((account) => !account.scrapeDisabled)
           .map((account) => {
-            const url = ensureAbsoluteUrl(
-              account.scrapeUrl ||
-                (account.username
-                  ? `https://www.instagram.com/${account.username}/`
-                  : ""),
-              "https://www.instagram.com"
-            );
+            const url = buildInstagramScrapeUrl(account);
             if (!url) {
               return null;
             }
@@ -703,10 +956,7 @@
         const accounts = getFacebookAccounts(config)
           .filter((account) => !account.scrapeDisabled)
           .map((account) => {
-            const url = ensureAbsoluteUrl(
-              account.scrapeUrl || account.pageUrl || "",
-              "https://www.facebook.com"
-            );
+            const url = buildFacebookScrapeUrl(account);
             if (!url) {
               return null;
             }
@@ -721,10 +971,7 @@
         const accounts = getTikTokAccounts(config)
           .filter((account) => !account.scrapeDisabled)
           .map((account) => {
-            const url = ensureAbsoluteUrl(
-              account.scrapeUrl || "",
-              "https://www.tiktok.com"
-            );
+            const url = buildTikTokScrapeUrl(account);
             if (!url) {
               return null;
             }

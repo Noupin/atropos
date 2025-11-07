@@ -2,11 +2,11 @@
 // The config is optional; if omitted the marketing site will fall back to
 // the static values in the markup.
 //
-// New in this release: you may specify `scrapeUrl` (and optional
-// `scrapePattern`) per account. When the official APIs fail, the frontend
-// will attempt to call a local API fallback (see `localApiBaseUrl` below)
-// to parse the provided page before showing "N/A". Set `scrapeDisabled: true`
-// (or `scrapeEnabled: false`) on any account to opt out of scraping entirely.
+// The frontend automatically builds fallback scrape URLs using the account
+// identifiers you provide. Supply handles/usernames once (either in the shared
+// `accounts` section or per platform) and avoid duplicating full profile URLs.
+// Set `scrapeDisabled: true` (or `scrapeEnabled: false`) on any account to opt
+// out of scraping entirely.
 window.atroposSocialConfig = {
   // Optional shared account definitions. Each entry can include platform keys
   // (`youtube`, `instagram`, `tiktok`, `facebook`) to avoid repeating metadata
@@ -14,14 +14,15 @@ window.atroposSocialConfig = {
   // merged with any shared accounts.
   accounts: [
     {
-      label: "Atropos Studio",
-      youtube: { channelId: "YOUR_CHANNEL_ID_1", scrapeDisabled: true },
-      instagram: { userId: "YOUR_INSTAGRAM_USER_ID_1", username: "atropos" },
-      tiktok: {
-        scrapeUrl: "https://www.tiktok.com/@atroposstudio",
-        scrapePattern: "(?P<count>[0-9.,KMB]+)\\s+Followers",
+      label: "Sniply Secrets",
+      handle: "sniplysecrets",
+      youtube: { channelId: "YOUR_YOUTUBE_CHANNEL_ID_FOR_SNIPLY_SECRETS" },
+      instagram: {
+        userId: "YOUR_INSTAGRAM_USER_ID_FOR_SNIPLY_SECRETS",
+        username: "sniplysecrets",
       },
-      facebook: { pageId: "YOUR_FACEBOOK_PAGE_ID_1" },
+      tiktok: { handle: "sniplysecrets" },
+      facebook: { pageId: "YOUR_FACEBOOK_PAGE_ID_FOR_SNIPLY_SECRETS" },
     },
   ],
   youtube: {
@@ -32,8 +33,7 @@ window.atroposSocialConfig = {
     accounts: [
       {
         channelId: "YOUR_CHANNEL_ID_1",
-        // Optional HTML fallback: omit (or set scrapeDisabled: true) to disable scraping.
-        scrapeUrl: "https://www.youtube.com/channel/YOUR_CHANNEL_ID_1/about",
+        handle: "sniplyhistory",
       },
       { channelId: "YOUR_CHANNEL_ID_2" },
     ],
@@ -47,8 +47,7 @@ window.atroposSocialConfig = {
     accounts: [
       {
         userId: "YOUR_INSTAGRAM_USER_ID_1",
-        // Optional fallback: provide the username to enable scraping.
-        username: "atropos", // or add scrapeUrl: "https://instagram.com/atropos/"
+        username: "sniplycosmos",
       },
       { userId: "YOUR_INSTAGRAM_USER_ID_2" },
     ],
@@ -56,20 +55,19 @@ window.atroposSocialConfig = {
   tiktok: {
     // Provide follower totals directly or point to your own endpoint that
     // returns a JSON object containing the count (optionally specify `jsonPath`).
-    // Add `scrapeUrl` (and optionally `scrapePattern`) to enable the HTML
-    // fallback scraper when the JSON source is unavailable.
+    // The scraper will automatically build profile URLs using any handles.
     accounts: [
       {
         followerCount: 125000,
-        scrapeUrl: "https://www.tiktok.com/@atroposstudio",
         // Disable scraping and rely solely on the static number if desired.
         // scrapeDisabled: true,
       },
       {
         fetchUrl: "https://example.com/api/tiktok/team",
         jsonPath: "data.followers",
-        scrapeUrl: "https://www.tiktok.com/@teamatropos",
+        handle: "sniplyhealth",
       },
+      "sniplyfunnykinda",
     ],
   },
   facebook: {
@@ -79,8 +77,7 @@ window.atroposSocialConfig = {
     accounts: [
       {
         pageId: "YOUR_FACEBOOK_PAGE_ID_1",
-        // Optional fallback scraper: customize the URL if you use vanity routes.
-        scrapeUrl: "https://www.facebook.com/YOUR_FACEBOOK_PAGE_ID_1/",
+        slug: "sniplycosmos",
       },
       { pageId: "YOUR_FACEBOOK_PAGE_ID_2" },
     ],
