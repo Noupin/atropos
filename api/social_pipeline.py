@@ -8,6 +8,7 @@ import re
 import time
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from html import unescape
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -49,13 +50,18 @@ INSTAGRAM_LD_JSON_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 FACEBOOK_FOLLOW_RE = re.compile(
-    r"([0-9][0-9.,\u00a0]*)\s+(?:people\s+)?follow this", re.IGNORECASE
+    r"([0-9][0-9.,\u00a0]*\s*[KMB]?)\s+(?:people\s+)?follow this",
+    re.IGNORECASE,
 )
 FACEBOOK_FOLLOWERS_RE = re.compile(
-    r"([0-9][0-9.,\u00a0]*)\s+followers", re.IGNORECASE
+    r"([0-9][0-9.,\u00a0]*\s*[KMB]?)\s+followers",
+    re.IGNORECASE,
+)
+FACEBOOK_ARIA_LABEL_RE = re.compile(
+    r'aria-label=["\']([0-9][0-9.,\u00a0]*\s*[KMB]?)\s+followers["\']',
+    re.IGNORECASE,
 )
 FACEBOOK_JSON_RE = re.compile(r'"fan_count"\s*:\s*([0-9]+)')
-GENERIC_NUMBER_RE = re.compile(r"([0-9][0-9.,\u00a0]*)")
 
 
 class UnsupportedPlatformError(ValueError):
@@ -149,18 +155,6 @@ def _parse_compact_number(text: str) -> Optional[int]:
     elif suffix == "B":
         multiplier = 1_000_000_000
     return int(round(numeric * multiplier))
-
-
-def _format_number_from_text(text: str) -> Optional[int]:
-    if not text:
-        return None
-    match = GENERIC_NUMBER_RE.search(text.replace("\u00a0", " "))
-    if not match:
-        return None
-    token = match.group(1)
-    return _parse_compact_number(token)
-
-
 def _extract_json_blob(html: str, regex: re.Pattern[str]) -> Optional[dict]:
     match = regex.search(html)
     if not match:
@@ -1162,28 +1156,49 @@ class SocialPipeline:
                 url,
             )
             return None, attempt
-        match = FACEBOOK_FOLLOW_RE.search(html)
-        if match:
-            count = _format_number_from_text(match.group(0))
+        aria_match = FACEBOOK_ARIA_LABEL_RE.search(html)
+        if aria_match:
+            count = _parse_compact_number(aria_match.group(1))
             if count is not None:
                 self.logger.info(
-                    "facebook handle=%s attempt=%s parse=follow-this count=%s",
+                    "facebook handle=%s attempt=%s parse=aria-label count=%s",
                     handle,
                     attempt,
                     count,
                 )
-                return count, f"{attempt}:follow-this"
-        match = FACEBOOK_FOLLOWERS_RE.search(html)
-        if match:
-            count = _format_number_from_text(match.group(0))
-            if count is not None:
-                self.logger.info(
-                    "facebook handle=%s attempt=%s parse=followers count=%s",
-                    handle,
-                    attempt,
-                    count,
-                )
-                return count, f"{attempt}:followers"
+                return count, f"{attempt}:aria-label"
+
+        text_variants: List[Tuple[str, str]] = [(html, attempt)]
+        if "<" in html:
+            stripped = re.sub(r"<[^>]+>", " ", html)
+            normalized = re.sub(r"\s+", " ", unescape(stripped)).strip()
+            if normalized:
+                text_variants.append((normalized, f"{attempt}-text"))
+
+        for candidate, label in text_variants:
+            match = FACEBOOK_FOLLOW_RE.search(candidate)
+            if match:
+                count = _parse_compact_number(match.group(1))
+                if count is not None:
+                    self.logger.info(
+                        "facebook handle=%s attempt=%s parse=follow-this count=%s",
+                        handle,
+                        label,
+                        count,
+                    )
+                    return count, f"{label}:follow-this"
+            match = FACEBOOK_FOLLOWERS_RE.search(candidate)
+            if match:
+                count = _parse_compact_number(match.group(1))
+                if count is not None:
+                    self.logger.info(
+                        "facebook handle=%s attempt=%s parse=followers count=%s",
+                        handle,
+                        label,
+                        count,
+                    )
+                    return count, f"{label}:followers"
+
         match = FACEBOOK_JSON_RE.search(html)
         if match:
             count = int(match.group(1))
