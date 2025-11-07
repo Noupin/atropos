@@ -10,8 +10,8 @@
   const ENABLE_SOCIAL_PLATFORMS = {
     youtube: true,
     instagram: true,
-    tiktok: false,
-    facebook: false,
+    tiktok: true,
+    facebook: true,
   };
 
   const resolveApiBase = () => {
@@ -69,9 +69,17 @@
     return platformState.get(platform);
   };
 
+  const PLACEHOLDER_TEXT = "-";
+
   const setMetricState = (
     metric,
-    { count, isMock = false, accountCount, useFallback = false } = {}
+    {
+      count,
+      isMock = false,
+      accountCount,
+      useFallback = false,
+      isLoading = false,
+    } = {}
   ) => {
     if (!metric || !metric.valueEl) {
       return { accountCount: 0, isMock: true, displayedCount: null };
@@ -86,33 +94,41 @@
     let displayValue = null;
     let resolvedMock = Boolean(isMock);
 
-    if (Number.isFinite(numericCount) && numericCount >= 0) {
+    if (!isLoading && Number.isFinite(numericCount) && numericCount >= 0) {
       displayValue = numericCount;
-    } else if (useFallback && hasFallbackCount) {
+    } else if (!isLoading && useFallback && hasFallbackCount) {
       displayValue = fallbackCount;
       resolvedMock = true;
     }
 
     if (displayValue !== null) {
       const formatted = formatCount(displayValue);
-      metric.valueEl.textContent = formatted || "—";
+      metric.valueEl.textContent = formatted || PLACEHOLDER_TEXT;
     } else {
-      metric.valueEl.textContent = "—";
+      metric.valueEl.textContent = PLACEHOLDER_TEXT;
       resolvedMock = true;
     }
 
     let resolvedAccounts;
     const numericAccounts = Number(accountCount);
-    if (Number.isFinite(numericAccounts) && numericAccounts > 0) {
+    if (!isLoading && Number.isFinite(numericAccounts) && numericAccounts > 0) {
       resolvedAccounts = numericAccounts;
-    } else if (useFallback && hasFallbackAccounts && fallbackAccounts > 0) {
+    } else if (
+      !isLoading &&
+      useFallback &&
+      hasFallbackAccounts &&
+      fallbackAccounts > 0
+    ) {
       resolvedAccounts = fallbackAccounts;
     } else {
       resolvedAccounts = 0;
     }
     metric.currentAccountCount = resolvedAccounts;
 
-    if (resolvedMock) {
+    const shouldShowPlaceholder =
+      isLoading || resolvedMock || displayValue === null;
+
+    if (shouldShowPlaceholder) {
       metric.element.classList.add("hero__metric--placeholder");
       metric.valueEl.classList.add("hero__metric-value--placeholder");
     } else {
@@ -120,9 +136,17 @@
       metric.valueEl.classList.remove("hero__metric-value--placeholder");
     }
 
+    if (isLoading) {
+      metric.element.setAttribute("data-loading", "true");
+      metric.valueEl.setAttribute("aria-busy", "true");
+    } else {
+      metric.element.removeAttribute("data-loading");
+      metric.valueEl.removeAttribute("aria-busy");
+    }
+
     return {
       accountCount: resolvedAccounts,
-      isMock: resolvedMock,
+      isMock: shouldShowPlaceholder,
       displayedCount: displayValue,
     };
   };
@@ -172,6 +196,7 @@
         accountCount: 0,
         isMock: true,
         useFallback: false,
+        isLoading: false,
       });
       updateTotalAccounts();
       return;
@@ -191,17 +216,21 @@
       }
     });
 
+    const isLoading = state.pending && state.pending.size > 0;
+
     const shouldUseFallback =
+      !isLoading &&
       ENABLE_MOCKS &&
       state.attempted &&
       resolvedAccounts === 0 &&
       state.handles.size > 0;
 
     setMetricState(metric, {
-      count: resolvedAccounts > 0 ? total : null,
-      accountCount: resolvedAccounts > 0 ? resolvedAccounts : state.handles.size,
+      count: !isLoading && resolvedAccounts > 0 ? total : null,
+      accountCount: resolvedAccounts,
       isMock: resolvedAccounts > 0 ? !hasReal : true,
       useFallback: shouldUseFallback,
+      isLoading,
     });
     updateTotalAccounts();
   };
@@ -243,7 +272,6 @@
     const perAccount = Array.isArray(payload.per_account)
       ? payload.per_account
       : [];
-    let sawReal = false;
     perAccount.forEach((entry) => {
       if (!entry || typeof entry.handle !== "string") return;
       const handle = entry.handle.trim();
@@ -253,15 +281,8 @@
         count: Number.isFinite(numeric) ? numeric : null,
         isMock: Boolean(entry.is_mock),
       };
-      if (Number.isFinite(record.count) && !record.isMock) {
-        sawReal = true;
-      }
       state.handles.set(handle, record);
     });
-    if (sawReal) {
-      state.attempted = true;
-    }
-    recomputePlatformMetric(platform);
   };
 
   const normalizeHandles = (handles) => {
@@ -299,7 +320,9 @@
       return;
     }
 
-    state.attempted = true;
+    state.pending.clear();
+    handles.forEach((handle) => state.pending.add(handle));
+    recomputePlatformMetric(platform);
     return requestStats(platform, handles)
       .then((payload) => {
         applyStatsResult(platform, payload);
@@ -308,6 +331,8 @@
         console.warn(`${platform} stats unavailable`, error);
       })
       .finally(() => {
+        state.attempted = true;
+        state.pending.clear();
         recomputePlatformMetric(platform);
       });
   };
@@ -407,10 +432,11 @@
     }
     enabledPlatforms.push(platform);
     setMetricState(metric, {
-      count: metric.fallbackCount,
+      count: null,
       isMock: true,
-      accountCount: metric.fallbackAccounts,
-      useFallback: true,
+      accountCount: 0,
+      useFallback: false,
+      isLoading: false,
     });
   });
 
