@@ -27,6 +27,10 @@ YT_VIDEOS_RE = re.compile(
 YT_VIEWS_RE = re.compile(
     r"([0-9][0-9.,\u00a0]*)\s*([KMB]?)\s+views", re.IGNORECASE
 )
+YT_ABOUT_VIEWS_RE = re.compile(
+    r"views\s*</td>\s*<td[^>]*>([0-9][0-9.,\u00a0]*)",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _log_attempt(
@@ -378,6 +382,18 @@ def _extract_secondary_counts(
                 views,
             )
             result["views"] = views
+    if "views" not in result:
+        about_views_match = YT_ABOUT_VIEWS_RE.search(html)
+        if about_views_match:
+            views = parse_compact_number(about_views_match.group(1))
+            if views is not None:
+                context.logger.info(
+                    "youtube handle=%s attempt=%s parse=regex-about-views count=%s",
+                    handle,
+                    attempt,
+                    views,
+                )
+                result["views"] = views
     return result or None
 
 
