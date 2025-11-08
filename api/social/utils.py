@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Optional
 
@@ -39,3 +40,27 @@ def extract_json_blob(html: str, regex: re.Pattern[str]) -> Optional[dict]:
         return json.loads(blob)
     except json.JSONDecodeError:
         return None
+
+
+def log_scrape_attempt(
+    logger: logging.Logger,
+    platform: str,
+    handle: str,
+    source: str,
+    detail: str,
+    followers: Optional[int],
+    views: Optional[int],
+    success: bool,
+) -> None:
+    """Emit a structured log summarizing a scrape attempt."""
+
+    logger.info(
+        "%s handle=%s source=%s status=%s followers=%s views=%s detail=%s",
+        platform,
+        handle,
+        source,
+        "hit" if success else "miss",
+        followers if followers is not None else "null",
+        views if views is not None else "null",
+        detail,
+    )

@@ -210,6 +210,8 @@ class SocialPipeline:
         per_account: List[Dict[str, object]] = []
         total_count = 0
         successful_accounts = 0
+        total_views = 0
+        views_accounts = 0
         requested: List[str] = []
         for handle in handles:
             requested.append(handle)
@@ -218,10 +220,17 @@ class SocialPipeline:
             if isinstance(stats.count, int):
                 successful_accounts += 1
                 total_count += stats.count
+            if isinstance(stats.extra, dict):
+                views_value = stats.extra.get("views")
+                if isinstance(views_value, int):
+                    total_views += views_value
+                    views_accounts += 1
         totals = {
             "count": total_count if successful_accounts else None,
             "accounts": successful_accounts,
             "requested": len(requested),
+            "views": total_views if views_accounts else None,
+            "views_accounts": views_accounts,
         }
         return {
             "platform": platform,

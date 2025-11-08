@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass
 from html import unescape
 from typing import List, Optional, Tuple
 
@@ -10,7 +11,7 @@ from requests import RequestException, Response
 from ..context import PlatformContext
 from ..models import AccountStats
 from ..settings import SCRAPER_TIMEOUT_SECONDS
-from ..utils import parse_compact_number
+from ..utils import log_scrape_attempt, parse_compact_number
 
 FACEBOOK_FOLLOW_RE = re.compile(
     r"([0-9][0-9.,\u00a0]*\s*[KMB]?)\s+(?:people\s+)?follow this",
@@ -33,6 +34,18 @@ FACEBOOK_ARIA_LABEL_RE = re.compile(
     re.IGNORECASE,
 )
 FACEBOOK_JSON_RE = re.compile(r'"fan_count"\s*:\s*([0-9]+)')
+FACEBOOK_VIEWS_RE = re.compile(
+    r"([0-9][0-9.,\u00a0]*\s*[KMB]?)\s+(?:total\s+)?views",
+    re.IGNORECASE,
+)
+
+
+@dataclass
+class FacebookParseResult:
+    count: Optional[int]
+    views: Optional[int]
+    detail: str
+    success: bool
 
 
 def resolve(handle: str, context: PlatformContext) -> AccountStats:
@@ -142,27 +155,64 @@ def _fetch_facebook_scrape(handle: str, context: PlatformContext) -> AccountStat
         extend_urls(f"profile.php?id={slug}")
     elif slug.startswith("profile.php?id="):
         extend_urls(slug)
+    views_snapshot: Optional[int] = None
     for url in urls:
         response = context.request(url, "facebook", handle, "direct")
         html = response.text if isinstance(response, Response) and response.ok else ""
-        count, source = _parse_facebook_html(html, handle, "direct", url, context)
-        if count is not None:
+        direct_result = _parse_facebook_html(html)
+        if isinstance(direct_result.views, int) and views_snapshot is None:
+            views_snapshot = direct_result.views
+        log_scrape_attempt(
+            context.logger,
+            "facebook",
+            handle,
+            "direct",
+            direct_result.detail,
+            direct_result.count,
+            direct_result.views,
+            direct_result.success,
+        )
+        if direct_result.count is not None:
+            view_value = (
+                direct_result.views
+                if isinstance(direct_result.views, int)
+                else views_snapshot
+            )
+            extra = {"views": view_value} if isinstance(view_value, int) else None
             return AccountStats(
                 handle=handle,
-                count=count,
+                count=direct_result.count,
                 fetched_at=context.now(),
-                source=f"scrape:{source}",
+                source=f"scrape:direct:{direct_result.detail}",
+                extra=extra,
             )
         proxy_html = context.fetch_text(url, "facebook", handle)
-        count, source = _parse_facebook_html(
-            proxy_html or "", handle, "text-proxy", url, context
+        proxy_result = _parse_facebook_html(proxy_html or "")
+        if isinstance(proxy_result.views, int) and views_snapshot is None:
+            views_snapshot = proxy_result.views
+        log_scrape_attempt(
+            context.logger,
+            "facebook",
+            handle,
+            "text-proxy",
+            proxy_result.detail,
+            proxy_result.count,
+            proxy_result.views,
+            proxy_result.success,
         )
-        if count is not None:
+        if proxy_result.count is not None:
+            view_value = (
+                proxy_result.views
+                if isinstance(proxy_result.views, int)
+                else views_snapshot
+            )
+            extra = {"views": view_value} if isinstance(view_value, int) else None
             return AccountStats(
                 handle=handle,
-                count=count,
+                count=proxy_result.count,
                 fetched_at=context.now(),
-                source=f"scrape:{source}",
+                source=f"scrape:text-proxy:{proxy_result.detail}",
+                extra=extra,
             )
     return AccountStats(
         handle=handle,
@@ -173,107 +223,74 @@ def _fetch_facebook_scrape(handle: str, context: PlatformContext) -> AccountStat
     )
 
 
-def _parse_facebook_html(
-    html: str,
-    handle: str,
-    attempt: str,
-    url: str,
-    context: PlatformContext,
-) -> Tuple[Optional[int], str]:
-    if not html:
-        context.logger.info(
-            "facebook handle=%s attempt=%s url=%s parse=empty",
-            handle,
-            attempt,
-            url,
-        )
-        return None, attempt
-    aria_match = FACEBOOK_ARIA_LABEL_RE.search(html)
-    if aria_match:
-        count = parse_compact_number(aria_match.group(1))
-        if count is not None:
-            context.logger.info(
-                "facebook handle=%s attempt=%s parse=aria-label count=%s",
-                handle,
-                attempt,
-                count,
-            )
-            return count, f"{attempt}:aria-label"
 
-    text_variants: List[Tuple[str, str]] = [(html, attempt)]
+def _parse_facebook_html(html: str) -> FacebookParseResult:
+    if not html:
+        return FacebookParseResult(None, None, "empty", False)
+
+    text_variants: List[Tuple[str, str]] = [(html, "html")]
     if "<" in html:
         stripped = re.sub(r"<[^>]+>", " ", html)
         normalized = re.sub(r"\s+", " ", unescape(stripped)).strip()
         if normalized:
-            text_variants.append((normalized, f"{attempt}-text"))
+            text_variants.append((normalized, "html-text"))
 
     markdown = re.sub(r"\[(.*?)\]\((.*?)\)", r"\1", html)
     markdown = re.sub(r"[\[\]*_`]", "", markdown)
     markdown = markdown.replace("•", " ")
     markdown = re.sub(r"\s+", " ", unescape(markdown)).strip()
     if markdown and markdown != html:
-        text_variants.append((markdown, f"{attempt}-markdown"))
+        text_variants.append((markdown, "markdown"))
+
+    views = _extract_facebook_views([candidate for candidate, _ in text_variants])
+
+    aria_match = FACEBOOK_ARIA_LABEL_RE.search(html)
+    if aria_match:
+        count = _parse_facebook_number(aria_match.group(1))
+        if count is not None:
+            return FacebookParseResult(count, views, "aria-label", True)
+
+    json_match = FACEBOOK_JSON_RE.search(html)
+    if json_match and json_match.group(1).isdigit():
+        count = int(json_match.group(1))
+        return FacebookParseResult(count, views, "json-fan_count", True)
+
+    follower_patterns: List[Tuple[re.Pattern[str], str]] = [
+        (FACEBOOK_FOLLOW_RE, "follow-this"),
+        (FACEBOOK_FOLLOWERS_RE, "followers"),
+        (FACEBOOK_FOLLOWER_RE, "follower"),
+        (FACEBOOK_FOLLOWERS_AFTER_RE, "followers-after"),
+    ]
 
     for candidate, label in text_variants:
-        match = FACEBOOK_FOLLOW_RE.search(candidate)
-        if match:
-            count = parse_compact_number(match.group(1))
-            if count is not None:
-                context.logger.info(
-                    "facebook handle=%s attempt=%s parse=follow-this count=%s",
-                    handle,
-                    label,
-                    count,
-                )
-                return count, f"{label}:follow-this"
-        match = FACEBOOK_FOLLOWERS_RE.search(candidate)
-        if match:
-            count = parse_compact_number(match.group(1))
-            if count is not None:
-                context.logger.info(
-                    "facebook handle=%s attempt=%s parse=followers count=%s",
-                    handle,
-                    label,
-                    count,
-                )
-                return count, f"{label}:followers"
-        match = FACEBOOK_FOLLOWER_RE.search(candidate)
-        if match:
-            count = parse_compact_number(match.group(1))
-            if count is not None:
-                context.logger.info(
-                    "facebook handle=%s attempt=%s parse=follower count=%s",
-                    handle,
-                    label,
-                    count,
-                )
-                return count, f"{label}:follower"
-        match = FACEBOOK_FOLLOWERS_AFTER_RE.search(candidate)
-        if match:
-            count = parse_compact_number(match.group(1))
-            if count is not None:
-                context.logger.info(
-                    "facebook handle=%s attempt=%s parse=followers-after count=%s",
-                    handle,
-                    label,
-                    count,
-                )
-                return count, f"{label}:followers-after"
+        for pattern, pattern_label in follower_patterns:
+            match = pattern.search(candidate)
+            if match:
+                count = _parse_facebook_number(match.group(1))
+                if count is not None:
+                    detail = f"{label}:{pattern_label}"
+                    return FacebookParseResult(count, views, detail, True)
 
-    match = FACEBOOK_JSON_RE.search(html)
-    if match:
-        count = int(match.group(1))
-        context.logger.info(
-            "facebook handle=%s attempt=%s parse=fan_count-json count=%s",
-            handle,
-            attempt,
-            count,
-        )
-        return count, f"{attempt}:fan_count"
-    context.logger.info(
-        "facebook handle=%s attempt=%s url=%s parse=miss",
-        handle,
-        attempt,
-        url,
-    )
-    return None, attempt
+    detail = "views-only" if isinstance(views, int) else "miss"
+    return FacebookParseResult(None, views, detail, False)
+
+
+def _extract_facebook_views(variants: List[str]) -> Optional[int]:
+    for candidate in variants:
+        match = FACEBOOK_VIEWS_RE.search(candidate)
+        if match:
+            value = _parse_facebook_number(match.group(1))
+            if value is not None:
+                return value
+    return None
+
+
+def _parse_facebook_number(token: str) -> Optional[int]:
+    if not token:
+        return None
+    if re.search(r"[KMB]", token, re.IGNORECASE):
+        return parse_compact_number(token)
+    digits = re.sub(r"[^0-9]", "", token)
+    if digits:
+        return int(digits)
+    return parse_compact_number(token)
