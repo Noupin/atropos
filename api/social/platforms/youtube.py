@@ -5,7 +5,7 @@ import os
 import re
 import time
 from html import unescape
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from requests import RequestException, Response
 
@@ -34,6 +34,21 @@ YT_ABOUT_INFO_CONTAINER_RE = re.compile(
 YT_ABOUT_ROW_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.IGNORECASE | re.DOTALL)
 YT_ABOUT_CELL_RE = re.compile(r"<td[^>]*>(.*?)</td>", re.IGNORECASE | re.DOTALL)
 YT_ABOUT_VIEWS_FALLBACK_RE = re.compile(r"(?i)(\d[\d,.]*)\s+views")
+YT_CANONICAL_LINK_RE = re.compile(
+    r"<link[^>]+rel=\"canonical\"[^>]+href=\"([^\"]+)\"",
+    re.IGNORECASE,
+)
+YT_CANONICAL_JSON_RE = re.compile(
+    r"\"(canonicalChannelUrl|canonicalBaseUrl|urlCanonical)\"\s*:\s*\"([^\"]+)\"",
+    re.IGNORECASE,
+)
+YT_CHANNEL_ID_RE = re.compile(r'"channelId"\s*:\s*"(UC[^\"]+)"')
+YT_EXTERNAL_ID_RE = re.compile(
+    r'data-channel-external-id="(UC[^\"]+)"',
+    re.IGNORECASE,
+)
+
+YT_LOCALE_QUERY = "?hl=en&gl=US&persist_hl=1&persist_gl=1"
 
 
 def _log_attempt(
@@ -177,20 +192,43 @@ def _fetch_youtube_api(
     )
 
 
-def _youtube_candidate_urls(handle: str) -> List[str]:
+def _youtube_candidate_bases(handle: str) -> List[str]:
     slug = handle.strip()
     if slug.startswith("UC"):
-        base = f"https://www.youtube.com/channel/{slug}"
-    else:
-        base = f"https://www.youtube.com/@{slug.lstrip('@')}"
-    query = "?hl=en&gl=US&persist_hl=1&persist_gl=1"
-    return [f"{base}/about{query}", f"{base}{query}"]
+        return [f"https://www.youtube.com/channel/{slug}"]
+    cleaned = slug.lstrip("@")
+    return [f"https://www.youtube.com/@{cleaned}"]
+
+
+def _yield_candidate_urls(bases: Iterable[str]) -> List[str]:
+    urls: List[str] = []
+    for base in bases:
+        normalized = _normalize_youtube_base(base)
+        if not normalized:
+            continue
+        urls.append(f"{normalized}/about{YT_LOCALE_QUERY}")
+        urls.append(f"{normalized}{YT_LOCALE_QUERY}")
+    return urls
 
 
 def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats:
     last_error = ""
     captured_views: Optional[int] = None
-    for url in _youtube_candidate_urls(handle):
+    initial_bases = _youtube_candidate_bases(handle)
+    bases_seen: Set[str] = {
+        normalized
+        for normalized in (
+            _normalize_youtube_base(base) for base in initial_bases
+        )
+        if normalized
+    }
+    url_queue = _yield_candidate_urls(initial_bases)
+    visited_urls: Set[str] = set()
+    while url_queue:
+        url = url_queue.pop(0)
+        if url in visited_urls:
+            continue
+        visited_urls.add(url)
         response = context.request(url, "youtube", handle, "direct")
         status = response.status_code if isinstance(response, Response) else None
         html = response.text if isinstance(response, Response) and response.ok else ""
@@ -198,6 +236,9 @@ def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats
         views = (extra or {}).get("views") if extra else None
         if views is not None and captured_views is None:
             captured_views = views
+        discovered = _discover_additional_about_urls(html, bases_seen)
+        if discovered:
+            url_queue.extend(_yield_candidate_urls(discovered))
         _log_attempt(context, handle, "direct", status, count, views, source)
         if count is not None:
             final_extra = dict(extra or {})
@@ -221,6 +262,10 @@ def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats
         views = (extra or {}).get("views") if extra else None
         if views is not None and captured_views is None:
             captured_views = views
+        if proxy_html:
+            discovered_proxy = _discover_additional_about_urls(proxy_html, bases_seen)
+            if discovered_proxy:
+                url_queue.extend(_yield_candidate_urls(discovered_proxy))
         _log_attempt(
             context,
             handle,
@@ -592,3 +637,41 @@ def _coerce_text(value: object) -> str:
         if parts:
             return "".join(parts)
     return ""
+
+
+def _discover_additional_about_urls(html: str, bases_seen: Set[str]) -> List[str]:
+    bases: Set[str] = set()
+    if not html:
+        return []
+    for match in YT_CANONICAL_LINK_RE.finditer(html):
+        base = _normalize_youtube_base(match.group(1))
+        if base:
+            bases.add(base)
+    for match in YT_CANONICAL_JSON_RE.finditer(html):
+        base = _normalize_youtube_base(match.group(2))
+        if base:
+            bases.add(base)
+    for pattern in (YT_CHANNEL_ID_RE, YT_EXTERNAL_ID_RE):
+        for match in pattern.finditer(html):
+            channel_id = match.group(1)
+            base = _normalize_youtube_base(f"https://www.youtube.com/channel/{channel_id}")
+            if base:
+                bases.add(base)
+    new_bases = [base for base in bases if base not in bases_seen]
+    bases_seen.update(new_bases)
+    return new_bases
+
+
+def _normalize_youtube_base(url: str) -> Optional[str]:
+    if not url:
+        return None
+    candidate = url.strip()
+    if not candidate:
+        return None
+    if not candidate.startswith("http"):
+        candidate = f"https://www.youtube.com{candidate if candidate.startswith('/') else '/' + candidate}"
+    candidate = candidate.split("?")[0]
+    candidate = candidate.rstrip("/")
+    if not candidate or "youtube.com" not in candidate:
+        return None
+    return candidate

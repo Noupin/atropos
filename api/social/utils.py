@@ -17,9 +17,40 @@ def parse_compact_number(text: str) -> Optional[int]:
         return None
     number_token = match.group(1)
     suffix = match.group(2).upper()
-    if "," in number_token and "." not in number_token:
-        number_token = number_token.replace(",", ".")
-    numeric = float(number_token.replace(",", ""))
+    if suffix:
+        normalized_token = number_token.replace(",", ".")
+        try:
+            numeric = float(normalized_token)
+        except ValueError:
+            digits = re.sub(r"[^0-9]", "", normalized_token)
+            if not digits:
+                return None
+            numeric = float(digits)
+    else:
+        comma_count = number_token.count(",")
+        dot_count = number_token.count(".")
+        if comma_count > 1 or dot_count > 1 or (comma_count and dot_count):
+            digits = re.sub(r"[^0-9]", "", number_token)
+            if not digits:
+                return None
+            numeric = float(digits)
+        elif comma_count == 1 and dot_count == 0:
+            decimals = number_token.split(",", 1)[1]
+            if len(decimals) == 3 and decimals.isdigit():
+                numeric = float(number_token.replace(",", ""))
+            else:
+                numeric = float(number_token.replace(",", "."))
+        elif dot_count == 1 and comma_count == 0:
+            decimals = number_token.split(".", 1)[1]
+            if len(decimals) == 3 and decimals.isdigit():
+                numeric = float(number_token.replace(".", ""))
+            else:
+                numeric = float(number_token)
+        else:
+            digits = re.sub(r"[^0-9]", "", number_token)
+            if not digits:
+                return None
+            numeric = float(digits)
     multiplier = 1
     if suffix == "K":
         multiplier = 1_000

@@ -21,6 +21,10 @@ INSTAGRAM_LD_JSON_RE = re.compile(
     r"<script\s+type=\"application/ld\+json\">(\{.*?\})</script>",
     re.DOTALL | re.IGNORECASE,
 )
+INSTAGRAM_SHARED_DATA_RE = re.compile(
+    r"window\._sharedData\s*=\s*(\{.*?\})\s*;",
+    re.DOTALL | re.IGNORECASE,
+)
 INSTAGRAM_FOLLOWERS_RE = re.compile(
     r"([0-9][0-9.,\u00a0]*\s*[KMB]?)\s+followers",
     re.IGNORECASE,
@@ -199,16 +203,20 @@ def _parse_instagram_html(
     if not html:
         return None, None, None, f"{attempt}:empty"
 
-    next_match = INSTAGRAM_NEXT_DATA_RE.search(html)
-    if next_match:
-        try:
-            next_data = json.loads(next_match.group(1))
-        except json.JSONDecodeError:
-            next_data = None
-        if isinstance(next_data, dict):
-            count, posts, views = _extract_from_structures([next_data])
-            if count is not None:
-                return count, posts, views, f"{attempt}:next-data"
+    for pattern, label in (
+        (INSTAGRAM_NEXT_DATA_RE, "next-data"),
+        (INSTAGRAM_SHARED_DATA_RE, "shared-data"),
+    ):
+        match = pattern.search(html)
+        if match:
+            try:
+                payload = json.loads(match.group(1))
+            except json.JSONDecodeError:
+                payload = None
+            if isinstance(payload, dict):
+                count, posts, views = _extract_from_structures([payload])
+                if count is not None:
+                    return count, posts, views, f"{attempt}:{label}"
 
     ld_match = INSTAGRAM_LD_JSON_RE.search(html)
     if ld_match:
@@ -241,8 +249,20 @@ def _parse_instagram_html(
 
 
 def _extract_embedded_json(html: str) -> Iterable[str]:
-    for match in re.finditer(r">\s*(\{\s*\"config\".*?\})\s*<", html, re.DOTALL):
-        yield match.group(1)
+    patterns = (
+        re.compile(r">\s*(\{\s*\"config\".*?\})\s*<", re.DOTALL),
+        re.compile(
+            r"window\.__additionalDataLoaded\([^,]+,\s*(\{.*?\})\s*\)",
+            re.DOTALL,
+        ),
+        re.compile(
+            r"window\.__initialDataLoaded\([^,]+,\s*(\{.*?\})\s*\)",
+            re.DOTALL,
+        ),
+    )
+    for pattern in patterns:
+        for match in pattern.finditer(html):
+            yield match.group(1)
 
 
 def _normalize_text(html: str) -> str:
