@@ -10,9 +10,30 @@
   const ENABLE_SOCIAL_PLATFORMS = {
     youtube: true,
     instagram: true,
-    tiktok: false,
-    facebook: false,
+    tiktok: true,
+    facebook: true,
   };
+
+  const resolveApiBase = () => {
+    const explicit =
+      typeof window !== "undefined" &&
+      typeof window.WEB_API_BASE === "string" &&
+      window.WEB_API_BASE.trim();
+    if (explicit) {
+      return window.WEB_API_BASE.trim().replace(/\/$/, "");
+    }
+    if (typeof window !== "undefined") {
+      const host = window.location.hostname;
+      if (host === "localhost" || host === "127.0.0.1") {
+        return "http://127.0.0.1:5001/api";
+      }
+    }
+    return "/api";
+  };
+
+  const API_BASE = resolveApiBase();
+  const ENABLE_MOCKS =
+    String(window.WEB_ENABLE_MOCKS || "").toLowerCase() === "true";
 
   const formatCount = (value) => {
     const num = Number(value);
@@ -34,44 +55,80 @@
     return Math.round(num).toLocaleString();
   };
 
+  const metrics = new Map();
+  const platformState = new Map();
+
+  const getOrCreatePlatformState = (platform) => {
+    if (!platformState.has(platform)) {
+      platformState.set(platform, {
+        handles: new Map(),
+        pending: new Set(),
+        attempted: false,
+      });
+    }
+    return platformState.get(platform);
+  };
+
+  const PLACEHOLDER_TEXT = "-";
+
   const setMetricState = (
     metric,
-    { count, isMock = false, accountCount } = {}
+    {
+      count,
+      isMock = false,
+      accountCount,
+      useFallback = false,
+      isLoading = false,
+    } = {}
   ) => {
     if (!metric || !metric.valueEl) {
-      return { accountCount: 0, isMock: true };
+      return { accountCount: 0, isMock: true, displayedCount: null };
     }
 
-    const numeric = Number(count);
+    const numericCount = Number(count);
     const fallbackCount = Number(metric.fallbackCount);
-    let formatted = Number.isFinite(numeric) ? formatCount(numeric) : null;
-    let usedFallback = false;
+    const fallbackAccounts = Number(metric.fallbackAccounts);
+    const hasFallbackCount = Number.isFinite(fallbackCount);
+    const hasFallbackAccounts = Number.isFinite(fallbackAccounts);
 
-    if (!formatted && Number.isFinite(fallbackCount)) {
-      formatted = formatCount(fallbackCount);
-      usedFallback = true;
+    let displayValue = null;
+    let resolvedMock = Boolean(isMock);
+
+    if (!isLoading && Number.isFinite(numericCount) && numericCount >= 0) {
+      displayValue = numericCount;
+    } else if (!isLoading && useFallback && hasFallbackCount) {
+      displayValue = fallbackCount;
+      resolvedMock = true;
     }
 
-    if (formatted) {
-      metric.valueEl.textContent = formatted;
+    if (displayValue !== null) {
+      const formatted = formatCount(displayValue);
+      metric.valueEl.textContent = formatted || PLACEHOLDER_TEXT;
+    } else {
+      metric.valueEl.textContent = PLACEHOLDER_TEXT;
+      resolvedMock = true;
     }
 
     let resolvedAccounts;
-    if (Number.isFinite(accountCount) && accountCount > 0) {
-      resolvedAccounts = accountCount;
+    const numericAccounts = Number(accountCount);
+    if (!isLoading && Number.isFinite(numericAccounts) && numericAccounts > 0) {
+      resolvedAccounts = numericAccounts;
     } else if (
-      Number.isFinite(metric.fallbackAccounts) &&
-      metric.fallbackAccounts > 0
+      !isLoading &&
+      useFallback &&
+      hasFallbackAccounts &&
+      fallbackAccounts > 0
     ) {
-      resolvedAccounts = metric.fallbackAccounts;
+      resolvedAccounts = fallbackAccounts;
     } else {
       resolvedAccounts = 0;
     }
     metric.currentAccountCount = resolvedAccounts;
 
-    const shouldMarkMock = usedFallback || Boolean(isMock);
+    const shouldShowPlaceholder =
+      isLoading || resolvedMock || displayValue === null;
 
-    if (shouldMarkMock) {
+    if (shouldShowPlaceholder) {
       metric.element.classList.add("hero__metric--placeholder");
       metric.valueEl.classList.add("hero__metric-value--placeholder");
     } else {
@@ -79,359 +136,20 @@
       metric.valueEl.classList.remove("hero__metric-value--placeholder");
     }
 
-    return { accountCount: resolvedAccounts, isMock: shouldMarkMock };
-  };
-
-  const fetchYouTubeSubscribers = async (channelId, apiKey) => {
-    const params = new URLSearchParams({
-      part: "statistics",
-      id: channelId,
-      key: apiKey,
-    });
-
-    const res = await fetch(
-      `https://www.googleapis.com/youtube/v3/channels?${params.toString()}`
-    );
-    if (!res.ok) {
-      throw new Error(`YouTube API request failed with ${res.status}`);
-    }
-    const data = await res.json();
-    const stats = data?.items?.[0]?.statistics;
-    return stats ? Number(stats.subscriberCount) : null;
-  };
-
-  const fetchInstagramFollowers = async (userId, accessToken) => {
-    const params = new URLSearchParams({
-      fields: "followers_count",
-      access_token: accessToken,
-    });
-
-    const res = await fetch(
-      `https://graph.facebook.com/v17.0/${userId}?${params.toString()}`
-    );
-    if (!res.ok) {
-      throw new Error(`Instagram API request failed with ${res.status}`);
-    }
-    const data = await res.json();
-    return data ? Number(data.followers_count) : null;
-  };
-
-  const fetchFacebookFollowers = async (pageId, accessToken) => {
-    const params = new URLSearchParams({
-      fields: "fan_count",
-      access_token: accessToken,
-    });
-
-    const res = await fetch(
-      `https://graph.facebook.com/v17.0/${pageId}?${params.toString()}`
-    );
-    if (!res.ok) {
-      throw new Error(`Facebook API request failed with ${res.status}`);
-    }
-    const data = await res.json();
-    return data ? Number(data.fan_count) : null;
-  };
-
-  const extractCountFromPath = (data, path) => {
-    if (typeof path === "string" && path.trim()) {
-      const segments = path.split(".").filter(Boolean);
-      let current = data;
-      for (const segment of segments) {
-        if (current == null || typeof current !== "object") {
-          return null;
-        }
-        current = current[segment];
-      }
-      const value = Number(current);
-      return Number.isFinite(value) ? value : null;
+    if (isLoading) {
+      metric.element.setAttribute("data-loading", "true");
+      metric.valueEl.setAttribute("aria-busy", "true");
+    } else {
+      metric.element.removeAttribute("data-loading");
+      metric.valueEl.removeAttribute("aria-busy");
     }
 
-    const candidates = [
-      data,
-      data?.count,
-      data?.followers,
-      data?.followers_count,
-      data?.fan_count,
-      data?.subscriberCount,
-    ];
-
-    for (const candidate of candidates) {
-      const value = Number(candidate);
-      if (Number.isFinite(value)) {
-        return value;
-      }
-    }
-    return null;
-  };
-
-  const fetchGenericCount = async (url, jsonPath) => {
-    const res = await fetch(url);
-    if (!res.ok) {
-      throw new Error(`Request failed with ${res.status}`);
-    }
-    const data = await res.json();
-    const value = extractCountFromPath(data, jsonPath);
-    if (!Number.isFinite(value)) {
-      throw new Error("Follower count missing in response");
-    }
-    return value;
-  };
-
-  const getYouTubeAccounts = (config) => {
-    if (!config) return [];
-    const raw = Array.isArray(config.accounts)
-      ? config.accounts
-      : config.channelId
-      ? [config.channelId]
-      : [];
-    return raw
-      .map((entry) => {
-        if (typeof entry === "string" && entry.trim()) {
-          return { channelId: entry.trim() };
-        }
-        if (entry && typeof entry.channelId === "string" && entry.channelId.trim()) {
-          return { channelId: entry.channelId.trim() };
-        }
-        return null;
-      })
-      .filter(Boolean);
-  };
-
-  const getInstagramAccounts = (config) => {
-    if (!config) return [];
-    const baseToken =
-      typeof config.accessToken === "string" && config.accessToken.trim()
-        ? config.accessToken.trim()
-        : "";
-    const raw = Array.isArray(config.accounts)
-      ? config.accounts
-      : config.userId
-      ? [config.userId]
-      : [];
-    return raw
-      .map((entry) => {
-        if (typeof entry === "string" && entry.trim()) {
-          return baseToken
-            ? { userId: entry.trim(), accessToken: baseToken }
-            : null;
-        }
-        if (entry && typeof entry.userId === "string" && entry.userId.trim()) {
-          const token =
-            typeof entry.accessToken === "string" && entry.accessToken.trim()
-              ? entry.accessToken.trim()
-              : baseToken;
-          if (!token) {
-            return null;
-          }
-          return { userId: entry.userId.trim(), accessToken: token };
-        }
-        return null;
-      })
-      .filter(Boolean);
-  };
-
-  const getFacebookAccounts = (config) => {
-    if (!config) return [];
-    const baseToken =
-      typeof config.accessToken === "string" && config.accessToken.trim()
-        ? config.accessToken.trim()
-        : "";
-    const raw = Array.isArray(config.accounts)
-      ? config.accounts
-      : config.pageId
-      ? [config.pageId]
-      : [];
-    return raw
-      .map((entry) => {
-        if (typeof entry === "string" && entry.trim()) {
-          return baseToken
-            ? { pageId: entry.trim(), accessToken: baseToken }
-            : null;
-        }
-        if (entry && typeof entry.pageId === "string" && entry.pageId.trim()) {
-          const token =
-            typeof entry.accessToken === "string" && entry.accessToken.trim()
-              ? entry.accessToken.trim()
-              : baseToken;
-          if (!token) {
-            return null;
-          }
-          return { pageId: entry.pageId.trim(), accessToken: token };
-        }
-        return null;
-      })
-      .filter(Boolean);
-  };
-
-  const getTikTokAccounts = (config) => {
-    if (!config) return [];
-    const raw = Array.isArray(config.accounts) ? config.accounts : [];
-    return raw
-      .map((entry) => {
-        if (entry == null) return null;
-        if (typeof entry === "number" && Number.isFinite(entry)) {
-          return { followerCount: entry };
-        }
-        if (typeof entry === "string" && entry.trim()) {
-          const num = Number(entry.trim());
-          return Number.isFinite(num) ? { followerCount: num } : null;
-        }
-        if (
-          typeof entry.followerCount === "number" &&
-          Number.isFinite(entry.followerCount)
-        ) {
-          return { followerCount: entry.followerCount };
-        }
-        if (
-          typeof entry.followers === "number" && Number.isFinite(entry.followers)
-        ) {
-          return { followerCount: entry.followers };
-        }
-        if (typeof entry.fetchUrl === "string" && entry.fetchUrl.trim()) {
-          return {
-            fetchUrl: entry.fetchUrl.trim(),
-            jsonPath:
-              typeof entry.jsonPath === "string" && entry.jsonPath.trim()
-                ? entry.jsonPath.trim()
-                : typeof entry.countPath === "string" && entry.countPath.trim()
-                ? entry.countPath.trim()
-                : "",
-          };
-        }
-        return null;
-      })
-      .filter(Boolean);
-  };
-
-  const canLoadPlatform = (platform, config) => {
-    switch (platform) {
-      case "youtube": {
-        return (
-          config &&
-          typeof config.apiKey === "string" &&
-          config.apiKey.trim() &&
-          getYouTubeAccounts(config).length > 0
-        );
-      }
-      case "instagram": {
-        return getInstagramAccounts(config).length > 0;
-      }
-      case "tiktok": {
-        return getTikTokAccounts(config).length > 0;
-      }
-      case "facebook": {
-        return getFacebookAccounts(config).length > 0;
-      }
-      default:
-        return false;
-    }
-  };
-
-  const PLATFORM_LOADERS = {
-    youtube: async (metric, config) => {
-      const accounts = getYouTubeAccounts(config);
-      if (!accounts.length) {
-        throw new Error("No YouTube accounts configured");
-      }
-      const apiKey = config.apiKey && config.apiKey.trim();
-      if (!apiKey) {
-        throw new Error("Missing YouTube API key");
-      }
-      let total = 0;
-      for (const account of accounts) {
-        const count = await fetchYouTubeSubscribers(account.channelId, apiKey);
-        if (!Number.isFinite(count)) {
-          throw new Error(
-            `Invalid count for YouTube channel ${account.channelId}`
-          );
-        }
-        total += count;
-      }
-      return { count: total, accountCount: accounts.length };
-    },
-    instagram: async (metric, config) => {
-      const accounts = getInstagramAccounts(config);
-      if (!accounts.length) {
-        throw new Error("No Instagram accounts configured");
-      }
-      let total = 0;
-      for (const account of accounts) {
-        const count = await fetchInstagramFollowers(
-          account.userId,
-          account.accessToken
-        );
-        if (!Number.isFinite(count)) {
-          throw new Error(
-            `Invalid count for Instagram user ${account.userId}`
-          );
-        }
-        total += count;
-      }
-      return { count: total, accountCount: accounts.length };
-    },
-    tiktok: async (metric, config) => {
-      const accounts = getTikTokAccounts(config);
-      if (!accounts.length) {
-        throw new Error("No TikTok accounts configured");
-      }
-      let total = 0;
-      for (const account of accounts) {
-        if (Number.isFinite(account.followerCount)) {
-          total += account.followerCount;
-        } else if (account.fetchUrl) {
-          const count = await fetchGenericCount(
-            account.fetchUrl,
-            account.jsonPath
-          );
-          total += count;
-        } else {
-          throw new Error("TikTok account missing follower information");
-        }
-      }
-      return { count: total, accountCount: accounts.length };
-    },
-    facebook: async (metric, config) => {
-      const accounts = getFacebookAccounts(config);
-      if (!accounts.length) {
-        throw new Error("No Facebook pages configured");
-      }
-      let total = 0;
-      for (const account of accounts) {
-        const count = await fetchFacebookFollowers(
-          account.pageId,
-          account.accessToken
-        );
-        if (!Number.isFinite(count)) {
-          throw new Error(
-            `Invalid count for Facebook page ${account.pageId}`
-          );
-        }
-        total += count;
-      }
-      return { count: total, accountCount: accounts.length };
-    },
-  };
-
-  const metrics = new Map();
-  metricsEl.querySelectorAll(".hero__metric").forEach((el) => {
-    const platform = el.dataset.platform;
-    if (!platform) return;
-    const valueEl = el.querySelector(".hero__metric-value");
-    if (!valueEl) return;
-    const fallbackCount = Number(el.dataset.fallbackCount);
-    const fallbackAccounts = Number(el.dataset.fallbackAccounts);
-    const metric = {
-      platform,
-      element: el,
-      valueEl,
-      fallbackCount: Number.isFinite(fallbackCount) ? fallbackCount : null,
-      fallbackAccounts: Number.isFinite(fallbackAccounts)
-        ? fallbackAccounts
-        : 0,
-      currentAccountCount: 0,
+    return {
+      accountCount: resolvedAccounts,
+      isMock: shouldShowPlaceholder,
+      displayedCount: displayValue,
     };
-    metrics.set(platform, metric);
-  });
+  };
 
   const socialConfig = window.atroposSocialConfig || {};
   const refreshInterval = Math.max(
@@ -466,6 +184,244 @@
     }
   };
 
+  const recomputePlatformMetric = (platform) => {
+    const metric = metrics.get(platform);
+    if (!metric) {
+      return;
+    }
+    const state = platformState.get(platform);
+    if (!state) {
+      setMetricState(metric, {
+        count: null,
+        accountCount: 0,
+        isMock: true,
+        useFallback: false,
+        isLoading: false,
+      });
+      updateTotalAccounts();
+      return;
+    }
+
+    let total = 0;
+    let resolvedAccounts = 0;
+    let hasReal = false;
+    state.handles.forEach((entry) => {
+      if (!entry) return;
+      if (Number.isFinite(entry.count)) {
+        total += entry.count;
+        resolvedAccounts += 1;
+        if (!entry.isMock) {
+          hasReal = true;
+        }
+      }
+    });
+
+    const isLoading = state.pending && state.pending.size > 0;
+
+    const shouldUseFallback =
+      !isLoading &&
+      ENABLE_MOCKS &&
+      state.attempted &&
+      resolvedAccounts === 0 &&
+      state.handles.size > 0;
+
+    setMetricState(metric, {
+      count: !isLoading && resolvedAccounts > 0 ? total : null,
+      accountCount: resolvedAccounts,
+      isMock: resolvedAccounts > 0 ? !hasReal : true,
+      useFallback: shouldUseFallback,
+      isLoading,
+    });
+    updateTotalAccounts();
+  };
+
+  const requestJson = async (path, searchParams) => {
+    const url = new URL(`${API_BASE}${path}`, window.location.origin);
+    if (searchParams) {
+      const params = new URLSearchParams(searchParams);
+      params.forEach((value, key) => {
+        url.searchParams.set(key, value);
+      });
+    }
+    const res = await fetch(url.toString());
+    if (!res.ok) {
+      throw new Error(`Request failed with ${res.status}`);
+    }
+    return res.json();
+  };
+
+  const requestStats = (platform, handles) => {
+    const normalized = handles.filter((handle) => handle && handle.trim());
+    if (!normalized.length) {
+      return Promise.resolve(null);
+    }
+    const params = { platform };
+    let path = "/social/stats";
+    if (normalized.length === 1) {
+      params.handle = normalized[0];
+    } else {
+      params.handles = normalized.join(",");
+      path = "/social/stats/batch";
+    }
+    return requestJson(path, params);
+  };
+
+  const applyStatsResult = (platform, payload) => {
+    if (!payload) return;
+    const state = getOrCreatePlatformState(platform);
+    const perAccount = Array.isArray(payload.per_account)
+      ? payload.per_account
+      : [];
+    perAccount.forEach((entry) => {
+      if (!entry || typeof entry.handle !== "string") return;
+      const handle = entry.handle.trim();
+      if (!handle) return;
+      const numeric = Number(entry.count);
+      const record = {
+        count: Number.isFinite(numeric) ? numeric : null,
+        isMock: Boolean(entry.is_mock),
+      };
+      state.handles.set(handle, record);
+    });
+  };
+
+  const normalizeHandles = (handles) => {
+    if (!Array.isArray(handles)) {
+      return [];
+    }
+    return handles
+      .map((handle) => (typeof handle === "string" ? handle.trim() : ""))
+      .filter(Boolean);
+  };
+
+  const addHandlesToState = (platform, handles) => {
+    const normalized = normalizeHandles(handles);
+    if (!normalized.length) {
+      return [];
+    }
+    const state = getOrCreatePlatformState(platform);
+    normalized.forEach((handle) => {
+      if (!state.handles.has(handle)) {
+        state.handles.set(handle, { count: null, isMock: true });
+      }
+    });
+    return normalized;
+  };
+
+  const refreshPlatformStats = (platform) => {
+    const metric = metrics.get(platform);
+    if (!metric || metric.element.hidden) {
+      return;
+    }
+
+    const state = getOrCreatePlatformState(platform);
+    const handles = Array.from(state.handles.keys());
+    if (!handles.length) {
+      return;
+    }
+
+    state.pending.clear();
+    handles.forEach((handle) => state.pending.add(handle));
+    recomputePlatformMetric(platform);
+    return requestStats(platform, handles)
+      .then((payload) => {
+        applyStatsResult(platform, payload);
+      })
+      .catch((error) => {
+        console.warn(`${platform} stats unavailable`, error);
+      })
+      .finally(() => {
+        state.attempted = true;
+        state.pending.clear();
+        recomputePlatformMetric(platform);
+      });
+  };
+
+  const processConfigPayload = (payload) => {
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+
+    const platforms = payload.platforms || {};
+    const legacyHandles = payload.handles || {};
+
+    Object.entries(platforms).forEach(([platformKey, platformConfig]) => {
+      if (typeof platformKey !== "string") {
+        return;
+      }
+      const platform = platformKey.toLowerCase();
+      if (!metrics.has(platform)) {
+        return;
+      }
+
+      const directHandles = normalizeHandles(platformConfig?.handles);
+      const fallbackHandles = normalizeHandles(legacyHandles[platformKey]);
+      const handlesToUse = directHandles.length ? directHandles : fallbackHandles;
+
+      if (!handlesToUse.length) {
+        return;
+      }
+
+      addHandlesToState(platform, handlesToUse);
+      refreshPlatformStats(platform);
+    });
+  };
+
+  const loadConfig = async () => {
+    try {
+      const payload = await requestJson("/social/config");
+      processConfigPayload(payload);
+    } catch (error) {
+      console.warn("social config unavailable", error);
+    }
+  };
+
+  const configureHandlesFromRuntime = () => {
+    const runtimeHandles = window.WEB_SOCIAL_HANDLES;
+    if (!runtimeHandles || typeof runtimeHandles !== "object") {
+      return;
+    }
+    Object.entries(runtimeHandles).forEach(([rawPlatform, handles]) => {
+      if (!rawPlatform || !Array.isArray(handles)) {
+        return;
+      }
+      const platform = rawPlatform.toLowerCase();
+      if (!metrics.has(platform)) {
+        return;
+      }
+      addHandlesToState(platform, handles);
+    });
+  };
+
+  const refreshAllPlatforms = () => {
+    metrics.forEach((metric, platform) => {
+      if (metric.element.hidden) {
+        return;
+      }
+      void refreshPlatformStats(platform);
+    });
+  };
+
+  metricsEl.querySelectorAll(".hero__metric").forEach((el) => {
+    const platform = el.dataset.platform;
+    if (!platform) return;
+    const valueEl = el.querySelector(".hero__metric-value");
+    if (!valueEl) return;
+    const fallbackCount = Number(el.dataset.fallbackCount);
+    const fallbackAccounts = Number(el.dataset.fallbackAccounts);
+    const metric = {
+      platform,
+      element: el,
+      valueEl,
+      fallbackCount: Number.isFinite(fallbackCount) ? fallbackCount : null,
+      fallbackAccounts: Number.isFinite(fallbackAccounts)
+        ? fallbackAccounts
+        : 0,
+      currentAccountCount: 0,
+    };
+    metrics.set(platform, metric);
+  });
+
   const enabledPlatforms = [];
   metrics.forEach((metric, platform) => {
     const enabled = ENABLE_SOCIAL_PLATFORMS[platform] !== false;
@@ -476,53 +432,25 @@
     }
     enabledPlatforms.push(platform);
     setMetricState(metric, {
-      count: metric.fallbackCount,
+      count: null,
       isMock: true,
-      accountCount: metric.fallbackAccounts,
+      accountCount: 0,
+      useFallback: false,
+      isLoading: false,
     });
   });
 
   updateTotalAccounts();
 
-  const activePlatforms = enabledPlatforms.filter((platform) =>
-    canLoadPlatform(platform, socialConfig[platform])
-  );
+  if (!enabledPlatforms.length) {
+    return;
+  }
 
-  if (activePlatforms.length) {
-    const loadAll = async () => {
-      await Promise.all(
-        activePlatforms.map(async (platform) => {
-          const metric = metrics.get(platform);
-          const loader = PLATFORM_LOADERS[platform];
-          const config = socialConfig[platform];
-          if (!metric || !loader || !config) {
-            return;
-          }
-          try {
-            const result = await loader(metric, config);
-            if (result && Number.isFinite(result.count)) {
-              setMetricState(metric, {
-                count: result.count,
-                isMock: Boolean(result.isMock),
-                accountCount: result.accountCount,
-              });
-            }
-          } catch (error) {
-            console.warn(`${platform} metrics unavailable`, error);
-            setMetricState(metric, {
-              count: metric.fallbackCount,
-              isMock: true,
-              accountCount: metric.fallbackAccounts,
-            });
-          }
-          updateTotalAccounts();
-        })
-      );
-    };
+  configureHandlesFromRuntime();
 
-    loadAll();
-    if (refreshInterval) {
-      setInterval(loadAll, refreshInterval);
-    }
+  refreshAllPlatforms();
+  void loadConfig();
+  if (refreshInterval) {
+    setInterval(refreshAllPlatforms, refreshInterval);
   }
 })();

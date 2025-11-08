@@ -1,14 +1,69 @@
 from __future__ import annotations
-import os, json, re, time, threading, hmac, hashlib, base64, secrets, logging, smtplib
+
+import base64
+import hashlib
+import hmac
+import json
+import logging
+import os
+import re
+import secrets
+import smtplib
+import threading
+import time
 from email.message import EmailMessage
 from email.utils import formataddr
 from pathlib import Path
-from flask import Flask, request, jsonify
+from typing import Iterable, List
+
+from flask import Flask, Response, jsonify, request
+
+from .social_pipeline import SocialPipeline, UnsupportedPlatformError
 
 # ---------- config / storage ----------
-SUBSCRIBERS = Path(os.environ.get("SUBSCRIBERS_FILE", "/data/subscribers.json"))
-UNSUB_TOKENS = Path(os.environ.get("UNSUB_TOKENS_FILE", "/data/unsub_tokens.json"))
-BASE_URL      = os.environ.get("PUBLIC_BASE_URL", "https://atropos-video.com")
+
+
+def _resolve_data_dir() -> Path:
+    """Return the writable data directory based on the runtime environment."""
+
+    override = os.environ.get("DATA_DIR")
+    if override:
+        data_dir = Path(override)
+    else:
+        in_docker = os.environ.get("IN_DOCKER") == "1" or Path("/.dockerenv").exists()
+        if in_docker:
+            data_dir = Path("/data")
+        else:
+            data_dir = Path(__file__).resolve().parents[1] / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
+
+
+DATA_DIR = _resolve_data_dir()
+
+SUBSCRIBERS = Path(
+    os.environ.get("SUBSCRIBERS_FILE", str(DATA_DIR / "subscribers.json"))
+)
+UNSUB_TOKENS = Path(
+    os.environ.get("UNSUB_TOKENS_FILE", str(DATA_DIR / "unsub_tokens.json"))
+)
+BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://atropos-video.com")
+
+
+def _parse_csv(name: str, default: Iterable[str]) -> list[str]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return list(default)
+    values = [item.strip() for item in raw.split(",") if item.strip()]
+    return values or list(default)
+
+
+CORS_ALLOW_ORIGINS = _parse_csv("API_CORS_ALLOW_ORIGINS", ["*"])
+CORS_ALLOW_METHODS = _parse_csv("API_CORS_ALLOW_METHODS", ["GET", "POST", "OPTIONS"])
+CORS_ALLOW_HEADERS = _parse_csv(
+    "API_CORS_ALLOW_HEADERS", ["Authorization", "Content-Type"]
+)
+CORS_MAX_AGE = int(os.environ.get("API_CORS_MAX_AGE", "600"))
 
 SMTP_HOST     = os.environ.get("SMTP_HOST", "")
 SMTP_PORT     = int(os.environ.get("SMTP_PORT", "587"))           # 587 STARTTLS (recommended)
@@ -189,10 +244,122 @@ handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s"))
 app.logger.setLevel(logging.INFO)
 app.logger.addHandler(handler)
+app.logger.info("Using data directory at %s", DATA_DIR)
+
+social_pipeline = SocialPipeline(data_dir=DATA_DIR, logger=app.logger)
+
+
+def _origin_allowed(origin: str | None) -> bool:
+    if not origin:
+        return False
+    if "*" in CORS_ALLOW_ORIGINS:
+        return True
+    return origin in CORS_ALLOW_ORIGINS
+
+
+def _apply_cors_headers(response: Response) -> Response:
+    origin = request.headers.get("Origin")
+    if not _origin_allowed(origin):
+        return response
+
+    allow_all = "*" in CORS_ALLOW_ORIGINS
+    response.headers["Access-Control-Allow-Origin"] = "*" if allow_all else origin
+    if not allow_all:
+        vary = response.headers.get("Vary")
+        if vary:
+            vary_parts = [part.strip() for part in vary.split(",") if part.strip()]
+            if "Origin" not in vary_parts:
+                vary_parts.append("Origin")
+            response.headers["Vary"] = ", ".join(vary_parts)
+        else:
+            response.headers["Vary"] = "Origin"
+
+    response.headers["Access-Control-Allow-Methods"] = ", ".join(CORS_ALLOW_METHODS)
+
+    requested_headers = request.headers.get("Access-Control-Request-Headers")
+    if requested_headers:
+        response.headers["Access-Control-Allow-Headers"] = requested_headers
+    elif CORS_ALLOW_HEADERS:
+        response.headers["Access-Control-Allow-Headers"] = ", ".join(CORS_ALLOW_HEADERS)
+
+    response.headers["Access-Control-Max-Age"] = str(CORS_MAX_AGE)
+    return response
+
+
+@app.before_request
+def _handle_preflight():
+    if request.method == "OPTIONS":
+        response = app.make_response(("", 204))
+        return _apply_cors_headers(response)
+
+
+@app.after_request
+def _add_cors(response):
+    return _apply_cors_headers(response)
+
+
+def _normalize_handles(raw: Iterable[str]) -> List[str]:
+    handles: List[str] = []
+    for value in raw:
+        if not value:
+            continue
+        handle = value.strip()
+        if not handle:
+            continue
+        if handle not in handles:
+            handles.append(handle)
+    return handles
 
 @app.get("/health")
 def health():
     return jsonify({"status": "ok"}), 200
+
+
+@app.get("/api/social/overview")
+def social_overview():
+    payload = social_pipeline.get_overview()
+    return jsonify(payload), 200
+
+
+@app.get("/api/social/config")
+def social_config():
+    payload = social_pipeline.get_config()
+    return jsonify(payload), 200
+
+
+@app.get("/api/social/stats")
+def social_stats():
+    platform = (request.args.get("platform") or "").strip().lower()
+    handle = (request.args.get("handle") or "").strip()
+    if not platform or not handle:
+        return jsonify({"error": "platform and handle are required"}), 400
+    try:
+        payload = social_pipeline.get_platform_stats(platform, [handle])
+    except UnsupportedPlatformError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(payload), 200
+
+
+@app.get("/api/social/stats/batch")
+def social_stats_batch():
+    platform = (request.args.get("platform") or "").strip().lower()
+    if not platform:
+        return jsonify({"error": "platform is required"}), 400
+
+    handles_param = request.args.get("handles") or ""
+    split_handles = [value for value in handles_param.split(",") if value]
+    handles = _normalize_handles(request.args.getlist("handle"))
+    handles.extend(split_handles)
+    normalized = _normalize_handles(handles)
+    if not normalized:
+        return jsonify({"error": "at least one handle must be provided"}), 400
+
+    try:
+        payload = social_pipeline.get_platform_stats(platform, normalized)
+    except UnsupportedPlatformError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(payload), 200
+
 
 @app.post("/subscribe")
 def subscribe():
