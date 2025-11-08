@@ -2,6 +2,8 @@
   const metricsEl = document.getElementById("socialMetrics");
   const totalAccountsStat = document.getElementById("totalAccountsStat");
   const totalAccountsValue = document.getElementById("totalAccountsValue");
+  const totalFollowersStat = document.getElementById("totalFollowersStat");
+  const totalFollowersValue = document.getElementById("totalFollowersValue");
 
   if (!metricsEl) {
     return;
@@ -124,6 +126,8 @@
       resolvedAccounts = 0;
     }
     metric.currentAccountCount = resolvedAccounts;
+    metric.currentFollowerCount =
+      displayValue !== null && Number.isFinite(displayValue) ? displayValue : 0;
 
     const shouldShowPlaceholder =
       isLoading || resolvedMock || displayValue === null;
@@ -157,30 +161,51 @@
     Number(socialConfig.refreshIntervalMs || 0)
   );
 
-  const updateTotalAccounts = () => {
-    if (!totalAccountsStat || !totalAccountsValue) {
-      return;
-    }
+  const updateAggregateStats = () => {
+    let accountsTotal = 0;
+    let followersTotal = 0;
 
-    let total = 0;
     metrics.forEach((metric) => {
       if (metric.element.hidden) return;
-      const value = Number(metric.currentAccountCount);
-      if (Number.isFinite(value) && value > 0) {
-        total += value;
+
+      const accountValue = Number(metric.currentAccountCount);
+      if (Number.isFinite(accountValue) && accountValue > 0) {
+        accountsTotal += accountValue;
+      }
+
+      const followerValue = Number(metric.currentFollowerCount);
+      if (Number.isFinite(followerValue) && followerValue > 0) {
+        followersTotal += followerValue;
       }
     });
 
-    if (total > 0) {
-      const label =
-        total === 1
-          ? "1 total account"
-          : `${total.toLocaleString()} total accounts`;
-      totalAccountsValue.textContent = label;
-      totalAccountsStat.hidden = false;
-    } else {
-      totalAccountsValue.textContent = "";
-      totalAccountsStat.hidden = true;
+    if (totalAccountsStat && totalAccountsValue) {
+      if (accountsTotal > 0) {
+        const label =
+          accountsTotal === 1
+            ? "1 total account"
+            : `${accountsTotal.toLocaleString()} total accounts`;
+        totalAccountsValue.textContent = label;
+        totalAccountsStat.hidden = false;
+      } else {
+        totalAccountsValue.textContent = "";
+        totalAccountsStat.hidden = true;
+      }
+    }
+
+    if (totalFollowersStat && totalFollowersValue) {
+      if (followersTotal > 0) {
+        const formatted = formatCount(followersTotal);
+        const label =
+          followersTotal === 1
+            ? "1 total follower"
+            : `${formatted || followersTotal.toLocaleString()} total followers`;
+        totalFollowersValue.textContent = label;
+        totalFollowersStat.hidden = false;
+      } else {
+        totalFollowersValue.textContent = "";
+        totalFollowersStat.hidden = true;
+      }
     }
   };
 
@@ -198,7 +223,7 @@
         useFallback: false,
         isLoading: false,
       });
-      updateTotalAccounts();
+      updateAggregateStats();
       return;
     }
 
@@ -232,7 +257,7 @@
       useFallback: shouldUseFallback,
       isLoading,
     });
-    updateTotalAccounts();
+    updateAggregateStats();
   };
 
   const requestJson = async (path, searchParams) => {
@@ -418,6 +443,7 @@
         ? fallbackAccounts
         : 0,
       currentAccountCount: 0,
+      currentFollowerCount: 0,
     };
     metrics.set(platform, metric);
   });
@@ -428,6 +454,7 @@
     metric.element.hidden = !enabled;
     if (!enabled) {
       metric.currentAccountCount = 0;
+      metric.currentFollowerCount = 0;
       return;
     }
     enabledPlatforms.push(platform);
@@ -440,7 +467,7 @@
     });
   });
 
-  updateTotalAccounts();
+  updateAggregateStats();
 
   if (!enabledPlatforms.length) {
     return;
