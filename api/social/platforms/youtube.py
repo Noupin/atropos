@@ -268,6 +268,9 @@ def _parse_youtube_html(
     secondary = _extract_secondary_counts(html, handle, attempt, context)
     data = extract_json_blob(html, YT_INITIAL_DATA_RE)
     if data:
+        secondary = _augment_secondary_counts_from_initial_data(
+            data, handle, attempt, context, secondary
+        )
         count = _search_for_subscriber_count(data)
         if count is not None:
             context.logger.info(
@@ -290,6 +293,9 @@ def _parse_youtube_html(
         )
     player_data = extract_json_blob(html, YT_INITIAL_PLAYER_RE)
     if player_data:
+        secondary = _augment_secondary_counts_from_initial_data(
+            player_data, handle, attempt, context, secondary
+        )
         count = _search_for_subscriber_count(player_data)
         if count is not None:
             context.logger.info(
@@ -375,6 +381,28 @@ def _extract_secondary_counts(
     return result or None
 
 
+def _augment_secondary_counts_from_initial_data(
+    data: object,
+    handle: str,
+    attempt: str,
+    context: PlatformContext,
+    secondary: Optional[Dict[str, int]],
+) -> Optional[Dict[str, int]]:
+    extras = dict(secondary) if secondary else {}
+    views = _search_for_view_count(data)
+    if views is not None and "views" not in extras:
+        context.logger.info(
+            "youtube handle=%s attempt=%s parse=json-views count=%s",
+            handle,
+            attempt,
+            views,
+        )
+        extras["views"] = views
+    if not extras:
+        return None
+    return extras
+
+
 def _search_for_subscriber_count(node: object) -> Optional[int]:
     if node is None:
         return None
@@ -416,3 +444,57 @@ def _search_for_subscriber_count(node: object) -> Optional[int]:
         if count is not None:
             return count
     return None
+
+
+def _search_for_view_count(node: object) -> Optional[int]:
+    if node is None:
+        return None
+    if isinstance(node, dict):
+        if "viewCountText" in node:
+            text = _coerce_text(node["viewCountText"])
+            if text:
+                count = parse_compact_number(text)
+                if count is not None:
+                    return count
+        if "viewCount" in node:
+            count = parse_compact_number(str(node["viewCount"]))
+            if count is not None:
+                return count
+        for value in node.values():
+            nested = _search_for_view_count(value)
+            if nested is not None:
+                return nested
+    elif isinstance(node, list):
+        for item in node:
+            nested = _search_for_view_count(item)
+            if nested is not None:
+                return nested
+    return None
+
+
+def _coerce_text(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        simple = value.get("simpleText")
+        if isinstance(simple, str):
+            return simple
+        runs = value.get("runs")
+        if isinstance(runs, list):
+            parts: List[str] = []
+            for item in runs:
+                if isinstance(item, dict):
+                    text = item.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+            if parts:
+                return "".join(parts)
+    if isinstance(value, list):
+        parts = [
+            fragment
+            for fragment in (_coerce_text(item) for item in value)
+            if fragment
+        ]
+        if parts:
+            return "".join(parts)
+    return ""
