@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import time
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import requests
 from requests import Response, Session
@@ -25,6 +26,7 @@ from .settings import (
     SCRAPER_TIMEOUT_SECONDS,
     TEXT_PROXY_PREFIX,
 )
+from .utils import parse_compact_number
 
 SUPPORTED_PLATFORMS = supported_platforms()
 
@@ -41,6 +43,61 @@ def _now() -> float:
 
 def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
+
+
+VIEW_KEYS: Sequence[str] = (
+    "views",
+    "view_count",
+    "viewCount",
+    "total_views",
+    "totalViews",
+    "plays",
+    "play_count",
+    "playCount",
+)
+
+
+def _coerce_positive_int(value: object) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, float):
+        if math.isfinite(value) and value >= 0:
+            return int(round(value))
+        return None
+    if isinstance(value, str):
+        numeric = parse_compact_number(value)
+        if numeric is not None and numeric >= 0:
+            return numeric
+        return None
+    return None
+
+
+def _extract_view_total(
+    extra: Mapping[str, object] | None, depth: int = 0
+) -> Optional[int]:
+    if extra is None or not isinstance(extra, Mapping):
+        return None
+    if depth > 4:
+        return None
+    for key in VIEW_KEYS:
+        if key in extra:
+            numeric = _coerce_positive_int(extra[key])
+            if numeric is not None:
+                return numeric
+    for value in extra.values():
+        if isinstance(value, Mapping):
+            nested = _extract_view_total(value, depth + 1)
+            if nested is not None:
+                return nested
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, Mapping):
+                    nested = _extract_view_total(item, depth + 1)
+                    if nested is not None:
+                        return nested
+    return None
 
 
 def _build_session() -> Session:
@@ -161,16 +218,53 @@ class SocialPipeline:
     def get_overview(self) -> Dict[str, object]:
         self._reload_config_if_needed()
         platforms: Dict[str, object] = {}
+        aggregate_totals = {
+            "accounts": 0,
+            "count": 0,
+            "views": 0,
+            "views_accounts": 0,
+        }
+        has_count_total = False
+        has_view_total = False
         for platform, handles in self._config.items():
             if platform not in SUPPORTED_PLATFORMS:
                 continue
-            platforms[platform] = self._gather_platform(platform, handles)
+            platform_stats = self._gather_platform(platform, handles)
+            platforms[platform] = platform_stats
+            totals = platform_stats.get("totals")
+            if isinstance(totals, dict):
+                accounts_value = totals.get("accounts")
+                if isinstance(accounts_value, int) and accounts_value >= 0:
+                    aggregate_totals["accounts"] += accounts_value
+                count_value = totals.get("count")
+                if isinstance(count_value, int) and count_value >= 0:
+                    aggregate_totals["count"] += count_value
+                    has_count_total = True
+                views_value = totals.get("views")
+                if isinstance(views_value, int) and views_value >= 0:
+                    aggregate_totals["views"] += views_value
+                    has_view_total = True
+                views_accounts_value = totals.get("views_accounts")
+                if (
+                    isinstance(views_accounts_value, int)
+                    and views_accounts_value >= 0
+                ):
+                    aggregate_totals["views_accounts"] += views_accounts_value
+        totals_payload: Dict[str, int] = {}
+        if aggregate_totals["accounts"]:
+            totals_payload["accounts"] = aggregate_totals["accounts"]
+        if has_count_total:
+            totals_payload["count"] = aggregate_totals["count"]
+        if has_view_total:
+            totals_payload["views"] = aggregate_totals["views"]
+            totals_payload["views_accounts"] = aggregate_totals["views_accounts"]
         return {
             "platforms": platforms,
             "meta": {
                 "generated_at": _now_iso(),
                 "cache_ttl_seconds": self.cache_ttl,
             },
+            "totals": totals_payload,
         }
 
     def get_config(self) -> Dict[str, object]:
@@ -221,7 +315,7 @@ class SocialPipeline:
                 successful_accounts += 1
                 total_count += stats.count
             if isinstance(stats.extra, dict):
-                views = stats.extra.get("views")
+                views = _extract_view_total(stats.extra)
                 if isinstance(views, int) and views >= 0:
                     view_accounts += 1
                     total_views += views

@@ -6,8 +6,12 @@
   const totalFollowersValue = document.getElementById("totalFollowersValue");
   const totalViewsStat = document.getElementById("totalViewsStat");
   const totalViewsValue = document.getElementById("totalViewsValue");
+  const viewSummaryCard = document.querySelector("[data-view-summary]");
+  const viewCountPrimary = document.querySelector("[data-view-count-primary]");
+  const viewCountMirrors = Array.from(
+    document.querySelectorAll("[data-view-count-mirror]")
+  );
   const clipOutputSection = document.getElementById("clipOutputSection");
-  const clipSummaryCard = document.querySelector("[data-clip-summary]");
   const clipCountPrimary = document.querySelector("[data-clip-count-primary]");
   const clipCountMirrors = Array.from(
     document.querySelectorAll("[data-clip-count-mirror]")
@@ -39,6 +43,30 @@
   };
 
   const clipFallbackCount = parseClipFallback();
+
+  const parseViewFallback = () => {
+    if (!viewCountPrimary) {
+      return null;
+    }
+    const attr = viewCountPrimary.getAttribute("data-fallback-views");
+    if (attr) {
+      const numericAttr = Number(attr);
+      if (Number.isFinite(numericAttr) && numericAttr > 0) {
+        return Math.round(numericAttr);
+      }
+    }
+    const rawText = viewCountPrimary.textContent || "";
+    const digitsOnly = rawText.replace(/[^0-9]/g, "");
+    if (digitsOnly) {
+      const numericText = Number(digitsOnly);
+      if (Number.isFinite(numericText) && numericText > 0) {
+        return Math.round(numericText);
+      }
+    }
+    return null;
+  };
+
+  const viewFallbackCount = parseViewFallback();
 
   const formatFullNumber = (value) => {
     const rounded = Math.round(Number(value));
@@ -83,6 +111,43 @@
     });
   };
 
+  const applyHeroViewCount = (countValue, { isMock = false } = {}) => {
+    if (!viewCountPrimary) {
+      return;
+    }
+    let resolvedCount = null;
+    if (Number.isFinite(countValue) && countValue > 0) {
+      resolvedCount = Math.round(countValue);
+    } else if (Number.isFinite(viewFallbackCount) && viewFallbackCount > 0) {
+      resolvedCount = viewFallbackCount;
+      isMock = true;
+    }
+    const applyDisplay = (value) => {
+      viewCountPrimary.textContent = value;
+      viewCountMirrors.forEach((el) => {
+        el.textContent = value;
+      });
+    };
+
+    const togglePlaceholder = (nextIsMock) => {
+      if (viewSummaryCard) {
+        viewSummaryCard.classList.toggle(
+          "hero__clip-summary--placeholder",
+          Boolean(nextIsMock)
+        );
+      }
+    };
+
+    if (resolvedCount !== null) {
+      const formatted = formatFullNumber(resolvedCount);
+      applyDisplay(formatted || resolvedCount.toString());
+      togglePlaceholder(isMock);
+    } else {
+      applyDisplay("-");
+      togglePlaceholder(true);
+    }
+  };
+
   const applyClipCount = (countValue, { isMock = false } = {}) => {
     if (!clipCountPrimary) {
       return;
@@ -101,32 +166,23 @@
       });
     };
 
-    const togglePlaceholder = (nextIsMock) => {
-      if (clipOutputSection) {
-        clipOutputSection.classList.toggle(
-          "clip-output--placeholder",
-          Boolean(nextIsMock)
-        );
-      }
-      if (clipSummaryCard) {
-        clipSummaryCard.classList.toggle(
-          "hero__clip-summary--placeholder",
-          Boolean(nextIsMock)
-        );
-      }
-    };
+    if (clipOutputSection) {
+      clipOutputSection.classList.toggle(
+        "clip-output--placeholder",
+        !(Number.isFinite(resolvedCount) && resolvedCount > 0 && !isMock)
+      );
+    }
 
     if (resolvedCount !== null) {
       const formatted = formatFullNumber(resolvedCount);
       applyDisplay(formatted || resolvedCount.toString());
-      togglePlaceholder(isMock);
     } else {
       applyDisplay("-");
-      togglePlaceholder(true);
     }
   };
 
   updateClipDurationMetadata();
+  applyHeroViewCount(null, { isMock: true });
   applyClipCount(null, { isMock: true });
 
   if (!metricsEl) {
@@ -206,6 +262,7 @@
       useFallback = false,
       isLoading = false,
       viewCount = null,
+      viewIsMock = true,
     } = {}
   ) => {
     if (!metric || !metric.valueEl) {
@@ -254,10 +311,14 @@
     metric.currentFollowerCount =
       displayValue !== null && Number.isFinite(displayValue) ? displayValue : 0;
     const numericViews = Number(viewCount);
-    if (!isLoading && Number.isFinite(numericViews) && numericViews >= 0) {
+    const hasViewCount =
+      !isLoading && Number.isFinite(numericViews) && numericViews >= 0;
+    if (hasViewCount) {
       metric.currentViewCount = numericViews;
+      metric.viewIsMock = Boolean(viewIsMock);
     } else {
       metric.currentViewCount = 0;
+      metric.viewIsMock = true;
     }
 
     const shouldShowPlaceholder =
@@ -297,6 +358,7 @@
     let accountsTotal = 0;
     let followersTotal = 0;
     let viewsTotal = 0;
+    let viewsReal = false;
 
     metrics.forEach((metric) => {
       if (metric.element.hidden) return;
@@ -312,8 +374,11 @@
       }
 
       const viewValue = Number(metric.currentViewCount);
-      if (Number.isFinite(viewValue) && viewValue > 0) {
+      if (Number.isFinite(viewValue) && viewValue >= 0) {
         viewsTotal += viewValue;
+        if (!metric.viewIsMock) {
+          viewsReal = true;
+        }
       }
     });
 
@@ -357,6 +422,8 @@
         totalViewsStat.hidden = true;
       }
     }
+
+    applyHeroViewCount(viewsTotal, { isMock: !viewsReal });
   };
 
   const recomputePlatformMetric = (platform) => {
@@ -385,6 +452,7 @@
     let clipHasReal = false;
     let viewTotal = 0;
     let viewResolved = 0;
+    let viewHasReal = false;
     state.handles.forEach((entry) => {
       if (!entry) return;
       if (Number.isFinite(entry.count)) {
@@ -404,6 +472,9 @@
       if (Number.isFinite(entry.views) && entry.views >= 0) {
         viewTotal += entry.views;
         viewResolved += 1;
+        if (!entry.isMock) {
+          viewHasReal = true;
+        }
       }
     });
 
@@ -423,6 +494,7 @@
       useFallback: shouldUseFallback,
       isLoading,
       viewCount: !isLoading && viewResolved > 0 ? viewTotal : null,
+      viewIsMock: !(!isLoading && viewResolved > 0 && viewHasReal),
     });
     if (platform === "instagram") {
       applyClipCount(clipResolved > 0 ? clipTotal : null, {
@@ -641,6 +713,7 @@
       currentAccountCount: 0,
       currentFollowerCount: 0,
       currentViewCount: 0,
+      viewIsMock: true,
     };
     metrics.set(platform, metric);
   });
