@@ -89,6 +89,7 @@ def _fetch_youtube_api(
         )
     statistics = (payload.get("items") or [{}])[0].get("statistics", {})
     count = statistics.get("subscriberCount")
+    numeric = None
     if count is not None:
         try:
             numeric = int(count)
@@ -102,18 +103,38 @@ def _fetch_youtube_api(
                 numeric,
                 elapsed,
             )
-            return AccountStats(
-                handle=handle,
-                count=numeric,
-                fetched_at=context.now(),
-                source="api",
-            )
+    extra: Dict[str, int] = {}
+    view_count = statistics.get("viewCount")
+    if view_count is not None:
+        try:
+            views_numeric = int(view_count)
+        except (ValueError, TypeError):
+            views_numeric = None
+        else:
+            extra["views"] = views_numeric
+    video_count = statistics.get("videoCount")
+    if video_count is not None:
+        try:
+            videos_numeric = int(video_count)
+        except (ValueError, TypeError):
+            videos_numeric = None
+        else:
+            extra["videos"] = videos_numeric
+    if numeric is not None:
+        return AccountStats(
+            handle=handle,
+            count=numeric,
+            fetched_at=context.now(),
+            source="api",
+            extra=extra or None,
+        )
     return AccountStats(
         handle=handle,
         count=None,
         fetched_at=context.now(),
         source="api",
         error="Missing subscriber count",
+        extra=extra or None,
     )
 
 
@@ -144,16 +165,21 @@ def _youtube_candidate_urls(handle: str) -> List[str]:
 
 def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats:
     last_error = ""
+    last_extra: Optional[Dict[str, int]] = None
     for url in _youtube_candidate_urls(handle):
         response = context.request(url, "youtube", handle, "direct")
         html = response.text if isinstance(response, Response) and response.ok else ""
         parse = _parse_youtube_html(html, handle, "direct", url, context)
         if parse is not None:
+            count, source, extra = parse
+            if extra:
+                last_extra = extra
             return AccountStats(
                 handle=handle,
-                count=parse[0],
+                count=count,
                 fetched_at=context.now(),
-                source=f"scrape:{parse[1]}",
+                source=f"scrape:{source}",
+                extra=extra,
             )
         if response is None or not isinstance(response, Response) or not response.ok or not html:
             last_error = (
@@ -162,11 +188,15 @@ def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats
         proxy_html = context.fetch_text(url, "youtube", handle)
         parse = _parse_youtube_html(proxy_html or "", handle, "text-proxy", url, context)
         if parse is not None:
+            count, source, extra = parse
+            if extra:
+                last_extra = extra
             return AccountStats(
                 handle=handle,
-                count=parse[0],
+                count=count,
                 fetched_at=context.now(),
-                source=f"scrape:{parse[1]}",
+                source=f"scrape:{source}",
+                extra=extra,
             )
         last_error = "No subscriber pattern found"
     return AccountStats(
@@ -175,6 +205,7 @@ def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats
         fetched_at=context.now(),
         source="scrape",
         error=last_error or "No subscriber data",
+        extra=last_extra,
     )
 
 
@@ -184,7 +215,7 @@ def _parse_youtube_html(
     attempt: str,
     url: str,
     context: PlatformContext,
-) -> Optional[Tuple[int, str]]:
+) -> Optional[Tuple[int, str, Optional[Dict[str, int]]]]:
     if not html:
         context.logger.info(
             "youtube handle=%s attempt=%s url=%s parse=empty-html",
@@ -193,6 +224,7 @@ def _parse_youtube_html(
             url,
         )
         return None
+    secondary = _extract_secondary_counts(html, handle, attempt, context)
     data = extract_json_blob(html, YT_INITIAL_DATA_RE)
     if data:
         count = _search_for_subscriber_count(data)
@@ -203,8 +235,7 @@ def _parse_youtube_html(
                 attempt,
                 count,
             )
-            _log_youtube_secondary_counts(html, handle, attempt, context)
-            return count, f"{attempt}:ytInitialData"
+            return count, f"{attempt}:ytInitialData", secondary
         context.logger.info(
             "youtube handle=%s attempt=%s parse=ytInitialData-miss",
             handle,
@@ -226,8 +257,7 @@ def _parse_youtube_html(
                 attempt,
                 count,
             )
-            _log_youtube_secondary_counts(html, handle, attempt, context)
-            return count, f"{attempt}:ytInitialPlayerResponse"
+            return count, f"{attempt}:ytInitialPlayerResponse", secondary
         context.logger.info(
             "youtube handle=%s attempt=%s parse=ytInitialPlayerResponse-miss",
             handle,
@@ -248,8 +278,7 @@ def _parse_youtube_html(
                 attempt,
                 count,
             )
-            _log_youtube_secondary_counts(html, handle, attempt, context)
-            return count, f"{attempt}:ytcfg"
+            return count, f"{attempt}:ytcfg", secondary
     if not found_cfg:
         context.logger.info(
             "youtube handle=%s attempt=%s parse=ytcfg-missing",
@@ -266,21 +295,20 @@ def _parse_youtube_html(
                 attempt,
                 count,
             )
-            _log_youtube_secondary_counts(html, handle, attempt, context)
-            return count, f"{attempt}:regex"
+            return count, f"{attempt}:regex", secondary
     else:
         context.logger.info(
             "youtube handle=%s attempt=%s parse=regex-subscribers-miss",
             handle,
             attempt,
         )
-    _log_youtube_secondary_counts(html, handle, attempt, context)
     return None
 
 
-def _log_youtube_secondary_counts(
+def _extract_secondary_counts(
     html: str, handle: str, attempt: str, context: PlatformContext
-) -> None:
+) -> Optional[Dict[str, int]]:
+    result: Dict[str, int] = {}
     videos_match = YT_VIDEOS_RE.search(html)
     if videos_match:
         videos = parse_compact_number(" ".join(videos_match.groups()))
@@ -291,6 +319,7 @@ def _log_youtube_secondary_counts(
                 attempt,
                 videos,
             )
+            result["videos"] = videos
     views_match = YT_VIEWS_RE.search(html)
     if views_match:
         views = parse_compact_number(" ".join(views_match.groups()))
@@ -301,6 +330,8 @@ def _log_youtube_secondary_counts(
                 attempt,
                 views,
             )
+            result["views"] = views
+    return result or None
 
 
 def _search_for_subscriber_count(node: object) -> Optional[int]:

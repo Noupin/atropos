@@ -209,7 +209,9 @@ class SocialPipeline:
     def _gather_platform(self, platform: str, handles: List[str]) -> Dict[str, object]:
         per_account: List[Dict[str, object]] = []
         total_count = 0
+        total_views = 0
         successful_accounts = 0
+        view_accounts = 0
         requested: List[str] = []
         for handle in handles:
             requested.append(handle)
@@ -218,11 +220,19 @@ class SocialPipeline:
             if isinstance(stats.count, int):
                 successful_accounts += 1
                 total_count += stats.count
+            if isinstance(stats.extra, dict):
+                views = stats.extra.get("views")
+                if isinstance(views, int) and views >= 0:
+                    view_accounts += 1
+                    total_views += views
         totals = {
             "count": total_count if successful_accounts else None,
             "accounts": successful_accounts,
             "requested": len(requested),
         }
+        if view_accounts:
+            totals["views"] = total_views
+            totals["views_accounts"] = view_accounts
         return {
             "platform": platform,
             "handles": requested,

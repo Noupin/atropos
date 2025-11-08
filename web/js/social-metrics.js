@@ -4,6 +4,8 @@
   const totalAccountsValue = document.getElementById("totalAccountsValue");
   const totalFollowersStat = document.getElementById("totalFollowersStat");
   const totalFollowersValue = document.getElementById("totalFollowersValue");
+  const totalViewsStat = document.getElementById("totalViewsStat");
+  const totalViewsValue = document.getElementById("totalViewsValue");
   const clipOutputSection = document.getElementById("clipOutputSection");
   const clipSummaryCard = document.querySelector("[data-clip-summary]");
   const clipCountPrimary = document.querySelector("[data-clip-count-primary]");
@@ -203,6 +205,7 @@
       accountCount,
       useFallback = false,
       isLoading = false,
+      viewCount = null,
     } = {}
   ) => {
     if (!metric || !metric.valueEl) {
@@ -250,6 +253,12 @@
     metric.currentAccountCount = resolvedAccounts;
     metric.currentFollowerCount =
       displayValue !== null && Number.isFinite(displayValue) ? displayValue : 0;
+    const numericViews = Number(viewCount);
+    if (!isLoading && Number.isFinite(numericViews) && numericViews >= 0) {
+      metric.currentViewCount = numericViews;
+    } else {
+      metric.currentViewCount = 0;
+    }
 
     const shouldShowPlaceholder =
       isLoading || resolvedMock || displayValue === null;
@@ -274,6 +283,7 @@
       accountCount: resolvedAccounts,
       isMock: shouldShowPlaceholder,
       displayedCount: displayValue,
+      viewCount: metric.currentViewCount,
     };
   };
 
@@ -286,6 +296,7 @@
   const updateAggregateStats = () => {
     let accountsTotal = 0;
     let followersTotal = 0;
+    let viewsTotal = 0;
 
     metrics.forEach((metric) => {
       if (metric.element.hidden) return;
@@ -298,6 +309,11 @@
       const followerValue = Number(metric.currentFollowerCount);
       if (Number.isFinite(followerValue) && followerValue > 0) {
         followersTotal += followerValue;
+      }
+
+      const viewValue = Number(metric.currentViewCount);
+      if (Number.isFinite(viewValue) && viewValue > 0) {
+        viewsTotal += viewValue;
       }
     });
 
@@ -329,6 +345,18 @@
         totalFollowersStat.hidden = true;
       }
     }
+
+    if (totalViewsStat && totalViewsValue) {
+      if (viewsTotal > 0) {
+        const formatted = formatCount(viewsTotal);
+        const label = `${formatted || viewsTotal.toLocaleString()} total views`;
+        totalViewsValue.textContent = label;
+        totalViewsStat.hidden = false;
+      } else {
+        totalViewsValue.textContent = "";
+        totalViewsStat.hidden = true;
+      }
+    }
   };
 
   const recomputePlatformMetric = (platform) => {
@@ -355,6 +383,8 @@
     let clipTotal = 0;
     let clipResolved = 0;
     let clipHasReal = false;
+    let viewTotal = 0;
+    let viewResolved = 0;
     state.handles.forEach((entry) => {
       if (!entry) return;
       if (Number.isFinite(entry.count)) {
@@ -370,6 +400,10 @@
         if (!entry.isMock) {
           clipHasReal = true;
         }
+      }
+      if (Number.isFinite(entry.views) && entry.views >= 0) {
+        viewTotal += entry.views;
+        viewResolved += 1;
       }
     });
 
@@ -388,6 +422,7 @@
       isMock: resolvedAccounts > 0 ? !hasReal : true,
       useFallback: shouldUseFallback,
       isLoading,
+      viewCount: !isLoading && viewResolved > 0 ? viewTotal : null,
     });
     if (platform === "instagram") {
       applyClipCount(clipResolved > 0 ? clipTotal : null, {
@@ -441,17 +476,25 @@
       const numeric = Number(entry.count);
       const rawExtra = entry.extra;
       let clipCount = null;
+      let viewCount = null;
       if (rawExtra && typeof rawExtra === "object") {
-        const possible =
+        const possiblePosts =
           rawExtra.posts ?? rawExtra.clips ?? rawExtra.media_count ?? null;
-        const numericClips = Number(possible);
+        const numericClips = Number(possiblePosts);
         if (Number.isFinite(numericClips) && numericClips >= 0) {
           clipCount = numericClips;
+        }
+        const possibleViews =
+          rawExtra.views ?? rawExtra.view_count ?? rawExtra.viewCount ?? null;
+        const numericViews = Number(possibleViews);
+        if (Number.isFinite(numericViews) && numericViews >= 0) {
+          viewCount = numericViews;
         }
       }
       const record = {
         count: Number.isFinite(numeric) ? numeric : null,
         clipCount,
+        views: viewCount,
         isMock: Boolean(entry.is_mock),
       };
       state.handles.set(handle, record);
@@ -475,7 +518,12 @@
     const state = getOrCreatePlatformState(platform);
     normalized.forEach((handle) => {
       if (!state.handles.has(handle)) {
-        state.handles.set(handle, { count: null, clipCount: null, isMock: true });
+        state.handles.set(handle, {
+          count: null,
+          clipCount: null,
+          views: null,
+          isMock: true,
+        });
       }
     });
     return normalized;
@@ -592,6 +640,7 @@
         : 0,
       currentAccountCount: 0,
       currentFollowerCount: 0,
+      currentViewCount: 0,
     };
     metrics.set(platform, metric);
   });
