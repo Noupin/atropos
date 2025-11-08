@@ -673,10 +673,14 @@ def _parse_additional_info_counts(
     for row in parser.rows:
         for cell in row:
             normalized = cell.strip()
+            if not normalized:
+                continue
             lower = normalized.lower()
-            if views is None and re.search(r"\bview", lower):
+            if views is None and "view" in lower:
                 saw_view_candidate = True
-                parsed = _coerce_numeric(normalized)
+                match = YT_VIEWS_RE.search(normalized)
+                candidate = " ".join(part for part in match.groups() if part) if match else normalized
+                parsed = _coerce_numeric(candidate)
                 success = parsed is not None
                 _log_youtube_parse(
                     context,
@@ -691,9 +695,15 @@ def _parse_additional_info_counts(
                 if success:
                     views = parsed
                     view_source = f"{attempt}:additional-info"
-            if videos is None and re.search(r"\bvideo", lower):
+            if videos is None and "video" in lower:
                 saw_video_candidate = True
-                parsed_videos = _coerce_numeric(normalized)
+                match_videos = YT_VIDEOS_RE.search(normalized)
+                candidate_videos = (
+                    " ".join(part for part in match_videos.groups() if part)
+                    if match_videos
+                    else normalized
+                )
+                parsed_videos = _coerce_numeric(candidate_videos)
                 success_videos = parsed_videos is not None
                 _log_youtube_parse(
                     context,

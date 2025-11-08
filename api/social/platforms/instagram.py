@@ -21,6 +21,14 @@ INSTAGRAM_NEXT_DATA_RE = re.compile(
     r"<script[^>]+id=\"__NEXT_DATA__\"[^>]*>(\{.*?\})</script>",
     re.DOTALL | re.IGNORECASE,
 )
+INSTAGRAM_ADDITIONAL_DATA_RE = re.compile(
+    r"window\.__additionalDataLoaded\([^,]+,\s*(\{.*?\})\);",
+    re.DOTALL | re.IGNORECASE,
+)
+INSTAGRAM_SHARED_DATA_RE = re.compile(
+    r"window\._sharedData\s*=\s*(\{.*?\});",
+    re.DOTALL | re.IGNORECASE,
+)
 INSTAGRAM_FOLLOWERS_TEXT_RE = re.compile(
     r"([0-9][0-9.,\u00a0]*)\s*([KMB]?)\s+followers",
     re.IGNORECASE,
@@ -201,6 +209,34 @@ def _parse_instagram_html(
         )
         if followers is not None:
             return followers, posts, views, f"{attempt}:next-data"
+
+    for pattern, stage in (
+        (INSTAGRAM_ADDITIONAL_DATA_RE, "additional-data"),
+        (INSTAGRAM_SHARED_DATA_RE, "shared-data"),
+    ):
+        match = pattern.search(payload)
+        if match:
+            try:
+                script_data = json.loads(match.group(1))
+            except json.JSONDecodeError:
+                script_data = None
+            followers_candidate, posts_candidate = _extract_from_instagram_data(
+                script_data
+            )
+            if posts is None and posts_candidate is not None:
+                posts = posts_candidate
+            _log_instagram_parse(
+                context,
+                handle,
+                attempt,
+                stage,
+                followers_candidate,
+                views,
+                posts_candidate,
+                followers_candidate is not None,
+            )
+            if followers_candidate is not None:
+                return followers_candidate, posts_candidate, views, f"{attempt}:{stage}"
 
     ld_match = INSTAGRAM_LD_JSON_RE.search(payload)
     if ld_match:

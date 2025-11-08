@@ -76,6 +76,67 @@ def test_instagram_regex_followers_parse() -> None:
     assert source.endswith("regex")
 
 
+def test_instagram_additional_data_parse() -> None:
+    context = _build_context()
+    payload = {
+        "graphql": {
+            "user": {
+                "edge_followed_by": {"count": 43210},
+                "edge_owner_to_timeline_media": {"count": 765},
+            }
+        }
+    }
+    html = (
+        "<html><body><script>window.__additionalDataLoaded('/@atropos/', {data});"
+        "</script></body></html>".replace("{data}", json.dumps(payload))
+    )
+    count, posts, views, source = instagram._parse_instagram_html(  # type: ignore[attr-defined]
+        html,
+        "@atropos",
+        "direct",
+        "https://www.instagram.com/atropos/",
+        context,
+    )
+    assert count == 43_210
+    assert posts == 765
+    assert views is None
+    assert source.endswith("additional-data")
+
+
+def test_instagram_shared_data_parse() -> None:
+    context = _build_context()
+    payload = {
+        "entry_data": {
+            "ProfilePage": [
+                {
+                    "graphql": {
+                        "user": {
+                            "edge_followed_by": {"count": 32100},
+                            "edge_owner_to_timeline_media": {"count": 654},
+                        }
+                    }
+                }
+            ]
+        }
+    }
+    html = (
+        "<html><body><script>window._sharedData = {data};" "</script></body></html>".replace(
+            "{data}", json.dumps(payload)
+        )
+    )
+    count, posts, views, source = instagram._parse_instagram_html(  # type: ignore[attr-defined]
+        html,
+        "@atropos",
+        "direct",
+        "https://www.instagram.com/atropos/",
+        context,
+    )
+    assert count == 32_100
+    assert posts == 654
+    assert views is None
+    assert source.endswith("shared-data")
+
+
 def test_instagram_scrape_sends_app_id_header() -> None:
     captured_headers: list[Optional[dict[str, str]]] = []
 
@@ -102,6 +163,33 @@ def test_instagram_scrape_sends_app_id_header() -> None:
 
     assert captured_headers, "expected request to be invoked"
     assert captured_headers[0] == {"X-IG-App-ID": "123456789"}
+
+
+def test_youtube_additional_info_combined_counts() -> None:
+    context = _build_context()
+    html = """
+    <html>
+      <body>
+        <div id="additional-info-container">
+          <table>
+            <tbody>
+              <tr><td>Stats</td><td>62,000,004 views • 412 videos</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </body>
+    </html>
+    """
+    views, view_source, videos, video_source = youtube._parse_additional_info_counts(  # type: ignore[attr-defined]
+        html,
+        "atropos",
+        "direct",
+        context,
+    )
+    assert views == 62_000_004
+    assert videos == 412
+    assert view_source and view_source.endswith("additional-info")
+    assert video_source and video_source.endswith("additional-info")
 
 
 def test_youtube_html_includes_views_and_subscribers() -> None:
