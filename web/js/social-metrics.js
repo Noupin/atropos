@@ -177,11 +177,18 @@
       bases.push(window.WEB_API_BASE);
     } else {
       bases.push("/api");
-      if (typeof window !== "undefined") {
-        const host = window.location.hostname;
-        if (host === "localhost" || host === "127.0.0.1") {
-          bases.push("http://127.0.0.1:5001/api");
-        }
+    }
+
+    if (typeof window !== "undefined") {
+      const host = String(window.location.hostname || "").toLowerCase();
+      const isLocalHost =
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host === "0.0.0.0" ||
+        host.endsWith(".localhost");
+      if (isLocalHost || !explicit) {
+        bases.push("http://127.0.0.1:5001/api");
+        bases.push("http://localhost:5001/api");
       }
     }
 
