@@ -14,7 +14,7 @@ from requests import Response, Session
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from .context import PlatformContext
+from .context import PlatformContext, RequestOutcome
 from .exceptions import UnsupportedPlatformError
 from .models import AccountStats
 from .platforms import get_resolver, supported_platforms
@@ -161,12 +161,28 @@ class SocialPipeline:
     def get_overview(self) -> Dict[str, object]:
         self._reload_config_if_needed()
         platforms: Dict[str, object] = {}
+        global_views = 0
+        global_views_accounts = 0
         for platform, handles in self._config.items():
             if platform not in SUPPORTED_PLATFORMS:
                 continue
-            platforms[platform] = self._gather_platform(platform, handles)
+            platform_payload = self._gather_platform(platform, handles)
+            platforms[platform] = platform_payload
+            totals = platform_payload.get("totals", {})
+            if isinstance(totals, dict):
+                views_value = totals.get("views")
+                views_accounts = totals.get("views_accounts")
+                if isinstance(views_value, int) and views_value >= 0:
+                    global_views += views_value
+                if isinstance(views_accounts, int) and views_accounts > 0:
+                    global_views_accounts += views_accounts
+        totals_payload = {
+            "views": global_views if global_views_accounts else None,
+            "views_accounts": global_views_accounts,
+        }
         return {
             "platforms": platforms,
+            "totals": totals_payload,
             "meta": {
                 "generated_at": _now_iso(),
                 "cache_ttl_seconds": self.cache_ttl,
@@ -211,6 +227,8 @@ class SocialPipeline:
         total_count = 0
         successful_accounts = 0
         requested: List[str] = []
+        views_total = 0
+        views_accounts = 0
         for handle in handles:
             requested.append(handle)
             stats = self._fetch_account(platform, handle)
@@ -218,10 +236,17 @@ class SocialPipeline:
             if isinstance(stats.count, int):
                 successful_accounts += 1
                 total_count += stats.count
+            extra = stats.extra or {}
+            views_value = extra.get("views") if isinstance(extra, dict) else None
+            if isinstance(views_value, int) and views_value >= 0:
+                views_total += views_value
+                views_accounts += 1
         totals = {
             "count": total_count if successful_accounts else None,
             "accounts": successful_accounts,
             "requested": len(requested),
+            "views": views_total if views_accounts else None,
+            "views_accounts": views_accounts,
         }
         return {
             "platform": platform,
@@ -258,49 +283,80 @@ class SocialPipeline:
         handle: str,
         attempt: str,
         headers: Optional[Dict[str, str]] = None,
-    ) -> Optional[Response]:
+    ) -> RequestOutcome:
+        request_url = url
+        if attempt == "text-proxy":
+            request_url = f"{TEXT_PROXY_PREFIX}{url}"
         start = time.perf_counter()
         try:
             response = self.session.get(
-                url, timeout=SCRAPER_TIMEOUT_SECONDS, headers=headers
+                request_url, timeout=SCRAPER_TIMEOUT_SECONDS, headers=headers
             )
         except requests.RequestException as exc:
             elapsed = time.perf_counter() - start
-            self.logger.info(
-                "%s handle=%s attempt=%s url=%s error=%s elapsed=%.2fs",
-                platform,
-                handle,
-                attempt,
-                url,
-                exc,
-                elapsed,
+            return RequestOutcome(
+                url=request_url,
+                attempt=attempt,
+                elapsed=elapsed,
+                response=None,
+                status=None,
+                error=str(exc),
             )
-            return None
         elapsed = time.perf_counter() - start
-        self.logger.info(
-            "%s handle=%s attempt=%s url=%s status=%s elapsed=%.2fs",
+        return RequestOutcome(
+            url=request_url,
+            attempt=attempt,
+            elapsed=elapsed,
+            response=response,
+            status=response.status_code,
+        )
+
+    def _log_attempt(
+        self,
+        platform: str,
+        handle: str,
+        outcome: RequestOutcome,
+        parse: str,
+        followers: Optional[int],
+        views: Optional[int],
+        detail: Optional[str],
+    ) -> None:
+        status: Optional[str]
+        if outcome.status is not None:
+            status = str(outcome.status)
+        elif outcome.error:
+            status = "error"
+        else:
+            status = "unknown"
+        message = (
+            "platform=%s handle=%s attempt=%s url=%s status=%s parse=%s "
+            "followers=%s views=%s elapsed=%.2fs"
+        ) % (
             platform,
             handle,
-            attempt,
-            url,
-            response.status_code,
-            elapsed,
+            outcome.attempt,
+            outcome.url,
+            status,
+            parse,
+            followers if followers is not None else "null",
+            views if views is not None else "null",
+            outcome.elapsed,
         )
-        return response
-
-    def _fetch_text(self, url: str, platform: str, handle: str) -> Optional[str]:
-        proxy_url = f"{TEXT_PROXY_PREFIX}{url}"
-        response = self._request(proxy_url, platform, handle, "text-proxy")
-        if response and response.ok:
-            return response.text
-        return None
+        extras: List[str] = []
+        if detail:
+            extras.append(f"detail={detail}")
+        if outcome.error:
+            extras.append(f"error={outcome.error}")
+        if extras:
+            message = f"{message} {' '.join(extras)}"
+        self.logger.info(message)
 
     def _build_context(self) -> PlatformContext:
         return PlatformContext(
             session=self.session,
             logger=self.logger,
             request=self._request,
-            fetch_text=self._fetch_text,
+            log_attempt=self._log_attempt,
             now=_now,
             instagram_web_app_id=INSTAGRAM_WEB_APP_ID,
         )

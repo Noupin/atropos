@@ -5,7 +5,8 @@
   const totalFollowersStat = document.getElementById("totalFollowersStat");
   const totalFollowersValue = document.getElementById("totalFollowersValue");
   const clipOutputSection = document.getElementById("clipOutputSection");
-  const clipSummaryCard = document.querySelector("[data-clip-summary]");
+  const viewSummaryCard = document.querySelector("[data-view-summary]");
+  const viewCountPrimary = document.querySelector("[data-view-count-primary]");
   const clipCountPrimary = document.querySelector("[data-clip-count-primary]");
   const clipCountMirrors = Array.from(
     document.querySelectorAll("[data-clip-count-mirror]")
@@ -13,6 +14,30 @@
   const clipDurationEls = document.querySelectorAll("[data-clip-duration]");
 
   const CLIP_START_DATE = new Date(Date.UTC(2025, 8, 3));
+
+  const parseViewFallback = () => {
+    if (!viewCountPrimary) {
+      return null;
+    }
+    const attr = viewCountPrimary.getAttribute("data-fallback-views");
+    if (attr) {
+      const numericAttr = Number(attr);
+      if (Number.isFinite(numericAttr) && numericAttr > 0) {
+        return Math.round(numericAttr);
+      }
+    }
+    const rawText = viewCountPrimary.textContent || "";
+    const digitsOnly = rawText.replace(/[^0-9]/g, "");
+    if (digitsOnly) {
+      const numericText = Number(digitsOnly);
+      if (Number.isFinite(numericText) && numericText > 0) {
+        return Math.round(numericText);
+      }
+    }
+    return null;
+  };
+
+  const viewFallbackCount = parseViewFallback();
 
   const parseClipFallback = () => {
     if (!clipCountPrimary) {
@@ -81,6 +106,37 @@
     });
   };
 
+  const applyViewCount = (countValue, { isMock = false } = {}) => {
+    if (!viewCountPrimary) {
+      return;
+    }
+    let resolvedCount = null;
+    if (Number.isFinite(countValue) && countValue > 0) {
+      resolvedCount = Math.round(countValue);
+    } else if (Number.isFinite(viewFallbackCount) && viewFallbackCount > 0) {
+      resolvedCount = viewFallbackCount;
+      isMock = true;
+    }
+
+    const togglePlaceholder = (nextIsMock) => {
+      if (viewSummaryCard) {
+        viewSummaryCard.classList.toggle(
+          "hero__clip-summary--placeholder",
+          Boolean(nextIsMock)
+        );
+      }
+    };
+
+    if (resolvedCount !== null) {
+      const formatted = formatFullNumber(resolvedCount);
+      viewCountPrimary.textContent = formatted || resolvedCount.toString();
+      togglePlaceholder(isMock);
+    } else {
+      viewCountPrimary.textContent = "-";
+      togglePlaceholder(true);
+    }
+  };
+
   const applyClipCount = (countValue, { isMock = false } = {}) => {
     if (!clipCountPrimary) {
       return;
@@ -106,12 +162,6 @@
           Boolean(nextIsMock)
         );
       }
-      if (clipSummaryCard) {
-        clipSummaryCard.classList.toggle(
-          "hero__clip-summary--placeholder",
-          Boolean(nextIsMock)
-        );
-      }
     };
 
     if (resolvedCount !== null) {
@@ -125,6 +175,7 @@
   };
 
   updateClipDurationMetadata();
+  applyViewCount(null, { isMock: true });
   applyClipCount(null, { isMock: true });
 
   if (!metricsEl) {
@@ -188,6 +239,8 @@
         handles: new Map(),
         pending: new Set(),
         attempted: false,
+        totalsViews: null,
+        totalsViewsAccounts: 0,
       });
     }
     return platformState.get(platform);
@@ -331,6 +384,36 @@
     }
   };
 
+  const updateGlobalViewsMetric = () => {
+    let totalViews = 0;
+    let hasReal = false;
+
+    platformState.forEach((state) => {
+      if (!state) return;
+      const viewsTotal = Number(state.totalsViews);
+      if (Number.isFinite(viewsTotal) && viewsTotal > 0) {
+        totalViews += viewsTotal;
+        hasReal = true;
+        return;
+      }
+      state.handles.forEach((entry) => {
+        if (!entry) return;
+        if (Number.isFinite(entry.views) && entry.views > 0) {
+          totalViews += entry.views;
+          if (!entry.isMock) {
+            hasReal = true;
+          }
+        }
+      });
+    });
+
+    if (totalViews > 0 && hasReal) {
+      applyViewCount(totalViews, { isMock: false });
+    } else {
+      applyViewCount(null, { isMock: true });
+    }
+  };
+
   const recomputePlatformMetric = (platform) => {
     const metric = metrics.get(platform);
     if (!metric) {
@@ -346,6 +429,7 @@
         isLoading: false,
       });
       updateAggregateStats();
+      updateGlobalViewsMetric();
       return;
     }
 
@@ -395,6 +479,7 @@
       });
     }
     updateAggregateStats();
+    updateGlobalViewsMetric();
   };
 
   const requestJson = async (path, searchParams) => {
@@ -441,6 +526,7 @@
       const numeric = Number(entry.count);
       const rawExtra = entry.extra;
       let clipCount = null;
+      let accountViews = null;
       if (rawExtra && typeof rawExtra === "object") {
         const possible =
           rawExtra.posts ?? rawExtra.clips ?? rawExtra.media_count ?? null;
@@ -448,14 +534,34 @@
         if (Number.isFinite(numericClips) && numericClips >= 0) {
           clipCount = numericClips;
         }
+        const possibleViews = rawExtra.views ?? rawExtra.total_views ?? null;
+        const numericViews = Number(possibleViews);
+        if (Number.isFinite(numericViews) && numericViews >= 0) {
+          accountViews = numericViews;
+        }
       }
       const record = {
         count: Number.isFinite(numeric) ? numeric : null,
         clipCount,
+        views: Number.isFinite(accountViews) ? accountViews : null,
         isMock: Boolean(entry.is_mock),
       };
       state.handles.set(handle, record);
     });
+    const totals = payload?.totals;
+    if (totals && typeof totals === "object") {
+      const totalViews = Number(totals.views);
+      state.totalsViews =
+        Number.isFinite(totalViews) && totalViews >= 0 ? totalViews : null;
+      const totalViewsAccounts = Number(totals.views_accounts);
+      state.totalsViewsAccounts =
+        Number.isFinite(totalViewsAccounts) && totalViewsAccounts > 0
+          ? totalViewsAccounts
+          : 0;
+    } else {
+      state.totalsViews = null;
+      state.totalsViewsAccounts = 0;
+    }
   };
 
   const normalizeHandles = (handles) => {
@@ -475,7 +581,12 @@
     const state = getOrCreatePlatformState(platform);
     normalized.forEach((handle) => {
       if (!state.handles.has(handle)) {
-        state.handles.set(handle, { count: null, clipCount: null, isMock: true });
+        state.handles.set(handle, {
+          count: null,
+          clipCount: null,
+          views: null,
+          isMock: true,
+        });
       }
     });
     return normalized;
@@ -616,6 +727,7 @@
   });
 
   updateAggregateStats();
+  updateGlobalViewsMetric();
 
   if (!enabledPlatforms.length) {
     return;

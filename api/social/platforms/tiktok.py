@@ -20,49 +20,44 @@ def resolve(handle: str, context: PlatformContext) -> AccountStats:
 def _fetch_tiktok_scrape(handle: str, context: PlatformContext) -> AccountStats:
     slug = handle.lstrip("@")
     url = f"https://www.tiktok.com/@{slug}"
-    response = context.request(url, "tiktok", handle, "direct")
-    html = response.text if response and getattr(response, "ok", False) else ""
-    count, source = _parse_tiktok_html(html, handle, "direct", url, context)
-    if count is not None:
-        return AccountStats(
-            handle=handle,
-            count=count,
-            fetched_at=context.now(),
-            source=f"scrape:{source}",
+    for attempt in ("direct", "text-proxy"):
+        outcome = context.request(url, "tiktok", handle, attempt)
+        html = (
+            outcome.response.text
+            if outcome.response is not None and outcome.response.ok
+            else ""
         )
-    proxy_html = context.fetch_text(url, "tiktok", handle)
-    count, source = _parse_tiktok_html(proxy_html or "", handle, "text-proxy", url, context)
-    if count is not None:
-        return AccountStats(
-            handle=handle,
-            count=count,
-            fetched_at=context.now(),
-            source=f"scrape:{source}",
+        count, detail = _parse_tiktok_html(handle, html)
+        parse_type = "followers" if count is not None else "miss"
+        context.log_attempt(
+            "tiktok",
+            handle,
+            outcome,
+            parse_type,
+            count,
+            None,
+            detail,
         )
+        if count is not None:
+            return AccountStats(
+                handle=handle,
+                count=count,
+                fetched_at=context.now(),
+                source=f"scrape:{detail or attempt}",
+            )
     return AccountStats(
         handle=handle,
         count=None,
         fetched_at=context.now(),
         source="scrape",
         error="Missing follower count",
+        is_mock=True,
     )
 
 
-def _parse_tiktok_html(
-    html: str,
-    handle: str,
-    attempt: str,
-    url: str,
-    context: PlatformContext,
-) -> Tuple[Optional[int], str]:
+def _parse_tiktok_html(handle: str, html: str) -> Tuple[Optional[int], Optional[str]]:
     if not html:
-        context.logger.info(
-            "tiktok handle=%s attempt=%s url=%s parse=empty",
-            handle,
-            attempt,
-            url,
-        )
-        return None, attempt
+        return None, "empty"
     match = TIKTOK_SIGI_RE.search(html)
     if match:
         try:
@@ -82,53 +77,23 @@ def _parse_tiktok_html(
                     if unique == slug or key.lower() == slug:
                         count = entry.get("followerCount")
                         if isinstance(count, int):
-                            context.logger.info(
-                                "tiktok handle=%s attempt=%s parse=SIGI_STATE-users count=%s",
-                                handle,
-                                attempt,
-                                count,
-                            )
-                            return count, f"{attempt}:sigi-users"
+                            return count, "sigi-users"
             if isinstance(stats, dict):
                 for key, entry in stats.items():
                     if not isinstance(entry, dict):
                         continue
                     count = entry.get("followerCount")
                     if isinstance(count, int):
-                        context.logger.info(
-                            "tiktok handle=%s attempt=%s parse=SIGI_STATE-stats count=%s",
-                            handle,
-                            attempt,
-                            count,
-                        )
-                        return count, f"{attempt}:sigi-stats"
+                        return count, "sigi-stats"
     regex_match = re.search(r'"followerCount"\s*:\s*([0-9]+)', html)
     if regex_match:
         count = int(regex_match.group(1))
-        context.logger.info(
-            "tiktok handle=%s attempt=%s parse=regex-json count=%s",
-            handle,
-            attempt,
-            count,
-        )
-        return count, f"{attempt}:regex-json"
+        return count, "regex-json"
     fallback_match = re.search(
         r"([0-9][0-9.,\u00a0]*)\s+Followers", html, re.IGNORECASE
     )
     if fallback_match:
         count = parse_compact_number(fallback_match.group(1))
         if count is not None:
-            context.logger.info(
-                "tiktok handle=%s attempt=%s parse=regex-text count=%s",
-                handle,
-                attempt,
-                count,
-            )
-            return count, f"{attempt}:regex-text"
-    context.logger.info(
-        "tiktok handle=%s attempt=%s url=%s parse=miss",
-        handle,
-        attempt,
-        url,
-    )
-    return None, attempt
+            return count, "regex-text"
+    return None, None
