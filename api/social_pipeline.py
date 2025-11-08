@@ -27,6 +27,12 @@ TEXT_PROXY_PREFIX = "https://r.jina.ai/"
 INSTAGRAM_WEB_APP_ID = os.environ.get(
     "INSTAGRAM_WEB_APP_ID", "936619743392459"
 )
+INSTAGRAM_ASBD_ID = os.environ.get("INSTAGRAM_ASBD_ID", "129477")
+INSTAGRAM_WWW_CLAIM = os.environ.get("INSTAGRAM_WWW_CLAIM", "0")
+INSTAGRAM_MOBILE_USER_AGENT = os.environ.get(
+    "INSTAGRAM_MOBILE_USER_AGENT",
+    "Instagram 295.0.0.27.109 Android",
+)
 
 YT_INITIAL_DATA_RE = re.compile(r"ytInitialData\s*=\s*(\{.+?\})\s*;", re.DOTALL)
 YT_INITIAL_PLAYER_RE = re.compile(
@@ -138,6 +144,21 @@ def _build_session() -> Session:
     )
     session.trust_env = True
     return session
+
+
+def _instagram_json_headers(*, mobile: bool = False) -> Dict[str, str]:
+    """Return headers that coax Instagram JSON endpoints to respond."""
+
+    headers: Dict[str, str] = {
+        "Accept": "application/json",
+        "Referer": "https://www.instagram.com/",
+        "X-IG-App-ID": INSTAGRAM_WEB_APP_ID,
+        "X-ASBD-ID": INSTAGRAM_ASBD_ID,
+        "X-IG-WWW-Claim": INSTAGRAM_WWW_CLAIM,
+    }
+    if mobile:
+        headers["User-Agent"] = INSTAGRAM_MOBILE_USER_AGENT
+    return headers
 
 
 def _parse_compact_number(text: str) -> Optional[int]:
@@ -794,26 +815,21 @@ class SocialPipeline:
 
     def _fetch_instagram_scrape(self, handle: str) -> AccountStats:
         slug = handle.lstrip("@")
-        attempts = [
+        attempts: List[Tuple[str, str, Optional[Dict[str, str]]]] = [
             (
-                "json",
+                "json-web",
                 f"https://www.instagram.com/api/v1/users/web_profile_info/?username={slug}",
+                _instagram_json_headers(),
             ),
             (
-                "json",
+                "json-mobile",
                 f"https://i.instagram.com/api/v1/users/web_profile_info/?username={slug}",
+                _instagram_json_headers(mobile=True),
             ),
-            ("direct", f"https://www.instagram.com/{slug}/?__a=1&__d=1"),
-            ("direct", f"https://www.instagram.com/{slug}/"),
+            ("direct", f"https://www.instagram.com/{slug}/?__a=1&__d=1", None),
+            ("direct", f"https://www.instagram.com/{slug}/", None),
         ]
-        for attempt, url in attempts:
-            headers = None
-            if attempt == "json":
-                headers = {
-                    "Accept": "application/json",
-                    "X-IG-App-ID": INSTAGRAM_WEB_APP_ID,
-                    "Referer": "https://www.instagram.com/",
-                }
+        for attempt, url, headers in attempts:
             response = self._request(url, "instagram", handle, attempt, headers=headers)
             body = response.text if response and response.ok else ""
             count, source = self._parse_instagram_payload(body, handle, attempt, url)
