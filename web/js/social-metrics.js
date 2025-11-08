@@ -164,24 +164,48 @@
     facebook: true,
   };
 
-  const resolveApiBase = () => {
+  const resolveApiBases = () => {
+    const normalizeBase = (value) =>
+      typeof value === "string" ? value.trim().replace(/\/$/, "") : "";
+
+    const bases = [];
     const explicit =
       typeof window !== "undefined" &&
       typeof window.WEB_API_BASE === "string" &&
       window.WEB_API_BASE.trim();
     if (explicit) {
-      return window.WEB_API_BASE.trim().replace(/\/$/, "");
-    }
-    if (typeof window !== "undefined") {
-      const host = window.location.hostname;
-      if (host === "localhost" || host === "127.0.0.1") {
-        return "http://127.0.0.1:5001/api";
+      bases.push(window.WEB_API_BASE);
+    } else {
+      bases.push("/api");
+      if (typeof window !== "undefined") {
+        const host = window.location.hostname;
+        if (host === "localhost" || host === "127.0.0.1") {
+          bases.push("http://127.0.0.1:5001/api");
+        }
       }
     }
-    return "/api";
+
+    const deduped = [];
+    const seen = new Set();
+    bases
+      .map(normalizeBase)
+      .filter(Boolean)
+      .forEach((base) => {
+        if (seen.has(base)) {
+          return;
+        }
+        seen.add(base);
+        deduped.push(base);
+      });
+
+    if (!deduped.length) {
+      return ["/api"];
+    }
+
+    return deduped;
   };
 
-  const API_BASE = resolveApiBase();
+  const API_BASES = resolveApiBases();
   const ENABLE_MOCKS =
     String(window.WEB_ENABLE_MOCKS || "").toLowerCase() === "true";
 
@@ -425,18 +449,27 @@
   };
 
   const requestJson = async (path, searchParams) => {
-    const url = new URL(`${API_BASE}${path}`, window.location.origin);
-    if (searchParams) {
-      const params = new URLSearchParams(searchParams);
-      params.forEach((value, key) => {
-        url.searchParams.set(key, value);
-      });
+    let lastError = null;
+    for (const base of API_BASES) {
+      try {
+        const url = new URL(`${base}${path}`, window.location.origin);
+        if (searchParams) {
+          const params = new URLSearchParams(searchParams);
+          params.forEach((value, key) => {
+            url.searchParams.set(key, value);
+          });
+        }
+        const res = await fetch(url.toString());
+        if (!res.ok) {
+          lastError = new Error(`Request failed with ${res.status}`);
+          continue;
+        }
+        return res.json();
+      } catch (error) {
+        lastError = error;
+      }
     }
-    const res = await fetch(url.toString());
-    if (!res.ok) {
-      throw new Error(`Request failed with ${res.status}`);
-    }
-    return res.json();
+    throw lastError || new Error("Request failed");
   };
 
   const requestStats = (platform, handles) => {
