@@ -5,12 +5,12 @@ import re
 from html import unescape
 from typing import List, Optional, Tuple
 
-from requests import RequestException, Response
+from requests import RequestException
 
 from ..context import PlatformContext
 from ..models import AccountStats
 from ..settings import SCRAPER_TIMEOUT_SECONDS
-from ..utils import parse_compact_number
+from ..utils import log_attempt_result, parse_compact_number
 
 FACEBOOK_FOLLOW_RE = re.compile(
     r"([0-9][0-9.,\u00a0]*\s*[KMB]?)\s+(?:people\s+)?follow this",
@@ -143,9 +143,20 @@ def _fetch_facebook_scrape(handle: str, context: PlatformContext) -> AccountStat
     elif slug.startswith("profile.php?id="):
         extend_urls(slug)
     for url in urls:
-        response = context.request(url, "facebook", handle, "direct")
-        html = response.text if isinstance(response, Response) and response.ok else ""
-        count, source = _parse_facebook_html(html, handle, "direct", url, context)
+        direct = context.request(url, "facebook", handle, "direct")
+        count, source = _parse_facebook_html(
+            direct.text or "", handle, "direct", url, context
+        )
+        log_attempt_result(
+            context.logger,
+            "facebook",
+            handle,
+            "direct",
+            direct.status,
+            count,
+            None,
+            direct.elapsed,
+        )
         if count is not None:
             return AccountStats(
                 handle=handle,
@@ -153,9 +164,19 @@ def _fetch_facebook_scrape(handle: str, context: PlatformContext) -> AccountStat
                 fetched_at=context.now(),
                 source=f"scrape:{source}",
             )
-        proxy_html = context.fetch_text(url, "facebook", handle)
+        proxy = context.fetch_text(url, "facebook", handle)
         count, source = _parse_facebook_html(
-            proxy_html or "", handle, "text-proxy", url, context
+            proxy.text or "", handle, "text-proxy", url, context
+        )
+        log_attempt_result(
+            context.logger,
+            "facebook",
+            handle,
+            "text-proxy",
+            proxy.status,
+            count,
+            None,
+            proxy.elapsed,
         )
         if count is not None:
             return AccountStats(

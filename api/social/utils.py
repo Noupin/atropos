@@ -5,6 +5,28 @@ import re
 from typing import Optional
 
 
+def log_attempt_result(
+    logger,
+    platform: str,
+    handle: str,
+    attempt: str,
+    status: str,
+    count: Optional[int],
+    views: Optional[int],
+    elapsed: float,
+) -> None:
+    logger.info(
+        "%s handle=%s attempt=%s status=%s parsed_count=%s parsed_views=%s elapsed=%.2fs",
+        platform,
+        handle,
+        attempt,
+        status,
+        "null" if count is None else count,
+        "null" if views is None else views,
+        elapsed,
+    )
+
+
 def parse_compact_number(text: str) -> Optional[int]:
     if not text:
         return None

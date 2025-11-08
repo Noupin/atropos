@@ -14,7 +14,7 @@ from requests import Response, Session
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from .context import PlatformContext
+from .context import AttemptResult, PlatformContext
 from .exceptions import UnsupportedPlatformError
 from .models import AccountStats
 from .platforms import get_resolver, supported_platforms
@@ -209,7 +209,9 @@ class SocialPipeline:
     def _gather_platform(self, platform: str, handles: List[str]) -> Dict[str, object]:
         per_account: List[Dict[str, object]] = []
         total_count = 0
+        total_views = 0
         successful_accounts = 0
+        successful_views_accounts = 0
         requested: List[str] = []
         for handle in handles:
             requested.append(handle)
@@ -218,10 +220,16 @@ class SocialPipeline:
             if isinstance(stats.count, int):
                 successful_accounts += 1
                 total_count += stats.count
+            views_total = self._extract_view_total(stats)
+            if isinstance(views_total, int):
+                successful_views_accounts += 1
+                total_views += views_total
         totals = {
             "count": total_count if successful_accounts else None,
             "accounts": successful_accounts,
             "requested": len(requested),
+            "views": total_views if successful_views_accounts else None,
+            "views_accounts": successful_views_accounts,
         }
         return {
             "platform": platform,
@@ -230,6 +238,14 @@ class SocialPipeline:
             "totals": totals,
             "generated_at": _now_iso(),
         }
+
+    def _extract_view_total(self, stats: AccountStats) -> Optional[int]:
+        if not isinstance(stats.extra, dict):
+            return None
+        value = stats.extra.get("views")
+        if isinstance(value, int) and value > 0:
+            return value
+        return None
 
     def _fetch_account(self, platform: str, handle: str) -> AccountStats:
         key = (platform, handle.lower())
@@ -258,7 +274,7 @@ class SocialPipeline:
         handle: str,
         attempt: str,
         headers: Optional[Dict[str, str]] = None,
-    ) -> Optional[Response]:
+    ) -> AttemptResult:
         start = time.perf_counter()
         try:
             response = self.session.get(
@@ -266,34 +282,30 @@ class SocialPipeline:
             )
         except requests.RequestException as exc:
             elapsed = time.perf_counter() - start
-            self.logger.info(
-                "%s handle=%s attempt=%s url=%s error=%s elapsed=%.2fs",
-                platform,
-                handle,
-                attempt,
-                url,
-                exc,
-                elapsed,
+            return AttemptResult(
+                response=None,
+                text=None,
+                status="miss",
+                elapsed=elapsed,
+                error=str(exc),
             )
-            return None
         elapsed = time.perf_counter() - start
-        self.logger.info(
-            "%s handle=%s attempt=%s url=%s status=%s elapsed=%.2fs",
-            platform,
-            handle,
-            attempt,
-            url,
-            response.status_code,
-            elapsed,
+        text: Optional[str]
+        try:
+            text = response.text
+        except requests.RequestException:
+            text = None
+        status = str(response.status_code)
+        return AttemptResult(
+            response=response,
+            text=text,
+            status=status,
+            elapsed=elapsed,
         )
-        return response
 
-    def _fetch_text(self, url: str, platform: str, handle: str) -> Optional[str]:
+    def _fetch_text(self, url: str, platform: str, handle: str) -> AttemptResult:
         proxy_url = f"{TEXT_PROXY_PREFIX}{url}"
-        response = self._request(proxy_url, platform, handle, "text-proxy")
-        if response and response.ok:
-            return response.text
-        return None
+        return self._request(proxy_url, platform, handle, "text-proxy")
 
     def _build_context(self) -> PlatformContext:
         return PlatformContext(

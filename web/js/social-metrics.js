@@ -5,7 +5,8 @@
   const totalFollowersStat = document.getElementById("totalFollowersStat");
   const totalFollowersValue = document.getElementById("totalFollowersValue");
   const clipOutputSection = document.getElementById("clipOutputSection");
-  const clipSummaryCard = document.querySelector("[data-clip-summary]");
+  const viewsSummaryCard = document.querySelector("[data-views-summary]");
+  const totalViewsValue = document.querySelector("[data-total-views-value]");
   const clipCountPrimary = document.querySelector("[data-clip-count-primary]");
   const clipCountMirrors = Array.from(
     document.querySelectorAll("[data-clip-count-mirror]")
@@ -81,6 +82,36 @@
     });
   };
 
+  const applyTotalViews = ({ value, isLoading = false } = {}) => {
+    if (!totalViewsValue) {
+      return;
+    }
+    let resolved = null;
+    const numeric = Number(value);
+    if (!isLoading && Number.isFinite(numeric) && numeric > 0) {
+      resolved = Math.round(numeric);
+    }
+    if (resolved !== null) {
+      const formatted = formatFullNumber(resolved);
+      totalViewsValue.textContent =
+        formatted || resolved.toLocaleString();
+    } else {
+      totalViewsValue.textContent = PLACEHOLDER_TEXT;
+    }
+    const shouldShowPlaceholder = isLoading || resolved === null;
+    if (viewsSummaryCard) {
+      viewsSummaryCard.classList.toggle(
+        "hero__clip-summary--placeholder",
+        shouldShowPlaceholder
+      );
+    }
+    if (isLoading) {
+      totalViewsValue.setAttribute("aria-busy", "true");
+    } else {
+      totalViewsValue.removeAttribute("aria-busy");
+    }
+  };
+
   const applyClipCount = (countValue, { isMock = false } = {}) => {
     if (!clipCountPrimary) {
       return;
@@ -106,12 +137,6 @@
           Boolean(nextIsMock)
         );
       }
-      if (clipSummaryCard) {
-        clipSummaryCard.classList.toggle(
-          "hero__clip-summary--placeholder",
-          Boolean(nextIsMock)
-        );
-      }
     };
 
     if (resolvedCount !== null) {
@@ -126,6 +151,7 @@
 
   updateClipDurationMetadata();
   applyClipCount(null, { isMock: true });
+  applyTotalViews({ value: null, isLoading: true });
 
   if (!metricsEl) {
     return;
@@ -194,6 +220,7 @@
   };
 
   const PLACEHOLDER_TEXT = "-";
+  let overviewLoaded = false;
 
   const setMetricState = (
     metric,
@@ -428,6 +455,65 @@
     return requestJson(path, params);
   };
 
+  const loadOverviewTotals = async () => {
+    if (!overviewLoaded) {
+      applyTotalViews({ value: null, isLoading: true });
+    }
+    try {
+      const payload = await requestJson("/social/overview");
+      let aggregatedViews = 0;
+      let aggregatedAccounts = 0;
+      let usedTopLevel = false;
+      const accumulate = (viewsValue, accountsValue) => {
+        const numericViews = Number(viewsValue);
+        const numericAccounts = Number(accountsValue);
+        if (
+          Number.isFinite(numericViews) &&
+          numericViews > 0 &&
+          Number.isFinite(numericAccounts) &&
+          numericAccounts > 0
+        ) {
+          aggregatedViews += Math.round(numericViews);
+          aggregatedAccounts += Math.round(numericAccounts);
+          return true;
+        }
+        return false;
+      };
+
+      if (payload && typeof payload === "object") {
+        const totals = payload.totals;
+        if (totals && typeof totals === "object") {
+          usedTopLevel = accumulate(totals.views, totals.views_accounts);
+        }
+        if (!usedTopLevel) {
+          const platforms = payload.platforms || {};
+          Object.values(platforms).forEach((entry) => {
+            if (!entry || typeof entry !== "object") {
+              return;
+            }
+            const platformTotals = entry.totals;
+            if (!platformTotals || typeof platformTotals !== "object") {
+              return;
+            }
+            const accountsCandidate =
+              platformTotals.views_accounts ?? platformTotals.accounts;
+            accumulate(platformTotals.views, accountsCandidate);
+          });
+        }
+      }
+
+      const resolved =
+        aggregatedAccounts > 0 && aggregatedViews > 0
+          ? aggregatedViews
+          : null;
+      applyTotalViews({ value: resolved, isLoading: false });
+      overviewLoaded = true;
+    } catch (error) {
+      console.warn("social overview unavailable", error);
+      applyTotalViews({ value: null, isLoading: false });
+    }
+  };
+
   const applyStatsResult = (platform, payload) => {
     if (!payload) return;
     const state = getOrCreatePlatformState(platform);
@@ -618,14 +704,20 @@
   updateAggregateStats();
 
   if (!enabledPlatforms.length) {
+    void loadOverviewTotals();
     return;
   }
 
   configureHandlesFromRuntime();
 
-  refreshAllPlatforms();
+  const refreshAll = () => {
+    refreshAllPlatforms();
+    void loadOverviewTotals();
+  };
+
+  refreshAll();
   void loadConfig();
   if (refreshInterval) {
-    setInterval(refreshAllPlatforms, refreshInterval);
+    setInterval(refreshAll, refreshInterval);
   }
 })();

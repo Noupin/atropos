@@ -6,12 +6,12 @@ import re
 import time
 from typing import Dict, List, Optional, Tuple
 
-from requests import RequestException, Response
+from requests import RequestException
 
 from ..context import PlatformContext
 from ..models import AccountStats
 from ..settings import SCRAPER_TIMEOUT_SECONDS
-from ..utils import extract_json_blob, parse_compact_number
+from ..utils import extract_json_blob, log_attempt_result, parse_compact_number
 
 YT_INITIAL_DATA_RE = re.compile(r"ytInitialData\s*=\s*(\{.+?\})\s*;", re.DOTALL)
 YT_INITIAL_PLAYER_RE = re.compile(
@@ -21,11 +21,12 @@ YT_YTCFG_RE = re.compile(r"ytcfg\.set\((\{.+?\})\);", re.DOTALL)
 YT_SUBSCRIBERS_RE = re.compile(
     r"([0-9][0-9.,\u00a0]*)\s*([KMB]?)\s+subscribers", re.IGNORECASE
 )
-YT_VIDEOS_RE = re.compile(
-    r"([0-9][0-9.,\u00a0]*)\s*([KMB]?)\s+videos", re.IGNORECASE
-)
 YT_VIEWS_RE = re.compile(
     r"([0-9][0-9.,\u00a0]*)\s*([KMB]?)\s+views", re.IGNORECASE
+)
+YT_ADDITIONAL_INFO_RE = re.compile(
+    r'id="additional-info-container"[^>]*>(?P<body>.*?</table>)',
+    re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -145,30 +146,62 @@ def _youtube_candidate_urls(handle: str) -> List[str]:
 def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats:
     last_error = ""
     for url in _youtube_candidate_urls(handle):
-        response = context.request(url, "youtube", handle, "direct")
-        html = response.text if isinstance(response, Response) and response.ok else ""
-        parse = _parse_youtube_html(html, handle, "direct", url, context)
-        if parse is not None:
+        direct = context.request(url, "youtube", handle, "direct")
+        count, views, source = _parse_youtube_html(
+            direct.text or "", handle, "direct", url, context
+        )
+        log_attempt_result(
+            context.logger,
+            "youtube",
+            handle,
+            "direct",
+            direct.status,
+            count,
+            views,
+            direct.elapsed,
+        )
+        if count is not None:
+            extra = {"views": views} if isinstance(views, int) else None
             return AccountStats(
                 handle=handle,
-                count=parse[0],
+                count=count,
                 fetched_at=context.now(),
-                source=f"scrape:{parse[1]}",
+                source=f"scrape:{source}",
+                extra=extra,
             )
-        if response is None or not isinstance(response, Response) or not response.ok or not html:
-            last_error = (
-                f"HTTP {response.status_code}" if isinstance(response, Response) else "request error"
-            )
-        proxy_html = context.fetch_text(url, "youtube", handle)
-        parse = _parse_youtube_html(proxy_html or "", handle, "text-proxy", url, context)
-        if parse is not None:
+        if direct.status != "miss":
+            last_error = f"HTTP {direct.status}"
+        elif direct.error:
+            last_error = direct.error
+        proxy = context.fetch_text(url, "youtube", handle)
+        count, views, source = _parse_youtube_html(
+            proxy.text or "", handle, "text-proxy", url, context
+        )
+        log_attempt_result(
+            context.logger,
+            "youtube",
+            handle,
+            "text-proxy",
+            proxy.status,
+            count,
+            views,
+            proxy.elapsed,
+        )
+        if count is not None:
+            extra = {"views": views} if isinstance(views, int) else None
             return AccountStats(
                 handle=handle,
-                count=parse[0],
+                count=count,
                 fetched_at=context.now(),
-                source=f"scrape:{parse[1]}",
+                source=f"scrape:{source}",
+                extra=extra,
             )
-        last_error = "No subscriber pattern found"
+        if proxy.status != "miss":
+            last_error = f"HTTP {proxy.status}"
+        elif proxy.error:
+            last_error = proxy.error
+        else:
+            last_error = "No subscriber pattern found"
     return AccountStats(
         handle=handle,
         count=None,
@@ -184,7 +217,7 @@ def _parse_youtube_html(
     attempt: str,
     url: str,
     context: PlatformContext,
-) -> Optional[Tuple[int, str]]:
+) -> Tuple[Optional[int], Optional[int], str]:
     if not html:
         context.logger.info(
             "youtube handle=%s attempt=%s url=%s parse=empty-html",
@@ -192,7 +225,8 @@ def _parse_youtube_html(
             attempt,
             url,
         )
-        return None
+        return None, None, attempt
+    views = _extract_youtube_views(html, handle, attempt, context)
     data = extract_json_blob(html, YT_INITIAL_DATA_RE)
     if data:
         count = _search_for_subscriber_count(data)
@@ -203,8 +237,7 @@ def _parse_youtube_html(
                 attempt,
                 count,
             )
-            _log_youtube_secondary_counts(html, handle, attempt, context)
-            return count, f"{attempt}:ytInitialData"
+            return count, views, f"{attempt}:ytInitialData"
         context.logger.info(
             "youtube handle=%s attempt=%s parse=ytInitialData-miss",
             handle,
@@ -226,8 +259,7 @@ def _parse_youtube_html(
                 attempt,
                 count,
             )
-            _log_youtube_secondary_counts(html, handle, attempt, context)
-            return count, f"{attempt}:ytInitialPlayerResponse"
+            return count, views, f"{attempt}:ytInitialPlayerResponse"
         context.logger.info(
             "youtube handle=%s attempt=%s parse=ytInitialPlayerResponse-miss",
             handle,
@@ -248,8 +280,7 @@ def _parse_youtube_html(
                 attempt,
                 count,
             )
-            _log_youtube_secondary_counts(html, handle, attempt, context)
-            return count, f"{attempt}:ytcfg"
+            return count, views, f"{attempt}:ytcfg"
     if not found_cfg:
         context.logger.info(
             "youtube handle=%s attempt=%s parse=ytcfg-missing",
@@ -266,41 +297,14 @@ def _parse_youtube_html(
                 attempt,
                 count,
             )
-            _log_youtube_secondary_counts(html, handle, attempt, context)
-            return count, f"{attempt}:regex"
+            return count, views, f"{attempt}:regex"
     else:
         context.logger.info(
             "youtube handle=%s attempt=%s parse=regex-subscribers-miss",
             handle,
             attempt,
         )
-    _log_youtube_secondary_counts(html, handle, attempt, context)
-    return None
-
-
-def _log_youtube_secondary_counts(
-    html: str, handle: str, attempt: str, context: PlatformContext
-) -> None:
-    videos_match = YT_VIDEOS_RE.search(html)
-    if videos_match:
-        videos = parse_compact_number(" ".join(videos_match.groups()))
-        if videos is not None:
-            context.logger.info(
-                "youtube handle=%s attempt=%s parse=regex-videos count=%s",
-                handle,
-                attempt,
-                videos,
-            )
-    views_match = YT_VIEWS_RE.search(html)
-    if views_match:
-        views = parse_compact_number(" ".join(views_match.groups()))
-        if views is not None:
-            context.logger.info(
-                "youtube handle=%s attempt=%s parse=regex-views count=%s",
-                handle,
-                attempt,
-                views,
-            )
+    return None, views, attempt
 
 
 def _search_for_subscriber_count(node: object) -> Optional[int]:
@@ -343,4 +347,36 @@ def _search_for_subscriber_count(node: object) -> Optional[int]:
         count = parse_compact_number(node)
         if count is not None:
             return count
+    return None
+
+
+def _extract_youtube_views(
+    html: str, handle: str, attempt: str, context: PlatformContext
+) -> Optional[int]:
+    if not html:
+        return None
+    views: Optional[int] = None
+    container = YT_ADDITIONAL_INFO_RE.search(html)
+    if container:
+        section = container.group("body")
+        match = YT_VIEWS_RE.search(section)
+        if match:
+            views = parse_compact_number(" ".join(match.groups()))
+    if views is None:
+        match = YT_VIEWS_RE.search(html)
+        if match:
+            views = parse_compact_number(" ".join(match.groups()))
+    if views is not None:
+        context.logger.info(
+            "youtube handle=%s attempt=%s parse=views count=%s",
+            handle,
+            attempt,
+            views,
+        )
+        return views
+    context.logger.info(
+        "youtube handle=%s attempt=%s parse=miss",
+        handle,
+        attempt,
+    )
     return None

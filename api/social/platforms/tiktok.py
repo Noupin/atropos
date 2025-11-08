@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 
 from ..context import PlatformContext
 from ..models import AccountStats
-from ..utils import parse_compact_number
+from ..utils import log_attempt_result, parse_compact_number
 
 TIKTOK_SIGI_RE = re.compile(
     r"<script id=\"SIGI_STATE\">(.*?)</script>", re.DOTALL | re.IGNORECASE
@@ -20,9 +20,20 @@ def resolve(handle: str, context: PlatformContext) -> AccountStats:
 def _fetch_tiktok_scrape(handle: str, context: PlatformContext) -> AccountStats:
     slug = handle.lstrip("@")
     url = f"https://www.tiktok.com/@{slug}"
-    response = context.request(url, "tiktok", handle, "direct")
-    html = response.text if response and getattr(response, "ok", False) else ""
-    count, source = _parse_tiktok_html(html, handle, "direct", url, context)
+    direct = context.request(url, "tiktok", handle, "direct")
+    count, source = _parse_tiktok_html(
+        direct.text or "", handle, "direct", url, context
+    )
+    log_attempt_result(
+        context.logger,
+        "tiktok",
+        handle,
+        "direct",
+        direct.status,
+        count,
+        None,
+        direct.elapsed,
+    )
     if count is not None:
         return AccountStats(
             handle=handle,
@@ -30,8 +41,20 @@ def _fetch_tiktok_scrape(handle: str, context: PlatformContext) -> AccountStats:
             fetched_at=context.now(),
             source=f"scrape:{source}",
         )
-    proxy_html = context.fetch_text(url, "tiktok", handle)
-    count, source = _parse_tiktok_html(proxy_html or "", handle, "text-proxy", url, context)
+    proxy = context.fetch_text(url, "tiktok", handle)
+    count, source = _parse_tiktok_html(
+        proxy.text or "", handle, "text-proxy", url, context
+    )
+    log_attempt_result(
+        context.logger,
+        "tiktok",
+        handle,
+        "text-proxy",
+        proxy.status,
+        count,
+        None,
+        proxy.elapsed,
+    )
     if count is not None:
         return AccountStats(
             handle=handle,
