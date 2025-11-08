@@ -10,10 +10,9 @@
   const clipCountMirrors = Array.from(
     document.querySelectorAll("[data-clip-count-mirror]")
   );
-  const clipStartLabelEls = document.querySelectorAll("[data-clip-start-label]");
   const clipDurationEls = document.querySelectorAll("[data-clip-duration]");
 
-  const CLIP_START_DATE = new Date(Date.UTC(2023, 8, 2));
+  const CLIP_START_DATE = new Date(Date.UTC(2025, 8, 3));
 
   const parseClipFallback = () => {
     if (!clipCountPrimary) {
@@ -72,31 +71,11 @@
     return `${totalMonths.toLocaleString()} ${label}`;
   };
 
-  const formatStartDate = (startDate) => {
-    if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
-      return "September 2, 2023";
-    }
-    try {
-      return startDate.toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
-    } catch (error) {
-      console.warn("Unable to format start date", error);
-      return "September 2, 2023";
-    }
-  };
-
-  const updateClipStartMetadata = () => {
+  const updateClipDurationMetadata = () => {
     if (!(CLIP_START_DATE instanceof Date)) {
       return;
     }
-    const label = formatStartDate(CLIP_START_DATE);
     const duration = computeDurationLabel(CLIP_START_DATE);
-    clipStartLabelEls.forEach((el) => {
-      el.textContent = label;
-    });
     clipDurationEls.forEach((el) => {
       el.textContent = duration;
     });
@@ -145,7 +124,7 @@
     }
   };
 
-  updateClipStartMetadata();
+  updateClipDurationMetadata();
   applyClipCount(null, { isMock: true });
 
   if (!metricsEl) {
