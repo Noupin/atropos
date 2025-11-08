@@ -4,6 +4,128 @@
   const totalAccountsValue = document.getElementById("totalAccountsValue");
   const totalFollowersStat = document.getElementById("totalFollowersStat");
   const totalFollowersValue = document.getElementById("totalFollowersValue");
+  const clipOutputSection = document.getElementById("clipOutputSection");
+  const clipSummaryCard = document.querySelector("[data-clip-summary]");
+  const clipCountPrimary = document.querySelector("[data-clip-count-primary]");
+  const clipCountMirrors = Array.from(
+    document.querySelectorAll("[data-clip-count-mirror]")
+  );
+  const clipDurationEls = document.querySelectorAll("[data-clip-duration]");
+
+  const CLIP_START_DATE = new Date(Date.UTC(2025, 8, 3));
+
+  const parseClipFallback = () => {
+    if (!clipCountPrimary) {
+      return null;
+    }
+    const attr = clipCountPrimary.getAttribute("data-fallback-clips");
+    if (attr) {
+      const numericAttr = Number(attr);
+      if (Number.isFinite(numericAttr) && numericAttr > 0) {
+        return Math.round(numericAttr);
+      }
+    }
+    const rawText = clipCountPrimary.textContent || "";
+    const digitsOnly = rawText.replace(/[^0-9]/g, "");
+    if (digitsOnly) {
+      const numericText = Number(digitsOnly);
+      if (Number.isFinite(numericText) && numericText > 0) {
+        return Math.round(numericText);
+      }
+    }
+    return null;
+  };
+
+  const clipFallbackCount = parseClipFallback();
+
+  const formatFullNumber = (value) => {
+    const rounded = Math.round(Number(value));
+    if (!Number.isFinite(rounded)) {
+      return null;
+    }
+    return rounded.toLocaleString();
+  };
+
+  const computeDurationLabel = (startDate) => {
+    if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
+      return "0 months";
+    }
+    const now = new Date();
+    const startMs = startDate.getTime();
+    const nowMs = now.getTime();
+    if (!Number.isFinite(nowMs) || nowMs <= startMs) {
+      return "0 months";
+    }
+    const diffMs = nowMs - startMs;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    let totalMonths =
+      (now.getFullYear() - startDate.getFullYear()) * 12 +
+      (now.getMonth() - startDate.getMonth());
+    if (now.getDate() < startDate.getDate()) {
+      totalMonths -= 1;
+    }
+    if (totalMonths <= 0) {
+      totalMonths = Math.max(Math.round(diffDays / 30), 1);
+    }
+    const label = totalMonths === 1 ? "month" : "months";
+    return `${totalMonths.toLocaleString()} ${label}`;
+  };
+
+  const updateClipDurationMetadata = () => {
+    if (!(CLIP_START_DATE instanceof Date)) {
+      return;
+    }
+    const duration = computeDurationLabel(CLIP_START_DATE);
+    clipDurationEls.forEach((el) => {
+      el.textContent = duration;
+    });
+  };
+
+  const applyClipCount = (countValue, { isMock = false } = {}) => {
+    if (!clipCountPrimary) {
+      return;
+    }
+    let resolvedCount = null;
+    if (Number.isFinite(countValue) && countValue > 0) {
+      resolvedCount = Math.round(countValue);
+    } else if (Number.isFinite(clipFallbackCount) && clipFallbackCount > 0) {
+      resolvedCount = clipFallbackCount;
+      isMock = true;
+    }
+    const applyDisplay = (value) => {
+      clipCountPrimary.textContent = value;
+      clipCountMirrors.forEach((el) => {
+        el.textContent = value;
+      });
+    };
+
+    const togglePlaceholder = (nextIsMock) => {
+      if (clipOutputSection) {
+        clipOutputSection.classList.toggle(
+          "clip-output--placeholder",
+          Boolean(nextIsMock)
+        );
+      }
+      if (clipSummaryCard) {
+        clipSummaryCard.classList.toggle(
+          "hero__clip-summary--placeholder",
+          Boolean(nextIsMock)
+        );
+      }
+    };
+
+    if (resolvedCount !== null) {
+      const formatted = formatFullNumber(resolvedCount);
+      applyDisplay(formatted || resolvedCount.toString());
+      togglePlaceholder(isMock);
+    } else {
+      applyDisplay("-");
+      togglePlaceholder(true);
+    }
+  };
+
+  updateClipDurationMetadata();
+  applyClipCount(null, { isMock: true });
 
   if (!metricsEl) {
     return;
@@ -230,6 +352,9 @@
     let total = 0;
     let resolvedAccounts = 0;
     let hasReal = false;
+    let clipTotal = 0;
+    let clipResolved = 0;
+    let clipHasReal = false;
     state.handles.forEach((entry) => {
       if (!entry) return;
       if (Number.isFinite(entry.count)) {
@@ -237,6 +362,13 @@
         resolvedAccounts += 1;
         if (!entry.isMock) {
           hasReal = true;
+        }
+      }
+      if (Number.isFinite(entry.clipCount)) {
+        clipTotal += entry.clipCount;
+        clipResolved += 1;
+        if (!entry.isMock) {
+          clipHasReal = true;
         }
       }
     });
@@ -250,13 +382,18 @@
       resolvedAccounts === 0 &&
       state.handles.size > 0;
 
-    setMetricState(metric, {
+    const metricResult = setMetricState(metric, {
       count: !isLoading && resolvedAccounts > 0 ? total : null,
       accountCount: resolvedAccounts,
       isMock: resolvedAccounts > 0 ? !hasReal : true,
       useFallback: shouldUseFallback,
       isLoading,
     });
+    if (platform === "instagram") {
+      applyClipCount(clipResolved > 0 ? clipTotal : null, {
+        isMock: clipResolved === 0 || !clipHasReal,
+      });
+    }
     updateAggregateStats();
   };
 
@@ -302,8 +439,19 @@
       const handle = entry.handle.trim();
       if (!handle) return;
       const numeric = Number(entry.count);
+      const rawExtra = entry.extra;
+      let clipCount = null;
+      if (rawExtra && typeof rawExtra === "object") {
+        const possible =
+          rawExtra.posts ?? rawExtra.clips ?? rawExtra.media_count ?? null;
+        const numericClips = Number(possible);
+        if (Number.isFinite(numericClips) && numericClips >= 0) {
+          clipCount = numericClips;
+        }
+      }
       const record = {
         count: Number.isFinite(numeric) ? numeric : null,
+        clipCount,
         isMock: Boolean(entry.is_mock),
       };
       state.handles.set(handle, record);
@@ -327,7 +475,7 @@
     const state = getOrCreatePlatformState(platform);
     normalized.forEach((handle) => {
       if (!state.handles.has(handle)) {
-        state.handles.set(handle, { count: null, isMock: true });
+        state.handles.set(handle, { count: null, clipCount: null, isMock: true });
       }
     });
     return normalized;

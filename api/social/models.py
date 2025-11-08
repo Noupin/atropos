@@ -14,6 +14,7 @@ class AccountStats:
     is_mock: bool = False
     error: Optional[str] = None
     from_cache: bool = False
+    extra: Optional[Dict[str, object]] = None
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -26,4 +27,5 @@ class AccountStats:
             "is_mock": self.is_mock,
             "error": self.error,
             "from_cache": self.from_cache,
+            "extra": dict(self.extra) if isinstance(self.extra, dict) else None,
         }
