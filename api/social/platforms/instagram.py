@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from dataclasses import replace
 from typing import Optional, Tuple
 
 from requests import RequestException, Response
@@ -18,13 +19,22 @@ INSTAGRAM_LD_JSON_RE = re.compile(
 
 
 def resolve(handle: str, context: PlatformContext) -> AccountStats:
+    scrape_result = _fetch_instagram_scrape(handle, context)
+
+    if scrape_result.count is not None:
+        return scrape_result
+
     access_token = os.environ.get("SOCIAL_INSTAGRAM_ACCESS_TOKEN")
     user_id = os.environ.get("SOCIAL_INSTAGRAM_USER_ID")
-    if access_token and user_id:
-        api_result = _fetch_instagram_api(user_id, access_token, handle, context)
-        if api_result.count is not None:
-            return api_result
-    return _fetch_instagram_scrape(handle, context)
+    if not (access_token and user_id):
+        return scrape_result
+
+    api_result = _fetch_instagram_api(user_id, access_token, handle, context)
+    if scrape_result.extra and not api_result.extra:
+        api_result = replace(api_result, extra=scrape_result.extra)
+    if api_result.count is not None:
+        return api_result
+    return scrape_result
 
 
 def _fetch_instagram_api(
@@ -97,6 +107,8 @@ def _fetch_instagram_scrape(handle: str, context: PlatformContext) -> AccountSta
         ("direct", f"https://www.instagram.com/{slug}/?__a=1&__d=1"),
         ("direct", f"https://www.instagram.com/{slug}/"),
     ]
+    posts_snapshot: Optional[int] = None
+
     for attempt, url in attempts:
         headers = None
         if attempt == "json":
@@ -107,25 +119,37 @@ def _fetch_instagram_scrape(handle: str, context: PlatformContext) -> AccountSta
             }
         response = context.request(url, "instagram", handle, attempt, headers=headers)
         body = response.text if isinstance(response, Response) and response.ok else ""
-        count, source = _parse_instagram_payload(body, handle, attempt, url, context)
+        count, posts, source = _parse_instagram_payload(
+            body, handle, attempt, url, context
+        )
+        if posts is not None and posts_snapshot is None:
+            posts_snapshot = posts
         if count is not None:
             return AccountStats(
                 handle=handle,
                 count=count,
                 fetched_at=context.now(),
                 source=f"scrape:{source}",
+                extra={"posts": posts if posts is not None else posts_snapshot}
+                if (posts is not None or posts_snapshot is not None)
+                else None,
             )
         if attempt == "direct":
             proxy_body = context.fetch_text(url, "instagram", handle)
-            count, source = _parse_instagram_payload(
+            count, posts, source = _parse_instagram_payload(
                 proxy_body or "", handle, "text-proxy", url, context
             )
+            if posts is not None and posts_snapshot is None:
+                posts_snapshot = posts
             if count is not None:
                 return AccountStats(
                     handle=handle,
                     count=count,
                     fetched_at=context.now(),
                     source=f"scrape:{source}",
+                    extra={"posts": posts if posts is not None else posts_snapshot}
+                    if (posts is not None or posts_snapshot is not None)
+                    else None,
                 )
     return AccountStats(
         handle=handle,
@@ -133,6 +157,7 @@ def _fetch_instagram_scrape(handle: str, context: PlatformContext) -> AccountSta
         fetched_at=context.now(),
         source="scrape",
         error="Missing followers",
+        extra={"posts": posts_snapshot} if posts_snapshot is not None else None,
     )
 
 
@@ -142,7 +167,7 @@ def _parse_instagram_payload(
     attempt: str,
     url: str,
     context: PlatformContext,
-) -> Tuple[Optional[int], str]:
+) -> Tuple[Optional[int], Optional[int], str]:
     if not payload:
         context.logger.info(
             "instagram handle=%s attempt=%s url=%s parse=empty",
@@ -150,11 +175,12 @@ def _parse_instagram_payload(
             attempt,
             url,
         )
-        return None, attempt
+        return None, None, attempt
     try:
         data = json.loads(payload)
     except json.JSONDecodeError:
         data = None
+    posts_count: Optional[int] = None
     if isinstance(data, dict):
         containers = [
             ("data", data.get("data")),
@@ -166,6 +192,15 @@ def _parse_instagram_payload(
             user = container.get("user")
             if not isinstance(user, dict):
                 continue
+            media = user.get("edge_owner_to_timeline_media")
+            if isinstance(media, dict):
+                posts_value = media.get("count")
+                if isinstance(posts_value, int):
+                    posts_count = posts_value
+            if posts_count is None:
+                media_count = user.get("media_count")
+                if isinstance(media_count, int):
+                    posts_count = media_count
             edge_followed_by = user.get("edge_followed_by", {})
             if isinstance(edge_followed_by, dict):
                 count = edge_followed_by.get("count")
@@ -184,7 +219,7 @@ def _parse_instagram_payload(
                     parse_label,
                     count,
                 )
-                return count, f"{attempt}:{parse_label}"
+                return count, posts_count, f"{attempt}:{parse_label}"
             follower_count = user.get("follower_count")
             if isinstance(follower_count, int):
                 parse_label = (
@@ -199,7 +234,7 @@ def _parse_instagram_payload(
                     parse_label,
                     follower_count,
                 )
-                return follower_count, f"{attempt}:{parse_label}"
+                return follower_count, posts_count, f"{attempt}:{parse_label}"
     ld_match = INSTAGRAM_LD_JSON_RE.search(payload)
     if ld_match:
         try:
@@ -221,11 +256,11 @@ def _parse_instagram_payload(
                                 attempt,
                                 count,
                             )
-                            return count, f"{attempt}:ld-json"
+                            return count, posts_count, f"{attempt}:ld-json"
     context.logger.info(
         "instagram handle=%s attempt=%s url=%s parse=miss",
         handle,
         attempt,
         url,
     )
-    return None, attempt
+    return None, posts_count, attempt
