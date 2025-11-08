@@ -81,7 +81,7 @@
     });
   };
 
-  const applyClipCount = (countValue, { isMock = false } = {}) => {
+  const applyViewsCount = (countValue, { isMock = false } = {}) => {
     if (!clipCountPrimary) {
       return;
     }
@@ -125,7 +125,7 @@
   };
 
   updateClipDurationMetadata();
-  applyClipCount(null, { isMock: true });
+  applyViewsCount(null, { isMock: true });
 
   if (!metricsEl) {
     return;
@@ -181,6 +181,8 @@
 
   const metrics = new Map();
   const platformState = new Map();
+  let globalViewsTotal = 0;
+  let globalViewsAccountsCount = 0;
 
   const getOrCreatePlatformState = (platform) => {
     if (!platformState.has(platform)) {
@@ -352,9 +354,9 @@
     let total = 0;
     let resolvedAccounts = 0;
     let hasReal = false;
-    let clipTotal = 0;
-    let clipResolved = 0;
-    let clipHasReal = false;
+    let viewsTotal = 0;
+    let viewsResolved = 0;
+    let viewsHasReal = false;
     state.handles.forEach((entry) => {
       if (!entry) return;
       if (Number.isFinite(entry.count)) {
@@ -364,11 +366,11 @@
           hasReal = true;
         }
       }
-      if (Number.isFinite(entry.clipCount)) {
-        clipTotal += entry.clipCount;
-        clipResolved += 1;
+      if (Number.isFinite(entry.viewsCount)) {
+        viewsTotal += entry.viewsCount;
+        viewsResolved += 1;
         if (!entry.isMock) {
-          clipHasReal = true;
+          viewsHasReal = true;
         }
       }
     });
@@ -389,11 +391,29 @@
       useFallback: shouldUseFallback,
       isLoading,
     });
-    if (platform === "instagram") {
-      applyClipCount(clipResolved > 0 ? clipTotal : null, {
-        isMock: clipResolved === 0 || !clipHasReal,
-      });
-    }
+
+    // Store views for this platform
+    state.viewsTotal = viewsResolved > 0 ? viewsTotal : 0;
+    state.viewsResolved = viewsResolved;
+    state.viewsHasReal = viewsHasReal;
+
+    // Recalculate global views across all platforms
+    let newGlobalViews = 0;
+    let newGlobalViewsAccounts = 0;
+    platformState.forEach((platformState) => {
+      if (platformState.viewsTotal > 0) {
+        newGlobalViews += platformState.viewsTotal;
+        newGlobalViewsAccounts += platformState.viewsResolved;
+      }
+    });
+    globalViewsTotal = newGlobalViews;
+    globalViewsAccountsCount = newGlobalViewsAccounts;
+
+    // Apply global views count to the display
+    applyViewsCount(globalViewsTotal > 0 ? globalViewsTotal : null, {
+      isMock: globalViewsAccountsCount === 0,
+    });
+
     updateAggregateStats();
   };
 
@@ -440,18 +460,17 @@
       if (!handle) return;
       const numeric = Number(entry.count);
       const rawExtra = entry.extra;
-      let clipCount = null;
+      let viewsCount = null;
       if (rawExtra && typeof rawExtra === "object") {
-        const possible =
-          rawExtra.posts ?? rawExtra.clips ?? rawExtra.media_count ?? null;
-        const numericClips = Number(possible);
-        if (Number.isFinite(numericClips) && numericClips >= 0) {
-          clipCount = numericClips;
+        const possibleViews = rawExtra.views ?? null;
+        const numericViews = Number(possibleViews);
+        if (Number.isFinite(numericViews) && numericViews >= 0) {
+          viewsCount = numericViews;
         }
       }
       const record = {
         count: Number.isFinite(numeric) ? numeric : null,
-        clipCount,
+        viewsCount,
         isMock: Boolean(entry.is_mock),
       };
       state.handles.set(handle, record);
@@ -475,7 +494,7 @@
     const state = getOrCreatePlatformState(platform);
     normalized.forEach((handle) => {
       if (!state.handles.has(handle)) {
-        state.handles.set(handle, { count: null, clipCount: null, isMock: true });
+        state.handles.set(handle, { count: null, viewsCount: null, isMock: true });
       }
     });
     return normalized;

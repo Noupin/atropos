@@ -161,12 +161,32 @@ class SocialPipeline:
     def get_overview(self) -> Dict[str, object]:
         self._reload_config_if_needed()
         platforms: Dict[str, object] = {}
+        global_views = 0
+        global_views_accounts = 0
+
         for platform, handles in self._config.items():
             if platform not in SUPPORTED_PLATFORMS:
                 continue
-            platforms[platform] = self._gather_platform(platform, handles)
+            platform_data = self._gather_platform(platform, handles)
+            platforms[platform] = platform_data
+
+            # Aggregate views across all platforms
+            if isinstance(platform_data, dict):
+                totals = platform_data.get("totals", {})
+                if isinstance(totals, dict):
+                    platform_views = totals.get("views")
+                    platform_views_accounts = totals.get("views_accounts", 0)
+                    if isinstance(platform_views, int):
+                        global_views += platform_views
+                    if isinstance(platform_views_accounts, int):
+                        global_views_accounts += platform_views_accounts
+
         return {
             "platforms": platforms,
+            "totals": {
+                "views": global_views if global_views_accounts > 0 else None,
+                "views_accounts": global_views_accounts,
+            },
             "meta": {
                 "generated_at": _now_iso(),
                 "cache_ttl_seconds": self.cache_ttl,
@@ -209,7 +229,9 @@ class SocialPipeline:
     def _gather_platform(self, platform: str, handles: List[str]) -> Dict[str, object]:
         per_account: List[Dict[str, object]] = []
         total_count = 0
+        total_views = 0
         successful_accounts = 0
+        views_accounts = 0
         requested: List[str] = []
         for handle in handles:
             requested.append(handle)
@@ -218,10 +240,18 @@ class SocialPipeline:
             if isinstance(stats.count, int):
                 successful_accounts += 1
                 total_count += stats.count
+            # Aggregate views from extra field
+            if stats.extra and isinstance(stats.extra, dict):
+                views = stats.extra.get("views")
+                if isinstance(views, int):
+                    views_accounts += 1
+                    total_views += views
         totals = {
             "count": total_count if successful_accounts else None,
             "accounts": successful_accounts,
             "requested": len(requested),
+            "views": total_views if views_accounts else None,
+            "views_accounts": views_accounts,
         }
         return {
             "platform": platform,

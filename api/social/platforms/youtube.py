@@ -89,6 +89,8 @@ def _fetch_youtube_api(
         )
     statistics = (payload.get("items") or [{}])[0].get("statistics", {})
     count = statistics.get("subscriberCount")
+    view_count = statistics.get("viewCount")
+
     if count is not None:
         try:
             numeric = int(count)
@@ -96,10 +98,18 @@ def _fetch_youtube_api(
             numeric = None
         else:
             elapsed = time.perf_counter() - start
+            views = None
+            if view_count is not None:
+                try:
+                    views = int(view_count)
+                except (ValueError, TypeError):
+                    pass
+
             context.logger.info(
-                "youtube handle=%s attempt=api parse=statistics count=%s elapsed=%.2fs",
+                "youtube handle=%s attempt=api parse=statistics subscribers=%s views=%s elapsed=%.2fs",
                 handle,
                 numeric,
+                views,
                 elapsed,
             )
             return AccountStats(
@@ -107,6 +117,7 @@ def _fetch_youtube_api(
                 count=numeric,
                 fetched_at=context.now(),
                 source="api",
+                extra={"views": views} if views is not None else None,
             )
     return AccountStats(
         handle=handle,
@@ -149,11 +160,17 @@ def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats
         html = response.text if isinstance(response, Response) and response.ok else ""
         parse = _parse_youtube_html(html, handle, "direct", url, context)
         if parse is not None:
+            subscribers, views, source = parse
+            context.logger.info(
+                "youtube handle=%s source=direct parsed_subscribers=%s parsed_views=%s",
+                handle, subscribers, views
+            )
             return AccountStats(
                 handle=handle,
-                count=parse[0],
+                count=subscribers,
                 fetched_at=context.now(),
-                source=f"scrape:{parse[1]}",
+                source=f"scrape:{source}",
+                extra={"views": views} if views is not None else None,
             )
         if response is None or not isinstance(response, Response) or not response.ok or not html:
             last_error = (
@@ -162,11 +179,17 @@ def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats
         proxy_html = context.fetch_text(url, "youtube", handle)
         parse = _parse_youtube_html(proxy_html or "", handle, "text-proxy", url, context)
         if parse is not None:
+            subscribers, views, source = parse
+            context.logger.info(
+                "youtube handle=%s source=text-proxy parsed_subscribers=%s parsed_views=%s",
+                handle, subscribers, views
+            )
             return AccountStats(
                 handle=handle,
-                count=parse[0],
+                count=subscribers,
                 fetched_at=context.now(),
-                source=f"scrape:{parse[1]}",
+                source=f"scrape:{source}",
+                extra={"views": views} if views is not None else None,
             )
         last_error = "No subscriber pattern found"
     return AccountStats(
@@ -184,7 +207,11 @@ def _parse_youtube_html(
     attempt: str,
     url: str,
     context: PlatformContext,
-) -> Optional[Tuple[int, str]]:
+) -> Optional[Tuple[int, Optional[int], str]]:
+    """Parse YouTube HTML for subscriber count and view count.
+
+    Returns: (subscribers, views, source) or None if parsing fails
+    """
     if not html:
         context.logger.info(
             "youtube handle=%s attempt=%s url=%s parse=empty-html",
@@ -193,18 +220,22 @@ def _parse_youtube_html(
             url,
         )
         return None
+
+    # Extract views first since it's always from regex
+    views = _extract_youtube_views(html)
+
     data = extract_json_blob(html, YT_INITIAL_DATA_RE)
     if data:
         count = _search_for_subscriber_count(data)
         if count is not None:
             context.logger.info(
-                "youtube handle=%s attempt=%s parse=ytInitialData count=%s",
+                "youtube handle=%s attempt=%s parse=ytInitialData subscribers=%s views=%s",
                 handle,
                 attempt,
                 count,
+                views,
             )
-            _log_youtube_secondary_counts(html, handle, attempt, context)
-            return count, f"{attempt}:ytInitialData"
+            return count, views, f"{attempt}:ytInitialData"
         context.logger.info(
             "youtube handle=%s attempt=%s parse=ytInitialData-miss",
             handle,
@@ -221,13 +252,13 @@ def _parse_youtube_html(
         count = _search_for_subscriber_count(player_data)
         if count is not None:
             context.logger.info(
-                "youtube handle=%s attempt=%s parse=ytInitialPlayerResponse count=%s",
+                "youtube handle=%s attempt=%s parse=ytInitialPlayerResponse subscribers=%s views=%s",
                 handle,
                 attempt,
                 count,
+                views,
             )
-            _log_youtube_secondary_counts(html, handle, attempt, context)
-            return count, f"{attempt}:ytInitialPlayerResponse"
+            return count, views, f"{attempt}:ytInitialPlayerResponse"
         context.logger.info(
             "youtube handle=%s attempt=%s parse=ytInitialPlayerResponse-miss",
             handle,
@@ -243,13 +274,13 @@ def _parse_youtube_html(
         count = _search_for_subscriber_count(cfg)
         if count is not None:
             context.logger.info(
-                "youtube handle=%s attempt=%s parse=ytcfg count=%s",
+                "youtube handle=%s attempt=%s parse=ytcfg subscribers=%s views=%s",
                 handle,
                 attempt,
                 count,
+                views,
             )
-            _log_youtube_secondary_counts(html, handle, attempt, context)
-            return count, f"{attempt}:ytcfg"
+            return count, views, f"{attempt}:ytcfg"
     if not found_cfg:
         context.logger.info(
             "youtube handle=%s attempt=%s parse=ytcfg-missing",
@@ -261,46 +292,29 @@ def _parse_youtube_html(
         count = parse_compact_number(" ".join(match.groups()))
         if count is not None:
             context.logger.info(
-                "youtube handle=%s attempt=%s parse=regex-subscribers count=%s",
+                "youtube handle=%s attempt=%s parse=regex-subscribers subscribers=%s views=%s",
                 handle,
                 attempt,
                 count,
+                views,
             )
-            _log_youtube_secondary_counts(html, handle, attempt, context)
-            return count, f"{attempt}:regex"
+            return count, views, f"{attempt}:regex"
     else:
         context.logger.info(
             "youtube handle=%s attempt=%s parse=regex-subscribers-miss",
             handle,
             attempt,
         )
-    _log_youtube_secondary_counts(html, handle, attempt, context)
     return None
 
 
-def _log_youtube_secondary_counts(
-    html: str, handle: str, attempt: str, context: PlatformContext
-) -> None:
-    videos_match = YT_VIDEOS_RE.search(html)
-    if videos_match:
-        videos = parse_compact_number(" ".join(videos_match.groups()))
-        if videos is not None:
-            context.logger.info(
-                "youtube handle=%s attempt=%s parse=regex-videos count=%s",
-                handle,
-                attempt,
-                videos,
-            )
+def _extract_youtube_views(html: str) -> Optional[int]:
+    """Extract total view count from YouTube HTML."""
     views_match = YT_VIEWS_RE.search(html)
     if views_match:
         views = parse_compact_number(" ".join(views_match.groups()))
-        if views is not None:
-            context.logger.info(
-                "youtube handle=%s attempt=%s parse=regex-views count=%s",
-                handle,
-                attempt,
-                views,
-            )
+        return views
+    return None
 
 
 def _search_for_subscriber_count(node: object) -> Optional[int]:

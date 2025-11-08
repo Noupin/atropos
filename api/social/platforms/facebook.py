@@ -145,24 +145,34 @@ def _fetch_facebook_scrape(handle: str, context: PlatformContext) -> AccountStat
     for url in urls:
         response = context.request(url, "facebook", handle, "direct")
         html = response.text if isinstance(response, Response) and response.ok else ""
-        count, source = _parse_facebook_html(html, handle, "direct", url, context)
+        count, views, source = _parse_facebook_html(html, handle, "direct", url, context)
         if count is not None:
+            context.logger.info(
+                "facebook handle=%s source=direct parsed_followers=%s parsed_views=%s",
+                handle, count, views
+            )
             return AccountStats(
                 handle=handle,
                 count=count,
                 fetched_at=context.now(),
                 source=f"scrape:{source}",
+                extra={"views": views} if views is not None else None,
             )
         proxy_html = context.fetch_text(url, "facebook", handle)
-        count, source = _parse_facebook_html(
+        count, views, source = _parse_facebook_html(
             proxy_html or "", handle, "text-proxy", url, context
         )
         if count is not None:
+            context.logger.info(
+                "facebook handle=%s source=text-proxy parsed_followers=%s parsed_views=%s",
+                handle, count, views
+            )
             return AccountStats(
                 handle=handle,
                 count=count,
                 fetched_at=context.now(),
                 source=f"scrape:{source}",
+                extra={"views": views} if views is not None else None,
             )
     return AccountStats(
         handle=handle,
@@ -179,7 +189,12 @@ def _parse_facebook_html(
     attempt: str,
     url: str,
     context: PlatformContext,
-) -> Tuple[Optional[int], str]:
+) -> Tuple[Optional[int], Optional[int], str]:
+    """Parse Facebook HTML for follower count and views.
+
+    Returns: (followers, views, source)
+    Note: Facebook doesn't expose total page views publicly, so views will always be None.
+    """
     if not html:
         context.logger.info(
             "facebook handle=%s attempt=%s url=%s parse=empty",
@@ -187,18 +202,22 @@ def _parse_facebook_html(
             attempt,
             url,
         )
-        return None, attempt
+        return None, None, attempt
+
+    # Facebook doesn't provide public total page views
+    views: Optional[int] = None
+
     aria_match = FACEBOOK_ARIA_LABEL_RE.search(html)
     if aria_match:
         count = parse_compact_number(aria_match.group(1))
         if count is not None:
             context.logger.info(
-                "facebook handle=%s attempt=%s parse=aria-label count=%s",
+                "facebook handle=%s attempt=%s parse=aria-label followers=%s",
                 handle,
                 attempt,
                 count,
             )
-            return count, f"{attempt}:aria-label"
+            return count, views, f"{attempt}:aria-label"
 
     text_variants: List[Tuple[str, str]] = [(html, attempt)]
     if "<" in html:
@@ -220,60 +239,60 @@ def _parse_facebook_html(
             count = parse_compact_number(match.group(1))
             if count is not None:
                 context.logger.info(
-                    "facebook handle=%s attempt=%s parse=follow-this count=%s",
+                    "facebook handle=%s attempt=%s parse=follow-this followers=%s",
                     handle,
                     label,
                     count,
                 )
-                return count, f"{label}:follow-this"
+                return count, views, f"{label}:follow-this"
         match = FACEBOOK_FOLLOWERS_RE.search(candidate)
         if match:
             count = parse_compact_number(match.group(1))
             if count is not None:
                 context.logger.info(
-                    "facebook handle=%s attempt=%s parse=followers count=%s",
+                    "facebook handle=%s attempt=%s parse=followers followers=%s",
                     handle,
                     label,
                     count,
                 )
-                return count, f"{label}:followers"
+                return count, views, f"{label}:followers"
         match = FACEBOOK_FOLLOWER_RE.search(candidate)
         if match:
             count = parse_compact_number(match.group(1))
             if count is not None:
                 context.logger.info(
-                    "facebook handle=%s attempt=%s parse=follower count=%s",
+                    "facebook handle=%s attempt=%s parse=follower followers=%s",
                     handle,
                     label,
                     count,
                 )
-                return count, f"{label}:follower"
+                return count, views, f"{label}:follower"
         match = FACEBOOK_FOLLOWERS_AFTER_RE.search(candidate)
         if match:
             count = parse_compact_number(match.group(1))
             if count is not None:
                 context.logger.info(
-                    "facebook handle=%s attempt=%s parse=followers-after count=%s",
+                    "facebook handle=%s attempt=%s parse=followers-after followers=%s",
                     handle,
                     label,
                     count,
                 )
-                return count, f"{label}:followers-after"
+                return count, views, f"{label}:followers-after"
 
     match = FACEBOOK_JSON_RE.search(html)
     if match:
         count = int(match.group(1))
         context.logger.info(
-            "facebook handle=%s attempt=%s parse=fan_count-json count=%s",
+            "facebook handle=%s attempt=%s parse=fan_count-json followers=%s",
             handle,
             attempt,
             count,
         )
-        return count, f"{attempt}:fan_count"
+        return count, views, f"{attempt}:fan_count"
     context.logger.info(
         "facebook handle=%s attempt=%s url=%s parse=miss",
         handle,
         attempt,
         url,
     )
-    return None, attempt
+    return None, views, attempt

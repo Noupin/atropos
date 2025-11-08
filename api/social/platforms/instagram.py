@@ -17,6 +17,23 @@ INSTAGRAM_LD_JSON_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+# Pattern to extract __NEXT_DATA__ from Instagram HTML
+INSTAGRAM_NEXT_DATA_RE = re.compile(
+    r'<script[^>]*id="__NEXT_DATA__"[^>]*type="application/json"[^>]*>([^<]+)</script>',
+    re.DOTALL | re.IGNORECASE,
+)
+
+# Fallback regex patterns for text content
+INSTAGRAM_FOLLOWERS_RE = re.compile(
+    r'([0-9][0-9.,KMB]*)\s+[Ff]ollowers',
+    re.IGNORECASE,
+)
+
+INSTAGRAM_POSTS_RE = re.compile(
+    r'([0-9][0-9.,KMB]*)\s+[Pp]osts',
+    re.IGNORECASE,
+)
+
 
 def resolve(handle: str, context: PlatformContext) -> AccountStats:
     scrape_result = _fetch_instagram_scrape(handle, context)
@@ -94,173 +111,239 @@ def _fetch_instagram_api(
 
 
 def _fetch_instagram_scrape(handle: str, context: PlatformContext) -> AccountStats:
+    """Fetch Instagram profile stats by parsing public HTML page."""
     slug = handle.lstrip("@")
-    attempts = [
-        (
-            "json",
-            f"https://www.instagram.com/api/v1/users/web_profile_info/?username={slug}",
-        ),
-        (
-            "json",
-            f"https://i.instagram.com/api/v1/users/web_profile_info/?username={slug}",
-        ),
-        ("direct", f"https://www.instagram.com/{slug}/?__a=1&__d=1"),
-        ("direct", f"https://www.instagram.com/{slug}/"),
-    ]
-    posts_snapshot: Optional[int] = None
+    url = f"https://www.instagram.com/{slug}/"
 
-    for attempt, url in attempts:
-        headers = None
-        if attempt == "json":
-            headers = {
-                "Accept": "application/json",
-                "X-IG-App-ID": context.instagram_web_app_id,
-                "Referer": "https://www.instagram.com/",
-            }
-        response = context.request(url, "instagram", handle, attempt, headers=headers)
-        body = response.text if isinstance(response, Response) and response.ok else ""
-        count, posts, source = _parse_instagram_payload(
-            body, handle, attempt, url, context
+    # Try direct request first
+    response = context.request(url, "instagram", handle, "direct")
+    body = response.text if isinstance(response, Response) and response.ok else ""
+    count, posts, views, source = _parse_instagram_html(
+        body, handle, "direct", url, context
+    )
+
+    if count is not None:
+        context.logger.info(
+            "instagram handle=%s source=direct parsed_followers=%s parsed_posts=%s parsed_views=%s",
+            handle, count, posts, views
         )
-        if posts is not None and posts_snapshot is None:
-            posts_snapshot = posts
-        if count is not None:
-            return AccountStats(
-                handle=handle,
-                count=count,
-                fetched_at=context.now(),
-                source=f"scrape:{source}",
-                extra={"posts": posts if posts is not None else posts_snapshot}
-                if (posts is not None or posts_snapshot is not None)
-                else None,
-            )
-        if attempt == "direct":
-            proxy_body = context.fetch_text(url, "instagram", handle)
-            count, posts, source = _parse_instagram_payload(
-                proxy_body or "", handle, "text-proxy", url, context
-            )
-            if posts is not None and posts_snapshot is None:
-                posts_snapshot = posts
-            if count is not None:
-                return AccountStats(
-                    handle=handle,
-                    count=count,
-                    fetched_at=context.now(),
-                    source=f"scrape:{source}",
-                    extra={"posts": posts if posts is not None else posts_snapshot}
-                    if (posts is not None or posts_snapshot is not None)
-                    else None,
-                )
+        extra = {}
+        if posts is not None:
+            extra["posts"] = posts
+        if views is not None:
+            extra["views"] = views
+        return AccountStats(
+            handle=handle,
+            count=count,
+            fetched_at=context.now(),
+            source=f"scrape:{source}",
+            extra=extra if extra else None,
+        )
+
+    # Try text proxy if direct failed
+    proxy_body = context.fetch_text(url, "instagram", handle)
+    count, posts, views, source = _parse_instagram_html(
+        proxy_body or "", handle, "text-proxy", url, context
+    )
+
+    if count is not None:
+        context.logger.info(
+            "instagram handle=%s source=text-proxy parsed_followers=%s parsed_posts=%s parsed_views=%s",
+            handle, count, posts, views
+        )
+        extra = {}
+        if posts is not None:
+            extra["posts"] = posts
+        if views is not None:
+            extra["views"] = views
+        return AccountStats(
+            handle=handle,
+            count=count,
+            fetched_at=context.now(),
+            source=f"scrape:{source}",
+            extra=extra if extra else None,
+        )
+
+    context.logger.warning(
+        "instagram handle=%s parse_failed=true", handle
+    )
     return AccountStats(
         handle=handle,
         count=None,
         fetched_at=context.now(),
         source="scrape",
         error="Missing followers",
-        extra={"posts": posts_snapshot} if posts_snapshot is not None else None,
     )
 
 
-def _parse_instagram_payload(
-    payload: str,
+def _parse_number_with_suffix(text: str) -> Optional[int]:
+    """Parse number strings like '1.2K', '3.5M', '10B' to integers."""
+    if not text:
+        return None
+    text = text.strip().replace(",", "")
+    multiplier = 1
+    if text[-1].upper() == "K":
+        multiplier = 1000
+        text = text[:-1]
+    elif text[-1].upper() == "M":
+        multiplier = 1000000
+        text = text[:-1]
+    elif text[-1].upper() == "B":
+        multiplier = 1000000000
+        text = text[:-1]
+    try:
+        number = float(text)
+        return int(number * multiplier)
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_instagram_html(
+    html: str,
     handle: str,
     attempt: str,
     url: str,
     context: PlatformContext,
-) -> Tuple[Optional[int], Optional[int], str]:
-    if not payload:
+) -> Tuple[Optional[int], Optional[int], Optional[int], str]:
+    """
+    Parse Instagram HTML to extract followers, posts, and views.
+    Returns: (followers, posts, views, source)
+
+    Instagram doesn't expose total profile views publicly, so views will always be None.
+    """
+    if not html:
         context.logger.info(
             "instagram handle=%s attempt=%s url=%s parse=empty",
             handle,
             attempt,
             url,
         )
-        return None, None, attempt
-    try:
-        data = json.loads(payload)
-    except json.JSONDecodeError:
-        data = None
-    posts_count: Optional[int] = None
-    if isinstance(data, dict):
-        containers = [
-            ("data", data.get("data")),
-            ("graphql", data.get("graphql")),
-        ]
-        for label, container in containers:
-            if not isinstance(container, dict):
-                continue
-            user = container.get("user")
-            if not isinstance(user, dict):
-                continue
-            media = user.get("edge_owner_to_timeline_media")
-            if isinstance(media, dict):
-                posts_value = media.get("count")
-                if isinstance(posts_value, int):
-                    posts_count = posts_value
-            if posts_count is None:
-                media_count = user.get("media_count")
-                if isinstance(media_count, int):
-                    posts_count = media_count
-            edge_followed_by = user.get("edge_followed_by", {})
-            if isinstance(edge_followed_by, dict):
-                count = edge_followed_by.get("count")
-            elif isinstance(edge_followed_by, int):
-                count = edge_followed_by
-            else:
-                count = None
-            if isinstance(count, int):
-                parse_label = (
-                    "graphql" if label == "graphql" else f"{label}_edge_followed_by"
-                )
-                context.logger.info(
-                    "instagram handle=%s attempt=%s parse=%s count=%s",
-                    handle,
-                    attempt,
-                    parse_label,
-                    count,
-                )
-                return count, posts_count, f"{attempt}:{parse_label}"
-            follower_count = user.get("follower_count")
-            if isinstance(follower_count, int):
-                parse_label = (
-                    "graphql_follower_count"
-                    if label == "graphql"
-                    else f"{label}_follower_count"
-                )
-                context.logger.info(
-                    "instagram handle=%s attempt=%s parse=%s count=%s",
-                    handle,
-                    attempt,
-                    parse_label,
-                    follower_count,
-                )
-                return follower_count, posts_count, f"{attempt}:{parse_label}"
-    ld_match = INSTAGRAM_LD_JSON_RE.search(payload)
+        return None, None, None, attempt
+
+    followers: Optional[int] = None
+    posts: Optional[int] = None
+    views: Optional[int] = None  # Instagram doesn't provide public view counts
+    source = attempt
+
+    # Try to extract __NEXT_DATA__ JSON
+    next_data_match = INSTAGRAM_NEXT_DATA_RE.search(html)
+    if next_data_match:
+        try:
+            next_data = json.loads(next_data_match.group(1))
+            context.logger.info(
+                "instagram handle=%s attempt=%s parse=__NEXT_DATA__ found=true",
+                handle,
+                attempt,
+            )
+
+            # Navigate through __NEXT_DATA__ structure
+            # Path: props.pageProps.user or props.pageProps.data.user
+            if isinstance(next_data, dict):
+                props = next_data.get("props", {})
+                if isinstance(props, dict):
+                    page_props = props.get("pageProps", {})
+                    if isinstance(page_props, dict):
+                        # Try direct user object
+                        user = page_props.get("user")
+                        if not isinstance(user, dict):
+                            # Try nested data.user
+                            data = page_props.get("data", {})
+                            if isinstance(data, dict):
+                                user = data.get("user")
+
+                        if isinstance(user, dict):
+                            # Extract follower count
+                            follower_count = user.get("follower_count")
+                            edge_followed_by = user.get("edge_followed_by", {})
+                            if isinstance(follower_count, int):
+                                followers = follower_count
+                            elif isinstance(edge_followed_by, dict):
+                                followers = edge_followed_by.get("count")
+
+                            # Extract posts count
+                            media_count = user.get("media_count")
+                            edge_media = user.get("edge_owner_to_timeline_media", {})
+                            if isinstance(media_count, int):
+                                posts = media_count
+                            elif isinstance(edge_media, dict):
+                                posts = edge_media.get("count")
+
+                            if followers is not None:
+                                source = f"{attempt}:__NEXT_DATA__"
+                                context.logger.info(
+                                    "instagram handle=%s attempt=%s parse=__NEXT_DATA__ followers=%s posts=%s",
+                                    handle,
+                                    attempt,
+                                    followers,
+                                    posts,
+                                )
+                                return followers, posts, views, source
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            context.logger.info(
+                "instagram handle=%s attempt=%s parse=__NEXT_DATA__ error=%s",
+                handle,
+                attempt,
+                str(e),
+            )
+
+    # Try LD+JSON as fallback
+    ld_match = INSTAGRAM_LD_JSON_RE.search(html)
     if ld_match:
         try:
             ld_data = json.loads(ld_match.group(1))
-        except json.JSONDecodeError:
-            ld_data = None
-        if isinstance(ld_data, dict):
-            stats = ld_data.get("interactionStatistic")
-            if isinstance(stats, list):
-                for entry in stats:
-                    if not isinstance(entry, dict):
-                        continue
-                    if entry.get("name") == "Followers":
-                        count = entry.get("userInteractionCount")
-                        if isinstance(count, int):
-                            context.logger.info(
-                                "instagram handle=%s attempt=%s parse=ld-json count=%s",
-                                handle,
-                                attempt,
-                                count,
-                            )
-                            return count, posts_count, f"{attempt}:ld-json"
-    context.logger.info(
+            if isinstance(ld_data, dict):
+                stats = ld_data.get("interactionStatistic")
+                if isinstance(stats, list):
+                    for entry in stats:
+                        if not isinstance(entry, dict):
+                            continue
+                        if entry.get("name") == "Followers":
+                            count = entry.get("userInteractionCount")
+                            if isinstance(count, int):
+                                followers = count
+                                source = f"{attempt}:ld-json"
+                                context.logger.info(
+                                    "instagram handle=%s attempt=%s parse=ld-json followers=%s",
+                                    handle,
+                                    attempt,
+                                    followers,
+                                )
+                                return followers, posts, views, source
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            context.logger.info(
+                "instagram handle=%s attempt=%s parse=ld-json error=%s",
+                handle,
+                attempt,
+                str(e),
+            )
+
+    # Regex fallback for followers
+    if followers is None:
+        followers_match = INSTAGRAM_FOLLOWERS_RE.search(html)
+        if followers_match:
+            followers = _parse_number_with_suffix(followers_match.group(1))
+            if followers is not None:
+                source = f"{attempt}:regex-followers"
+                context.logger.info(
+                    "instagram handle=%s attempt=%s parse=regex-followers followers=%s",
+                    handle,
+                    attempt,
+                    followers,
+                )
+
+    # Regex fallback for posts
+    if posts is None:
+        posts_match = INSTAGRAM_POSTS_RE.search(html)
+        if posts_match:
+            posts = _parse_number_with_suffix(posts_match.group(1))
+
+    if followers is not None:
+        return followers, posts, views, source
+
+    context.logger.warning(
         "instagram handle=%s attempt=%s url=%s parse=miss",
         handle,
         attempt,
         url,
     )
-    return None, posts_count, attempt
+    return None, posts, views, attempt
