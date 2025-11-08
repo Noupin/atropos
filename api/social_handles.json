@@ -1,8 +1,10 @@
 {
   "youtube": [
     "SniplyCosmos",
-    "ClipitHighlights",
-    "ClipitHQ"
+    "SniplyHealth",
+    "SniplySecrets",
+    "SniplyFunnyKinda",
+    "SniplyHistory"
   ],
   "instagram": [
     "clipit.app",
@@ -11,7 +13,6 @@
   "tiktok": [
     "clipitapp"
   ],
-  "facebook": [
-    "clipitapp"
-  ]
+  "tiktok": ["SniplyFunnyKinda"],
+  "facebook": ["61581125225922"]
 }
