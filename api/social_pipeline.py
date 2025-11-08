@@ -55,6 +55,10 @@ INSTAGRAM_LD_JSON_RE = re.compile(
     r"<script type=\"application/ld\+json\">(\{.*?\})</script>",
     re.DOTALL | re.IGNORECASE,
 )
+INSTAGRAM_FOLLOWERS_TEXT_RE = re.compile(
+    r"([0-9][0-9.,\u00a0]*\s*[KMB]?)\s+followers\b",
+    re.IGNORECASE,
+)
 FACEBOOK_FOLLOW_RE = re.compile(
     r"([0-9][0-9.,\u00a0]*\s*[KMB]?)\s+(?:people\s+)?follow this",
     re.IGNORECASE,
@@ -954,6 +958,17 @@ class SocialPipeline:
                 count,
             )
             return count, f"{attempt}:regex"
+        text_match = INSTAGRAM_FOLLOWERS_TEXT_RE.search(payload)
+        if text_match:
+            count = _parse_compact_number(text_match.group(1))
+            if isinstance(count, int):
+                self.logger.info(
+                    "instagram handle=%s attempt=%s parse=text count=%s",
+                    handle,
+                    attempt,
+                    count,
+                )
+                return count, f"{attempt}:text"
         self.logger.info(
             "instagram handle=%s attempt=%s url=%s parse=miss",
             handle,

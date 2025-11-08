@@ -61,3 +61,46 @@ def test_instagram_scrape_attempts_mobile_json_headers(monkeypatch, tmp_path):
     assert second_attempt == "json-mobile"
     assert second_headers is not None
     assert second_headers["User-Agent"].startswith("Instagram")
+
+
+def test_instagram_parse_markdown_followers(tmp_path):
+    module = _load_social_pipeline_module()
+    pipeline = module.SocialPipeline(tmp_path)
+
+    markdown = "*   [405 followers](https://www.instagram.com/example/)"
+
+    count, source = pipeline._parse_instagram_payload(
+        markdown, "example", "text-proxy", "https://www.instagram.com/example/"
+    )
+
+    assert count == 405
+    assert source.endswith("text")
+
+
+def test_instagram_scrape_uses_text_proxy_markdown(monkeypatch, tmp_path):
+    module = _load_social_pipeline_module()
+    pipeline = module.SocialPipeline(tmp_path)
+
+    class _FakeResponse:
+        def __init__(self) -> None:
+            self.ok = False
+            self.text = ""
+
+    attempts: list[str] = []
+
+    def fake_request(url, platform, handle, attempt, headers=None):  # type: ignore[override]
+        attempts.append(attempt)
+        return _FakeResponse()
+
+    monkeypatch.setattr(pipeline, "_request", fake_request)
+    monkeypatch.setattr(
+        pipeline,
+        "_fetch_text",
+        lambda *_args, **_kwargs: "*   [512 followers](https://www.instagram.com/example/)",
+    )
+
+    result = pipeline._fetch_instagram_scrape("example")
+
+    assert result.count == 512
+    assert result.source.endswith("text")
+    assert attempts.count("direct") >= 1
