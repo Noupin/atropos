@@ -161,12 +161,28 @@ class SocialPipeline:
     def get_overview(self) -> Dict[str, object]:
         self._reload_config_if_needed()
         platforms: Dict[str, object] = {}
+        aggregate_views = 0
+        aggregate_view_accounts = 0
         for platform, handles in self._config.items():
             if platform not in SUPPORTED_PLATFORMS:
                 continue
-            platforms[platform] = self._gather_platform(platform, handles)
+            platform_payload = self._gather_platform(platform, handles)
+            totals = platform_payload.get("totals", {})
+            views_value = totals.get("views") if isinstance(totals, dict) else None
+            view_accounts = (
+                totals.get("views_accounts") if isinstance(totals, dict) else None
+            )
+            if isinstance(views_value, int) and views_value >= 0:
+                aggregate_views += views_value
+            if isinstance(view_accounts, int) and view_accounts > 0:
+                aggregate_view_accounts += view_accounts
+            platforms[platform] = platform_payload
         return {
             "platforms": platforms,
+            "totals": {
+                "views": aggregate_views if aggregate_view_accounts else None,
+                "views_accounts": aggregate_view_accounts,
+            },
             "meta": {
                 "generated_at": _now_iso(),
                 "cache_ttl_seconds": self.cache_ttl,
@@ -210,6 +226,8 @@ class SocialPipeline:
         per_account: List[Dict[str, object]] = []
         total_count = 0
         successful_accounts = 0
+        total_views = 0
+        successful_view_accounts = 0
         requested: List[str] = []
         for handle in handles:
             requested.append(handle)
@@ -218,10 +236,17 @@ class SocialPipeline:
             if isinstance(stats.count, int):
                 successful_accounts += 1
                 total_count += stats.count
+            if isinstance(stats.extra, dict):
+                views_value = stats.extra.get("views")
+                if isinstance(views_value, (int, float)) and views_value >= 0:
+                    total_views += int(views_value)
+                    successful_view_accounts += 1
         totals = {
             "count": total_count if successful_accounts else None,
             "accounts": successful_accounts,
             "requested": len(requested),
+            "views": total_views if successful_view_accounts else None,
+            "views_accounts": successful_view_accounts,
         }
         return {
             "platform": platform,
