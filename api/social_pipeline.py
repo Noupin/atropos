@@ -57,6 +57,14 @@ FACEBOOK_FOLLOWERS_RE = re.compile(
     r"([0-9][0-9.,\u00a0]*\s*[KMB]?)\s+followers",
     re.IGNORECASE,
 )
+FACEBOOK_FOLLOWER_RE = re.compile(
+    r"([0-9][0-9.,\u00a0]*\s*[KMB]?)\s+follower\b",
+    re.IGNORECASE,
+)
+FACEBOOK_FOLLOWERS_AFTER_RE = re.compile(
+    r"followers?\s*(?:[:=]|are|is)?\s*(?:[•\u2022·:\-–—])?\s*([0-9][0-9.,\u00a0]*\s*[KMB]?)",
+    re.IGNORECASE,
+)
 FACEBOOK_ARIA_LABEL_RE = re.compile(
     r'aria-label=["\']([0-9][0-9.,\u00a0]*\s*[KMB]?)\s+followers["\']',
     re.IGNORECASE,
@@ -1239,6 +1247,28 @@ class SocialPipeline:
                         count,
                     )
                     return count, f"{label}:followers"
+            match = FACEBOOK_FOLLOWER_RE.search(candidate)
+            if match:
+                count = _parse_compact_number(match.group(1))
+                if count is not None:
+                    self.logger.info(
+                        "facebook handle=%s attempt=%s parse=follower count=%s",
+                        handle,
+                        label,
+                        count,
+                    )
+                    return count, f"{label}:follower"
+            match = FACEBOOK_FOLLOWERS_AFTER_RE.search(candidate)
+            if match:
+                count = _parse_compact_number(match.group(1))
+                if count is not None:
+                    self.logger.info(
+                        "facebook handle=%s attempt=%s parse=followers-after count=%s",
+                        handle,
+                        label,
+                        count,
+                    )
+                    return count, f"{label}:followers-after"
 
         match = FACEBOOK_JSON_RE.search(html)
         if match:
