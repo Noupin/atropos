@@ -4,6 +4,7 @@ import json
 import logging
 from pathlib import Path
 import sys
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -75,6 +76,34 @@ def test_instagram_regex_followers_parse() -> None:
     assert source.endswith("regex")
 
 
+def test_instagram_scrape_sends_app_id_header() -> None:
+    captured_headers: list[Optional[dict[str, str]]] = []
+
+    def fake_request(
+        url: str,
+        platform: str,
+        handle: str,
+        attempt: str,
+        headers: Optional[dict[str, str]] = None,
+    ) -> None:
+        captured_headers.append(headers)
+        return None
+
+    context = PlatformContext(
+        session=None,
+        logger=logging.getLogger("test-instagram"),
+        request=fake_request,
+        fetch_text=lambda *args, **kwargs: "",
+        now=lambda: 0.0,
+        instagram_web_app_id="123456789",
+    )
+
+    instagram._fetch_instagram_scrape("@atropos", context)  # type: ignore[attr-defined]
+
+    assert captured_headers, "expected request to be invoked"
+    assert captured_headers[0] == {"X-IG-App-ID": "123456789"}
+
+
 def test_youtube_html_includes_views_and_subscribers() -> None:
     context = _build_context()
     yt_initial = {
@@ -106,6 +135,34 @@ def test_youtube_html_includes_views_and_subscribers() -> None:
     assert result.views == 12_345_678
     assert result.count_source and result.count_source.endswith("ytInitialData")
     assert result.views_source and "additional-info" in result.views_source
+
+
+def test_youtube_views_fallback_to_json_payload() -> None:
+    context = _build_context()
+    yt_initial = {
+        "header": {
+            "c4TabbedHeaderRenderer": {
+                "subscriberCountText": {"simpleText": "2.3M subscribers"},
+                "viewCountText": {"simpleText": "98765 total"},
+            }
+        }
+    }
+    html = (
+        "<html><body><script>var ytInitialData = {data};</script></body></html>".replace(
+            "{data}", json.dumps(yt_initial)
+        )
+    )
+    result = youtube._parse_youtube_html(  # type: ignore[attr-defined]
+        html,
+        "atropos",
+        "direct",
+        "https://www.youtube.com/@atropos/about",
+        context,
+    )
+    assert result is not None
+    assert result.subscribers == 2_300_000
+    assert result.views == 98_765
+    assert result.views_source == "direct:ytInitialData"
 
 
 def test_pipeline_totals_include_views(tmp_path: Path) -> None:

@@ -20,7 +20,7 @@ def resolve(handle: str, context: PlatformContext) -> AccountStats:
 def _fetch_tiktok_scrape(handle: str, context: PlatformContext) -> AccountStats:
     slug = handle.lstrip("@")
     url = f"https://www.tiktok.com/@{slug}"
-    response = context.request(url, "tiktok", handle, "direct")
+    response = context.request(url, "tiktok", handle, "direct", None)
     html = response.text if response and getattr(response, "ok", False) else ""
     count, source = _parse_tiktok_html(html, handle, "direct", url, context)
     if count is not None:

@@ -143,7 +143,7 @@ def _fetch_facebook_scrape(handle: str, context: PlatformContext) -> AccountStat
     elif slug.startswith("profile.php?id="):
         extend_urls(slug)
     for url in urls:
-        response = context.request(url, "facebook", handle, "direct")
+        response = context.request(url, "facebook", handle, "direct", None)
         html = response.text if isinstance(response, Response) and response.ok else ""
         count, source = _parse_facebook_html(html, handle, "direct", url, context)
         if count is not None:

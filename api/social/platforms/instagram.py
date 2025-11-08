@@ -116,7 +116,12 @@ def _fetch_instagram_scrape(handle: str, context: PlatformContext) -> AccountSta
     for attempt, target_url in attempts:
         body: str
         if attempt == "direct":
-            response = context.request(target_url, "instagram", handle, attempt)
+            headers = None
+            if context.instagram_web_app_id:
+                headers = {"X-IG-App-ID": context.instagram_web_app_id}
+            response = context.request(
+                target_url, "instagram", handle, attempt, headers
+            )
             body = response.text if isinstance(response, Response) and response.ok else ""
         else:
             body = context.fetch_text(target_url, "instagram", handle) or ""

@@ -201,7 +201,7 @@ def _fetch_youtube_views_only(
 ) -> Tuple[Optional[int], Optional[str]]:
     last_source: Optional[str] = None
     for url in _youtube_candidate_urls(handle):
-        response = context.request(url, "youtube", handle, "direct")
+        response = context.request(url, "youtube", handle, "direct", None)
         html = response.text if isinstance(response, Response) and response.ok else ""
         views, source = _parse_youtube_views(html, handle, "direct", context)
         if views is not None:
@@ -222,7 +222,7 @@ def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats
     last_views: Optional[int] = None
     last_views_source: Optional[str] = None
     for url in _youtube_candidate_urls(handle):
-        response = context.request(url, "youtube", handle, "direct")
+        response = context.request(url, "youtube", handle, "direct", None)
         html = response.text if isinstance(response, Response) and response.ok else ""
         parse = _parse_youtube_html(html, handle, "direct", url, context)
         if parse is not None:
@@ -306,6 +306,21 @@ def _parse_youtube_html(
 
     data = extract_json_blob(html, YT_INITIAL_DATA_RE)
     if data:
+        if result.views is None:
+            view_count = _search_for_view_count(data)
+            view_success = view_count is not None
+            _log_youtube_parse(
+                context,
+                handle,
+                attempt,
+                "ytInitialData-views",
+                None,
+                view_count,
+                view_success,
+            )
+            if view_success:
+                result.views = view_count
+                result.views_source = f"{attempt}:ytInitialData"
         count = _search_for_subscriber_count(data)
         success = count is not None
         _log_youtube_parse(
@@ -334,6 +349,21 @@ def _parse_youtube_html(
 
     player_data = extract_json_blob(html, YT_INITIAL_PLAYER_RE)
     if player_data:
+        if result.views is None:
+            view_count = _search_for_view_count(player_data)
+            view_success = view_count is not None
+            _log_youtube_parse(
+                context,
+                handle,
+                attempt,
+                "ytInitialPlayerResponse-views",
+                None,
+                view_count,
+                view_success,
+            )
+            if view_success:
+                result.views = view_count
+                result.views_source = f"{attempt}:ytInitialPlayerResponse"
         count = _search_for_subscriber_count(player_data)
         success = count is not None
         _log_youtube_parse(
@@ -367,6 +397,21 @@ def _parse_youtube_html(
             cfg = json.loads(match.group(1))
         except json.JSONDecodeError:
             continue
+        if result.views is None:
+            view_count = _search_for_view_count(cfg)
+            view_success = view_count is not None
+            _log_youtube_parse(
+                context,
+                handle,
+                attempt,
+                "ytcfg-views",
+                None,
+                view_count,
+                view_success,
+            )
+            if view_success:
+                result.views = view_count
+                result.views_source = f"{attempt}:ytcfg"
         count = _search_for_subscriber_count(cfg)
         success = count is not None
         _log_youtube_parse(
@@ -569,6 +614,72 @@ def _search_for_subscriber_count(node: object) -> Optional[int]:
             if result is not None:
                 return result
     elif isinstance(node, str) and "subscriber" in node.lower():
+        count = parse_compact_number(node)
+        if count is not None:
+            return count
+    return None
+
+
+def _search_for_view_count(node: object) -> Optional[int]:
+    if node is None:
+        return None
+    if isinstance(node, dict):
+        if "viewCountText" in node:
+            value = node["viewCountText"]
+            if isinstance(value, dict):
+                if "simpleText" in value:
+                    count = parse_compact_number(value["simpleText"])
+                    if count is not None:
+                        return count
+                runs = value.get("runs")
+                if isinstance(runs, list):
+                    joined = " ".join(
+                        str(part.get("text", "")) for part in runs if isinstance(part, dict)
+                    )
+                    count = parse_compact_number(joined)
+                    if count is not None:
+                        return count
+            elif isinstance(value, str):
+                count = parse_compact_number(value)
+                if count is not None:
+                    return count
+        for key in ("viewCount", "totalViewCount"):
+            if key in node:
+                raw_value = node[key]
+                if isinstance(raw_value, dict):
+                    simple = raw_value.get("simpleText")
+                    if isinstance(simple, str):
+                        count = parse_compact_number(simple)
+                        if count is not None:
+                            return count
+                    runs = raw_value.get("runs")
+                    if isinstance(runs, list):
+                        joined = " ".join(
+                            str(part.get("text", ""))
+                            for part in runs
+                            if isinstance(part, dict)
+                        )
+                        count = parse_compact_number(joined)
+                        if count is not None:
+                            return count
+                elif isinstance(raw_value, (int, float)):
+                    numeric = int(raw_value)
+                    if numeric >= 0:
+                        return numeric
+                elif isinstance(raw_value, str):
+                    count = parse_compact_number(raw_value)
+                    if count is not None:
+                        return count
+        for child in node.values():
+            result = _search_for_view_count(child)
+            if result is not None:
+                return result
+    elif isinstance(node, list):
+        for item in node:
+            result = _search_for_view_count(item)
+            if result is not None:
+                return result
+    elif isinstance(node, str) and "view" in node.lower():
         count = parse_compact_number(node)
         if count is not None:
             return count
