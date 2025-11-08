@@ -4,6 +4,143 @@
   const totalAccountsValue = document.getElementById("totalAccountsValue");
   const totalFollowersStat = document.getElementById("totalFollowersStat");
   const totalFollowersValue = document.getElementById("totalFollowersValue");
+  const clipOutputSection = document.getElementById("clipOutputSection");
+  const clipCountEl = document.getElementById("instagramClipCount");
+  const clipStartLabelEls = document.querySelectorAll("[data-clip-start-label]");
+  const clipDurationEls = document.querySelectorAll("[data-clip-duration]");
+
+  const CLIP_START_DATE = new Date(Date.UTC(2023, 8, 2));
+
+  const parseClipFallback = () => {
+    if (!clipCountEl) {
+      return null;
+    }
+    const attr = clipCountEl.getAttribute("data-fallback-clips");
+    if (attr) {
+      const numericAttr = Number(attr);
+      if (Number.isFinite(numericAttr) && numericAttr > 0) {
+        return Math.round(numericAttr);
+      }
+    }
+    const rawText = clipCountEl.textContent || "";
+    const digitsOnly = rawText.replace(/[^0-9]/g, "");
+    if (digitsOnly) {
+      const numericText = Number(digitsOnly);
+      if (Number.isFinite(numericText) && numericText > 0) {
+        return Math.round(numericText);
+      }
+    }
+    return null;
+  };
+
+  const clipFallbackCount = parseClipFallback();
+
+  const formatFullNumber = (value) => {
+    const rounded = Math.round(Number(value));
+    if (!Number.isFinite(rounded)) {
+      return null;
+    }
+    return rounded.toLocaleString();
+  };
+
+  const computeDurationLabel = (startDate) => {
+    if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
+      return "";
+    }
+    const now = new Date();
+    const startMs = startDate.getTime();
+    const nowMs = now.getTime();
+    if (!Number.isFinite(nowMs) || nowMs <= startMs) {
+      return "0 days";
+    }
+    const diffMs = nowMs - startMs;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays < 31) {
+      const label = diffDays === 1 ? "day" : "days";
+      return `${diffDays.toLocaleString()} ${label}`;
+    }
+    let totalMonths =
+      (now.getFullYear() - startDate.getFullYear()) * 12 +
+      (now.getMonth() - startDate.getMonth());
+    if (now.getDate() < startDate.getDate()) {
+      totalMonths -= 1;
+    }
+    if (totalMonths <= 0) {
+      const label = diffDays === 1 ? "day" : "days";
+      return `${diffDays.toLocaleString()} ${label}`;
+    }
+    const years = Math.floor(totalMonths / 12);
+    const months = totalMonths % 12;
+    const parts = [];
+    if (years > 0) {
+      parts.push(`${years} ${years === 1 ? "year" : "years"}`);
+    }
+    if (months > 0) {
+      parts.push(`${months} ${months === 1 ? "month" : "months"}`);
+    }
+    if (!parts.length) {
+      const approxMonths = Math.max(Math.round(diffDays / 30), 1);
+      parts.push(`${approxMonths} ${approxMonths === 1 ? "month" : "months"}`);
+    }
+    return parts.join(" and ");
+  };
+
+  const formatStartDate = (startDate) => {
+    if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
+      return "September 2, 2023";
+    }
+    try {
+      return startDate.toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    } catch (error) {
+      console.warn("Unable to format start date", error);
+      return "September 2, 2023";
+    }
+  };
+
+  const updateClipStartMetadata = () => {
+    if (!(CLIP_START_DATE instanceof Date)) {
+      return;
+    }
+    const label = formatStartDate(CLIP_START_DATE);
+    const duration = computeDurationLabel(CLIP_START_DATE);
+    clipStartLabelEls.forEach((el) => {
+      el.textContent = label;
+    });
+    clipDurationEls.forEach((el) => {
+      el.textContent = duration;
+    });
+  };
+
+  const applyClipCount = (countValue, { isMock = false } = {}) => {
+    if (!clipOutputSection || !clipCountEl) {
+      return;
+    }
+    let resolvedCount = null;
+    if (Number.isFinite(countValue) && countValue > 0) {
+      resolvedCount = Math.round(countValue);
+    } else if (Number.isFinite(clipFallbackCount) && clipFallbackCount > 0) {
+      resolvedCount = clipFallbackCount;
+      isMock = true;
+    }
+    if (resolvedCount !== null) {
+      const formatted = formatFullNumber(resolvedCount);
+      clipCountEl.textContent = formatted || resolvedCount.toString();
+      clipOutputSection.classList.toggle(
+        "clip-output--placeholder",
+        Boolean(isMock)
+      );
+    } else {
+      clipCountEl.textContent = "-";
+      clipOutputSection.classList.add("clip-output--placeholder");
+    }
+  };
+
+  updateClipStartMetadata();
+  applyClipCount(null, { isMock: true });
 
   if (!metricsEl) {
     return;
@@ -250,13 +387,18 @@
       resolvedAccounts === 0 &&
       state.handles.size > 0;
 
-    setMetricState(metric, {
+    const metricResult = setMetricState(metric, {
       count: !isLoading && resolvedAccounts > 0 ? total : null,
       accountCount: resolvedAccounts,
       isMock: resolvedAccounts > 0 ? !hasReal : true,
       useFallback: shouldUseFallback,
       isLoading,
     });
+    if (platform === "instagram") {
+      applyClipCount(metricResult.displayedCount, {
+        isMock: metricResult.isMock,
+      });
+    }
     updateAggregateStats();
   };
 

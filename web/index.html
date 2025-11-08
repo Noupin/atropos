@@ -128,13 +128,23 @@
 
             <div class="hero__subbanner" role="status" aria-live="polite">
               <span>
-                Over
-                <strong class="hero__subbanner-highlight">4,800 clips</strong>
-                created so far
+                Producing standout clips since
+                <strong
+                  class="hero__subbanner-highlight"
+                  data-clip-start-label
+                >
+                  September 2, 2023
+                </strong>
               </span>
               <span>
-                in under
-                <strong class="hero__subbanner-highlight">7 months</strong>
+                That's
+                <strong
+                  class="hero__subbanner-highlight"
+                  data-clip-duration
+                >
+                  0 days
+                </strong>
+                of nonstop output
               </span>
               <span id="totalAccountsStat" hidden>
                 Managing
@@ -152,6 +162,37 @@
               </span>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section
+        class="panel clip-output"
+        id="clipOutputSection"
+        aria-labelledby="clipOutputHeading"
+        role="region"
+      >
+        <div class="clip-output__content">
+          <h2 class="clip-output__title" id="clipOutputHeading">
+            Proof in the output
+          </h2>
+          <p class="clip-output__statement">
+            Over
+            <span
+              class="clip-output__count"
+              id="instagramClipCount"
+              data-fallback-clips="4800"
+            >
+              4,800
+            </span>
+            clips generated for Instagram.
+          </p>
+          <p class="clip-output__description">
+            We add up every reel across our Instagram accounts so this stays up
+            to date from
+            <span class="clip-output__start" data-clip-start-label>
+              September 2, 2023
+            </span>.
+          </p>
         </div>
       </section>
 
