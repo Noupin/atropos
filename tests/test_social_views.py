@@ -118,7 +118,12 @@ def test_youtube_html_includes_views_and_subscribers() -> None:
       <body>
         <script>var ytInitialData = {data};</script>
         <div id="additional-info-container">
-          <table><tbody><tr><td>Stats</td><td>12,345,678 views</td></tr></tbody></table>
+          <table>
+            <tbody>
+              <tr><td>Stats</td><td>191 videos</td></tr>
+              <tr><td>Stats</td><td>12,345,678 views</td></tr>
+            </tbody>
+          </table>
         </div>
       </body>
     </html>
@@ -133,8 +138,10 @@ def test_youtube_html_includes_views_and_subscribers() -> None:
     assert result is not None
     assert result.subscribers == 1_500_000
     assert result.views == 12_345_678
+    assert result.videos == 191
     assert result.count_source and result.count_source.endswith("ytInitialData")
     assert result.views_source and "additional-info" in result.views_source
+    assert result.videos_source and "additional-info" in result.videos_source
 
 
 def test_youtube_views_fallback_to_json_payload() -> None:
@@ -144,6 +151,7 @@ def test_youtube_views_fallback_to_json_payload() -> None:
             "c4TabbedHeaderRenderer": {
                 "subscriberCountText": {"simpleText": "2.3M subscribers"},
                 "viewCountText": {"simpleText": "98765 total"},
+                "videosCountText": {"simpleText": "432 videos"},
             }
         }
     }
@@ -162,7 +170,9 @@ def test_youtube_views_fallback_to_json_payload() -> None:
     assert result is not None
     assert result.subscribers == 2_300_000
     assert result.views == 98_765
+    assert result.videos == 432
     assert result.views_source == "direct:ytInitialData"
+    assert result.videos_source == "direct:ytInitialData"
 
 
 def test_pipeline_totals_include_views(tmp_path: Path) -> None:
@@ -174,7 +184,13 @@ def test_pipeline_totals_include_views(tmp_path: Path) -> None:
         self: SocialPipeline, platform: str, handle: str
     ) -> AccountStats:
         views = {"alpha": 12345, "beta": None}[handle]
-        extra = {"views": views} if views is not None else None
+        videos = {"alpha": 321, "beta": None}[handle]
+        extra = {}
+        if views is not None:
+            extra["views"] = views
+        if videos is not None:
+            extra["videos"] = videos
+        extra = extra or None
         return AccountStats(
             handle=handle,
             count=1000,
@@ -187,6 +203,8 @@ def test_pipeline_totals_include_views(tmp_path: Path) -> None:
     result = pipeline._gather_platform("youtube", ["alpha", "beta"])
     assert result["totals"]["views"] == 12345
     assert result["totals"]["views_accounts"] == 1
+    assert result["totals"]["videos"] == 321
+    assert result["totals"]["videos_accounts"] == 1
 
 
 def test_overview_totals_accumulate_views(tmp_path: Path) -> None:
@@ -198,7 +216,7 @@ def test_overview_totals_accumulate_views(tmp_path: Path) -> None:
         self: SocialPipeline, platform: str, handle: str
     ) -> AccountStats:
         if platform == "youtube":
-            extra = {"views": 4321}
+            extra = {"views": 4321, "videos": 210}
             count = 2000
         else:
             extra = None
@@ -215,3 +233,5 @@ def test_overview_totals_accumulate_views(tmp_path: Path) -> None:
     overview = pipeline.get_overview()
     assert overview["totals"]["views"] == 4321
     assert overview["totals"]["views_accounts"] == 1
+    assert overview["totals"]["videos"] == 210
+    assert overview["totals"]["videos_accounts"] == 1

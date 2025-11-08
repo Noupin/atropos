@@ -163,6 +163,8 @@ class SocialPipeline:
         platforms: Dict[str, object] = {}
         aggregate_views = 0
         aggregate_view_accounts = 0
+        aggregate_videos = 0
+        aggregate_video_accounts = 0
         for platform, handles in self._config.items():
             if platform not in SUPPORTED_PLATFORMS:
                 continue
@@ -172,16 +174,26 @@ class SocialPipeline:
             view_accounts = (
                 totals.get("views_accounts") if isinstance(totals, dict) else None
             )
+            videos_value = totals.get("videos") if isinstance(totals, dict) else None
+            video_accounts = (
+                totals.get("videos_accounts") if isinstance(totals, dict) else None
+            )
             if isinstance(views_value, int) and views_value >= 0:
                 aggregate_views += views_value
             if isinstance(view_accounts, int) and view_accounts > 0:
                 aggregate_view_accounts += view_accounts
+            if isinstance(videos_value, int) and videos_value >= 0:
+                aggregate_videos += videos_value
+            if isinstance(video_accounts, int) and video_accounts > 0:
+                aggregate_video_accounts += video_accounts
             platforms[platform] = platform_payload
         return {
             "platforms": platforms,
             "totals": {
                 "views": aggregate_views if aggregate_view_accounts else None,
+                "videos": aggregate_videos if aggregate_video_accounts else None,
                 "views_accounts": aggregate_view_accounts,
+                "videos_accounts": aggregate_video_accounts,
             },
             "meta": {
                 "generated_at": _now_iso(),
@@ -228,6 +240,8 @@ class SocialPipeline:
         successful_accounts = 0
         total_views = 0
         successful_view_accounts = 0
+        total_videos = 0
+        successful_video_accounts = 0
         requested: List[str] = []
         for handle in handles:
             requested.append(handle)
@@ -241,12 +255,18 @@ class SocialPipeline:
                 if isinstance(views_value, (int, float)) and views_value >= 0:
                     total_views += int(views_value)
                     successful_view_accounts += 1
+                videos_value = stats.extra.get("videos")
+                if isinstance(videos_value, (int, float)) and videos_value >= 0:
+                    total_videos += int(videos_value)
+                    successful_video_accounts += 1
         totals = {
             "count": total_count if successful_accounts else None,
             "accounts": successful_accounts,
             "requested": len(requested),
             "views": total_views if successful_view_accounts else None,
             "views_accounts": successful_view_accounts,
+            "videos": total_videos if successful_video_accounts else None,
+            "videos_accounts": successful_video_accounts,
         }
         return {
             "platform": platform,

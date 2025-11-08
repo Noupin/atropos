@@ -7,25 +7,25 @@
   const clipOutputSection = document.getElementById("clipOutputSection");
   const viewSummaryCard = document.querySelector("[data-view-summary]");
   const viewCountPrimary = document.querySelector("[data-view-count-primary]");
-  const viewCountMirrors = Array.from(
-    document.querySelectorAll("[data-view-count-mirror]")
+  const videoCountPrimary = document.querySelector(
+    "[data-video-count-primary]"
   );
   const clipDurationEls = document.querySelectorAll("[data-clip-duration]");
 
   const CLIP_START_DATE = new Date(Date.UTC(2025, 8, 3));
 
-  const parseViewFallback = () => {
-    if (!viewCountPrimary) {
+  const parseFallbackCount = (element, attribute) => {
+    if (!element) {
       return null;
     }
-    const attr = viewCountPrimary.getAttribute("data-fallback-views");
+    const attr = element.getAttribute(attribute);
     if (attr) {
       const numericAttr = Number(attr);
       if (Number.isFinite(numericAttr) && numericAttr > 0) {
         return Math.round(numericAttr);
       }
     }
-    const rawText = viewCountPrimary.textContent || "";
+    const rawText = element.textContent || "";
     const digitsOnly = rawText.replace(/[^0-9]/g, "");
     if (digitsOnly) {
       const numericText = Number(digitsOnly);
@@ -36,7 +36,14 @@
     return null;
   };
 
-  const viewFallbackCount = parseViewFallback();
+  const viewFallbackCount = parseFallbackCount(
+    viewCountPrimary,
+    "data-fallback-views"
+  );
+  const videoFallbackCount = parseFallbackCount(
+    videoCountPrimary,
+    "data-fallback-videos"
+  );
 
   const formatFullNumber = (value) => {
     const rounded = Math.round(Number(value));
@@ -81,7 +88,7 @@
     });
   };
 
-  const applyViewCount = (countValue, { isMock = false } = {}) => {
+  const applyHeroViewCount = (countValue, { isMock = false } = {}) => {
     if (!viewCountPrimary) {
       return;
     }
@@ -94,18 +101,9 @@
     }
     const applyDisplay = (value) => {
       viewCountPrimary.textContent = value;
-      viewCountMirrors.forEach((el) => {
-        el.textContent = value;
-      });
     };
 
     const togglePlaceholder = (nextIsMock) => {
-      if (clipOutputSection) {
-        clipOutputSection.classList.toggle(
-          "clip-output--placeholder",
-          Boolean(nextIsMock)
-        );
-      }
       if (viewSummaryCard) {
         viewSummaryCard.classList.toggle(
           "hero__clip-summary--placeholder",
@@ -124,8 +122,44 @@
     }
   };
 
+  const applyVideoCount = (countValue, { isMock = false } = {}) => {
+    if (!videoCountPrimary) {
+      return;
+    }
+    let resolvedCount = null;
+    if (Number.isFinite(countValue) && countValue >= 0) {
+      resolvedCount = Math.round(countValue);
+    } else if (Number.isFinite(videoFallbackCount) && videoFallbackCount > 0) {
+      resolvedCount = videoFallbackCount;
+      isMock = true;
+    }
+
+    const applyDisplay = (value) => {
+      videoCountPrimary.textContent = value;
+    };
+
+    const togglePlaceholder = (nextIsMock) => {
+      if (clipOutputSection) {
+        clipOutputSection.classList.toggle(
+          "clip-output--placeholder",
+          Boolean(nextIsMock)
+        );
+      }
+    };
+
+    if (resolvedCount !== null) {
+      const formatted = formatFullNumber(resolvedCount);
+      applyDisplay(formatted || resolvedCount.toString());
+      togglePlaceholder(isMock);
+    } else {
+      applyDisplay("-");
+      togglePlaceholder(true);
+    }
+  };
+
   updateClipDurationMetadata();
-  applyViewCount(null, { isMock: true });
+  applyHeroViewCount(null, { isMock: true });
+  applyVideoCount(null, { isMock: true });
 
   if (!metricsEl) {
     return;
@@ -331,16 +365,17 @@
     }
   };
 
-  const computeGlobalViewTotals = () => {
-    let viewsTotal = 0;
+  const computeGlobalTotals = (selector) => {
+    let countTotal = 0;
     let contributingAccounts = 0;
     let hasRealData = false;
 
     platformState.forEach((state) => {
       state.handles.forEach((entry) => {
         if (!entry) return;
-        if (Number.isFinite(entry.viewCount) && entry.viewCount >= 0) {
-          viewsTotal += entry.viewCount;
+        const value = selector(entry);
+        if (Number.isFinite(value) && value >= 0) {
+          countTotal += value;
           contributingAccounts += 1;
           if (!entry.isMock) {
             hasRealData = true;
@@ -349,19 +384,32 @@
       });
     });
 
-    return { viewsTotal, contributingAccounts, hasRealData };
+    return { countTotal, contributingAccounts, hasRealData };
   };
 
   const updateViewSummary = () => {
     if (!viewCountPrimary) {
       return;
     }
-    const { viewsTotal, contributingAccounts, hasRealData } =
-      computeGlobalViewTotals();
+    const { countTotal, contributingAccounts, hasRealData } =
+      computeGlobalTotals((entry) => entry.viewCount);
     if (contributingAccounts > 0) {
-      applyViewCount(viewsTotal, { isMock: !hasRealData });
+      applyHeroViewCount(countTotal, { isMock: !hasRealData });
     } else {
-      applyViewCount(null, { isMock: true });
+      applyHeroViewCount(null, { isMock: true });
+    }
+  };
+
+  const updateVideoSummary = () => {
+    if (!videoCountPrimary) {
+      return;
+    }
+    const { countTotal, contributingAccounts, hasRealData } =
+      computeGlobalTotals((entry) => entry.videoCount);
+    if (contributingAccounts > 0) {
+      applyVideoCount(countTotal, { isMock: !hasRealData });
+    } else {
+      applyVideoCount(null, { isMock: true });
     }
   };
 
@@ -415,6 +463,7 @@
     });
     updateAggregateStats();
     updateViewSummary();
+    updateVideoSummary();
   };
 
   const requestJson = async (path, searchParams) => {
@@ -461,16 +510,23 @@
       const numeric = Number(entry.count);
       const rawExtra = entry.extra;
       let viewCount = null;
+      let videoCount = null;
       if (rawExtra && typeof rawExtra === "object") {
         const rawViews = rawExtra.views ?? null;
         const numericViews = Number(rawViews);
         if (Number.isFinite(numericViews) && numericViews >= 0) {
           viewCount = numericViews;
         }
+        const rawVideos = rawExtra.videos ?? null;
+        const numericVideos = Number(rawVideos);
+        if (Number.isFinite(numericVideos) && numericVideos >= 0) {
+          videoCount = numericVideos;
+        }
       }
       const record = {
         count: Number.isFinite(numeric) ? numeric : null,
         viewCount,
+        videoCount,
         isMock: Boolean(entry.is_mock),
       };
       state.handles.set(handle, record);
@@ -497,6 +553,7 @@
         state.handles.set(handle, {
           count: null,
           viewCount: null,
+          videoCount: null,
           isMock: true,
         });
       }
