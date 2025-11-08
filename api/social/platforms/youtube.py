@@ -29,6 +29,26 @@ YT_VIEWS_RE = re.compile(
 )
 
 
+def _log_attempt(
+    context: PlatformContext,
+    handle: str,
+    attempt: str,
+    status: Optional[int],
+    followers: Optional[int],
+    views: Optional[int],
+    source: str,
+) -> None:
+    context.logger.info(
+        "youtube handle=%s attempt=%s status=%s followers=%s views=%s source=%s",
+        handle,
+        attempt,
+        status if status is not None else "error",
+        followers if followers is not None else "null",
+        views if views is not None else "null",
+        source,
+    )
+
+
 def resolve(handle: str, context: PlatformContext) -> AccountStats:
     api_key = os.environ.get("SOCIAL_YOUTUBE_API_KEY")
     if api_key:
@@ -64,6 +84,7 @@ def _fetch_youtube_api(
             status,
         )
         if not response.ok:
+            _log_attempt(context, handle, "api", status, None, None, "api:http-error")
             return AccountStats(
                 handle=handle,
                 count=None,
@@ -80,6 +101,7 @@ def _fetch_youtube_api(
             exc,
             elapsed,
         )
+        _log_attempt(context, handle, "api", None, None, None, "api:error")
         return AccountStats(
             handle=handle,
             count=None,
@@ -121,6 +143,15 @@ def _fetch_youtube_api(
         else:
             extra["videos"] = videos_numeric
     if numeric is not None:
+        _log_attempt(
+            context,
+            handle,
+            "api",
+            status,
+            numeric,
+            extra.get("views"),
+            "api:statistics",
+        )
         return AccountStats(
             handle=handle,
             count=numeric,
@@ -128,6 +159,7 @@ def _fetch_youtube_api(
             source="api",
             extra=extra or None,
         )
+    _log_attempt(context, handle, "api", status, None, extra.get("views"), "api:missing")
     return AccountStats(
         handle=handle,
         count=None,
@@ -165,15 +197,14 @@ def _youtube_candidate_urls(handle: str) -> List[str]:
 
 def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats:
     last_error = ""
-    last_extra: Optional[Dict[str, int]] = None
     for url in _youtube_candidate_urls(handle):
         response = context.request(url, "youtube", handle, "direct")
+        status = response.status_code if isinstance(response, Response) else None
         html = response.text if isinstance(response, Response) and response.ok else ""
-        parse = _parse_youtube_html(html, handle, "direct", url, context)
-        if parse is not None:
-            count, source, extra = parse
-            if extra:
-                last_extra = extra
+        count, source, extra = _parse_youtube_html(html, handle, "direct", url, context)
+        views = (extra or {}).get("views") if extra else None
+        _log_attempt(context, handle, "direct", status, count, views, source)
+        if count is not None:
             return AccountStats(
                 handle=handle,
                 count=count,
@@ -186,11 +217,20 @@ def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats
                 f"HTTP {response.status_code}" if isinstance(response, Response) else "request error"
             )
         proxy_html = context.fetch_text(url, "youtube", handle)
-        parse = _parse_youtube_html(proxy_html or "", handle, "text-proxy", url, context)
-        if parse is not None:
-            count, source, extra = parse
-            if extra:
-                last_extra = extra
+        count, source, extra = _parse_youtube_html(
+            proxy_html or "", handle, "text-proxy", url, context
+        )
+        views = (extra or {}).get("views") if extra else None
+        _log_attempt(
+            context,
+            handle,
+            "text-proxy",
+            200 if proxy_html else None,
+            count,
+            views,
+            source,
+        )
+        if count is not None:
             return AccountStats(
                 handle=handle,
                 count=count,
@@ -199,13 +239,14 @@ def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats
                 extra=extra,
             )
         last_error = "No subscriber pattern found"
+    _log_attempt(context, handle, "scrape", None, None, None, "scrape:miss")
     return AccountStats(
         handle=handle,
         count=None,
         fetched_at=context.now(),
         source="scrape",
         error=last_error or "No subscriber data",
-        extra=last_extra,
+        is_mock=True,
     )
 
 
@@ -215,7 +256,7 @@ def _parse_youtube_html(
     attempt: str,
     url: str,
     context: PlatformContext,
-) -> Optional[Tuple[int, str, Optional[Dict[str, int]]]]:
+) -> Tuple[Optional[int], str, Optional[Dict[str, int]]]:
     if not html:
         context.logger.info(
             "youtube handle=%s attempt=%s url=%s parse=empty-html",
@@ -223,7 +264,7 @@ def _parse_youtube_html(
             attempt,
             url,
         )
-        return None
+        return None, f"{attempt}:empty-html", None
     secondary = _extract_secondary_counts(html, handle, attempt, context)
     data = extract_json_blob(html, YT_INITIAL_DATA_RE)
     if data:
@@ -302,7 +343,7 @@ def _parse_youtube_html(
             handle,
             attempt,
         )
-    return None
+    return None, f"{attempt}:miss", secondary
 
 
 def _extract_secondary_counts(
