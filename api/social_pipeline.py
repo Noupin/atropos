@@ -29,6 +29,13 @@ INSTAGRAM_WEB_APP_ID = os.environ.get(
 )
 INSTAGRAM_ASBD_ID = os.environ.get("INSTAGRAM_ASBD_ID", "129477")
 INSTAGRAM_WWW_CLAIM = os.environ.get("INSTAGRAM_WWW_CLAIM", "0")
+INSTAGRAM_WEB_USER_AGENT = os.environ.get(
+    "INSTAGRAM_WEB_USER_AGENT",
+    (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+    ),
+)
 INSTAGRAM_MOBILE_USER_AGENT = os.environ.get(
     "INSTAGRAM_MOBILE_USER_AGENT",
     "Instagram 295.0.0.27.109 Android",
@@ -138,10 +145,7 @@ def _build_session() -> Session:
     session.mount("https://", adapter)
     session.headers.update(
         {
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
-            ),
+            "User-Agent": INSTAGRAM_WEB_USER_AGENT,
             "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
         }
@@ -150,18 +154,24 @@ def _build_session() -> Session:
     return session
 
 
-def _instagram_json_headers(*, mobile: bool = False) -> Dict[str, str]:
+def _instagram_json_headers(
+    slug: str, *, mobile: bool = False
+) -> Dict[str, str]:
     """Return headers that coax Instagram JSON endpoints to respond."""
 
+    referer = f"https://www.instagram.com/{slug}/"
     headers: Dict[str, str] = {
-        "Accept": "application/json",
-        "Referer": "https://www.instagram.com/",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": referer,
         "X-IG-App-ID": INSTAGRAM_WEB_APP_ID,
         "X-ASBD-ID": INSTAGRAM_ASBD_ID,
         "X-IG-WWW-Claim": INSTAGRAM_WWW_CLAIM,
+        "X-Requested-With": "XMLHttpRequest",
     }
-    if mobile:
-        headers["User-Agent"] = INSTAGRAM_MOBILE_USER_AGENT
+    headers["User-Agent"] = (
+        INSTAGRAM_MOBILE_USER_AGENT if mobile else INSTAGRAM_WEB_USER_AGENT
+    )
     return headers
 
 
@@ -823,19 +833,19 @@ class SocialPipeline:
             (
                 "json-web",
                 f"https://www.instagram.com/api/v1/users/web_profile_info/?username={slug}",
-                _instagram_json_headers(),
+                _instagram_json_headers(slug),
             ),
             (
                 "json-mobile",
                 f"https://i.instagram.com/api/v1/users/web_profile_info/?username={slug}",
-                _instagram_json_headers(mobile=True),
+                _instagram_json_headers(slug, mobile=True),
             ),
             ("direct", f"https://www.instagram.com/{slug}/?__a=1&__d=1", None),
             ("direct", f"https://www.instagram.com/{slug}/", None),
         ]
         for attempt, url, headers in attempts:
             response = self._request(url, "instagram", handle, attempt, headers=headers)
-            body = response.text if response and response.ok else ""
+            body = response.text if response is not None else ""
             count, source = self._parse_instagram_payload(body, handle, attempt, url)
             if count is not None:
                 return AccountStats(

@@ -25,10 +25,11 @@ def test_instagram_mobile_headers_respect_environment(monkeypatch):
     monkeypatch.setenv("INSTAGRAM_MOBILE_USER_AGENT", "Instagram 1.2.3 Android")
     module = _load_social_pipeline_module()
 
-    headers = module._instagram_json_headers(mobile=True)
+    headers = module._instagram_json_headers("example", mobile=True)
 
     assert headers["User-Agent"] == "Instagram 1.2.3 Android"
     assert headers["X-IG-App-ID"] == module.INSTAGRAM_WEB_APP_ID
+    assert headers["Referer"].endswith("/example/")
     assert headers["X-ASBD-ID"] == module.INSTAGRAM_ASBD_ID
 
 
@@ -58,6 +59,7 @@ def test_instagram_scrape_attempts_mobile_json_headers(monkeypatch, tmp_path):
     assert first_attempt == "json-web"
     assert first_headers is not None
     assert first_headers["X-IG-App-ID"] == module.INSTAGRAM_WEB_APP_ID
+    assert first_headers["User-Agent"] == module.INSTAGRAM_WEB_USER_AGENT
     assert second_attempt == "json-mobile"
     assert second_headers is not None
     assert second_headers["User-Agent"].startswith("Instagram")
