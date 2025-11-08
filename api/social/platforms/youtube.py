@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+from html import unescape
 from typing import Dict, List, Optional, Tuple
 
 from requests import RequestException, Response
@@ -27,10 +28,12 @@ YT_VIDEOS_RE = re.compile(
 YT_VIEWS_RE = re.compile(
     r"([0-9][0-9.,\u00a0]*)\s*([KMB]?)\s+views", re.IGNORECASE
 )
-YT_ABOUT_VIEWS_RE = re.compile(
-    r"views\s*</td>\s*<td[^>]*>([0-9][0-9.,\u00a0]*)",
-    re.IGNORECASE | re.DOTALL,
+YT_ABOUT_INFO_CONTAINER_RE = re.compile(
+    r'id=["\']additional-info-container["\']', re.IGNORECASE
 )
+YT_ABOUT_ROW_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.IGNORECASE | re.DOTALL)
+YT_ABOUT_CELL_RE = re.compile(r"<td[^>]*>(.*?)</td>", re.IGNORECASE | re.DOTALL)
+YT_ABOUT_VIEWS_FALLBACK_RE = re.compile(r"(?i)(\d[\d,.]*)\s+views")
 
 
 def _log_attempt(
@@ -176,45 +179,36 @@ def _fetch_youtube_api(
 
 def _youtube_candidate_urls(handle: str) -> List[str]:
     slug = handle.strip()
-    urls: List[str] = []
     if slug.startswith("UC"):
-        urls.append(
-            "https://www.youtube.com/channel/"
-            f"{slug}/about?hl=en&gl=US&persist_hl=1&persist_gl=1"
-        )
-        urls.append(
-            "https://www.youtube.com/channel/"
-            f"{slug}?hl=en&gl=US&persist_hl=1&persist_gl=1"
-        )
+        base = f"https://www.youtube.com/channel/{slug}"
     else:
-        slug = slug.lstrip("@")
-        urls.append(
-            "https://www.youtube.com/@"
-            f"{slug}/about?hl=en&gl=US&persist_hl=1&persist_gl=1"
-        )
-        urls.append(
-            "https://www.youtube.com/@"
-            f"{slug}?hl=en&gl=US&persist_hl=1&persist_gl=1"
-        )
-    return urls
+        base = f"https://www.youtube.com/@{slug.lstrip('@')}"
+    query = "?hl=en&gl=US&persist_hl=1&persist_gl=1"
+    return [f"{base}/about{query}", f"{base}{query}"]
 
 
 def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats:
     last_error = ""
+    captured_views: Optional[int] = None
     for url in _youtube_candidate_urls(handle):
         response = context.request(url, "youtube", handle, "direct")
         status = response.status_code if isinstance(response, Response) else None
         html = response.text if isinstance(response, Response) and response.ok else ""
         count, source, extra = _parse_youtube_html(html, handle, "direct", url, context)
         views = (extra or {}).get("views") if extra else None
+        if views is not None and captured_views is None:
+            captured_views = views
         _log_attempt(context, handle, "direct", status, count, views, source)
         if count is not None:
+            final_extra = dict(extra or {})
+            if captured_views is not None and "views" not in final_extra:
+                final_extra["views"] = captured_views
             return AccountStats(
                 handle=handle,
                 count=count,
                 fetched_at=context.now(),
                 source=f"scrape:{source}",
-                extra=extra,
+                extra=final_extra or None,
             )
         if response is None or not isinstance(response, Response) or not response.ok or not html:
             last_error = (
@@ -225,6 +219,8 @@ def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats
             proxy_html or "", handle, "text-proxy", url, context
         )
         views = (extra or {}).get("views") if extra else None
+        if views is not None and captured_views is None:
+            captured_views = views
         _log_attempt(
             context,
             handle,
@@ -235,12 +231,15 @@ def _fetch_youtube_scrape(handle: str, context: PlatformContext) -> AccountStats
             source,
         )
         if count is not None:
+            final_extra = dict(extra or {})
+            if captured_views is not None and "views" not in final_extra:
+                final_extra["views"] = captured_views
             return AccountStats(
                 handle=handle,
                 count=count,
                 fetched_at=context.now(),
                 source=f"scrape:{source}",
-                extra=extra,
+                extra=final_extra or None,
             )
         last_error = "No subscriber pattern found"
     _log_attempt(context, handle, "scrape", None, None, None, "scrape:miss")
@@ -268,8 +267,14 @@ def _parse_youtube_html(
             attempt,
             url,
         )
+        if "/about" in url:
+            _extract_about_views("", handle, attempt, url, context)
         return None, f"{attempt}:empty-html", None
     secondary = _extract_secondary_counts(html, handle, attempt, context)
+    about_views = _extract_about_views(html, handle, attempt, url, context)
+    if about_views is not None:
+        secondary = dict(secondary) if secondary else {}
+        secondary["views"] = about_views
     data = extract_json_blob(html, YT_INITIAL_DATA_RE)
     if data:
         secondary = _augment_secondary_counts_from_initial_data(
@@ -382,19 +387,92 @@ def _extract_secondary_counts(
                 views,
             )
             result["views"] = views
-    if "views" not in result:
-        about_views_match = YT_ABOUT_VIEWS_RE.search(html)
-        if about_views_match:
-            views = parse_compact_number(about_views_match.group(1))
-            if views is not None:
-                context.logger.info(
-                    "youtube handle=%s attempt=%s parse=regex-about-views count=%s",
-                    handle,
-                    attempt,
-                    views,
-                )
-                result["views"] = views
     return result or None
+
+
+def _extract_about_views(
+    html: str,
+    handle: str,
+    attempt: str,
+    url: str,
+    context: PlatformContext,
+) -> Optional[int]:
+    if "/about" not in url:
+        return None
+    views = _extract_about_table_views(html)
+    origin = "table"
+    if views is None:
+        match = YT_ABOUT_VIEWS_FALLBACK_RE.search(html)
+        if match:
+            views = _normalize_view_total(match.group(1))
+            origin = "regex"
+    if views is not None:
+        context.logger.info(
+            "youtube handle=%s attempt=%s parse=views count=%s origin=%s",
+            handle,
+            attempt,
+            views,
+            origin,
+        )
+        return views
+    context.logger.info(
+        "youtube handle=%s attempt=%s parse=miss",
+        handle,
+        attempt,
+    )
+    return None
+
+
+def _extract_about_table_views(html: str) -> Optional[int]:
+    container_match = YT_ABOUT_INFO_CONTAINER_RE.search(html)
+    if not container_match:
+        return None
+    table_start = html.find("<table", container_match.end())
+    if table_start == -1:
+        return None
+    table_end = html.find("</table>", table_start)
+    if table_end == -1:
+        return None
+    table_html = html[table_start : table_end + len("</table>")]
+    for row_match in YT_ABOUT_ROW_RE.finditer(table_html):
+        cells = [
+            _normalize_cell_text(cell)
+            for cell in YT_ABOUT_CELL_RE.findall(row_match.group(1))
+        ]
+        if not cells:
+            continue
+        for index, cell in enumerate(cells):
+            if "views" in cell.lower():
+                number = _normalize_view_total(cell)
+                if number is not None:
+                    return number
+                previous = cells[index - 1] if index > 0 else ""
+                number = _normalize_view_total(previous)
+                if number is not None:
+                    return number
+        if len(cells) >= 2:
+            number = _normalize_view_total(cells[0])
+            if number is not None and "views" in cells[1].lower():
+                return number
+    return None
+
+
+def _normalize_cell_text(cell: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", cell)
+    text = unescape(text)
+    text = text.replace("\u00a0", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _normalize_view_total(raw: str) -> Optional[int]:
+    cleaned = raw.replace(",", "").replace(".", "").replace("\u00a0", "")
+    cleaned = re.sub(r"\s+", "", cleaned)
+    if not cleaned:
+        return None
+    if not cleaned.isdigit():
+        match = re.search(r"(\d+)", cleaned)
+        cleaned = match.group(1) if match else ""
+    return int(cleaned) if cleaned.isdigit() else None
 
 
 def _augment_secondary_counts_from_initial_data(
