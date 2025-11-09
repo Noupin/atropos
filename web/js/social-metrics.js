@@ -18,8 +18,8 @@
 
   const socialConfig = window.atroposSocialConfig || {};
 
-  // Toggle to hide the subscriber/follower section entirely when set to false.
-  const SHOW_SOCIAL_METRICS = true;
+  // Toggle to hide the follower/subscriber metrics section (other stats still run when false).
+  const SHOW_SUBSCRIBER_METRICS_SECTION = true;
 
   const normalizeHandleKey = (value) =>
     typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -281,7 +281,7 @@
   applyClipCount(null, { isMock: true });
   applyViewCount(null, { isMock: true });
 
-  if (!SHOW_SOCIAL_METRICS) {
+  if (!SHOW_SUBSCRIBER_METRICS_SECTION) {
     if (metricsEl) {
       metricsEl.hidden = true;
       metricsEl.setAttribute("aria-hidden", "true");
