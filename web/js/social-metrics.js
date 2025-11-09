@@ -131,20 +131,22 @@
       });
     };
 
-    if (resolvedCount !== null) {
-      const formatted = formatFullNumber(resolvedCount);
-      applyDisplay(formatted || resolvedCount.toString());
-      if (viewSummaryCard) {
-        viewSummaryCard.classList.toggle(
-          "hero__clip-summary--placeholder",
-          Boolean(isMock)
-        );
-      }
-    } else {
+    const showPlaceholder = () => {
       applyDisplay("-");
       if (viewSummaryCard) {
         viewSummaryCard.classList.add("hero__clip-summary--placeholder");
       }
+    };
+
+    if (!Number.isFinite(resolvedCount) || resolvedCount <= 0 || isMock) {
+      showPlaceholder();
+      return;
+    }
+
+    const formatted = formatFullNumber(resolvedCount);
+    applyDisplay(formatted || resolvedCount.toString());
+    if (viewSummaryCard) {
+      viewSummaryCard.classList.remove("hero__clip-summary--placeholder");
     }
   };
 
@@ -522,7 +524,7 @@
           clipHasReal = true;
         }
       }
-      if (Number.isFinite(entry.viewCount)) {
+      if (Number.isFinite(entry.viewCount) && entry.viewCount > 0) {
         viewTotal += entry.viewCount;
         viewResolved += 1;
         if (!entry.isMock) {
@@ -622,7 +624,7 @@
         }
         const viewsValue = rawExtra.views ?? null;
         const numericViews = Number(viewsValue);
-        if (Number.isFinite(numericViews) && numericViews >= 0) {
+        if (Number.isFinite(numericViews) && numericViews > 0) {
           viewCount = numericViews;
         }
       }
