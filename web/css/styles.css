@@ -154,9 +154,11 @@ body::after {
   text-decoration: underline;
 }
 .top-nav__cta {
-  flex: 1;
+  flex: 1 1 clamp(320px, 52vw, 680px);
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  min-width: 0;
 }
 .signup-slot {
   margin-top: 0;
@@ -176,35 +178,42 @@ body::after {
   gap: 12px;
 }
 .top-nav__cta .signup-wrapper {
-  width: 100%;
+  width: min(100%, 660px);
   flex-direction: column;
-  align-items: flex-end;
+  align-items: stretch;
   gap: 10px;
 }
 .top-nav__cta form {
-  width: 100%;
-  justify-content: flex-end;
-  flex-wrap: nowrap;
   margin-top: 0;
+  width: 100%;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
 }
 .top-nav__cta input[type="email"] {
-  flex: 0 1 240px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .top-nav__cta .status {
   max-width: 420px;
+  margin-left: auto;
+  text-align: right;
 }
 .nav-compact .top-nav__cta .signup-wrapper {
-  width: auto;
+  width: min(100%, 600px);
   flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
+  align-items: stretch;
+  gap: 8px;
 }
 .nav-compact .top-nav__cta form {
   margin-top: 0;
-  width: auto;
+  width: 100%;
+  flex-wrap: nowrap;
 }
 .nav-compact .top-nav__cta input[type="email"] {
-  flex: 0 1 260px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .nav-compact .top-nav__cta .status {
   text-align: right;
