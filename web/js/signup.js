@@ -14,15 +14,38 @@
   }
 
   const pulseClass = "signup-button--pulse";
+  let isSubmitting = false;
+
+  const updateSubmitState = () => {
+    const hasValue = emailEl.value.trim().length > 0;
+    submitBtn.disabled = isSubmitting || !hasValue;
+
+    if (submitBtn.disabled) {
+      submitBtn.classList.remove(pulseClass);
+    }
+  };
+
   const triggerButtonPulse = () => {
+    if (submitBtn.disabled) {
+      submitBtn.classList.remove(pulseClass);
+      return;
+    }
+
     submitBtn.classList.remove(pulseClass);
     // Force a reflow so the animation restarts consistently.
     void submitBtn.offsetWidth;
     submitBtn.classList.add(pulseClass);
   };
 
+  updateSubmitState();
   triggerButtonPulse();
   document.addEventListener("hero:phrase-rotated", triggerButtonPulse);
+  emailEl.addEventListener("input", () => {
+    updateSubmitState();
+    if (!submitBtn.disabled) {
+      triggerButtonPulse();
+    }
+  });
 
   const toggleNavSignup = (toNav) => {
     if (!signupWrapper || !nav || !navTarget || !heroSlot) {
@@ -88,7 +111,8 @@
       return;
     }
 
-    submitBtn.disabled = true;
+    isSubmitting = true;
+    updateSubmitState();
     showStatus("", "Sending…");
 
     try {
@@ -111,6 +135,7 @@
         } else {
           showStatus("success", "Welcome aboard — you're on the list!");
           form.reset();
+          updateSubmitState();
         }
       } else if (response.status === 400 && data && data.error) {
         showStatus("error", data.error);
@@ -124,7 +149,11 @@
       console.warn("Signup request failed", error);
       showStatus("error", "Network error. Check your connection and try again.");
     } finally {
-      submitBtn.disabled = false;
+      isSubmitting = false;
+      updateSubmitState();
+      if (!submitBtn.disabled) {
+        triggerButtonPulse();
+      }
     }
   });
 })();
