@@ -16,6 +16,43 @@
   );
   const clipDurationEls = document.querySelectorAll("[data-clip-duration]");
 
+  const normalizeHandleKey = (value) =>
+    typeof value === "string" ? value.trim().toLowerCase() : "";
+
+  const PLATFORM_VIEW_FALLBACKS = new Map([
+    [
+      "instagram",
+      new Map([
+        ["sniplycosmos", 220075],
+        ["sniplyhealth", 27860],
+        ["sniplysecrets", 5678],
+        ["sniplyfunnykinda", 33679],
+        ["sniplyhistory", 18932],
+      ]),
+    ],
+  ]);
+
+  const VIEW_SUMMARY_PLATFORMS = new Set(["youtube", "instagram"]);
+
+  const viewSummaryContributions = new Map();
+
+  const getViewFallbackForHandle = (platform, handle) => {
+    const platformKey = normalizeHandleKey(platform);
+    const handleKey = normalizeHandleKey(handle);
+    if (!platformKey || !handleKey) {
+      return null;
+    }
+    const platformFallbacks = PLATFORM_VIEW_FALLBACKS.get(platformKey);
+    if (!platformFallbacks) {
+      return null;
+    }
+    const fallbackValue = platformFallbacks.get(handleKey);
+    if (!Number.isFinite(fallbackValue) || fallbackValue <= 0) {
+      return null;
+    }
+    return Math.round(fallbackValue);
+  };
+
   const CLIP_START_DATE = new Date(Date.UTC(2025, 8, 3));
 
   const parseViewFallback = () => {
@@ -109,6 +146,56 @@
         viewSummaryCard.classList.add("hero__clip-summary--placeholder");
       }
     }
+  };
+
+  const recomputeViewSummary = () => {
+    let combinedTotal = 0;
+    let hasAny = false;
+    let hasReal = false;
+
+    viewSummaryContributions.forEach((entry) => {
+      if (!entry) {
+        return;
+      }
+      const numericTotal = Number(entry.total);
+      if (!Number.isFinite(numericTotal) || numericTotal <= 0) {
+        return;
+      }
+      combinedTotal += numericTotal;
+      hasAny = true;
+      if (entry.hasReal) {
+        hasReal = true;
+      }
+    });
+
+    if (hasAny) {
+      applyViewCount(combinedTotal, { isMock: !hasReal });
+    } else {
+      applyViewCount(null, { isMock: true });
+    }
+  };
+
+  const updateViewSummaryContribution = (platform, contribution) => {
+    if (!VIEW_SUMMARY_PLATFORMS.has(platform)) {
+      return;
+    }
+
+    if (
+      contribution &&
+      Number.isFinite(contribution.total) &&
+      contribution.total > 0 &&
+      Number.isFinite(contribution.resolved) &&
+      contribution.resolved > 0
+    ) {
+      viewSummaryContributions.set(platform, {
+        total: Math.round(contribution.total),
+        hasReal: Boolean(contribution.hasReal),
+      });
+    } else {
+      viewSummaryContributions.delete(platform);
+    }
+
+    recomputeViewSummary();
   };
 
   const computeDurationLabel = (startDate) => {
@@ -441,6 +528,12 @@
         if (!entry.isMock) {
           viewHasReal = true;
         }
+      } else {
+        const fallbackView = Number(entry.viewFallback);
+        if (Number.isFinite(fallbackView) && fallbackView > 0) {
+          viewTotal += fallbackView;
+          viewResolved += 1;
+        }
       }
     });
 
@@ -465,9 +558,11 @@
         isMock: clipResolved === 0 || !clipHasReal,
       });
     }
-    if (platform === "youtube") {
-      applyViewCount(viewResolved > 0 ? viewTotal : null, {
-        isMock: viewResolved === 0 || !viewHasReal,
+    if (VIEW_SUMMARY_PLATFORMS.has(platform)) {
+      updateViewSummaryContribution(platform, {
+        total: viewTotal,
+        resolved: viewResolved,
+        hasReal: viewHasReal,
       });
     }
     updateAggregateStats();
@@ -531,12 +626,20 @@
           viewCount = numericViews;
         }
       }
-      const record = {
-        count: Number.isFinite(numeric) ? numeric : null,
-        clipCount,
-        viewCount,
-        isMock: Boolean(entry.is_mock),
-      };
+      const previous = state.handles.get(handle);
+      const record = previous
+        ? { ...previous }
+        : {
+            count: null,
+            clipCount: null,
+            viewCount: null,
+            viewFallback: getViewFallbackForHandle(platform, handle),
+            isMock: true,
+          };
+      record.count = Number.isFinite(numeric) ? numeric : null;
+      record.clipCount = clipCount;
+      record.viewCount = viewCount;
+      record.isMock = Boolean(entry.is_mock);
       state.handles.set(handle, record);
     });
   };
@@ -562,6 +665,7 @@
           count: null,
           clipCount: null,
           viewCount: null,
+          viewFallback: getViewFallbackForHandle(platform, handle),
           isMock: true,
         });
       }
