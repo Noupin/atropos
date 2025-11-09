@@ -714,26 +714,16 @@ button {
   padding: 14px 24px;
   border: none;
   border-radius: 14px;
-  background: linear-gradient(
-    145deg,
-    rgba(245, 241, 234, 0.96) 0%,
-    rgba(222, 217, 207, 0.94) 36%,
-    rgba(83, 80, 76, 0.96) 72%,
-    var(--crevice) 100%
-  );
+  background: linear-gradient(180deg, #3a3936, var(--crevice));
   color: #fff;
   font-weight: 700;
   letter-spacing: 0.01em;
   cursor: pointer;
-  transition: transform 0.18s ease, filter 0.18s ease, opacity 0.18s,
-    box-shadow 0.24s ease;
+  transition: transform 0.18s ease, filter 0.18s ease, opacity 0.18s;
   box-shadow: 0 10px 20px rgba(20, 20, 20, 0.25);
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
   flex-shrink: 0;
   white-space: nowrap;
-  position: relative;
-  overflow: hidden;
-  z-index: 0;
 }
 button:hover {
   transform: translateY(-1px);
@@ -749,77 +739,74 @@ button[disabled] {
 }
 
 #submitBtn {
-  background: linear-gradient(
-    140deg,
-    rgba(247, 244, 238, 0.98) 0%,
-    rgba(230, 226, 219, 0.94) 30%,
-    rgba(90, 87, 84, 0.98) 70%,
-    var(--crevice) 100%
-  );
-  box-shadow: 0 12px 24px rgba(20, 20, 20, 0.28);
+  position: relative;
+  z-index: 0;
+  overflow: visible;
+  background: linear-gradient(180deg, #3a3936, var(--crevice));
+  box-shadow: 0 18px 28px rgba(10, 10, 10, 0.45),
+    0 0 0 0 rgba(37, 37, 37, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -4px 10px rgba(0, 0, 0, 0.6);
 }
 
 #submitBtn::after {
   content: "";
   position: absolute;
-  inset: -45%;
+  inset: -32%;
   border-radius: inherit;
   background: radial-gradient(
     circle at center,
-    rgba(255, 252, 246, 0.45) 0%,
-    rgba(228, 222, 212, 0.3) 38%,
-    rgba(214, 208, 198, 0.18) 58%,
-    rgba(70, 67, 63, 0) 90%
+    rgba(58, 57, 54, 0.32) 0%,
+    rgba(24, 23, 22, 0) 68%
   );
   opacity: 0;
-  transform: scale(0.55);
-  filter: blur(0.4px);
-  transition: opacity 0.18s ease;
+  transform: scale(0.82);
+  filter: blur(0.2px);
   pointer-events: none;
   z-index: -1;
 }
 
 #submitBtn.signup-button--pulse {
-  animation: heroSignupPulse 1.85s ease-out;
+  animation: heroSignupPulse 2.6s ease-in-out;
 }
 
 #submitBtn.signup-button--pulse::after {
-  animation: heroSignupRipple 1.85s ease-out;
+  animation: heroSignupAura 2.6s ease-in-out;
 }
 
 @keyframes heroSignupPulse {
-  0% {
-    box-shadow: 0 12px 24px rgba(20, 20, 20, 0.28),
-      0 0 0 0 rgba(230, 226, 219, 0.28);
-  }
-  35% {
-    box-shadow: 0 14px 32px rgba(20, 20, 20, 0.32),
-      0 0 0 6px rgba(232, 227, 219, 0.25);
-  }
-  65% {
-    box-shadow: 0 14px 30px rgba(20, 20, 20, 0.28),
-      0 0 0 12px rgba(212, 207, 198, 0.12);
-  }
+  0%,
   100% {
-    box-shadow: 0 12px 24px rgba(20, 20, 20, 0.28),
-      0 0 0 0 rgba(230, 226, 219, 0);
+    box-shadow: 0 18px 28px rgba(10, 10, 10, 0.45),
+      0 0 0 0 rgba(37, 37, 37, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 -4px 10px rgba(0, 0, 0, 0.6);
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    box-shadow: 0 22px 40px rgba(8, 8, 8, 0.55),
+      0 0 0 12px rgba(32, 32, 32, 0.28),
+      inset 0 3px 4px rgba(255, 255, 255, 0.12),
+      inset 0 -8px 18px rgba(0, 0, 0, 0.68);
+    transform: translateY(-1px) scale(1.01);
   }
 }
 
-@keyframes heroSignupRipple {
+@keyframes heroSignupAura {
   0% {
-    opacity: 0.45;
-    transform: scale(0.55);
+    opacity: 0;
+    transform: scale(0.82);
   }
   40% {
-    opacity: 0.32;
+    opacity: 0.35;
   }
   70% {
-    opacity: 0.16;
+    opacity: 0.18;
+    transform: scale(1.15);
   }
   100% {
     opacity: 0;
-    transform: scale(1.35);
+    transform: scale(1.28);
   }
 }
 
