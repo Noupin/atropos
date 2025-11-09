@@ -743,31 +743,49 @@ button[disabled] {
   z-index: 0;
   overflow: visible;
   background: linear-gradient(180deg, #3a3936, var(--crevice));
-  box-shadow: 0 18px 28px rgba(10, 10, 10, 0.45),
-    0 0 0 0 rgba(37, 37, 37, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -4px 10px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 18px 32px rgba(10, 10, 10, 0.35),
+    0 10px 24px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -3px 8px rgba(0, 0, 0, 0.55);
+}
+
+#submitBtn::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: inherit;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.24), rgba(58, 57, 54, 0));
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+  mix-blend-mode: screen;
+  z-index: 0;
 }
 
 #submitBtn::after {
   content: "";
   position: absolute;
-  inset: -32%;
+  inset: -12%;
   border-radius: inherit;
   background: radial-gradient(
     circle at center,
-    rgba(58, 57, 54, 0.32) 0%,
-    rgba(24, 23, 22, 0) 68%
+    rgba(236, 232, 224, 0.3) 0%,
+    rgba(87, 83, 77, 0.12) 40%,
+    rgba(24, 23, 22, 0) 70%
   );
   opacity: 0;
-  transform: scale(0.82);
-  filter: blur(0.2px);
+  transform: scale(0.9);
+  filter: blur(14px);
   pointer-events: none;
   z-index: -1;
 }
 
 #submitBtn.signup-button--pulse {
   animation: heroSignupPulse 2.6s ease-in-out;
+}
+
+#submitBtn.signup-button--pulse::before {
+  animation: heroSignupHighlight 2.6s ease-in-out;
 }
 
 #submitBtn.signup-button--pulse::after {
@@ -777,17 +795,17 @@ button[disabled] {
 @keyframes heroSignupPulse {
   0%,
   100% {
-    box-shadow: 0 18px 28px rgba(10, 10, 10, 0.45),
-      0 0 0 0 rgba(37, 37, 37, 0.28),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08),
-      inset 0 -4px 10px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 18px 32px rgba(10, 10, 10, 0.35),
+      0 10px 24px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      inset 0 -3px 8px rgba(0, 0, 0, 0.55);
     transform: translateY(0) scale(1);
   }
   50% {
-    box-shadow: 0 22px 40px rgba(8, 8, 8, 0.55),
-      0 0 0 12px rgba(32, 32, 32, 0.28),
-      inset 0 3px 4px rgba(255, 255, 255, 0.12),
-      inset 0 -8px 18px rgba(0, 0, 0, 0.68);
+    box-shadow: 0 22px 38px rgba(12, 11, 10, 0.42),
+      0 0 0 14px rgba(236, 232, 224, 0.26),
+      inset 0 2px 6px rgba(255, 255, 255, 0.24),
+      inset 0 -6px 14px rgba(0, 0, 0, 0.52);
     transform: translateY(-1px) scale(1.01);
   }
 }
@@ -795,18 +813,28 @@ button[disabled] {
 @keyframes heroSignupAura {
   0% {
     opacity: 0;
-    transform: scale(0.82);
+    transform: scale(0.9);
   }
   40% {
-    opacity: 0.35;
+    opacity: 0.42;
   }
   70% {
-    opacity: 0.18;
-    transform: scale(1.15);
+    opacity: 0.2;
+    transform: scale(1.08);
   }
   100% {
     opacity: 0;
-    transform: scale(1.28);
+    transform: scale(1.16);
+  }
+}
+
+@keyframes heroSignupHighlight {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.85;
   }
 }
 
