@@ -149,6 +149,11 @@ def _fetch_instagram_api(
 
 def _fetch_instagram_scrape(handle: str, context: PlatformContext) -> AccountStats:
     slug = handle.lstrip("@")
+
+    scraper_stats = _fetch_instagram_cloudscraper(slug, handle, context)
+    if scraper_stats is not None:
+        return scraper_stats
+
     attempts = [
         (
             "json",
@@ -212,6 +217,71 @@ def _fetch_instagram_scrape(handle: str, context: PlatformContext) -> AccountSta
         source="scrape",
         error="Missing followers",
         extra={"posts": posts_snapshot} if posts_snapshot is not None else None,
+    )
+
+
+def _fetch_instagram_cloudscraper(
+    slug: str, handle: str, context: PlatformContext
+) -> Optional[AccountStats]:
+    try:
+        import cloudscraper  # type: ignore
+    except ImportError:
+        return None
+
+    try:
+        scraper = cloudscraper.create_scraper(
+            browser={"browser": "chrome", "platform": "windows", "mobile": False}
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        context.logger.info(
+            "instagram handle=%s attempt=cloudscraper error=init %s",
+            handle,
+            exc,
+        )
+        return None
+
+    try:
+        scraper.get("https://www.instagram.com/")
+    except Exception as exc:  # pragma: no cover - defensive
+        context.logger.info(
+            "instagram handle=%s attempt=cloudscraper error=bootstrap %s",
+            handle,
+            exc,
+        )
+        return None
+
+    url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={slug}"
+    headers = {
+        "Accept": "application/json",
+        "Referer": "https://www.instagram.com/",
+        "X-IG-App-ID": context.instagram_web_app_id,
+        "X-ASBD-ID": "129477",
+        "X-IG-WWW-Claim": "0",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+
+    try:
+        response = scraper.get(url, headers=headers)
+    except Exception as exc:  # pragma: no cover - defensive
+        context.logger.info(
+            "instagram handle=%s attempt=cloudscraper error=request %s",
+            handle,
+            exc,
+        )
+        return None
+
+    body = getattr(response, "text", "") or ""
+    count, posts, source = _parse_instagram_payload(
+        body, handle, "cloudscraper", url, context
+    )
+    if count is None:
+        return None
+    return AccountStats(
+        handle=handle,
+        count=count,
+        fetched_at=context.now(),
+        source=f"scrape:{source}",
+        extra={"posts": posts} if posts is not None else None,
     )
 
 
