@@ -13,9 +13,26 @@ from ..models import AccountStats
 from ..settings import SCRAPER_TIMEOUT_SECONDS
 
 INSTAGRAM_LD_JSON_RE = re.compile(
-    r"<script type=\"application/ld\+json\">(\{.*?\})</script>",
+    r"<script[^>]*type=(?:\"application/ld\+json\"|'application/ld\+json')[^>]*>(.*?)</script>",
     re.DOTALL | re.IGNORECASE,
 )
+
+
+def _coerce_int(value: object) -> Optional[int]:
+    """Convert loosely formatted integers (including digit strings) to ints."""
+
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        digits = re.sub(r"[^0-9]", "", value)
+        if digits:
+            try:
+                return int(digits)
+            except ValueError:
+                return None
+    return None
 
 
 def resolve(handle: str, context: PlatformContext) -> AccountStats:
@@ -194,21 +211,19 @@ def _parse_instagram_payload(
                 continue
             media = user.get("edge_owner_to_timeline_media")
             if isinstance(media, dict):
-                posts_value = media.get("count")
-                if isinstance(posts_value, int):
+                posts_value = _coerce_int(media.get("count"))
+                if posts_value is not None:
                     posts_count = posts_value
             if posts_count is None:
-                media_count = user.get("media_count")
-                if isinstance(media_count, int):
+                media_count = _coerce_int(user.get("media_count"))
+                if media_count is not None:
                     posts_count = media_count
             edge_followed_by = user.get("edge_followed_by", {})
             if isinstance(edge_followed_by, dict):
-                count = edge_followed_by.get("count")
-            elif isinstance(edge_followed_by, int):
-                count = edge_followed_by
+                count = _coerce_int(edge_followed_by.get("count"))
             else:
-                count = None
-            if isinstance(count, int):
+                count = _coerce_int(edge_followed_by)
+            if count is not None:
                 parse_label = (
                     "graphql" if label == "graphql" else f"{label}_edge_followed_by"
                 )
@@ -220,8 +235,8 @@ def _parse_instagram_payload(
                     count,
                 )
                 return count, posts_count, f"{attempt}:{parse_label}"
-            follower_count = user.get("follower_count")
-            if isinstance(follower_count, int):
+            follower_count = _coerce_int(user.get("follower_count"))
+            if follower_count is not None:
                 parse_label = (
                     "graphql_follower_count"
                     if label == "graphql"
@@ -238,7 +253,7 @@ def _parse_instagram_payload(
     ld_match = INSTAGRAM_LD_JSON_RE.search(payload)
     if ld_match:
         try:
-            ld_data = json.loads(ld_match.group(1))
+            ld_data = json.loads(ld_match.group(1).strip())
         except json.JSONDecodeError:
             ld_data = None
         if isinstance(ld_data, dict):
@@ -248,8 +263,8 @@ def _parse_instagram_payload(
                     if not isinstance(entry, dict):
                         continue
                     if entry.get("name") == "Followers":
-                        count = entry.get("userInteractionCount")
-                        if isinstance(count, int):
+                        count = _coerce_int(entry.get("userInteractionCount"))
+                        if count is not None:
                             context.logger.info(
                                 "instagram handle=%s attempt=%s parse=ld-json count=%s",
                                 handle,
