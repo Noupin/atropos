@@ -154,7 +154,7 @@ body::after {
   text-decoration: underline;
 }
 .top-nav__cta {
-  flex: 1 1 auto;
+  flex: 1 1 clamp(320px, 52vw, 680px);
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -178,7 +178,7 @@ body::after {
   gap: 12px;
 }
 .top-nav__cta .signup-wrapper {
-  width: min(100%, 820px);
+  width: min(100%, 660px);
   flex-direction: column;
   align-items: stretch;
   gap: 10px;
@@ -186,13 +186,13 @@ body::after {
 .top-nav__cta form {
   margin-top: 0;
   width: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
+  gap: 12px;
 }
 .top-nav__cta input[type="email"] {
-  width: 100%;
+  flex: 1 1 auto;
   min-width: 0;
 }
 .top-nav__cta .status {
@@ -201,16 +201,18 @@ body::after {
   text-align: right;
 }
 .nav-compact .top-nav__cta .signup-wrapper {
-  width: auto;
+  width: min(100%, 600px);
   flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
+  align-items: stretch;
+  gap: 8px;
 }
 .nav-compact .top-nav__cta form {
   margin-top: 0;
   width: 100%;
+  flex-wrap: nowrap;
 }
 .nav-compact .top-nav__cta input[type="email"] {
+  flex: 1 1 auto;
   min-width: 0;
 }
 .nav-compact .top-nav__cta .status {
