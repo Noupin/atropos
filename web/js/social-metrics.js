@@ -221,7 +221,7 @@
 
   const formatCount = (value) => {
     const num = Number(value);
-    if (!Number.isFinite(num) || num < 0) {
+    if (!Number.isFinite(num) || num <= 0) {
       return null;
     }
     const thresholds = [
@@ -272,13 +272,15 @@
     const numericCount = Number(count);
     const fallbackCount = Number(metric.fallbackCount);
     const fallbackAccounts = Number(metric.fallbackAccounts);
-    const hasFallbackCount = Number.isFinite(fallbackCount);
-    const hasFallbackAccounts = Number.isFinite(fallbackAccounts);
+    const hasFallbackCount =
+      Number.isFinite(fallbackCount) && fallbackCount > 0;
+    const hasFallbackAccounts =
+      Number.isFinite(fallbackAccounts) && fallbackAccounts > 0;
 
     let displayValue = null;
     let resolvedMock = Boolean(isMock);
 
-    if (!isLoading && Number.isFinite(numericCount) && numericCount >= 0) {
+    if (!isLoading && Number.isFinite(numericCount) && numericCount > 0) {
       displayValue = numericCount;
     } else if (!isLoading && useFallback && hasFallbackCount) {
       displayValue = fallbackCount;
@@ -300,8 +302,7 @@
     } else if (
       !isLoading &&
       useFallback &&
-      hasFallbackAccounts &&
-      fallbackAccounts > 0
+      hasFallbackAccounts
     ) {
       resolvedAccounts = fallbackAccounts;
     } else {
