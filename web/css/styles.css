@@ -154,9 +154,10 @@ body::after {
   text-decoration: underline;
 }
 .top-nav__cta {
-  flex: 1;
+  flex: 1 1 320px;
   display: flex;
   justify-content: flex-end;
+  min-width: 0;
 }
 .signup-slot {
   margin-top: 0;
@@ -188,7 +189,8 @@ body::after {
   margin-top: 0;
 }
 .top-nav__cta input[type="email"] {
-  flex: 0 1 240px;
+  flex: 1 1 240px;
+  min-width: 0;
 }
 .top-nav__cta .status {
   max-width: 420px;
@@ -204,7 +206,8 @@ body::after {
   width: auto;
 }
 .nav-compact .top-nav__cta input[type="email"] {
-  flex: 0 1 260px;
+  flex: 1 1 260px;
+  min-width: 0;
 }
 .nav-compact .top-nav__cta .status {
   text-align: right;
