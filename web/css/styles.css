@@ -714,16 +714,26 @@ button {
   padding: 14px 24px;
   border: none;
   border-radius: 14px;
-  background: linear-gradient(180deg, #3a3936, var(--crevice));
+  background: linear-gradient(
+    145deg,
+    rgba(245, 241, 234, 0.96) 0%,
+    rgba(222, 217, 207, 0.94) 36%,
+    rgba(83, 80, 76, 0.96) 72%,
+    var(--crevice) 100%
+  );
   color: #fff;
   font-weight: 700;
   letter-spacing: 0.01em;
   cursor: pointer;
-  transition: transform 0.18s ease, filter 0.18s ease, opacity 0.18s;
+  transition: transform 0.18s ease, filter 0.18s ease, opacity 0.18s,
+    box-shadow 0.24s ease;
   box-shadow: 0 10px 20px rgba(20, 20, 20, 0.25);
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
   flex-shrink: 0;
   white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+  z-index: 0;
 }
 button:hover {
   transform: translateY(-1px);
@@ -736,6 +746,81 @@ button:active {
 button[disabled] {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+#submitBtn {
+  background: linear-gradient(
+    140deg,
+    rgba(247, 244, 238, 0.98) 0%,
+    rgba(230, 226, 219, 0.94) 30%,
+    rgba(90, 87, 84, 0.98) 70%,
+    var(--crevice) 100%
+  );
+  box-shadow: 0 12px 24px rgba(20, 20, 20, 0.28);
+}
+
+#submitBtn::after {
+  content: "";
+  position: absolute;
+  inset: -45%;
+  border-radius: inherit;
+  background: radial-gradient(
+    circle at center,
+    rgba(255, 252, 246, 0.45) 0%,
+    rgba(228, 222, 212, 0.3) 38%,
+    rgba(214, 208, 198, 0.18) 58%,
+    rgba(70, 67, 63, 0) 90%
+  );
+  opacity: 0;
+  transform: scale(0.55);
+  filter: blur(0.4px);
+  transition: opacity 0.18s ease;
+  pointer-events: none;
+  z-index: -1;
+}
+
+#submitBtn.signup-button--pulse {
+  animation: heroSignupPulse 1.85s ease-out;
+}
+
+#submitBtn.signup-button--pulse::after {
+  animation: heroSignupRipple 1.85s ease-out;
+}
+
+@keyframes heroSignupPulse {
+  0% {
+    box-shadow: 0 12px 24px rgba(20, 20, 20, 0.28),
+      0 0 0 0 rgba(230, 226, 219, 0.28);
+  }
+  35% {
+    box-shadow: 0 14px 32px rgba(20, 20, 20, 0.32),
+      0 0 0 6px rgba(232, 227, 219, 0.25);
+  }
+  65% {
+    box-shadow: 0 14px 30px rgba(20, 20, 20, 0.28),
+      0 0 0 12px rgba(212, 207, 198, 0.12);
+  }
+  100% {
+    box-shadow: 0 12px 24px rgba(20, 20, 20, 0.28),
+      0 0 0 0 rgba(230, 226, 219, 0);
+  }
+}
+
+@keyframes heroSignupRipple {
+  0% {
+    opacity: 0.45;
+    transform: scale(0.55);
+  }
+  40% {
+    opacity: 0.32;
+  }
+  70% {
+    opacity: 0.16;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
 }
 
 /* Status: hidden by default */

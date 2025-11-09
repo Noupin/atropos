@@ -8,9 +8,29 @@
     "Clip channels 24/7",
   ];
   const rotationInterval = 5000;
+  const signupButton = document.getElementById("submitBtn");
+  const pulseClass = "signup-button--pulse";
 
   if (!phraseRotator || !marketingPhrases.length) {
     return;
+  }
+
+  const triggerSignupPulse = () => {
+    if (!signupButton) {
+      return;
+    }
+
+    signupButton.classList.remove(pulseClass);
+    void signupButton.offsetWidth;
+    signupButton.classList.add(pulseClass);
+  };
+
+  if (signupButton) {
+    signupButton.addEventListener("animationend", (event) => {
+      if (event.animationName === "heroSignupPulse") {
+        signupButton.classList.remove(pulseClass);
+      }
+    });
   }
 
   const ensureRotatorSize = () => {
@@ -140,6 +160,7 @@
 
   setPhraseImmediate(initialPhrase);
   announcePhrase(initialPhrase);
+  triggerSignupPulse();
 
   if (marketingPhrases.length > 1) {
     const rotatePhrase = () => {
@@ -148,6 +169,7 @@
       animateToPhrase(phrase);
       announcePhrase(phrase);
       currentIndex = nextIndex;
+      triggerSignupPulse();
     };
 
     setInterval(rotatePhrase, rotationInterval);
