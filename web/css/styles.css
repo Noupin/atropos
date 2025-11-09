@@ -17,6 +17,7 @@
   --shadow: 0 26px 70px rgba(0, 0, 0, 0.14), 0 2px 10px rgba(0, 0, 0, 0.06);
   --inner: inset 0 1px 0 rgba(255, 255, 255, 0.65),
     inset 0 -1px 14px rgba(0, 0, 0, 0.06);
+  --hero-rotation-interval: 5000ms;
 }
 * {
   box-sizing: border-box;
@@ -725,6 +726,78 @@ button {
   flex-shrink: 0;
   white-space: nowrap;
 }
+
+#submitBtn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  gap: 8px;
+  isolation: isolate;
+  --signup-shadow-rest: 0 16px 32px rgba(24, 24, 24, 0.32),
+    0 6px 14px rgba(24, 24, 24, 0.2), inset 1px 1px 2px rgba(255, 255, 255, 0.32),
+    inset -4px -4px 16px rgba(0, 0, 0, 0.45);
+  --signup-shadow-active: 0 22px 42px rgba(24, 24, 24, 0.38),
+    0 10px 20px rgba(24, 24, 24, 0.24), inset 1px 1px 3px rgba(255, 255, 255, 0.4),
+    inset -6px -6px 18px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--signup-shadow-rest);
+  transition: transform 0.18s ease, filter 0.18s ease, opacity 0.18s,
+    box-shadow 0.45s ease;
+}
+
+#submitBtn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(160% 120% at 30% 25%, rgba(255, 255, 255, 0.18) 0%,
+      transparent 55%),
+    radial-gradient(140% 120% at 70% 75%, rgba(0, 0, 0, 0.35) 0%, transparent 62%);
+  mix-blend-mode: screen;
+  opacity: 0.6;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+#submitBtn::after {
+  content: "";
+  position: absolute;
+  inset: -20px;
+  border-radius: calc(14px + 20px);
+  background: radial-gradient(
+      circle at 50% 50%,
+      transparent 0%,
+      transparent 80%,
+      rgba(255, 255, 255, 0.4) 86%,
+      rgba(28, 27, 26, 0.3) 94%,
+      transparent 100%
+    )
+    padding-box;
+  opacity: 0;
+  transform: scale(0.78);
+  filter: blur(0.5px);
+  pointer-events: none;
+  z-index: -1;
+}
+
+#submitBtn:hover::before {
+  opacity: 0.75;
+}
+
+#submitBtn.signup-button--pulse {
+  animation: signupButtonNeumorph var(--hero-rotation-interval) ease-in-out;
+}
+
+#submitBtn.signup-button--pulse::before {
+  animation: signupButtonGlow var(--hero-rotation-interval) ease-in-out;
+}
+
+#submitBtn.signup-button--pulse::after {
+  animation: signupButtonRipple var(--hero-rotation-interval)
+    cubic-bezier(0.4, 0, 0.2, 1);
+}
 button:hover {
   transform: translateY(-1px);
   filter: brightness(1.02);
@@ -736,6 +809,53 @@ button:active {
 button[disabled] {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+@keyframes signupButtonNeumorph {
+  0%,
+  100% {
+    box-shadow: var(--signup-shadow-rest);
+  }
+  52% {
+    box-shadow: var(--signup-shadow-active);
+  }
+}
+
+@keyframes signupButtonGlow {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  40% {
+    opacity: 0.82;
+  }
+}
+
+@keyframes signupButtonRipple {
+  0% {
+    opacity: 0.42;
+    transform: scale(0.84);
+  }
+  32% {
+    opacity: 0.28;
+    transform: scale(0.98);
+  }
+  60% {
+    opacity: 0.16;
+    transform: scale(1.16);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.28);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #submitBtn.signup-button--pulse,
+  #submitBtn.signup-button--pulse::before,
+  #submitBtn.signup-button--pulse::after {
+    animation: none !important;
+  }
 }
 
 /* Status: hidden by default */

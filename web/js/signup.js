@@ -13,6 +13,17 @@
     return;
   }
 
+  const pulseClass = "signup-button--pulse";
+  const triggerButtonPulse = () => {
+    submitBtn.classList.remove(pulseClass);
+    // Force a reflow so the animation restarts consistently.
+    void submitBtn.offsetWidth;
+    submitBtn.classList.add(pulseClass);
+  };
+
+  triggerButtonPulse();
+  document.addEventListener("hero:phrase-rotated", triggerButtonPulse);
+
   const toggleNavSignup = (toNav) => {
     if (!signupWrapper || !nav || !navTarget || !heroSlot) {
       return;
