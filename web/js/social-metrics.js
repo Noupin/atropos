@@ -1,5 +1,6 @@
 (() => {
   const metricsEl = document.getElementById("socialMetrics");
+  const metricsTemplate = document.getElementById("socialMetricsTemplate");
   const totalAccountsStat = document.getElementById("totalAccountsStat");
   const totalAccountsValue = document.getElementById("totalAccountsValue");
   const totalFollowersStat = document.getElementById("totalFollowersStat");
@@ -15,6 +16,13 @@
     document.querySelectorAll("[data-clip-count-mirror]")
   );
   const clipDurationEls = document.querySelectorAll("[data-clip-duration]");
+
+  const socialConfig = window.atroposSocialConfig || {};
+
+  // Toggle to hide the follower/subscriber metrics section (set from the page markup).
+  const SHOW_SUBSCRIBER_METRICS_SECTION =
+    typeof window === "undefined" ||
+    window.SHOW_SUBSCRIBER_METRICS_SECTION !== false;
 
   const normalizeHandleKey = (value) =>
     typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -276,10 +284,6 @@
   applyClipCount(null, { isMock: true });
   applyViewCount(null, { isMock: true });
 
-  if (!metricsEl) {
-    return;
-  }
-
   const ENABLE_SOCIAL_PLATFORMS = {
     youtube: true,
     instagram: true,
@@ -427,7 +431,6 @@
     };
   };
 
-  const socialConfig = window.atroposSocialConfig || {};
   const refreshInterval = Math.max(
     0,
     Number(socialConfig.refreshIntervalMs || 0)
@@ -769,16 +772,35 @@
     });
   };
 
-  metricsEl.querySelectorAll(".hero__metric").forEach((el) => {
-    const platform = el.dataset.platform;
-    if (!platform) return;
-    const valueEl = el.querySelector(".hero__metric-value");
-    if (!valueEl) return;
-    const fallbackCount = Number(el.dataset.fallbackCount);
-    const fallbackAccounts = Number(el.dataset.fallbackAccounts);
-    const metric = {
+  const metricElements =
+    metricsEl && SHOW_SUBSCRIBER_METRICS_SECTION
+      ? Array.from(metricsEl.querySelectorAll(".hero__metric"))
+      : metricsTemplate && metricsTemplate.content
+        ? Array.from(
+            metricsTemplate.content.querySelectorAll(".hero__metric"),
+            (templateEl) => templateEl.cloneNode(true)
+          )
+        : [];
+
+  const metricsAreVirtual =
+    !metricsEl || !SHOW_SUBSCRIBER_METRICS_SECTION;
+
+  metricElements.forEach((element) => {
+    if (!element) {
+      return;
+    }
+    const platform = element.dataset.platform;
+    if (!platform) {
+      return;
+    }
+    const valueEl =
+      element.querySelector(".hero__metric-value") ||
+      document.createElement("span");
+    const fallbackCount = Number(element.dataset.fallbackCount);
+    const fallbackAccounts = Number(element.dataset.fallbackAccounts);
+    metrics.set(platform, {
       platform,
-      element: el,
+      element,
       valueEl,
       fallbackCount: Number.isFinite(fallbackCount) ? fallbackCount : null,
       fallbackAccounts: Number.isFinite(fallbackAccounts)
@@ -786,9 +808,14 @@
         : 0,
       currentAccountCount: 0,
       currentFollowerCount: 0,
-    };
-    metrics.set(platform, metric);
+      isVirtual: metricsAreVirtual,
+    });
   });
+
+  if (!metrics.size) {
+    updateAggregateStats();
+    return;
+  }
 
   const enabledPlatforms = [];
   metrics.forEach((metric, platform) => {

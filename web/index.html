@@ -96,52 +96,79 @@
               </span>
             </div>
 
-            <div class="hero__metrics" id="socialMetrics">
-              <div
-                class="hero__metric hero__metric--placeholder"
-                data-platform="youtube"
-                data-fallback-count="123000"
-                data-fallback-accounts="3"
-              >
-                <span class="hero__metric-label">YouTube</span>
-                <span class="hero__metric-value" id="youtubeMetric">123K</span>
-                <span class="hero__metric-caption">Subscribers</span>
-              </div>
-              <div
-                class="hero__metric hero__metric--placeholder"
-                data-platform="instagram"
-                data-fallback-count="86500"
-                data-fallback-accounts="4"
-              >
-                <span class="hero__metric-label">Instagram</span>
-                <span class="hero__metric-value" id="instagramMetric"
-                  >86.5K</span
+            <div id="socialMetricsMount"></div>
+            <template id="socialMetricsTemplate">
+              <div class="hero__metrics" id="socialMetrics">
+                <div
+                  class="hero__metric hero__metric--placeholder"
+                  data-platform="youtube"
+                  data-fallback-count="123000"
+                  data-fallback-accounts="3"
                 >
-                <span class="hero__metric-caption">Followers</span>
-              </div>
-              <div
-                class="hero__metric hero__metric--placeholder"
-                data-platform="tiktok"
-                data-fallback-count="98000"
-                data-fallback-accounts="4"
-              >
-                <span class="hero__metric-label">TikTok</span>
-                <span class="hero__metric-value" id="tiktokMetric">98K</span>
-                <span class="hero__metric-caption">Followers</span>
-              </div>
-              <div
-                class="hero__metric hero__metric--placeholder"
-                data-platform="facebook"
-                data-fallback-count="45200"
-                data-fallback-accounts="2"
-              >
-                <span class="hero__metric-label">Facebook</span>
-                <span class="hero__metric-value" id="facebookMetric"
-                  >45.2K</span
+                  <span class="hero__metric-label">YouTube</span>
+                  <span class="hero__metric-value" id="youtubeMetric">123K</span>
+                  <span class="hero__metric-caption">Subscribers</span>
+                </div>
+                <div
+                  class="hero__metric hero__metric--placeholder"
+                  data-platform="instagram"
+                  data-fallback-count="86500"
+                  data-fallback-accounts="4"
                 >
-                <span class="hero__metric-caption">Followers</span>
+                  <span class="hero__metric-label">Instagram</span>
+                  <span class="hero__metric-value" id="instagramMetric"
+                    >86.5K</span
+                  >
+                  <span class="hero__metric-caption">Followers</span>
+                </div>
+                <div
+                  class="hero__metric hero__metric--placeholder"
+                  data-platform="tiktok"
+                  data-fallback-count="98000"
+                  data-fallback-accounts="4"
+                >
+                  <span class="hero__metric-label">TikTok</span>
+                  <span class="hero__metric-value" id="tiktokMetric">98K</span>
+                  <span class="hero__metric-caption">Followers</span>
+                </div>
+                <div
+                  class="hero__metric hero__metric--placeholder"
+                  data-platform="facebook"
+                  data-fallback-count="45200"
+                  data-fallback-accounts="2"
+                >
+                  <span class="hero__metric-label">Facebook</span>
+                  <span class="hero__metric-value" id="facebookMetric"
+                    >45.2K</span
+                  >
+                  <span class="hero__metric-caption">Followers</span>
+                </div>
               </div>
-            </div>
+            </template>
+            <script>
+              (() => {
+                const shouldShowSubscriberMetricsSection = true;
+                window.SHOW_SUBSCRIBER_METRICS_SECTION =
+                  shouldShowSubscriberMetricsSection;
+                const mount = document.getElementById("socialMetricsMount");
+                const template = document.getElementById(
+                  "socialMetricsTemplate"
+                );
+                if (!mount) {
+                  return;
+                }
+                if (
+                  shouldShowSubscriberMetricsSection &&
+                  template &&
+                  template.content
+                ) {
+                  const fragment = template.content.cloneNode(true);
+                  mount.replaceWith(fragment);
+                  return;
+                }
+                mount.remove();
+              })();
+            </script>
 
             <div class="hero__subbanner" role="status" aria-live="polite">
               <span>
