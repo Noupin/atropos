@@ -18,8 +18,10 @@
 
   const socialConfig = window.atroposSocialConfig || {};
 
-  // Toggle to hide the follower/subscriber metrics section (other stats still run when false).
-  const SHOW_SUBSCRIBER_METRICS_SECTION = true;
+  // Toggle to hide the follower/subscriber metrics section (set from the page markup).
+  const SHOW_SUBSCRIBER_METRICS_SECTION =
+    typeof window === "undefined" ||
+    window.SHOW_SUBSCRIBER_METRICS_SECTION !== false;
 
   const normalizeHandleKey = (value) =>
     typeof value === "string" ? value.trim().toLowerCase() : "";
