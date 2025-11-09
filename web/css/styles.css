@@ -782,20 +782,22 @@ button {
 #submitBtn::after {
   content: "";
   position: absolute;
-  inset: -20px;
-  border-radius: calc(14px + 20px);
-  background: radial-gradient(
-      circle at 50% 50%,
-      transparent 0%,
-      transparent 80%,
-      rgba(255, 255, 255, 0.4) 86%,
-      rgba(28, 27, 26, 0.3) 94%,
-      transparent 100%
-    )
-    padding-box;
+  inset: -22px;
+  border-radius: calc(14px + 22px);
+  background:
+    radial-gradient(
+        circle at 50% 50%,
+        rgba(255, 255, 255, 0.58) 0%,
+        rgba(255, 255, 255, 0.34) 46%,
+        rgba(255, 220, 170, 0.26) 64%,
+        rgba(24, 24, 24, 0.38) 86%,
+        transparent 100%
+      )
+      padding-box;
   opacity: 0;
-  transform: scale(0.78);
-  filter: blur(0.5px);
+  transform: scale(0.72);
+  filter: blur(1px);
+  mix-blend-mode: screen;
   pointer-events: none;
   z-index: -1;
 }
@@ -866,20 +868,20 @@ button[disabled] {
 
 @keyframes signupButtonRipple {
   0% {
+    opacity: 0.6;
+    transform: scale(0.78);
+  }
+  34% {
     opacity: 0.42;
-    transform: scale(0.84);
+    transform: scale(1.05);
   }
-  32% {
-    opacity: 0.28;
-    transform: scale(0.98);
-  }
-  60% {
-    opacity: 0.16;
-    transform: scale(1.16);
+  68% {
+    opacity: 0.24;
+    transform: scale(1.32);
   }
   100% {
     opacity: 0;
-    transform: scale(1.28);
+    transform: scale(1.5);
   }
 }
 
