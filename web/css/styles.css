@@ -732,7 +732,7 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
   gap: 8px;
   isolation: isolate;
   --signup-shadow-rest: 0 16px 32px rgba(24, 24, 24, 0.32),
@@ -764,20 +764,22 @@ button {
 #submitBtn::after {
   content: "";
   position: absolute;
-  inset: 6px;
-  border-radius: inherit;
+  inset: -20px;
+  border-radius: calc(14px + 20px);
   background: radial-gradient(
-    circle at 50% 50%,
-    rgba(255, 255, 255, 0.6) 0%,
-    rgba(255, 255, 255, 0.22) 35%,
-    rgba(255, 255, 255, 0.08) 55%,
-    rgba(10, 10, 10, 0.2) 72%,
-    rgba(10, 10, 10, 0) 90%
-  );
+      circle at 50% 50%,
+      transparent 0%,
+      transparent 80%,
+      rgba(255, 255, 255, 0.26) 86%,
+      rgba(28, 27, 26, 0.16) 94%,
+      transparent 100%
+    )
+    padding-box;
   opacity: 0;
-  transform: scale(0.85);
-  filter: blur(0.4px);
+  transform: scale(0.78);
+  filter: blur(0.5px);
   pointer-events: none;
+  z-index: -1;
 }
 
 #submitBtn:hover::before {
@@ -831,19 +833,20 @@ button[disabled] {
 
 @keyframes signupButtonRipple {
   0% {
-    opacity: 0;
-    transform: scale(0.85);
+    opacity: 0.42;
+    transform: scale(0.84);
   }
-  25% {
-    opacity: 0.45;
+  32% {
+    opacity: 0.28;
+    transform: scale(0.98);
   }
   60% {
-    opacity: 0.18;
-    transform: scale(1.08);
+    opacity: 0.16;
+    transform: scale(1.16);
   }
   100% {
     opacity: 0;
-    transform: scale(1.18);
+    transform: scale(1.28);
   }
 }
 
