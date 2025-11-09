@@ -16,6 +16,11 @@
   );
   const clipDurationEls = document.querySelectorAll("[data-clip-duration]");
 
+  const socialConfig = window.atroposSocialConfig || {};
+
+  // Toggle to hide the subscriber/follower section entirely when set to false.
+  const SHOW_SOCIAL_METRICS = true;
+
   const normalizeHandleKey = (value) =>
     typeof value === "string" ? value.trim().toLowerCase() : "";
 
@@ -276,6 +281,20 @@
   applyClipCount(null, { isMock: true });
   applyViewCount(null, { isMock: true });
 
+  if (!SHOW_SOCIAL_METRICS) {
+    if (metricsEl) {
+      metricsEl.hidden = true;
+      metricsEl.setAttribute("aria-hidden", "true");
+    }
+    if (totalAccountsStat) {
+      totalAccountsStat.hidden = true;
+    }
+    if (totalFollowersStat) {
+      totalFollowersStat.hidden = true;
+    }
+    return;
+  }
+
   if (!metricsEl) {
     return;
   }
@@ -427,7 +446,6 @@
     };
   };
 
-  const socialConfig = window.atroposSocialConfig || {};
   const refreshInterval = Math.max(
     0,
     Number(socialConfig.refreshIntervalMs || 0)
