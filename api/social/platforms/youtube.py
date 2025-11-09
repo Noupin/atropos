@@ -359,6 +359,9 @@ def _parse_views_from_dom(html: str) -> Optional[int]:
             value = _normalize_view_number(cell)
             if value is None:
                 continue
+            lowered = cell.lower()
+            if "views" in lowered:
+                return value
             neighbors: List[str] = []
             if index > 0:
                 neighbors.append(row[index - 1])
@@ -370,10 +373,14 @@ def _parse_views_from_dom(html: str) -> Optional[int]:
 
 
 def _parse_views_from_regex(html: str) -> Optional[int]:
-    match = YT_TOTAL_VIEWS_RE.search(html)
-    if not match:
+    values: List[int] = []
+    for match in YT_TOTAL_VIEWS_RE.finditer(html):
+        value = _normalize_view_number(match.group(1))
+        if value is not None:
+            values.append(value)
+    if not values:
         return None
-    return _normalize_view_number(match.group(1))
+    return max(values)
 
 
 class _AdditionalInfoParser(HTMLParser):
