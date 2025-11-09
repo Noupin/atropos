@@ -116,7 +116,7 @@ body::after {
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   gap: 20px;
   padding: 16px clamp(18px, 4vw, 38px);
   border-radius: calc(var(--radius) + 4px);
@@ -154,11 +154,11 @@ body::after {
   text-decoration: underline;
 }
 .top-nav__cta {
-  flex: 1 1 520px;
+  flex: 1 1 auto;
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   min-width: 0;
-  margin-left: auto;
 }
 .signup-slot {
   margin-top: 0;
@@ -178,23 +178,27 @@ body::after {
   gap: 12px;
 }
 .top-nav__cta .signup-wrapper {
-  width: 100%;
+  width: min(100%, 820px);
   flex-direction: column;
-  align-items: flex-end;
+  align-items: stretch;
   gap: 10px;
 }
 .top-nav__cta form {
-  width: min(100%, 720px);
-  justify-content: flex-end;
-  flex-wrap: nowrap;
   margin-top: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
 }
 .top-nav__cta input[type="email"] {
-  flex: 1 1 420px;
+  width: 100%;
   min-width: 0;
 }
 .top-nav__cta .status {
   max-width: 420px;
+  margin-left: auto;
+  text-align: right;
 }
 .nav-compact .top-nav__cta .signup-wrapper {
   width: auto;
@@ -204,10 +208,9 @@ body::after {
 }
 .nav-compact .top-nav__cta form {
   margin-top: 0;
-  width: auto;
+  width: 100%;
 }
 .nav-compact .top-nav__cta input[type="email"] {
-  flex: 1 1 260px;
   min-width: 0;
 }
 .nav-compact .top-nav__cta .status {
