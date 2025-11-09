@@ -116,7 +116,7 @@ body::after {
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 20px;
   padding: 16px clamp(18px, 4vw, 38px);
   border-radius: calc(var(--radius) + 4px);
@@ -154,10 +154,11 @@ body::after {
   text-decoration: underline;
 }
 .top-nav__cta {
-  flex: 1 1 320px;
+  flex: 1 1 520px;
   display: flex;
   justify-content: flex-end;
   min-width: 0;
+  margin-left: auto;
 }
 .signup-slot {
   margin-top: 0;
@@ -183,13 +184,13 @@ body::after {
   gap: 10px;
 }
 .top-nav__cta form {
-  width: 100%;
+  width: min(100%, 720px);
   justify-content: flex-end;
   flex-wrap: nowrap;
   margin-top: 0;
 }
 .top-nav__cta input[type="email"] {
-  flex: 1 1 240px;
+  flex: 1 1 420px;
   min-width: 0;
 }
 .top-nav__cta .status {
