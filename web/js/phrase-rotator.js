@@ -9,9 +9,29 @@
   ];
   const rotationInterval = 5000;
 
+  if (document.documentElement) {
+    document.documentElement.style.setProperty(
+      "--hero-rotation-interval",
+      `${rotationInterval}ms`
+    );
+  }
+
   if (!phraseRotator || !marketingPhrases.length) {
     return;
   }
+
+  const emitRotationEvent = (index, phrase, initial = false) => {
+    document.dispatchEvent(
+      new CustomEvent("hero:phrase-rotated", {
+        detail: {
+          index,
+          phrase,
+          interval: rotationInterval,
+          initial,
+        },
+      })
+    );
+  };
 
   const ensureRotatorSize = () => {
     const host = phraseRotator.closest(".hero__rotator");
@@ -140,6 +160,7 @@
 
   setPhraseImmediate(initialPhrase);
   announcePhrase(initialPhrase);
+  emitRotationEvent(currentIndex, initialPhrase, true);
 
   if (marketingPhrases.length > 1) {
     const rotatePhrase = () => {
@@ -148,6 +169,7 @@
       animateToPhrase(phrase);
       announcePhrase(phrase);
       currentIndex = nextIndex;
+      emitRotationEvent(currentIndex, phrase);
     };
 
     setInterval(rotatePhrase, rotationInterval);
