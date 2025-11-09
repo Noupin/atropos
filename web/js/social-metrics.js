@@ -5,7 +5,11 @@
   const totalFollowersStat = document.getElementById("totalFollowersStat");
   const totalFollowersValue = document.getElementById("totalFollowersValue");
   const clipOutputSection = document.getElementById("clipOutputSection");
-  const clipSummaryCard = document.querySelector("[data-clip-summary]");
+  const viewSummaryCard = document.querySelector("[data-view-summary]");
+  const viewCountPrimary = document.querySelector("[data-view-count-primary]");
+  const viewCountMirrors = Array.from(
+    document.querySelectorAll("[data-view-count-mirror]")
+  );
   const clipCountPrimary = document.querySelector("[data-clip-count-primary]");
   const clipCountMirrors = Array.from(
     document.querySelectorAll("[data-clip-count-mirror]")
@@ -13,6 +17,30 @@
   const clipDurationEls = document.querySelectorAll("[data-clip-duration]");
 
   const CLIP_START_DATE = new Date(Date.UTC(2025, 8, 3));
+
+  const parseViewFallback = () => {
+    if (!viewCountPrimary) {
+      return null;
+    }
+    const attr = viewCountPrimary.getAttribute("data-fallback-views");
+    if (attr) {
+      const numericAttr = Number(attr);
+      if (Number.isFinite(numericAttr) && numericAttr > 0) {
+        return Math.round(numericAttr);
+      }
+    }
+    const rawText = viewCountPrimary.textContent || "";
+    const digitsOnly = rawText.replace(/[^0-9]/g, "");
+    if (digitsOnly) {
+      const numericText = Number(digitsOnly);
+      if (Number.isFinite(numericText) && numericText > 0) {
+        return Math.round(numericText);
+      }
+    }
+    return null;
+  };
+
+  const viewFallbackCount = parseViewFallback();
 
   const parseClipFallback = () => {
     if (!clipCountPrimary) {
@@ -44,6 +72,43 @@
       return null;
     }
     return rounded.toLocaleString();
+  };
+
+  const applyViewCount = (countValue, { isMock = false } = {}) => {
+    if (!viewCountPrimary) {
+      return;
+    }
+
+    let resolvedCount = null;
+    if (Number.isFinite(countValue) && countValue > 0) {
+      resolvedCount = Math.round(countValue);
+    } else if (Number.isFinite(viewFallbackCount) && viewFallbackCount > 0) {
+      resolvedCount = viewFallbackCount;
+      isMock = true;
+    }
+
+    const applyDisplay = (value) => {
+      viewCountPrimary.textContent = value;
+      viewCountMirrors.forEach((el) => {
+        el.textContent = value;
+      });
+    };
+
+    if (resolvedCount !== null) {
+      const formatted = formatFullNumber(resolvedCount);
+      applyDisplay(formatted || resolvedCount.toString());
+      if (viewSummaryCard) {
+        viewSummaryCard.classList.toggle(
+          "hero__clip-summary--placeholder",
+          Boolean(isMock)
+        );
+      }
+    } else {
+      applyDisplay("-");
+      if (viewSummaryCard) {
+        viewSummaryCard.classList.add("hero__clip-summary--placeholder");
+      }
+    }
   };
 
   const computeDurationLabel = (startDate) => {
@@ -106,12 +171,6 @@
           Boolean(nextIsMock)
         );
       }
-      if (clipSummaryCard) {
-        clipSummaryCard.classList.toggle(
-          "hero__clip-summary--placeholder",
-          Boolean(nextIsMock)
-        );
-      }
     };
 
     if (resolvedCount !== null) {
@@ -126,6 +185,7 @@
 
   updateClipDurationMetadata();
   applyClipCount(null, { isMock: true });
+  applyViewCount(null, { isMock: true });
 
   if (!metricsEl) {
     return;
@@ -355,6 +415,9 @@
     let clipTotal = 0;
     let clipResolved = 0;
     let clipHasReal = false;
+    let viewTotal = 0;
+    let viewResolved = 0;
+    let viewHasReal = false;
     state.handles.forEach((entry) => {
       if (!entry) return;
       if (Number.isFinite(entry.count)) {
@@ -369,6 +432,13 @@
         clipResolved += 1;
         if (!entry.isMock) {
           clipHasReal = true;
+        }
+      }
+      if (Number.isFinite(entry.viewCount)) {
+        viewTotal += entry.viewCount;
+        viewResolved += 1;
+        if (!entry.isMock) {
+          viewHasReal = true;
         }
       }
     });
@@ -392,6 +462,11 @@
     if (platform === "instagram") {
       applyClipCount(clipResolved > 0 ? clipTotal : null, {
         isMock: clipResolved === 0 || !clipHasReal,
+      });
+    }
+    if (platform === "youtube") {
+      applyViewCount(viewResolved > 0 ? viewTotal : null, {
+        isMock: viewResolved === 0 || !viewHasReal,
       });
     }
     updateAggregateStats();
@@ -441,6 +516,7 @@
       const numeric = Number(entry.count);
       const rawExtra = entry.extra;
       let clipCount = null;
+      let viewCount = null;
       if (rawExtra && typeof rawExtra === "object") {
         const possible =
           rawExtra.posts ?? rawExtra.clips ?? rawExtra.media_count ?? null;
@@ -448,10 +524,16 @@
         if (Number.isFinite(numericClips) && numericClips >= 0) {
           clipCount = numericClips;
         }
+        const viewsValue = rawExtra.views ?? null;
+        const numericViews = Number(viewsValue);
+        if (Number.isFinite(numericViews) && numericViews >= 0) {
+          viewCount = numericViews;
+        }
       }
       const record = {
         count: Number.isFinite(numeric) ? numeric : null,
         clipCount,
+        viewCount,
         isMock: Boolean(entry.is_mock),
       };
       state.handles.set(handle, record);
@@ -475,7 +557,12 @@
     const state = getOrCreatePlatformState(platform);
     normalized.forEach((handle) => {
       if (!state.handles.has(handle)) {
-        state.handles.set(handle, { count: null, clipCount: null, isMock: true });
+        state.handles.set(handle, {
+          count: null,
+          clipCount: null,
+          viewCount: null,
+          isMock: true,
+        });
       }
     });
     return normalized;
