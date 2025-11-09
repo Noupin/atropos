@@ -84,3 +84,36 @@ def test_parse_instagram_ld_json_allows_single_quotes() -> None:
     assert count == 777
     assert posts is None
     assert source.endswith("ld-json")
+
+
+def test_parse_instagram_text_proxy_extracts_counts() -> None:
+    payload = """
+    *   [202 posts](https://example.test/)
+    *   [29 followers](https://example.test/)
+    """
+    count, posts, source = instagram._parse_instagram_payload(
+        payload,
+        handle="atropos",
+        attempt="text-proxy",
+        url="https://www.instagram.com/atropos/",
+        context=_make_context(),
+    )
+    assert count == 29
+    assert posts == 202
+    assert source.endswith("markdown_followers")
+
+
+def test_parse_instagram_text_proxy_handles_shorthand() -> None:
+    payload = """
+    *   [12.3K followers](https://example.test/)
+    """
+    count, posts, source = instagram._parse_instagram_payload(
+        payload,
+        handle="atropos",
+        attempt="text-proxy",
+        url="https://www.instagram.com/atropos/",
+        context=_make_context(),
+    )
+    assert count == 12300
+    assert posts is None
+    assert source.endswith("markdown_followers")

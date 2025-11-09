@@ -17,6 +17,15 @@ INSTAGRAM_LD_JSON_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+INSTAGRAM_TEXT_FOLLOWERS_RE = re.compile(
+    r"[\[(]?([0-9][0-9.,]*(?:\s*[KMBkmb])?)\s+followers",
+    re.IGNORECASE,
+)
+INSTAGRAM_TEXT_POSTS_RE = re.compile(
+    r"[\[(]?([0-9][0-9.,]*(?:\s*[KMBkmb])?)\s+posts",
+    re.IGNORECASE,
+)
+
 
 def _coerce_int(value: object) -> Optional[int]:
     """Convert loosely formatted integers (including digit strings) to ints."""
@@ -33,6 +42,34 @@ def _coerce_int(value: object) -> Optional[int]:
             except ValueError:
                 return None
     return None
+
+
+def _coerce_shorthand_number(raw: str) -> Optional[int]:
+    """Coerce shorthand numbers like "12.3K" into integers."""
+
+    if not raw:
+        return None
+    cleaned = raw.strip()
+    suffix = ""
+    if cleaned and cleaned[-1].lower() in {"k", "m", "b"}:
+        suffix = cleaned[-1].lower()
+        cleaned = cleaned[:-1]
+    cleaned = cleaned.strip()
+    if not cleaned:
+        return None
+    cleaned = cleaned.replace(",", "")
+    try:
+        value = float(cleaned)
+    except ValueError:
+        return None
+    multiplier = 1
+    if suffix == "k":
+        multiplier = 1_000
+    elif suffix == "m":
+        multiplier = 1_000_000
+    elif suffix == "b":
+        multiplier = 1_000_000_000
+    return int(value * multiplier)
 
 
 def resolve(handle: str, context: PlatformContext) -> AccountStats:
@@ -272,6 +309,20 @@ def _parse_instagram_payload(
                                 count,
                             )
                             return count, posts_count, f"{attempt}:ld-json"
+    text_posts = INSTAGRAM_TEXT_POSTS_RE.search(payload)
+    if posts_count is None and text_posts:
+        posts_count = _coerce_shorthand_number(text_posts.group(1))
+    text_followers = INSTAGRAM_TEXT_FOLLOWERS_RE.search(payload)
+    if text_followers:
+        followers = _coerce_shorthand_number(text_followers.group(1))
+        if followers is not None:
+            context.logger.info(
+                "instagram handle=%s attempt=%s parse=markdown_followers count=%s",
+                handle,
+                attempt,
+                followers,
+            )
+            return followers, posts_count, f"{attempt}:markdown_followers"
     context.logger.info(
         "instagram handle=%s attempt=%s url=%s parse=miss",
         handle,
