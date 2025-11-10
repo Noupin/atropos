@@ -14,11 +14,20 @@
   }
 
   const pulseClass = "signup-button--pulse";
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
   let isSubmitting = false;
 
+  const isEmailValid = (value) => emailPattern.test(value);
+
   const updateSubmitState = () => {
-    const hasValue = emailEl.value.trim().length > 0;
-    submitBtn.disabled = isSubmitting || !hasValue;
+    const emailValue = emailEl.value.trim();
+    const hasValue = emailValue.length > 0;
+    const isValid = isEmailValid(emailValue);
+    submitBtn.disabled = isSubmitting || !isValid;
+    emailEl.classList.toggle("input-invalid", hasValue && !isValid);
+    emailEl.setCustomValidity(
+      !hasValue || isValid ? "" : "Enter a valid email address."
+    );
 
     if (submitBtn.disabled) {
       submitBtn.classList.remove(pulseClass);
@@ -108,6 +117,16 @@
 
     const email = emailEl.value.trim();
     if (!email) {
+      return;
+    }
+
+    if (!isEmailValid(email)) {
+      updateSubmitState();
+      showStatus("error", "Enter a valid email address.");
+      emailEl.focus();
+      if (typeof emailEl.reportValidity === "function") {
+        emailEl.reportValidity();
+      }
       return;
     }
 
