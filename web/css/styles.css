@@ -788,8 +788,8 @@ button {
       circle at 50% 50%,
       transparent 0%,
       transparent 80%,
-      rgba(255, 255, 255, 0.4) 86%,
-      rgba(28, 27, 26, 0.3) 94%,
+      rgba(255, 255, 255, 0.8) 86%,
+      rgba(28, 27, 26, 0.6) 94%,
       transparent 100%
     )
     padding-box;
@@ -815,6 +815,14 @@ button {
 #submitBtn.signup-button--pulse::after {
   animation: signupButtonRipple var(--hero-rotation-interval)
     cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+body.nav-compact #submitBtn::before {
+  mix-blend-mode: normal;
+  background:
+    radial-gradient(160% 120% at 30% 25%, rgba(255, 255, 255, 0.18) 0%,
+      transparent 55%),
+    radial-gradient(140% 120% at 70% 75%, rgba(0, 0, 0, 0.35) 0%, transparent 62%);
 }
 button:hover {
   transform: translateY(-1px);
