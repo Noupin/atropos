@@ -725,6 +725,12 @@ input[type="email"]:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 5px var(--ring), inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
+
+input[type="email"].input-invalid {
+  border-color: var(--error);
+  box-shadow: 0 0 0 4px rgba(122, 43, 43, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
 button {
   padding: 14px 24px;
   border: none;
@@ -788,8 +794,8 @@ button {
       circle at 50% 50%,
       transparent 0%,
       transparent 80%,
-      rgba(255, 255, 255, 0.4) 86%,
-      rgba(28, 27, 26, 0.3) 94%,
+      rgba(255, 255, 255, 0.8) 86%,
+      rgba(28, 27, 26, 0.6) 94%,
       transparent 100%
     )
     padding-box;
@@ -815,6 +821,38 @@ button {
 #submitBtn.signup-button--pulse::after {
   animation: signupButtonRipple var(--hero-rotation-interval)
     cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+body.nav-compact #submitBtn::before {
+  mix-blend-mode: screen;
+  opacity: 0.82;
+  background:
+    radial-gradient(
+      160% 120% at 30% 25%,
+      rgba(255, 255, 255, 0.32) 0%,
+      transparent 56%
+    ),
+    radial-gradient(
+      145% 125% at 72% 74%,
+      rgba(255, 255, 255, 0.18) 0%,
+      transparent 64%
+    );
+}
+
+body.nav-compact #submitBtn {
+  filter: brightness(1.08) saturate(0.92);
+}
+
+body.nav-compact #submitBtn:hover {
+  filter: brightness(1.12) saturate(0.94);
+}
+
+body.nav-compact #submitBtn:active {
+  filter: brightness(1) saturate(0.9);
+}
+
+body.nav-compact #submitBtn:active::before {
+  opacity: 0.9;
 }
 button:hover {
   transform: translateY(-1px);
