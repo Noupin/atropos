@@ -819,10 +819,23 @@ button {
 
 body.nav-compact #submitBtn::before {
   mix-blend-mode: normal;
+  opacity: 1;
   background:
-    radial-gradient(160% 120% at 30% 25%, rgba(255, 255, 255, 0.18) 0%,
+    radial-gradient(160% 120% at 30% 25%, rgba(255, 255, 255, 0.7) 0%,
       transparent 55%),
-    radial-gradient(140% 120% at 70% 75%, rgba(0, 0, 0, 0.35) 0%, transparent 62%);
+    radial-gradient(140% 120% at 70% 75%, rgba(0, 0, 0, 0.05) 0%, transparent 62%);
+}
+
+body.nav-compact #submitBtn {
+  filter: brightness(1.05);
+}
+
+body.nav-compact #submitBtn:hover {
+  filter: brightness(1.071);
+}
+
+body.nav-compact #submitBtn:active {
+  filter: brightness(1.029);
 }
 button:hover {
   transform: translateY(-1px);
