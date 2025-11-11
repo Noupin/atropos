@@ -17,31 +17,55 @@
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
   let isSubmitting = false;
 
-  const resolveApiBase = () => {
-    const explicit =
-      typeof window !== "undefined" &&
-      typeof window.WEB_API_BASE === "string" &&
-      window.WEB_API_BASE.trim();
-
-    if (explicit) {
-      return window.WEB_API_BASE.trim().replace(/\/$/, "");
-    }
+  const resolveApiBases = () => {
+    const bases = [];
 
     if (typeof window !== "undefined") {
-      const host = window.location.hostname;
-      if (host === "localhost" || host === "127.0.0.1") {
-        return "http://127.0.0.1:5001/api";
+      if (typeof window.WEB_API_BASE === "string") {
+        const trimmed = window.WEB_API_BASE.trim().replace(/\/$/, "");
+        if (trimmed) {
+          bases.push(trimmed);
+        }
+      }
+
+      const host = (window.location.hostname || "").toLowerCase();
+      const localHosts = new Set([
+        "localhost",
+        "127.0.0.1",
+        "0.0.0.0",
+        "::1",
+        "[::1]",
+      ]);
+
+      const looksLocal =
+        localHosts.has(host) || host.endsWith(".local") || host.startsWith("localhost");
+
+      if (looksLocal) {
+        const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+        const loopbackHost = host === "[::1]" || host === "::1" ? "[::1]" : "127.0.0.1";
+        const candidate = `${protocol}//${loopbackHost}:5001/api`;
+        if (!bases.includes(candidate)) {
+          bases.push(candidate);
+        }
       }
     }
 
-    return "/api";
+    if (!bases.includes("/api")) {
+      bases.push("/api");
+    }
+
+    return bases;
   };
 
-  const API_BASE = resolveApiBase();
+  const API_BASE_CANDIDATES = resolveApiBases();
 
-  const buildApiUrl = (path) => {
+  const buildApiUrl = (base, path) => {
+    const normalizedBase = base.replace(/\/$/, "");
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-    return new URL(`${API_BASE}${normalizedPath}`, window.location.origin).toString();
+    return new URL(
+      `${normalizedBase}${normalizedPath}`,
+      typeof window !== "undefined" ? window.location.origin : undefined
+    ).toString();
   };
 
   const isEmailValid = (value) => emailPattern.test(value);
@@ -162,20 +186,50 @@
     showStatus("", "Sending…");
 
     try {
-      const response = await fetch(buildApiUrl("/subscribe"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-
+      let response;
       let data = {};
-      try {
-        data = await response.json();
-      } catch (error) {
-        console.warn("Failed to parse subscribe response", error);
+      let parsed = false;
+
+      for (let index = 0; index < API_BASE_CANDIDATES.length; index += 1) {
+        const base = API_BASE_CANDIDATES[index];
+        const url = buildApiUrl(base, "/subscribe");
+
+        try {
+          response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email }),
+          });
+        } catch (error) {
+          if (index === API_BASE_CANDIDATES.length - 1) {
+            throw error;
+          }
+          continue;
+        }
+
+        parsed = false;
+        data = {};
+        try {
+          data = await response.json();
+          parsed = true;
+        } catch (error) {
+          console.warn("Failed to parse subscribe response", error);
+        }
+
+        const contentType = response.headers.get("content-type") || "";
+        const looksHtml = contentType.includes("text/html");
+        const shouldRetry =
+          (!response.ok && (response.status === 501 || response.status === 404)) ||
+          (!parsed && looksHtml);
+
+        if (shouldRetry && index < API_BASE_CANDIDATES.length - 1) {
+          continue;
+        }
+
+        break;
       }
 
-      if (response.ok && data && data.ok) {
+      if (response && response.ok && data && data.ok) {
         if (data.duplicate) {
           showStatus("info", "You're already on the list.");
         } else {
@@ -183,7 +237,7 @@
           form.reset();
           updateSubmitState();
         }
-      } else if (response.status === 400 && data && data.error) {
+      } else if (response && response.status === 400 && data && data.error) {
         showStatus("error", data.error);
       } else {
         showStatus(
