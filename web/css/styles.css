@@ -277,6 +277,7 @@ body::after {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: clamp(12px, 2vw, 18px);
   border-radius: 12px;
   background: linear-gradient(135deg, rgba(33, 32, 30, 0.08), rgba(126, 120, 110, 0.2));
   border: 1px solid rgba(218, 214, 206, 0.8);
@@ -306,19 +307,29 @@ body::after {
 }
 .story-columns {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: clamp(16px, 3vw, 28px);
 }
 .story-columns .column {
-  flex: 1 1 min(320px, 100%);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(222, 218, 210, 0.8);
   border-radius: 12px;
-  padding: 16px 18px;
+  padding: 18px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+.column__accent {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(33, 32, 30, 0.14), rgba(33, 32, 30, 0.38));
+}
+.column__content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 .story-columns h4 {
   margin: 0;
@@ -330,21 +341,10 @@ body::after {
   font-size: 14px;
   line-height: 1.6;
 }
-.story-columns .column.flip-even {
-  align-items: flex-end;
-  text-align: right;
-}
 @media (min-width: 960px) {
   .story__body {
-    flex-direction: row;
-    align-items: flex-start;
-    gap: clamp(32px, 6vw, 60px);
-  }
-  .story__intro {
-    flex: 1 1 38%;
-  }
-  .story__sections {
-    flex: 1 1 55%;
+    max-width: 960px;
+    margin: 0 auto;
   }
 }
 @media (min-width: 768px) {
@@ -358,7 +358,36 @@ body::after {
   }
   .story-section__text,
   .story-section__visual {
-    flex: 1 1 0;
+    flex: 1 1 50%;
+    min-width: 0;
+  }
+  .story-columns {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .story-columns .column {
+    flex: 1 1 calc(33.333% - 18px);
+    flex-direction: row;
+    align-items: center;
+    padding: 20px;
+    min-width: 260px;
+  }
+  .column__accent {
+    width: 12px;
+    height: auto;
+    align-self: stretch;
+    background: linear-gradient(180deg, rgba(33, 32, 30, 0.16), rgba(33, 32, 30, 0.42));
+  }
+  .column__content {
+    flex: 1 1 auto;
+    gap: 12px;
+  }
+  .story-columns .column.flip-even {
+    flex-direction: row-reverse;
+    text-align: right;
+  }
+  .story-columns .column.flip-even .column__content {
+    align-items: flex-end;
   }
 }
 .frame::before {
