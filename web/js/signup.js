@@ -17,6 +17,33 @@
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
   let isSubmitting = false;
 
+  const resolveApiBase = () => {
+    const explicit =
+      typeof window !== "undefined" &&
+      typeof window.WEB_API_BASE === "string" &&
+      window.WEB_API_BASE.trim();
+
+    if (explicit) {
+      return window.WEB_API_BASE.trim().replace(/\/$/, "");
+    }
+
+    if (typeof window !== "undefined") {
+      const host = window.location.hostname;
+      if (host === "localhost" || host === "127.0.0.1") {
+        return "http://127.0.0.1:5001/api";
+      }
+    }
+
+    return "/api";
+  };
+
+  const API_BASE = resolveApiBase();
+
+  const buildApiUrl = (path) => {
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    return new URL(`${API_BASE}${normalizedPath}`, window.location.origin).toString();
+  };
+
   const isEmailValid = (value) => emailPattern.test(value);
 
   const updateSubmitState = () => {
@@ -135,7 +162,7 @@
     showStatus("", "Sending…");
 
     try {
-      const response = await fetch("/api/subscribe", {
+      const response = await fetch(buildApiUrl("/subscribe"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
