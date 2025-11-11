@@ -19,41 +19,91 @@
 
   const resolveApiBases = () => {
     const bases = [];
+    const seen = new Set();
+
+    const addBase = (value) => {
+      if (!value || seen.has(value)) {
+        return;
+      }
+      seen.add(value);
+      bases.push(value);
+    };
+
+    const formatHost = (value) => {
+      if (!value) {
+        return value;
+      }
+      if (value.includes(":")) {
+        return value.startsWith("[") ? value : `[${value}]`;
+      }
+      return value;
+    };
+
+    const isPrivateIpv4 = (value) => {
+      if (!value) {
+        return false;
+      }
+      const octets = value.split(".").map((part) => Number.parseInt(part, 10));
+      if (octets.length !== 4 || octets.some((part) => Number.isNaN(part))) {
+        return false;
+      }
+      const [a, b] = octets;
+      if (a === 10 || a === 127) {
+        return true;
+      }
+      if (a === 169 && b === 254) {
+        return true;
+      }
+      if (a === 172 && b >= 16 && b <= 31) {
+        return true;
+      }
+      if (a === 192 && b === 168) {
+        return true;
+      }
+      return false;
+    };
 
     if (typeof window !== "undefined") {
       if (typeof window.WEB_API_BASE === "string") {
         const trimmed = window.WEB_API_BASE.trim().replace(/\/$/, "");
         if (trimmed) {
-          bases.push(trimmed);
+          addBase(trimmed);
         }
       }
 
-      const host = (window.location.hostname || "").toLowerCase();
-      const localHosts = new Set([
-        "localhost",
-        "127.0.0.1",
-        "0.0.0.0",
-        "::1",
-        "[::1]",
-      ]);
-
+      const rawHost = window.location.hostname || "";
+      const host = rawHost.toLowerCase();
       const looksLocal =
-        localHosts.has(host) || host.endsWith(".local") || host.startsWith("localhost");
+        host === "" ||
+        host.endsWith(".local") ||
+        host.endsWith(".localhost") ||
+        host.endsWith(".localdomain") ||
+        host === "localhost" ||
+        host === "[::1]" ||
+        host === "::1" ||
+        host === "0.0.0.0" ||
+        isPrivateIpv4(host);
 
       if (looksLocal) {
         const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-        const loopbackHost = host === "[::1]" || host === "::1" ? "[::1]" : "127.0.0.1";
-        const candidate = `${protocol}//${loopbackHost}:5001/api`;
-        if (!bases.includes(candidate)) {
-          bases.push(candidate);
+        const loopbackHosts = new Set([
+          "127.0.0.1",
+          "localhost",
+          "[::1]",
+        ]);
+
+        if (rawHost && rawHost !== "0.0.0.0" && !loopbackHosts.has(rawHost)) {
+          loopbackHosts.add(rawHost);
         }
+
+        loopbackHosts.forEach((loopbackHost) => {
+          const formatted = formatHost(loopbackHost === "::1" ? "[::1]" : loopbackHost);
+          addBase(`${protocol}//${formatted}:5001/api`);
+        });
       }
     }
 
-    if (!bases.includes("/api")) {
-      bases.push("/api");
-    }
-
+    addBase("/api");
     return bases;
   };
 
@@ -219,7 +269,8 @@
         const contentType = response.headers.get("content-type") || "";
         const looksHtml = contentType.includes("text/html");
         const shouldRetry =
-          (!response.ok && (response.status === 501 || response.status === 404)) ||
+          (!response.ok &&
+            (response.status === 501 || response.status === 405 || response.status === 404)) ||
           (!parsed && looksHtml);
 
         if (shouldRetry && index < API_BASE_CANDIDATES.length - 1) {

@@ -51,9 +51,10 @@ modification.
 
 ### Frontend wiring
 
-- When the marketing site runs on `localhost` or `127.0.0.1`, the JavaScript
-  automatically targets `http://127.0.0.1:5001`. In production it falls back to
-  the relative `/api` prefix so the site works behind the same host.
+- When the marketing site runs on `localhost`, loopback, or private-network
+  hosts, the JavaScript automatically targets `http://127.0.0.1:5001`. In
+  production it falls back to the relative `/api` prefix so the site works
+  behind the same host.
 - Set the optional `WEB_API_BASE` environment variable to override the API
   origin, and `WEB_ENABLE_MOCKS=true` if you want to keep showing the baked-in
   numbers when every fetch stage fails.
