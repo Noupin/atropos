@@ -155,6 +155,7 @@ def social_stats_batch():
 
 
 @app.post("/subscribe")
+@app.post("/api/subscribe")
 def subscribe():
     ip = request.headers.get("X-Forwarded-For", request.remote_addr) or "?"
     app.logger.info("/subscribe from %s", ip)
@@ -197,6 +198,7 @@ def subscribe():
 
 
 @app.get("/unsubscribe")
+@app.get("/api/unsubscribe")
 def unsubscribe():
     token = (request.args.get("token") or "").strip()
     tokens = load_unsubscribe_tokens(settings.storage)
