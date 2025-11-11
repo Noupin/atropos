@@ -17,6 +17,107 @@
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
   let isSubmitting = false;
 
+  const resolveApiBases = () => {
+    const bases = [];
+    const seen = new Set();
+
+    const addBase = (value) => {
+      if (!value || seen.has(value)) {
+        return;
+      }
+      seen.add(value);
+      bases.push(value);
+    };
+
+    const formatHost = (value) => {
+      if (!value) {
+        return value;
+      }
+      if (value.includes(":")) {
+        return value.startsWith("[") ? value : `[${value}]`;
+      }
+      return value;
+    };
+
+    const isPrivateIpv4 = (value) => {
+      if (!value) {
+        return false;
+      }
+      const octets = value.split(".").map((part) => Number.parseInt(part, 10));
+      if (octets.length !== 4 || octets.some((part) => Number.isNaN(part))) {
+        return false;
+      }
+      const [a, b] = octets;
+      if (a === 10 || a === 127) {
+        return true;
+      }
+      if (a === 169 && b === 254) {
+        return true;
+      }
+      if (a === 172 && b >= 16 && b <= 31) {
+        return true;
+      }
+      if (a === 192 && b === 168) {
+        return true;
+      }
+      return false;
+    };
+
+    if (typeof window !== "undefined") {
+      if (typeof window.WEB_API_BASE === "string") {
+        const trimmed = window.WEB_API_BASE.trim().replace(/\/$/, "");
+        if (trimmed) {
+          addBase(trimmed);
+        }
+      }
+
+      const rawHost = window.location.hostname || "";
+      const host = rawHost.toLowerCase();
+      const looksLocal =
+        host === "" ||
+        host.endsWith(".local") ||
+        host.endsWith(".localhost") ||
+        host.endsWith(".localdomain") ||
+        host === "localhost" ||
+        host === "[::1]" ||
+        host === "::1" ||
+        host === "0.0.0.0" ||
+        isPrivateIpv4(host);
+
+      if (looksLocal) {
+        const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+        const loopbackHosts = new Set([
+          "127.0.0.1",
+          "localhost",
+          "[::1]",
+        ]);
+
+        if (rawHost && rawHost !== "0.0.0.0" && !loopbackHosts.has(rawHost)) {
+          loopbackHosts.add(rawHost);
+        }
+
+        loopbackHosts.forEach((loopbackHost) => {
+          const formatted = formatHost(loopbackHost === "::1" ? "[::1]" : loopbackHost);
+          addBase(`${protocol}//${formatted}:5001/api`);
+        });
+      }
+    }
+
+    addBase("/api");
+    return bases;
+  };
+
+  const API_BASE_CANDIDATES = resolveApiBases();
+
+  const buildApiUrl = (base, path) => {
+    const normalizedBase = base.replace(/\/$/, "");
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    return new URL(
+      `${normalizedBase}${normalizedPath}`,
+      typeof window !== "undefined" ? window.location.origin : undefined
+    ).toString();
+  };
+
   const isEmailValid = (value) => emailPattern.test(value);
 
   const updateSubmitState = () => {
@@ -135,20 +236,51 @@
     showStatus("", "Sending…");
 
     try {
-      const response = await fetch("/api/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-
+      let response;
       let data = {};
-      try {
-        data = await response.json();
-      } catch (error) {
-        console.warn("Failed to parse subscribe response", error);
+      let parsed = false;
+
+      for (let index = 0; index < API_BASE_CANDIDATES.length; index += 1) {
+        const base = API_BASE_CANDIDATES[index];
+        const url = buildApiUrl(base, "/subscribe");
+
+        try {
+          response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email }),
+          });
+        } catch (error) {
+          if (index === API_BASE_CANDIDATES.length - 1) {
+            throw error;
+          }
+          continue;
+        }
+
+        parsed = false;
+        data = {};
+        try {
+          data = await response.json();
+          parsed = true;
+        } catch (error) {
+          console.warn("Failed to parse subscribe response", error);
+        }
+
+        const contentType = response.headers.get("content-type") || "";
+        const looksHtml = contentType.includes("text/html");
+        const shouldRetry =
+          (!response.ok &&
+            (response.status === 501 || response.status === 405 || response.status === 404)) ||
+          (!parsed && looksHtml);
+
+        if (shouldRetry && index < API_BASE_CANDIDATES.length - 1) {
+          continue;
+        }
+
+        break;
       }
 
-      if (response.ok && data && data.ok) {
+      if (response && response.ok && data && data.ok) {
         if (data.duplicate) {
           showStatus("info", "You're already on the list.");
         } else {
@@ -156,7 +288,7 @@
           form.reset();
           updateSubmitState();
         }
-      } else if (response.status === 400 && data && data.error) {
+      } else if (response && response.status === 400 && data && data.error) {
         showStatus("error", data.error);
       } else {
         showStatus(

@@ -49,8 +49,8 @@ Atropos is composed of three cooperating runtimes:
 - `SERVER_ENV` / `ENVIRONMENT` → Python services → selects credentials in `server/config.py` and toggles webhook hosts.
 - `LICENSING_ENV` → Worker → selects Stripe keys and KV namespace bindings.
 - `WEB_API_BASE` → Marketing site → override the social metrics API origin. Defaults to
-  `http://127.0.0.1:5001` when served from localhost and falls back to `/api`
-  elsewhere.
+  `http://127.0.0.1:5001` when served from localhost or private network hosts and
+  falls back to `/api` elsewhere.
 - `WEB_ENABLE_MOCKS` → Marketing site → render the static hero counts when every
   scrape stage fails (disabled by default).
 - `DATA_DIR` / `IN_DOCKER` → API → control where JSON artifacts are stored. The
