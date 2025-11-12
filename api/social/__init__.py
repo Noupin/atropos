@@ -1,4 +1,4 @@
-from .pipeline import SocialPipeline
-from .exceptions import UnsupportedPlatformError
+from api.social.pipeline import SocialPipeline
+from api.social.exceptions import UnsupportedPlatformError
 
 __all__ = ["SocialPipeline", "UnsupportedPlatformError"]
