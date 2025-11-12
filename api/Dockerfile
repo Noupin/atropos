@@ -11,8 +11,10 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONPATH=/app
 
+COPY requirements.txt /tmp/api-requirements.txt
+
 # be explicit about the index to avoid mirror issues
-RUN python -m pip install --no-cache-dir -i https://pypi.org/simple flask gunicorn
+RUN python -m pip install --no-cache-dir -i https://pypi.org/simple -r /tmp/api-requirements.txt
 
 COPY . /app/api
 
