@@ -138,6 +138,7 @@ body::after {
 .top-nav.compact {
   box-shadow: var(--shadow);
   transform: translateY(0);
+  padding: 12px clamp(18px, 4vw, 38px);
 }
 .brand {
   font-weight: 700;
