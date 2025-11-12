@@ -110,18 +110,21 @@ def health():
 
 
 @app.get("/api/social/overview")
+@app.get("/social/overview")
 def social_overview():
     payload = social_pipeline.get_overview()
     return jsonify(payload), 200
 
 
 @app.get("/api/social/config")
+@app.get("/social/config")
 def social_config():
     payload = social_pipeline.get_config()
     return jsonify(payload), 200
 
 
 @app.get("/api/social/stats")
+@app.get("/social/stats")
 def social_stats():
     platform = (request.args.get("platform") or "").strip().lower()
     handle = (request.args.get("handle") or "").strip()
@@ -135,6 +138,7 @@ def social_stats():
 
 
 @app.get("/api/social/stats/batch")
+@app.get("/social/stats/batch")
 def social_stats_batch():
     platform = (request.args.get("platform") or "").strip().lower()
     if not platform:
