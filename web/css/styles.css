@@ -810,7 +810,7 @@ h4 {
   gap: 12px clamp(12px, 3vw, 24px);
   align-items: center;
   padding: clamp(12px, 3vw, 18px) clamp(16px, 4vw, 24px);
-  border-radius: 999px;
+  border-radius: calc(var(--radius) + 6px);
   background: linear-gradient(90deg, rgba(45, 44, 41, 0.08), rgba(45, 44, 41, 0));
   border: 1px solid rgba(43, 42, 40, 0.12);
   font-size: clamp(15px, 2.6vw, 17px);
@@ -1233,11 +1233,14 @@ footer {
   .hero__intro {
     flex-direction: column;
     align-items: stretch;
-    gap: 16px;
+    gap: 12px;
   }
   .hero__intro-form {
     width: 100%;
     justify-content: flex-start;
+  }
+  .hero__intro-text {
+    gap: 4px;
   }
   .hero__intro-form form {
     flex-direction: column;
