@@ -18,6 +18,11 @@
   const clipDurationEls = document.querySelectorAll("[data-clip-duration]");
 
   const socialConfig = window.atroposSocialConfig || {};
+  const api = window.AtroposApi;
+  if (!api || typeof api.request !== "function") {
+    console.warn("Atropos API helpers unavailable; metrics disabled");
+    return;
+  }
 
   // Toggle to hide the follower/subscriber metrics section (set from the page markup).
   const SHOW_SUBSCRIBER_METRICS_SECTION =
@@ -86,6 +91,7 @@
   };
 
   const viewFallbackCount = parseViewFallback();
+  const PLACEHOLDER_TEXT = "–";
 
   const parseClipFallback = () => {
     if (!clipCountPrimary) {
@@ -140,7 +146,7 @@
     };
 
     const showPlaceholder = () => {
-      applyDisplay("-");
+      applyDisplay(PLACEHOLDER_TEXT);
       if (viewSummaryCard) {
         viewSummaryCard.classList.add("hero__clip-summary--placeholder");
       }
@@ -275,7 +281,7 @@
       applyDisplay(formatted || resolvedCount.toString());
       togglePlaceholder(isMock);
     } else {
-      applyDisplay("-");
+      applyDisplay(PLACEHOLDER_TEXT);
       togglePlaceholder(true);
     }
   };
@@ -291,24 +297,6 @@
     facebook: true,
   };
 
-  const resolveApiBase = () => {
-    const explicit =
-      typeof window !== "undefined" &&
-      typeof window.WEB_API_BASE === "string" &&
-      window.WEB_API_BASE.trim();
-    if (explicit) {
-      return window.WEB_API_BASE.trim().replace(/\/$/, "");
-    }
-    if (typeof window !== "undefined") {
-      const host = window.location.hostname;
-      if (host === "localhost" || host === "127.0.0.1") {
-        return "http://127.0.0.1:5001/api";
-      }
-    }
-    return "/api";
-  };
-
-  const API_BASE = resolveApiBase();
   const ENABLE_MOCKS =
     String(window.WEB_ENABLE_MOCKS || "").toLowerCase() === "true";
 
@@ -345,8 +333,6 @@
     }
     return platformState.get(platform);
   };
-
-  const PLACEHOLDER_TEXT = "-";
 
   const setMetricState = (
     metric,
@@ -570,22 +556,15 @@
         hasReal: viewHasReal,
       });
     }
-    updateAggregateStats();
   };
 
   const requestJson = async (path, searchParams) => {
-    const url = new URL(`${API_BASE}${path}`, window.location.origin);
-    if (searchParams) {
-      const params = new URLSearchParams(searchParams);
-      params.forEach((value, key) => {
-        url.searchParams.set(key, value);
-      });
+    const { response, data } = await api.request(path, { searchParams });
+    if (!response || !response.ok) {
+      const status = response ? response.status : "error";
+      throw new Error(`Request failed with ${status}`);
     }
-    const res = await fetch(url.toString());
-    if (!res.ok) {
-      throw new Error(`Request failed with ${res.status}`);
-    }
-    return res.json();
+    return data;
   };
 
   const requestStats = (platform, handles) => {
@@ -772,6 +751,45 @@
     });
   };
 
+  const runHealthCheck = async () => {
+    try {
+      const { response } = await api.request("/health", { parse: false });
+      if (!response || !response.ok) {
+        console.warn(
+          "api health check failed",
+          response ? response.status : "error"
+        );
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.warn("api health check failed", error);
+      return false;
+    }
+  };
+
+  const markMetricsUnavailable = () => {
+    metrics.forEach((metric) => {
+      setMetricState(metric, {
+        count: null,
+        accountCount: 0,
+        isMock: true,
+        useFallback: false,
+        isLoading: false,
+      });
+    });
+    applyClipCount(null, { isMock: true });
+    applyViewCount(null, { isMock: true });
+    if (totalAccountsStat && totalAccountsValue) {
+      totalAccountsValue.textContent = PLACEHOLDER_TEXT;
+      totalAccountsStat.hidden = false;
+    }
+    if (totalFollowersStat && totalFollowersValue) {
+      totalFollowersValue.textContent = PLACEHOLDER_TEXT;
+      totalFollowersStat.hidden = false;
+    }
+  };
+
   const metricElements =
     metricsEl && SHOW_SUBSCRIBER_METRICS_SECTION
       ? Array.from(metricsEl.querySelectorAll(".hero__metric"))
@@ -842,11 +860,17 @@
     return;
   }
 
-  configureHandlesFromRuntime();
+  runHealthCheck().then((healthy) => {
+    if (!healthy) {
+      markMetricsUnavailable();
+      return;
+    }
 
-  refreshAllPlatforms();
-  void loadConfig();
-  if (refreshInterval) {
-    setInterval(refreshAllPlatforms, refreshInterval);
-  }
+    configureHandlesFromRuntime();
+    refreshAllPlatforms();
+    void loadConfig();
+    if (refreshInterval) {
+      setInterval(refreshAllPlatforms, refreshInterval);
+    }
+  });
 })();

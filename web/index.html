@@ -11,14 +11,15 @@
     <link rel="stylesheet" href="/css/styles.css" />
   </head>
   <body>
-    <header class="top-nav" id="topNav">
-      <a class="brand" href="/" aria-label="Back to the Atropos home page"
-        >Atropos</a
-      >
-      <div class="top-nav__cta" id="navSignupTarget"></div>
-    </header>
+    <div class="page-shell">
+      <header class="top-nav" id="topNav">
+        <a class="brand" href="/" aria-label="Back to the Atropos home page"
+          >Atropos</a
+        >
+        <div class="top-nav__cta" id="navSignupTarget"></div>
+      </header>
 
-    <main class="frame" role="main" aria-labelledby="hero-title">
+      <main class="frame" role="main" aria-labelledby="hero-title">
       <section class="panel hero">
         <div class="hero__heading">
           <h1 id="hero-title">Atropos</h1>
@@ -86,7 +87,7 @@
               <span class="hero__clip-summary-count">
                 Over
                 <span class="hero__clip-summary-value" data-view-count-primary>
-                  -
+                  –
                 </span>
                 views from clips made with Atropos
               </span>
@@ -106,9 +107,7 @@
                   data-fallback-accounts="3"
                 >
                   <span class="hero__metric-label">YouTube</span>
-                  <span class="hero__metric-value" id="youtubeMetric"
-                    >123K</span
-                  >
+                  <span class="hero__metric-value" id="youtubeMetric">–</span>
                   <span class="hero__metric-caption">Subscribers</span>
                 </div>
                 <div
@@ -118,9 +117,7 @@
                   data-fallback-accounts="4"
                 >
                   <span class="hero__metric-label">Instagram</span>
-                  <span class="hero__metric-value" id="instagramMetric"
-                    >86.5K</span
-                  >
+                  <span class="hero__metric-value" id="instagramMetric">–</span>
                   <span class="hero__metric-caption">Followers</span>
                 </div>
                 <div
@@ -130,7 +127,7 @@
                   data-fallback-accounts="4"
                 >
                   <span class="hero__metric-label">TikTok</span>
-                  <span class="hero__metric-value" id="tiktokMetric">98K</span>
+                  <span class="hero__metric-value" id="tiktokMetric">–</span>
                   <span class="hero__metric-caption">Followers</span>
                 </div>
                 <div
@@ -140,9 +137,7 @@
                   data-fallback-accounts="2"
                 >
                   <span class="hero__metric-label">Facebook</span>
-                  <span class="hero__metric-value" id="facebookMetric"
-                    >45.2K</span
-                  >
+                  <span class="hero__metric-value" id="facebookMetric">–</span>
                   <span class="hero__metric-caption">Followers</span>
                 </div>
               </div>
@@ -215,7 +210,7 @@
               data-clip-count-mirror
               data-clip-count-primary
             >
-              -
+              –
             </span>
             clips generated for Instagram.
           </p>
@@ -364,9 +359,11 @@
         </div>
       </div>
 
-      <footer><span id="year"></span> · Atropos</footer>
-    </main>
+        <footer><span id="year"></span> · Atropos</footer>
+      </main>
+    </div>
 
+    <script src="/js/api.js" defer></script>
     <script src="/js/social.config.js" defer></script>
     <script src="/js/footer-year.js" defer></script>
     <script src="/js/signup.js" defer></script>
