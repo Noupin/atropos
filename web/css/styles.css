@@ -1288,6 +1288,41 @@ footer {
     flex-direction: column;
   }
 }
+
+@media (max-width: 480px) {
+  .panel.hero {
+    gap: 16px;
+    padding: 20px 18px;
+  }
+  .hero {
+    gap: 16px;
+  }
+  .hero__body {
+    gap: 16px;
+    padding-block: 4px;
+  }
+  .hero__content {
+    gap: 14px;
+  }
+  .hero__intro {
+    padding-block: 4px;
+    gap: 6px;
+  }
+  .hero__intro-text {
+    gap: 2px;
+  }
+  .hero__intro-text .support {
+    margin-top: 2px;
+  }
+  .hero__intro-form {
+    margin-top: 0;
+    padding-top: 0;
+  }
+  .hero__intro-form form {
+    margin-top: 0;
+    gap: 4px;
+  }
+}
 @media (max-width: 480px) {
   .frame {
     padding: 10px;
