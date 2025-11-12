@@ -1200,23 +1200,82 @@ footer {
   .top-nav {
     flex-direction: column;
     align-items: stretch;
-    gap: 16px;
+    gap: 12px;
+    padding: 12px clamp(16px, 5vw, 24px);
     top: 12px;
   }
   .top-nav__cta {
     width: 100%;
     justify-content: flex-start;
-  }
-  .top-nav__cta form {
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    gap: 10px;
-  }
-  .top-nav__cta input[type="email"] {
     flex: 1 1 100%;
   }
+  .top-nav__cta .signup-wrapper {
+    width: 100%;
+  }
+  .top-nav__cta form {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 8px;
+    width: 100%;
+  }
+  .top-nav__cta input[type="email"] {
+    flex: 1 1 auto;
+    width: 100%;
+  }
   .top-nav__cta button {
-    width: auto;
+    width: 100%;
+    font-size: 15px;
+    line-height: 1.2;
+    padding: 12px 18px;
+    white-space: normal;
+  }
+  .hero__intro {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+  .hero__intro-form {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .hero__intro-form form {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .hero__intro-form button {
+    width: 100%;
+    font-size: 15px;
+    line-height: 1.2;
+    padding: 12px 18px;
+    white-space: normal;
+  }
+  .hero__disclaimer {
+    text-align: left;
+  }
+  .hero__clip-summary {
+    width: 100%;
+    padding: 18px;
+    justify-items: stretch;
+  }
+  .hero__clip-summary-count {
+    gap: 6px;
+  }
+  .hero__metrics {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .hero__metric {
+    gap: 6px;
+  }
+  .hero__metric-label,
+  .hero__metric-caption {
+    font-size: 13px;
+  }
+  .hero__subbanner {
+    flex-direction: column;
+    align-items: flex-start;
   }
   .tiles {
     flex-direction: column;
@@ -1228,5 +1287,7 @@ footer {
   }
   button {
     width: 100%;
+    font-size: 14px;
+    padding: 12px 16px;
   }
 }
