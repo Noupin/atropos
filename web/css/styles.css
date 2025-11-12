@@ -463,10 +463,10 @@ h4 {
     min-width: 0;
   }
   .story-section__text {
-    flex: 1 1 0;
+    flex: 4 1 0;
   }
   .story-section__visual {
-    flex: 2 1 0;
+    flex: 6 1 0;
     max-width: none;
   }
   .story-columns {
