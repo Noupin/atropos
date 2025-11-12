@@ -8,9 +8,9 @@ from typing import Optional, Tuple
 
 from requests import RequestException, Response
 
-from ..context import PlatformContext
-from ..models import AccountStats
-from ..settings import SCRAPER_TIMEOUT_SECONDS
+from api.social.context import PlatformContext
+from api.social.models import AccountStats
+from api.social.settings import SCRAPER_TIMEOUT_SECONDS
 
 INSTAGRAM_LD_JSON_RE = re.compile(
     r"<script[^>]*type=(?:\"application/ld\+json\"|'application/ld\+json')[^>]*>(.*?)</script>",

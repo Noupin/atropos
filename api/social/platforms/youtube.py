@@ -9,10 +9,10 @@ from typing import Dict, List, Optional, Tuple
 
 from requests import RequestException, Response
 
-from ..context import PlatformContext
-from ..models import AccountStats
-from ..settings import SCRAPER_TIMEOUT_SECONDS, TEXT_PROXY_PREFIX
-from ..utils import extract_json_blob, parse_compact_number
+from api.social.context import PlatformContext
+from api.social.models import AccountStats
+from api.social.settings import SCRAPER_TIMEOUT_SECONDS, TEXT_PROXY_PREFIX
+from api.social.utils import extract_json_blob, parse_compact_number
 
 YT_INITIAL_DATA_RE = re.compile(r"ytInitialData\s*=\s*(\{.+?\})\s*;", re.DOTALL)
 YT_INITIAL_PLAYER_RE = re.compile(

@@ -7,10 +7,10 @@ from typing import List, Optional, Tuple
 
 from requests import RequestException, Response
 
-from ..context import PlatformContext
-from ..models import AccountStats
-from ..settings import SCRAPER_TIMEOUT_SECONDS
-from ..utils import parse_compact_number
+from api.social.context import PlatformContext
+from api.social.models import AccountStats
+from api.social.settings import SCRAPER_TIMEOUT_SECONDS
+from api.social.utils import parse_compact_number
 
 FACEBOOK_FOLLOW_RE = re.compile(
     r"([0-9][0-9.,\u00a0]*\s*[KMB]?)\s+(?:people\s+)?follow this",

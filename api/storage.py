@@ -5,7 +5,7 @@ import json
 import secrets
 from typing import Dict, Iterable, List
 
-from .settings import StorageSettings
+from api.settings import StorageSettings
 
 
 def ensure_initialized(settings: StorageSettings) -> None:

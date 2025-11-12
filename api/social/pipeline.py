@@ -14,11 +14,11 @@ from requests import Response, Session
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from .context import PlatformContext
-from .exceptions import UnsupportedPlatformError
-from .models import AccountStats
-from .platforms import get_resolver, supported_platforms
-from .settings import (
+from api.social.context import PlatformContext
+from api.social.exceptions import UnsupportedPlatformError
+from api.social.models import AccountStats
+from api.social.platforms import get_resolver, supported_platforms
+from api.social.settings import (
     DEFAULT_CACHE_SECONDS,
     INSTAGRAM_WEB_APP_ID,
     SCRAPER_RETRIES,

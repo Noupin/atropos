@@ -8,11 +8,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_DEFAULT_TIMEOUT=120 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH=/app
 
 # be explicit about the index to avoid mirror issues
 RUN python -m pip install --no-cache-dir -i https://pypi.org/simple flask gunicorn
 
-COPY app.py .
+COPY . /app/api
 
-CMD ["gunicorn", "-b", "0.0.0.0:5001", "-w", "2", "app:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:5001", "-w", "2", "api.app:app"]

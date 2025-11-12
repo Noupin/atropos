@@ -5,7 +5,7 @@ import smtplib
 from email.message import EmailMessage
 from email.utils import formataddr
 
-from .settings import SmtpSettings
+from api.settings import SmtpSettings
 
 
 def send_welcome_email(

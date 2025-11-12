@@ -5,11 +5,11 @@ from typing import Iterable, List
 
 from flask import Flask, Response, jsonify, request
 
-from .emailer import send_welcome_email
-from .rate_limit import RateLimiter
-from .settings import ApiSettings, load_settings
-from .social import SocialPipeline, UnsupportedPlatformError
-from .storage import (
+from api.emailer import send_welcome_email
+from api.rate_limit import RateLimiter
+from api.settings import ApiSettings, load_settings
+from api.social import SocialPipeline, UnsupportedPlatformError
+from api.storage import (
     ensure_initialized,
     generate_unsubscribe_token,
     load_subscribers,
@@ -17,7 +17,7 @@ from .storage import (
     save_subscribers,
     save_unsubscribe_tokens,
 )
-from .validators import EMAIL_RE
+from api.validators import EMAIL_RE
 
 settings: ApiSettings = load_settings()
 ensure_initialized(settings.storage)
@@ -29,6 +29,7 @@ handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s
 app.logger.setLevel(logging.INFO)
 app.logger.addHandler(handler)
 app.logger.info("Using data directory at %s", settings.storage.data_dir)
+app.logger.info("import_ok=1 package=api module=api.app")
 
 social_pipeline = SocialPipeline(data_dir=settings.storage.data_dir, logger=app.logger)
 rate_limiter = RateLimiter(

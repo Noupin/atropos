@@ -4,9 +4,9 @@ import json
 import re
 from typing import Optional, Tuple
 
-from ..context import PlatformContext
-from ..models import AccountStats
-from ..utils import parse_compact_number
+from api.social.context import PlatformContext
+from api.social.models import AccountStats
+from api.social.utils import parse_compact_number
 
 TIKTOK_SIGI_RE = re.compile(
     r"<script id=\"SIGI_STATE\">(.*?)</script>", re.DOTALL | re.IGNORECASE

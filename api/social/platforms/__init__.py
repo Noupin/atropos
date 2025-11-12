@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Callable, Dict
 
-from ..context import PlatformContext
-from ..exceptions import UnsupportedPlatformError
-from ..models import AccountStats
-from . import facebook, instagram, tiktok, youtube
+from api.social.context import PlatformContext
+from api.social.exceptions import UnsupportedPlatformError
+from api.social.models import AccountStats
+from api.social.platforms import facebook, instagram, tiktok, youtube
 
 Resolver = Callable[[str, PlatformContext], AccountStats]
 
