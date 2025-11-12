@@ -49,17 +49,19 @@
       return;
     }
 
+    const phraseList = Array.from(phrases);
     let maxWidth = 0;
     let maxHeight = 0;
     const measurer = document.createElement("span");
     measurer.className = "hero__rotator-measure";
     host.appendChild(measurer);
 
-    phrases.forEach((text) => {
+    phraseList.forEach((text) => {
+      measurer.style.width = "auto";
+      measurer.style.whiteSpace = "nowrap";
       measurer.textContent = text;
       const rect = measurer.getBoundingClientRect();
       maxWidth = Math.max(maxWidth, rect.width);
-      maxHeight = Math.max(maxHeight, rect.height);
     });
 
     measurer.remove();
@@ -68,6 +70,24 @@
       const width = Math.ceil(maxWidth) + 2;
       host.style.setProperty("--hero-rotator-max-width", `${width}px`);
     }
+
+    const widthProbe = host.getBoundingClientRect();
+    const availableWidth = Math.ceil(
+      widthProbe.width || host.clientWidth || maxWidth
+    );
+
+    measurer.textContent = "";
+    measurer.style.width = availableWidth ? `${availableWidth}px` : "auto";
+    measurer.style.whiteSpace = "normal";
+    host.appendChild(measurer);
+
+    phraseList.forEach((text) => {
+      measurer.textContent = text;
+      const rect = measurer.getBoundingClientRect();
+      maxHeight = Math.max(maxHeight, rect.height);
+    });
+
+    measurer.remove();
 
     if (maxHeight) {
       const height = Math.ceil(maxHeight) + 2;
