@@ -43,6 +43,9 @@ export { DEFAULT_TRIAL_RUNS } from './accessTypes'
 const AccessContext = createContext<AccessContextValue | undefined>(undefined)
 
 const OFFLINE_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000
+const ACTIVE_REFRESH_INTERVAL_MS = 5 * 60 * 1000
+const DORMANT_REFRESH_INTERVAL_MS = 30 * 60 * 1000
+const INACTIVITY_THRESHOLD_MS = 3 * 60 * 1000
 
 type OfflineSnapshot = {
   expiresAt: string | null
@@ -75,9 +78,12 @@ const resolveOfflineSnapshot = (lastVerifiedAtMs: number | null): OfflineSnapsho
 export const AccessProvider = ({ children }: { children: ReactNode }): ReactElement => {
   const [state, setState] = useState<AccessState>(INITIAL_STATE)
   const [deviceHash, setDeviceHash] = useState<string | null>(null)
+  const [isUserActive, setIsUserActive] = useState(true)
   const hasRecoveredPendingRef = useRef(false)
   const pendingTransferTokenRef = useRef<string | null>(null)
   const lastVerifiedAtRef = useRef<number | null>(readLastVerifiedAt())
+  const isUserActiveRef = useRef(true)
+  const inactivityTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
 
   const applyStatus = useCallback(
     (status: AccessStatusPayload, overrides?: Partial<AccessState>) => {
@@ -512,6 +518,120 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
   )
 
   useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      return
+    }
+    const activityEvents: (keyof WindowEventMap)[] = [
+      'pointerdown',
+      'pointermove',
+      'keydown',
+      'wheel',
+      'scroll',
+      'focus',
+      'touchstart',
+      'touchmove'
+    ]
+
+    const scheduleInactivityCheck = (): void => {
+      if (inactivityTimerRef.current) {
+        window.clearTimeout(inactivityTimerRef.current)
+      }
+      inactivityTimerRef.current = window.setTimeout(() => {
+        isUserActiveRef.current = false
+        setIsUserActive(false)
+        inactivityTimerRef.current = null
+      }, INACTIVITY_THRESHOLD_MS)
+    }
+
+    const markActive = (): void => {
+      if (!isUserActiveRef.current) {
+        isUserActiveRef.current = true
+        setIsUserActive(true)
+      }
+      scheduleInactivityCheck()
+    }
+
+    const markInactive = (): void => {
+      if (inactivityTimerRef.current) {
+        window.clearTimeout(inactivityTimerRef.current)
+        inactivityTimerRef.current = null
+      }
+      if (isUserActiveRef.current) {
+        isUserActiveRef.current = false
+        setIsUserActive(false)
+      }
+    }
+
+    const handleVisibilityChange = (): void => {
+      if (document.hidden) {
+        markInactive()
+      } else {
+        markActive()
+      }
+    }
+
+    for (const eventName of activityEvents) {
+      window.addEventListener(eventName, markActive)
+    }
+    window.addEventListener('blur', markInactive)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    markActive()
+
+    return () => {
+      for (const eventName of activityEvents) {
+        window.removeEventListener(eventName, markActive)
+      }
+      window.removeEventListener('blur', markInactive)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      if (inactivityTimerRef.current) {
+        window.clearTimeout(inactivityTimerRef.current)
+        inactivityTimerRef.current = null
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    let interval: ReturnType<typeof window.setInterval> | null = null
+    let dormantTimeout: ReturnType<typeof window.setTimeout> | null = null
+
+    if (isUserActive) {
+      interval = window.setInterval(() => {
+        void refresh()
+      }, ACTIVE_REFRESH_INTERVAL_MS)
+    } else {
+      const scheduleDormantRefresh = (): void => {
+        dormantTimeout = window.setTimeout(() => {
+          void refresh()
+          scheduleDormantRefresh()
+        }, DORMANT_REFRESH_INTERVAL_MS)
+      }
+      scheduleDormantRefresh()
+    }
+
+    return () => {
+      if (interval) {
+        window.clearInterval(interval)
+      }
+      if (dormantTimeout) {
+        window.clearTimeout(dormantTimeout)
+      }
+    }
+  }, [isUserActive, refresh])
+
+  useEffect(() => {
+    if (!isUserActive) {
+      return
+    }
+
+    void refresh()
+  }, [isUserActive, refresh])
+
+  useEffect(() => {
     if (typeof window === 'undefined') {
       return
     }
@@ -520,16 +640,6 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
     }
     window.addEventListener('focus', handleFocus)
     return () => window.removeEventListener('focus', handleFocus)
-  }, [refresh])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
-    const interval = window.setInterval(() => {
-      void refresh()
-    }, 5 * 60 * 1000)
-    return () => window.clearInterval(interval)
   }, [refresh])
 
   useEffect(() => {
