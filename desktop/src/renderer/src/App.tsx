@@ -632,6 +632,30 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     })
   }, [availableAccounts, setHomeState])
 
+  useEffect(() => {
+    const storedAccountId = uiState.activeAccountId
+    if (!storedAccountId) {
+      return
+    }
+
+    setHomeState((prev) => {
+      if (prev.selectedAccountId === storedAccountId) {
+        return prev
+      }
+
+      const isAvailable = availableAccounts.some((account) => account.id === storedAccountId)
+      if (!isAvailable) {
+        return prev
+      }
+
+      return {
+        ...prev,
+        selectedAccountId: storedAccountId,
+        accountError: null
+      }
+    })
+  }, [availableAccounts, setHomeState, uiState.activeAccountId])
+
   const handleSelectAccount = useCallback(
     (accountId: string | null) => {
       setHomeState((prev) => {
