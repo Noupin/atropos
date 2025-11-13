@@ -14,6 +14,7 @@ import { formatDuration, formatViews } from '../lib/format'
 import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import type { AccountSummary, Clip } from '../types'
 import {
+  fetchAccountClipCount,
   fetchAccountClipsPage,
   type ClipPage,
   type ProjectSummary
@@ -47,6 +48,8 @@ type AccountRuntimeState = {
   loadedPages: number
   totalClips: number | null
   projectSummaries: Record<string, ProjectSummary>
+  isCountLoading: boolean
+  countError: string | null
 }
 
 type LibraryProps = {
@@ -65,7 +68,9 @@ const createDefaultAccountState = (): AccountRuntimeState => ({
   error: null,
   loadedPages: 0,
   totalClips: null,
-  projectSummaries: {}
+  projectSummaries: {},
+  isCountLoading: false,
+  countError: null
 })
 
 const isAccountAvailable = (account: AccountSummary): boolean =>
@@ -205,6 +210,86 @@ const Library: FC<LibraryProps> = ({
   }, [availableAccounts, effectivePageSize])
 
   useEffect(() => {
+    if (availableAccountIds.length === 0) {
+      return
+    }
+
+    let cancelled = false
+    const availableIdSet = new Set(availableAccountIds)
+    const errorMessage = 'Unable to load clip count. Please try again.'
+
+    const refreshCounts = async () => {
+      await Promise.all(
+        availableAccountIds.map(async (accountId) => {
+          setAccountStates((previous) => {
+            if (!availableIdSet.has(accountId)) {
+              return previous
+            }
+            const existing = previous[accountId] ?? createDefaultAccountState()
+            return {
+              ...previous,
+              [accountId]: {
+                ...existing,
+                isCountLoading: true,
+                countError: null
+              }
+            }
+          })
+
+          try {
+            const total = await fetchAccountClipCount(accountId)
+            if (cancelled) {
+              return
+            }
+            setAccountStates((previous) => {
+              if (!availableIdSet.has(accountId)) {
+                return previous
+              }
+              const existing = previous[accountId] ?? createDefaultAccountState()
+              const hasValidTotal = typeof total === 'number' && Number.isFinite(total)
+              const resolvedTotal = hasValidTotal ? Math.max(0, Math.floor(total)) : existing.totalClips
+              return {
+                ...previous,
+                [accountId]: {
+                  ...existing,
+                  totalClips: resolvedTotal,
+                  isCountLoading: false,
+                  countError: hasValidTotal ? null : errorMessage
+                }
+              }
+            })
+          } catch (error) {
+            console.error(`Unable to load clip count for account ${accountId}`, error)
+            if (cancelled) {
+              return
+            }
+            setAccountStates((previous) => {
+              if (!availableIdSet.has(accountId)) {
+                return previous
+              }
+              const existing = previous[accountId] ?? createDefaultAccountState()
+              return {
+                ...previous,
+                [accountId]: {
+                  ...existing,
+                  isCountLoading: false,
+                  countError: errorMessage
+                }
+              }
+            })
+          }
+        })
+      )
+    }
+
+    void refreshCounts()
+
+    return () => {
+      cancelled = true
+    }
+  }, [availableAccountIds])
+
+  useEffect(() => {
     updateLibrary((previous) => {
       const validExpanded = previous.expandedAccountIds.filter((id) => availableAccountIds.includes(id))
       const nextPageCounts: Record<string, number> = {}
@@ -308,7 +393,9 @@ const Library: FC<LibraryProps> = ({
             error: null,
             loadedPages: reset ? 0 : existing.loadedPages,
             totalClips: reset ? null : existing.totalClips,
-            projectSummaries: reset ? {} : existing.projectSummaries
+            projectSummaries: reset ? {} : existing.projectSummaries,
+            isCountLoading: existing.isCountLoading,
+            countError: existing.countError
           }
         }
       })
@@ -348,7 +435,15 @@ const Library: FC<LibraryProps> = ({
               error: null,
               loadedPages: nextLoadedPages,
               totalClips: nextTotal,
-              projectSummaries: summaries
+              projectSummaries: summaries,
+              isCountLoading:
+                typeof nextTotal === 'number' && Number.isFinite(nextTotal)
+                  ? false
+                  : existing.isCountLoading,
+              countError:
+                typeof nextTotal === 'number' && Number.isFinite(nextTotal)
+                  ? null
+                  : existing.countError
             }
           }
         })
@@ -752,22 +847,29 @@ const Library: FC<LibraryProps> = ({
               )
               const totalClipsValue =
                 typeof state.totalClips === 'number' && Number.isFinite(state.totalClips)
-                  ? state.totalClips
+                  ? Math.max(0, Math.floor(state.totalClips))
                   : totalFromSummaries > 0
                   ? totalFromSummaries
                   : state.clips.length > 0
                   ? state.clips.length
                   : null
-              const accountClipLabel =
-                totalClipsValue !== null
-                  ? totalClipsValue === 0
+              const accountClipLabel = (() => {
+                if (totalClipsValue !== null) {
+                  return totalClipsValue === 0
                     ? 'No clips available yet'
                     : `${totalClipsValue} clip${totalClipsValue === 1 ? '' : 's'} available`
-                  : state.isLoading
-                  ? 'Loading clip count…'
-                  : state.clips.length === 0
-                  ? 'No clips available yet'
-                  : 'Clip count unavailable'
+                }
+                if (state.isCountLoading || state.isLoading) {
+                  return 'Loading clip count…'
+                }
+                if (state.countError) {
+                  return 'Clip count unavailable'
+                }
+                if (state.clips.length === 0) {
+                  return 'No clips available yet'
+                }
+                return 'Clip count unavailable'
+              })()
               return (
                 <article
                   key={account.id}

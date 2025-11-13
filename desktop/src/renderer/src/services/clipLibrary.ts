@@ -233,6 +233,20 @@ type RawClipPagePayload = {
   projects?: unknown
 }
 
+const parseClipCountPayload = (payload: unknown): number | null => {
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+
+  const record = payload as RawClipPagePayload
+  const totalRaw = typeof record.totalClips === 'number' ? record.totalClips : record.total_clips
+  if (typeof totalRaw !== 'number' || !Number.isFinite(totalRaw)) {
+    return null
+  }
+
+  return Math.max(0, Math.floor(totalRaw))
+}
+
 const parseProjectSummaries = (value: unknown): ProjectSummary[] => {
   if (!Array.isArray(value)) {
     return []
@@ -291,6 +305,24 @@ const fetchAccountClipPageFromApi = async (
   }
   const payload = (await response.json()) as unknown
   return parseClipPagePayload(payload)
+}
+
+export const fetchAccountClipCount = async (accountId: string): Promise<number | null> => {
+  if (!accountId) {
+    return null
+  }
+
+  if (BACKEND_MODE === 'api' || typeof window === 'undefined' || !window.api?.listAccountClips) {
+    const response = await requestWithFallback(() => buildClipsPageUrl(accountId, 1, null))
+    if (!response.ok) {
+      throw new Error(await extractErrorMessage(response))
+    }
+    const payload = (await response.json()) as unknown
+    return parseClipCountPayload(payload)
+  }
+
+  const rawClips = await window.api.listAccountClips(accountId)
+  return Array.isArray(rawClips) ? rawClips.length : null
 }
 
 export type ClipPage = {
