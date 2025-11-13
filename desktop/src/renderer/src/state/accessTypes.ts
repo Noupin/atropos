@@ -36,7 +36,7 @@ export type AccessState = {
 export type AccessContextValue = {
   state: AccessState
   deviceHash: string | null
-  refresh: () => Promise<void>
+  refresh: (options?: { force?: boolean }) => Promise<void>
   markTrialRunPending: () => void
   finalizeTrialRun: (options: { succeeded: boolean }) => Promise<void>
 }

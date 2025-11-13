@@ -76,6 +76,7 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
   const lastVerifiedAtRef = useRef<number | null>(readLastVerifiedAt())
   const isUserActiveRef = useRef(true)
   const inactivityTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+  const lastRefreshAtRef = useRef<number | null>(null)
 
   const applyStatus = useCallback(
     (status: AccessStatusPayload, overrides?: Partial<AccessState>) => {
@@ -184,6 +185,7 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
 
   const loadStatus = useCallback(
     async (hash: string, options?: { allowCreateTrial?: boolean }) => {
+      lastRefreshAtRef.current = Date.now()
       setState((prev) => ({
         ...prev,
         isLoading: true,
@@ -236,9 +238,17 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
     }
   }, [loadStatus, markFailure])
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options?: { force?: boolean }) => {
     if (!deviceHash) {
       return
+    }
+    const forceRefresh = options?.force ?? true
+    if (!forceRefresh) {
+      const lastRefreshAt = lastRefreshAtRef.current
+      const now = Date.now()
+      if (lastRefreshAt !== null && now - lastRefreshAt < ACTIVE_REFRESH_INTERVAL_MS) {
+        return
+      }
     }
     await loadStatus(deviceHash, { allowCreateTrial: false })
   }, [deviceHash, loadStatus])
@@ -485,7 +495,7 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
       try {
         await acceptSubscriptionTransfer(deviceHash, token)
         pendingTransferTokenRef.current = null
-        await refresh()
+        await refresh({ force: true })
       } catch (error) {
         if (error instanceof LicensingOfflineError) {
           pendingTransferTokenRef.current = null
@@ -594,12 +604,12 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
 
     if (isUserActive) {
       interval = window.setInterval(() => {
-        void refresh()
+        void refresh({ force: true })
       }, ACTIVE_REFRESH_INTERVAL_MS)
     } else {
       const scheduleDormantRefresh = (): void => {
         dormantTimeout = window.setTimeout(() => {
-          void refresh()
+          void refresh({ force: true })
           scheduleDormantRefresh()
         }, DORMANT_REFRESH_INTERVAL_MS)
       }
@@ -621,7 +631,7 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
       return
     }
 
-    void refresh()
+    void refresh({ force: false })
   }, [isUserActive, refresh])
 
   useEffect(() => {
@@ -629,7 +639,7 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
       return
     }
     const handleFocus = (): void => {
-      void refresh()
+      void refresh({ force: false })
     }
     window.addEventListener('focus', handleFocus)
     return () => window.removeEventListener('focus', handleFocus)
@@ -685,7 +695,7 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
           return
         }
         if (parsed.hostname === 'subscription') {
-          void refresh()
+          void refresh({ force: true })
           return
         }
         if (parsed.hostname === 'transfer') {
