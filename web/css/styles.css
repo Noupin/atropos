@@ -118,7 +118,7 @@ body::after {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 16px clamp(18px, 4vw, 38px);
+  padding: 14px clamp(18px, 4vw, 38px);
   border-radius: calc(var(--radius) + 4px);
   background: linear-gradient(
         180deg,
@@ -159,6 +159,11 @@ body::after {
   align-items: center;
   justify-content: flex-end;
   min-width: 0;
+  min-height: 0;
+}
+
+.top-nav__cta:empty {
+  display: none;
 }
 .signup-slot {
   margin-top: 0;
