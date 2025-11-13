@@ -110,6 +110,7 @@ const Library: FC<LibraryProps> = ({
   const { libraryState, updateLibrary } = useLibraryUiState()
   const [accountStates, setAccountStates] = useState<Record<string, AccountRuntimeState>>({})
   const accountStatesRef = useRef(accountStates)
+  const isMountedRef = useRef(true)
   const pendingClipCountAccountIdsRef = useRef<Set<string>>(new Set())
   const failedClipCountAccountIdsRef = useRef<Set<string>>(new Set())
   const [query, setQuery] = useState('')
@@ -175,6 +176,12 @@ const Library: FC<LibraryProps> = ({
   }, [accountStates])
 
   useEffect(() => {
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
     const activeIds = new Set(availableAccountIds)
     pendingClipCountAccountIdsRef.current.forEach((accountId) => {
       if (!activeIds.has(accountId)) {
@@ -213,8 +220,6 @@ const Library: FC<LibraryProps> = ({
       return
     }
 
-    let cancelled = false
-
     const loadClipCounts = async (): Promise<void> => {
       for (const account of availableAccounts) {
         if (failedClipCountAccountIdsRef.current.has(account.id)) {
@@ -229,22 +234,24 @@ const Library: FC<LibraryProps> = ({
         }
 
         pendingClipCountAccountIdsRef.current.add(account.id)
-        setAccountStates((previous) => {
-          const existing = previous[account.id] ?? createDefaultAccountState()
-          if (existing.isLoadingClipCount) {
-            return previous
-          }
-          return {
-            ...previous,
-            [account.id]: {
-              ...existing,
-              isLoadingClipCount: true
+        if (isMountedRef.current) {
+          setAccountStates((previous) => {
+            const existing = previous[account.id] ?? createDefaultAccountState()
+            if (existing.isLoadingClipCount) {
+              return previous
             }
-          }
-        })
+            return {
+              ...previous,
+              [account.id]: {
+                ...existing,
+                isLoadingClipCount: true
+              }
+            }
+          })
+        }
         try {
           const total = await fetchAccountClipCount(account.id)
-          if (!cancelled) {
+          if (isMountedRef.current) {
             setAccountStates((previous) => {
               const existing = previous[account.id] ?? createDefaultAccountState()
               if (
@@ -269,7 +276,7 @@ const Library: FC<LibraryProps> = ({
           failedClipCountAccountIdsRef.current.add(account.id)
         } finally {
           pendingClipCountAccountIdsRef.current.delete(account.id)
-          if (!cancelled) {
+          if (isMountedRef.current) {
             setAccountStates((previous) => {
               const existing = previous[account.id] ?? createDefaultAccountState()
               if (!existing.isLoadingClipCount) {
@@ -289,10 +296,6 @@ const Library: FC<LibraryProps> = ({
     }
 
     void loadClipCounts()
-
-    return () => {
-      cancelled = true
-    }
   }, [availableAccounts, setAccountStates])
 
   useEffect(() => {
