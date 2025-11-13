@@ -182,7 +182,7 @@ body::after {
   width: min(100%, 660px);
   flex-direction: column;
   align-items: stretch;
-  gap: 10px;
+  gap: 0;
 }
 .top-nav__cta form {
   margin-top: 0;
@@ -199,13 +199,18 @@ body::after {
 .top-nav__cta .status {
   max-width: 420px;
   margin-left: auto;
+  margin-top: 10px;
   text-align: right;
+}
+.top-nav__cta .status:empty {
+  display: none;
+  margin-top: 0;
 }
 .nav-compact .top-nav__cta .signup-wrapper {
   width: min(100%, 600px);
   flex-direction: column;
   align-items: stretch;
-  gap: 8px;
+  gap: 0;
 }
 .nav-compact .top-nav__cta form {
   margin-top: 0;
