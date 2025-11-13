@@ -59,6 +59,7 @@ const toSeconds = (value: number): number => Math.max(0, Number.isFinite(value) 
 const MIN_CLIP_GAP = 0.25
 const MIN_PREVIEW_DURATION = 0.05
 const DEFAULT_EXPAND_SECONDS = 10
+const CLIP_WINDOW_PADDING_SECONDS = 10
 
 type DurationGuardrails = {
   minDuration: number
@@ -121,6 +122,56 @@ const resolveGuardrailKey = (name: string): keyof DurationGuardrails | null => {
 
 const getDefaultPreviewMode = (clip: Clip | null): 'adjusted' | 'rendered' =>
   clip && clip.previewUrl === clip.playbackUrl ? 'rendered' : 'adjusted'
+
+const deriveBaseWindowStart = (clip: Clip): number =>
+  Math.max(0, Math.min(clip.startSeconds, clip.originalStartSeconds))
+
+const deriveBaseWindowEnd = (clip: Clip, minGap: number): number =>
+  Math.max(
+    clip.endSeconds,
+    clip.originalEndSeconds,
+    clip.startSeconds + minGap,
+    clip.originalStartSeconds + minGap
+  )
+
+const resolveSourceEndBoundFromClip = (clip: Clip, minGap: number): number => {
+  const fallbackSourceEnd = Math.max(
+    minGap,
+    clip.originalEndSeconds,
+    clip.endSeconds,
+    clip.originalStartSeconds + Math.max(clip.durationSec, minGap)
+  )
+
+  if (clip.sourceDurationSeconds != null && Number.isFinite(clip.sourceDurationSeconds)) {
+    return Math.max(minGap, clip.sourceDurationSeconds)
+  }
+
+  return fallbackSourceEnd
+}
+
+const clampStartWithinBounds = (start: number, sourceEnd: number, minGap: number): number => {
+  const maxStart = Math.max(0, sourceEnd - minGap)
+  return Math.min(Math.max(0, start), maxStart)
+}
+
+const computePaddedWindowBounds = (
+  clip: Clip,
+  minGap: number,
+  paddingSeconds: number,
+  sourceEndOverride?: number
+): { start: number; end: number } => {
+  const sourceEnd = sourceEndOverride ?? resolveSourceEndBoundFromClip(clip, minGap)
+  const padding = Math.max(0, paddingSeconds)
+  const baseStart = deriveBaseWindowStart(clip)
+  const paddedStart = clampStartWithinBounds(Math.max(0, baseStart - padding), sourceEnd, minGap)
+  const desiredEnd = Math.max(deriveBaseWindowEnd(clip, minGap), paddedStart + minGap)
+  const paddedEnd = Math.min(sourceEnd, desiredEnd + padding)
+
+  return {
+    start: paddedStart,
+    end: paddedEnd
+  }
+}
 
 const formatRelativeSeconds = (value: number): string => {
   if (!Number.isFinite(value) || value === 0) {
@@ -260,18 +311,27 @@ const VideoPage: FC = () => {
     if (!sourceClip) {
       return 0
     }
-    return Math.max(0, Math.min(sourceClip.startSeconds, sourceClip.originalStartSeconds))
+    const sourceBound = resolveSourceEndBoundFromClip(sourceClip, minGap)
+    const { start } = computePaddedWindowBounds(
+      sourceClip,
+      minGap,
+      CLIP_WINDOW_PADDING_SECONDS,
+      sourceBound
+    )
+    return start
   })
   const [windowEnd, setWindowEnd] = useState(() => {
     if (!sourceClip) {
       return minGap
     }
-    return Math.max(
-      sourceClip.endSeconds,
-      sourceClip.originalEndSeconds,
-      sourceClip.startSeconds + minGap,
-      sourceClip.originalStartSeconds + minGap
+    const sourceBound = resolveSourceEndBoundFromClip(sourceClip, minGap)
+    const { end } = computePaddedWindowBounds(
+      sourceClip,
+      minGap,
+      CLIP_WINDOW_PADDING_SECONDS,
+      sourceBound
     )
+    return end
   })
   const [expandAmount, setExpandAmount] = useState(DEFAULT_EXPAND_SECONDS)
   const [activeHandle, setActiveHandle] = useState<'start' | 'end' | null>(null)
@@ -574,24 +634,15 @@ const VideoPage: FC = () => {
       setDescription(updated.description ?? '')
       setStatusMessage(null)
       setUploadStatus((previous) => (previous === 'scheduled' ? previous : 'ready'))
-      setWindowStart(Math.max(0, Math.min(updated.startSeconds, updated.originalStartSeconds)))
-      const fallbackSourceEnd = Math.max(
+      const updatedSourceEnd = resolveSourceEndBoundFromClip(updated, minGap)
+      const { start, end } = computePaddedWindowBounds(
+        updated,
         minGap,
-        updated.originalEndSeconds,
-        updated.endSeconds,
-        updated.originalStartSeconds + Math.max(updated.durationSec, minGap)
+        CLIP_WINDOW_PADDING_SECONDS,
+        updatedSourceEnd
       )
-      const updatedSourceEnd =
-        updated.sourceDurationSeconds != null && Number.isFinite(updated.sourceDurationSeconds)
-          ? Math.max(minGap, updated.sourceDurationSeconds)
-          : fallbackSourceEnd
-      const desiredWindowEnd = Math.max(
-        updated.endSeconds,
-        updated.originalEndSeconds,
-        updated.startSeconds + minGap,
-        updated.originalStartSeconds + minGap
-      )
-      setWindowEnd(Math.min(updatedSourceEnd, desiredWindowEnd))
+      setWindowStart(start)
+      setWindowEnd(end)
       setPreviewTarget({ start: updated.startSeconds, end: updated.endSeconds })
       setPreviewMode(getDefaultPreviewMode(updated))
       layoutAppliedIdRef.current = updated.layoutId ?? null
@@ -747,20 +798,7 @@ const VideoPage: FC = () => {
     if (!clipState) {
       return minGap
     }
-    const sourceDuration =
-      clipState.sourceDurationSeconds != null && Number.isFinite(clipState.sourceDurationSeconds)
-        ? Math.max(minGap, clipState.sourceDurationSeconds)
-        : null
-    if (sourceDuration !== null) {
-      return sourceDuration
-    }
-    const derivedFromDuration = clipState.originalStartSeconds + Math.max(clipState.durationSec, minGap)
-    return Math.max(
-      minGap,
-      clipState.originalEndSeconds,
-      clipState.endSeconds,
-      derivedFromDuration
-    )
+    return resolveSourceEndBoundFromClip(clipState, minGap)
   }, [clipState, minGap])
 
   useEffect(() => {
@@ -926,18 +964,14 @@ const VideoPage: FC = () => {
     }
     setRangeStart(clipState.startSeconds)
     setRangeEnd(clipState.endSeconds)
-    setWindowStart(Math.max(0, Math.min(clipState.startSeconds, clipState.originalStartSeconds)))
-    setWindowEnd(
-      Math.min(
-        sourceEndBound,
-        Math.max(
-          clipState.endSeconds,
-          clipState.originalEndSeconds,
-          clipState.startSeconds + minGap,
-          clipState.originalStartSeconds + minGap
-        )
-      )
+    const { start, end } = computePaddedWindowBounds(
+      clipState,
+      minGap,
+      CLIP_WINDOW_PADDING_SECONDS,
+      sourceEndBound
     )
+    setWindowStart(start)
+    setWindowEnd(end)
     setPreviewTarget({ start: clipState.startSeconds, end: clipState.endSeconds })
     setPreviewMode(getDefaultPreviewMode(clipState))
     setSaveSteps(createInitialSaveSteps())
@@ -1331,20 +1365,16 @@ const VideoPage: FC = () => {
       setPreviewTarget({ start: 0, end: minGap })
       setPreviewMode('adjusted')
     } else {
-      const baseStart = Math.max(
-        0,
-        Math.min(clipState.originalStartSeconds, clipState.startSeconds)
-      )
-      const baseEnd = Math.max(
-        clipState.originalEndSeconds,
-        clipState.endSeconds,
-        clipState.originalStartSeconds + minGap,
-        clipState.startSeconds + minGap
-      )
       setRangeStart(clipState.originalStartSeconds)
       setRangeEnd(Math.max(clipState.originalStartSeconds + minGap, clipState.originalEndSeconds))
-      setWindowStart(baseStart)
-      setWindowEnd(Math.min(baseEnd, sourceEndBound))
+      const { start, end } = computePaddedWindowBounds(
+        clipState,
+        minGap,
+        CLIP_WINDOW_PADDING_SECONDS,
+        sourceEndBound
+      )
+      setWindowStart(start)
+      setWindowEnd(end)
       setPreviewTarget({
         start: clipState.originalStartSeconds,
         end: Math.max(
