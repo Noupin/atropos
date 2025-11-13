@@ -157,6 +157,12 @@ export const buildClipsPageUrl = (
   return url.toString()
 }
 
+export const buildClipCountUrl = (accountId: string): string => {
+  const url = new URL('/api/clips/count', getApiBaseUrl())
+  url.searchParams.set('accountId', accountId)
+  return url.toString()
+}
+
 export const buildAccountPlatformUrl = (accountId: string): string => {
   const url = new URL(`/api/accounts/${encodeURIComponent(accountId)}/platforms`, getApiBaseUrl())
   return url.toString()

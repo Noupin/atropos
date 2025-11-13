@@ -2,6 +2,7 @@ import {
   BACKEND_MODE,
   buildAccountClipThumbnailUrl,
   buildAccountClipsUrl,
+  buildClipCountUrl,
   buildClipsPageUrl
 } from '../config/backend'
 import type { Clip } from '../types'
@@ -233,6 +234,11 @@ type RawClipPagePayload = {
   projects?: unknown
 }
 
+type RawClipCountPayload = {
+  totalClips?: unknown
+  total_clips?: unknown
+}
+
 const parseProjectSummaries = (value: unknown): ProjectSummary[] => {
   if (!Array.isArray(value)) {
     return []
@@ -280,6 +286,18 @@ const parseClipPagePayload = (
   return { clips, nextCursor, totalClips, projects }
 }
 
+const parseClipCountPayload = (payload: unknown): number | null => {
+  if (!payload || typeof payload !== 'object') {
+    return null
+  }
+  const record = payload as RawClipCountPayload
+  const totalRaw = typeof record.totalClips === 'number' ? record.totalClips : record.total_clips
+  if (typeof totalRaw !== 'number' || !Number.isFinite(totalRaw)) {
+    return null
+  }
+  return Math.max(0, Math.floor(totalRaw))
+}
+
 const fetchAccountClipPageFromApi = async (
   accountId: string,
   limit: number,
@@ -298,6 +316,24 @@ export type ClipPage = {
   nextCursor: string | null
   totalClips: number | null
   projects: ProjectSummary[]
+}
+
+export const fetchAccountClipCount = async (accountId: string): Promise<number> => {
+  if (!accountId) {
+    throw new Error('Account identifier is required to load clip counts.')
+  }
+
+  const response = await requestWithFallback(() => buildClipCountUrl(accountId))
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response))
+  }
+
+  const payload = (await response.json()) as unknown
+  const total = parseClipCountPayload(payload)
+  if (total === null) {
+    throw new Error('Received malformed clip count data from the library API.')
+  }
+  return total
 }
 
 const getProjectKey = (clip: Clip): string => {

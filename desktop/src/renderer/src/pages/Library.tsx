@@ -14,6 +14,7 @@ import { formatDuration, formatViews } from '../lib/format'
 import { buildCacheBustedPlaybackUrl } from '../lib/video'
 import type { AccountSummary, Clip } from '../types'
 import {
+  fetchAccountClipCount,
   fetchAccountClipsPage,
   type ClipPage,
   type ProjectSummary
@@ -107,6 +108,8 @@ const Library: FC<LibraryProps> = ({
   const { libraryState, updateLibrary } = useLibraryUiState()
   const [accountStates, setAccountStates] = useState<Record<string, AccountRuntimeState>>({})
   const accountStatesRef = useRef(accountStates)
+  const pendingClipCountAccountIdsRef = useRef<Set<string>>(new Set())
+  const failedClipCountAccountIdsRef = useRef<Set<string>>(new Set())
   const [query, setQuery] = useState('')
   const [isVideoLoading, setIsVideoLoading] = useState(false)
   const [sharedVolume, setSharedVolume] = useSharedVolume()
@@ -170,6 +173,20 @@ const Library: FC<LibraryProps> = ({
   }, [accountStates])
 
   useEffect(() => {
+    const activeIds = new Set(availableAccountIds)
+    pendingClipCountAccountIdsRef.current.forEach((accountId) => {
+      if (!activeIds.has(accountId)) {
+        pendingClipCountAccountIdsRef.current.delete(accountId)
+      }
+    })
+    failedClipCountAccountIdsRef.current.forEach((accountId) => {
+      if (!activeIds.has(accountId)) {
+        failedClipCountAccountIdsRef.current.delete(accountId)
+      }
+    })
+  }, [availableAccountIds])
+
+  useEffect(() => {
     if (selectedClipId && previousSelectedClipIdRef.current !== selectedClipId) {
       setIsVideoLoading(true)
     }
@@ -188,6 +205,60 @@ const Library: FC<LibraryProps> = ({
       return next
     })
   }, [availableAccounts])
+
+  useEffect(() => {
+    if (availableAccounts.length === 0) {
+      return
+    }
+
+    let cancelled = false
+
+    const loadClipCounts = async (): Promise<void> => {
+      for (const account of availableAccounts) {
+        if (failedClipCountAccountIdsRef.current.has(account.id)) {
+          continue
+        }
+        const state = accountStatesRef.current[account.id]
+        if (state && typeof state.totalClips === 'number') {
+          continue
+        }
+        if (pendingClipCountAccountIdsRef.current.has(account.id)) {
+          continue
+        }
+
+        pendingClipCountAccountIdsRef.current.add(account.id)
+        try {
+          const total = await fetchAccountClipCount(account.id)
+          if (!cancelled) {
+            setAccountStates((previous) => {
+              const existing = previous[account.id] ?? createDefaultAccountState()
+              if (typeof existing.totalClips === 'number' && existing.totalClips === total) {
+                return previous
+              }
+              return {
+                ...previous,
+                [account.id]: {
+                  ...existing,
+                  totalClips: total
+                }
+              }
+            })
+          }
+        } catch (error) {
+          console.error('Unable to load clip count for account', account.id, error)
+          failedClipCountAccountIdsRef.current.add(account.id)
+        } finally {
+          pendingClipCountAccountIdsRef.current.delete(account.id)
+        }
+      }
+    }
+
+    void loadClipCounts()
+
+    return () => {
+      cancelled = true
+    }
+  }, [availableAccounts, setAccountStates])
 
   useEffect(() => {
     const previous = previousPageSizeRef.current
@@ -760,14 +831,12 @@ const Library: FC<LibraryProps> = ({
                   : null
               const accountClipLabel =
                 totalClipsValue !== null
-                  ? totalClipsValue === 0
-                    ? 'No clips available yet'
-                    : `${totalClipsValue} clip${totalClipsValue === 1 ? '' : 's'} available`
+                  ? `${totalClipsValue} clip${totalClipsValue === 1 ? '' : 's'} available`
                   : state.isLoading
                   ? 'Loading clip count…'
                   : state.clips.length === 0
-                  ? 'No clips available yet'
-                  : 'Clip count unavailable'
+                    ? 'No clips available yet'
+                    : 'Clip count unavailable'
               return (
                 <article
                   key={account.id}

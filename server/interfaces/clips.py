@@ -35,6 +35,15 @@ class PaginatedClipsResponse(BaseModel):
     projects: list[ProjectSummaryResponse] = Field(default_factory=list)
 
 
+class ClipCountResponse(BaseModel):
+    """Response payload describing the total number of clips for an account."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    account_id: str = Field(alias="accountId")
+    total_clips: int = Field(alias="totalClips")
+
+
 router = APIRouter(tags=["clips"])
 
 
@@ -67,6 +76,23 @@ async def list_paginated_clips(
         totalClips=total_clips,
         projects=projects,
     )
+
+
+@router.get("/clips/count", response_model=ClipCountResponse)
+async def get_clip_count(account_id: str = Query(alias="accountId", min_length=1)) -> ClipCountResponse:
+    """Return the total clip count for the provided account without fetching clip data."""
+
+    try:
+        _, _, total_clips, _ = await paginate_account_clips(account_id, limit=1, cursor=None)
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive guard
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to load clip count",
+        ) from exc
+
+    return ClipCountResponse(accountId=account_id, totalClips=total_clips)
 
 
 def register_legacy_routes(app: FastAPI) -> None:
