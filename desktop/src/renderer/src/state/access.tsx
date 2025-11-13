@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import { getOrCreateDeviceHash } from '../services/device'
 import {
@@ -44,8 +36,8 @@ const AccessContext = createContext<AccessContextValue | undefined>(undefined)
 
 const OFFLINE_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000
 const ACTIVE_REFRESH_INTERVAL_MS = 5 * 60 * 1000
-const DORMANT_REFRESH_INTERVAL_MS = 30 * 60 * 1000
-const INACTIVITY_THRESHOLD_MS = 3 * 60 * 1000
+const DORMANT_REFRESH_INTERVAL_MS = 60 * 60 * 1000
+const INACTIVITY_THRESHOLD_MS = 5 * 60 * 1000
 
 type OfflineSnapshot = {
   expiresAt: string | null
@@ -106,15 +98,15 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
         lastVerifiedAtRef.current = now
         writeLastVerifiedAt(now)
 
-          return {
-            deviceHash: status.deviceHash,
-            subscription,
-            trial,
-            access: status.access,
-            transfer,
-            isSubscriptionActive: subscriptionActive,
-            isTrialActive: trialActive,
-            isAccessActive: accessActive,
+        return {
+          deviceHash: status.deviceHash,
+          subscription,
+          trial,
+          access: status.access,
+          transfer,
+          isSubscriptionActive: subscriptionActive,
+          isTrialActive: trialActive,
+          isAccessActive: accessActive,
           isOffline: overrides?.isOffline ?? false,
           isOfflineLocked: overrides?.isOfflineLocked ?? false,
           offlineExpiresAt: overrides?.offlineExpiresAt ?? null,
@@ -124,62 +116,58 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
           lastError: overrides?.lastError ?? null,
           pendingConsumption: shouldResetPending
             ? false
-            : overrides?.pendingConsumption ?? prev.pendingConsumption,
+            : (overrides?.pendingConsumption ?? prev.pendingConsumption),
           pendingConsumptionStage: shouldResetPending
             ? null
-            : overrides?.pendingConsumptionStage ?? prev.pendingConsumptionStage
+            : (overrides?.pendingConsumptionStage ?? prev.pendingConsumptionStage)
         }
       })
     },
     []
   )
 
-  const markOffline = useCallback(
-    (message?: string) => {
-      const snapshot = resolveOfflineSnapshot(lastVerifiedAtRef.current ?? readLastVerifiedAt())
-      setState((prev) => {
-        const wasSubscriptionActive = prev.isSubscriptionActive
-        const accessSource = prev.access?.source ?? 'none'
-        const nextIsSubscriptionActive = snapshot.isLocked ? false : wasSubscriptionActive
-        const nextIsAccessActive = snapshot.isLocked
-          ? false
-          : accessSource === 'subscription' && wasSubscriptionActive
-        let nextError = message
-        if (!nextError) {
-          if (snapshot.isLocked) {
-            nextError =
-              accessSource === 'subscription'
-                ? 'Offline access expired. Reconnect to verify your subscription before processing.'
-                : 'Offline access expired. Reconnect to the internet to resume processing.'
-          } else if (accessSource === 'trial') {
-            nextError =
-              'Trial runs require an internet connection. Reconnect to continue processing.'
-          } else if (accessSource === 'subscription' && wasSubscriptionActive) {
-            nextError =
-              'Licensing service is unreachable. Reconnect within 24 hours to keep your subscription active.'
-          } else {
-            nextError =
-              'Licensing service is unreachable. Check your connection and refresh to verify access.'
-          }
+  const markOffline = useCallback((message?: string) => {
+    const snapshot = resolveOfflineSnapshot(lastVerifiedAtRef.current ?? readLastVerifiedAt())
+    setState((prev) => {
+      const wasSubscriptionActive = prev.isSubscriptionActive
+      const accessSource = prev.access?.source ?? 'none'
+      const nextIsSubscriptionActive = snapshot.isLocked ? false : wasSubscriptionActive
+      const nextIsAccessActive = snapshot.isLocked
+        ? false
+        : accessSource === 'subscription' && wasSubscriptionActive
+      let nextError = message
+      if (!nextError) {
+        if (snapshot.isLocked) {
+          nextError =
+            accessSource === 'subscription'
+              ? 'Offline access expired. Reconnect to verify your subscription before processing.'
+              : 'Offline access expired. Reconnect to the internet to resume processing.'
+        } else if (accessSource === 'trial') {
+          nextError = 'Trial runs require an internet connection. Reconnect to continue processing.'
+        } else if (accessSource === 'subscription' && wasSubscriptionActive) {
+          nextError =
+            'Licensing service is unreachable. Reconnect within 24 hours to keep your subscription active.'
+        } else {
+          nextError =
+            'Licensing service is unreachable. Check your connection and refresh to verify access.'
         }
+      }
 
-        return {
-          ...prev,
-          isLoading: false,
-          isOffline: true,
-          isOfflineLocked: snapshot.isLocked,
-          offlineExpiresAt: snapshot.expiresAt,
-          offlineRemainingMs: snapshot.remainingMs,
-          offlineLastVerifiedAt: snapshot.lastVerifiedAt,
-          isAccessActive: nextIsAccessActive,
-          isTrialActive: false,
-          isSubscriptionActive: nextIsSubscriptionActive,
-          lastError: nextError
-        }
-      })
-    },
-    []
-  )
+      return {
+        ...prev,
+        isLoading: false,
+        isOffline: true,
+        isOfflineLocked: snapshot.isLocked,
+        offlineExpiresAt: snapshot.expiresAt,
+        offlineRemainingMs: snapshot.remainingMs,
+        offlineLastVerifiedAt: snapshot.lastVerifiedAt,
+        isAccessActive: nextIsAccessActive,
+        isTrialActive: false,
+        isSubscriptionActive: nextIsSubscriptionActive,
+        lastError: nextError
+      }
+    })
+  }, [])
 
   const markFailure = useCallback((message: string) => {
     setState((prev) => ({
@@ -229,7 +217,9 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
           return
         }
         console.error('Unexpected licensing error while loading access status.', error)
-        markFailure('Something went wrong while checking your access. Please try again in a moment.')
+        markFailure(
+          'Something went wrong while checking your access. Please try again in a moment.'
+        )
       }
     },
     [applyStatus, markFailure, markOffline]
@@ -258,7 +248,9 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
       ...prev,
       pendingConsumption: true,
       pendingConsumptionStage:
-        prev.pendingConsumptionStage === 'finalizing' ? prev.pendingConsumptionStage : 'in_progress',
+        prev.pendingConsumptionStage === 'finalizing'
+          ? prev.pendingConsumptionStage
+          : 'in_progress',
       lastError: null,
       isOffline: false,
       isOfflineLocked: false,
@@ -276,9 +268,10 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
         startedAt: prev.trial.startedAt
       }
       const trialActive = isTrialAccessActive(prev.access, trial)
-      const access = prev.access && prev.access.source === 'trial'
-        ? { ...prev.access, isActive: trialActive }
-        : prev.access
+      const access =
+        prev.access && prev.access.source === 'trial'
+          ? { ...prev.access, isActive: trialActive }
+          : prev.access
       const isAccessActive = prev.isSubscriptionActive || Boolean(access?.isActive)
       return {
         ...prev,
