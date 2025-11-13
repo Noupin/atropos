@@ -44,6 +44,7 @@ type AccountRuntimeState = {
   clips: Clip[]
   nextCursor: string | null
   isLoading: boolean
+  isLoadingClipCount: boolean
   error: string | null
   loadedPages: number
   totalClips: number | null
@@ -63,6 +64,7 @@ const createDefaultAccountState = (): AccountRuntimeState => ({
   clips: [],
   nextCursor: null,
   isLoading: false,
+  isLoadingClipCount: false,
   error: null,
   loadedPages: 0,
   totalClips: null,
@@ -227,19 +229,37 @@ const Library: FC<LibraryProps> = ({
         }
 
         pendingClipCountAccountIdsRef.current.add(account.id)
+        setAccountStates((previous) => {
+          const existing = previous[account.id] ?? createDefaultAccountState()
+          if (existing.isLoadingClipCount) {
+            return previous
+          }
+          return {
+            ...previous,
+            [account.id]: {
+              ...existing,
+              isLoadingClipCount: true
+            }
+          }
+        })
         try {
           const total = await fetchAccountClipCount(account.id)
           if (!cancelled) {
             setAccountStates((previous) => {
               const existing = previous[account.id] ?? createDefaultAccountState()
-              if (typeof existing.totalClips === 'number' && existing.totalClips === total) {
+              if (
+                typeof existing.totalClips === 'number' &&
+                existing.totalClips === total &&
+                existing.isLoadingClipCount === false
+              ) {
                 return previous
               }
               return {
                 ...previous,
                 [account.id]: {
                   ...existing,
-                  totalClips: total
+                  totalClips: total,
+                  isLoadingClipCount: false
                 }
               }
             })
@@ -249,6 +269,21 @@ const Library: FC<LibraryProps> = ({
           failedClipCountAccountIdsRef.current.add(account.id)
         } finally {
           pendingClipCountAccountIdsRef.current.delete(account.id)
+          if (!cancelled) {
+            setAccountStates((previous) => {
+              const existing = previous[account.id] ?? createDefaultAccountState()
+              if (!existing.isLoadingClipCount) {
+                return previous
+              }
+              return {
+                ...previous,
+                [account.id]: {
+                  ...existing,
+                  isLoadingClipCount: false
+                }
+              }
+            })
+          }
         }
       }
     }
@@ -376,6 +411,7 @@ const Library: FC<LibraryProps> = ({
             clips: reset ? [] : existing.clips,
             nextCursor: reset ? null : existing.nextCursor,
             isLoading: true,
+            isLoadingClipCount: existing.isLoadingClipCount,
             error: null,
             loadedPages: reset ? 0 : existing.loadedPages,
             totalClips: reset ? null : existing.totalClips,
@@ -416,6 +452,7 @@ const Library: FC<LibraryProps> = ({
               clips: nextClips,
               nextCursor: page.nextCursor,
               isLoading: false,
+              isLoadingClipCount: existing.isLoadingClipCount,
               error: null,
               loadedPages: nextLoadedPages,
               totalClips: nextTotal,
@@ -832,11 +869,13 @@ const Library: FC<LibraryProps> = ({
               const accountClipLabel =
                 totalClipsValue !== null
                   ? `${totalClipsValue} clip${totalClipsValue === 1 ? '' : 's'} available`
-                  : state.isLoading
+                  : state.isLoadingClipCount
                   ? 'Loading clip count…'
-                  : state.clips.length === 0
-                    ? 'No clips available yet'
-                    : 'Clip count unavailable'
+                  : state.isLoading
+                    ? 'Loading clips…'
+                    : state.clips.length === 0
+                      ? 'No clips available yet'
+                      : 'Clip count unavailable'
               return (
                 <article
                   key={account.id}

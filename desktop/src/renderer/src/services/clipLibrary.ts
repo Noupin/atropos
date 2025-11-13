@@ -237,6 +237,11 @@ type RawClipPagePayload = {
 type RawClipCountPayload = {
   totalClips?: unknown
   total_clips?: unknown
+  count?: unknown
+  clipCount?: unknown
+  clip_count?: unknown
+  total?: unknown
+  total_count?: unknown
 }
 
 const parseProjectSummaries = (value: unknown): ProjectSummary[] => {
@@ -286,16 +291,44 @@ const parseClipPagePayload = (
   return { clips, nextCursor, totalClips, projects }
 }
 
+const normaliseClipCountValue = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value))
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed.length === 0) {
+      return null
+    }
+    const parsed = Number.parseInt(trimmed, 10)
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, parsed)
+    }
+  }
+  return null
+}
+
 const parseClipCountPayload = (payload: unknown): number | null => {
   if (!payload || typeof payload !== 'object') {
     return null
   }
   const record = payload as RawClipCountPayload
-  const totalRaw = typeof record.totalClips === 'number' ? record.totalClips : record.total_clips
-  if (typeof totalRaw !== 'number' || !Number.isFinite(totalRaw)) {
-    return null
+  const candidates: unknown[] = [
+    record.totalClips,
+    record.total_clips,
+    record.count,
+    record.clipCount,
+    record.clip_count,
+    record.total,
+    record.total_count
+  ]
+  for (const candidate of candidates) {
+    const value = normaliseClipCountValue(candidate)
+    if (value !== null) {
+      return value
+    }
   }
-  return Math.max(0, Math.floor(totalRaw))
+  return null
 }
 
 const fetchAccountClipPageFromApi = async (
