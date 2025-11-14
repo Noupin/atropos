@@ -114,6 +114,7 @@ const Library: FC<LibraryProps> = ({
   const accountStatesRef = useRef(accountStates)
   const [query, setQuery] = useState('')
   const [isVideoLoading, setIsVideoLoading] = useState(false)
+  const [videoError, setVideoError] = useState<string | null>(null)
   const [sharedVolume, setSharedVolume] = useSharedVolume()
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
   const scrollRestoredRef = useRef(false)
@@ -177,12 +178,14 @@ const Library: FC<LibraryProps> = ({
   useEffect(() => {
     if (selectedClipId && previousSelectedClipIdRef.current !== selectedClipId) {
       setIsVideoLoading(true)
+      setVideoError(null)
     }
     if (!selectedClipId) {
       setIsVideoLoading(false)
+      setVideoError(null)
     }
     previousSelectedClipIdRef.current = selectedClipId
-  }, [selectedClipId, setIsVideoLoading])
+  }, [selectedClipId, setIsVideoLoading, setVideoError])
 
   useEffect(() => {
     setAccountStates((previous) => {
@@ -611,8 +614,28 @@ const Library: FC<LibraryProps> = ({
   useEffect(() => {
     if (!selectedContext.clip) {
       setIsVideoLoading(false)
+      if (selectedClipId) {
+        console.error('Selected clip is no longer available in the library state', {
+          clipId: selectedClipId
+        })
+      }
     }
-  }, [selectedContext.clip])
+  }, [selectedContext.clip, selectedClipId, setIsVideoLoading])
+
+  const handleVideoLoaded = useCallback(() => {
+    setIsVideoLoading(false)
+    setVideoError(null)
+  }, [setIsVideoLoading, setVideoError])
+
+  const handleVideoError = useCallback(() => {
+    setIsVideoLoading(false)
+    setVideoError('We couldn’t play this clip preview right now. Please try again or pick another clip.')
+    if (selectedClipId) {
+      console.error('Failed to load clip preview video in the library', { clipId: selectedClipId })
+    } else {
+      console.error('Failed to load clip preview video in the library')
+    }
+  }, [selectedClipId, setIsVideoLoading, setVideoError])
 
   useEffect(() => {
     const element = previewVideoRef.current
@@ -761,6 +784,21 @@ const Library: FC<LibraryProps> = ({
     const cacheBusted = buildCacheBustedPlaybackUrl(selectedClip)
     return cacheBusted.length > 0 ? cacheBusted : selectedClip.playbackUrl
   }, [selectedClip])
+  const clipSelectionErrorMessage = selectedClipId !== null && !selectedClip
+    ? 'We couldn’t load that clip preview. Try selecting a different clip or reload the page.'
+    : null
+
+  useEffect(() => {
+    if (!selectedClip) {
+      return
+    }
+    if (selectedClipPlaybackSrc) {
+      return
+    }
+    console.error('Selected clip is missing a playable source', { clipId: selectedClip.id })
+    setIsVideoLoading(false)
+    setVideoError('We couldn’t play this clip preview right now. Please try again or pick another clip.')
+  }, [selectedClip, selectedClipPlaybackSrc, setIsVideoLoading, setVideoError])
 
   return (
     <section className="flex w-full flex-1 flex-col gap-6 px-6 py-8 lg:px-8">
@@ -1092,9 +1130,9 @@ const Library: FC<LibraryProps> = ({
                     controls
                     playsInline
                     preload="metadata"
-                    onLoadedData={() => setIsVideoLoading(false)}
-                    onLoadedMetadata={() => setIsVideoLoading(false)}
-                    onError={() => setIsVideoLoading(false)}
+                    onLoadedData={handleVideoLoaded}
+                    onLoadedMetadata={handleVideoLoaded}
+                    onError={handleVideoError}
                     onVolumeChange={handleVolumeChange}
                     className="w-full"
                   >
@@ -1103,6 +1141,17 @@ const Library: FC<LibraryProps> = ({
                   {isVideoLoading ? (
                     <div className="absolute inset-0 flex items-center justify-center bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)]/80">
                       <MarbleSpinner label="Loading video" size={36} />
+                    </div>
+                  ) : null}
+                  {videoError ? (
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="absolute inset-0 flex items-center justify-center bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)]/85 px-4 text-center"
+                    >
+                      <p className="rounded-lg border border-[color:var(--error-strong)] bg-[color:color-mix(in_srgb,var(--error-soft)_55%,transparent)] px-4 py-3 text-sm font-medium text-[color:var(--error-strong)] shadow-sm">
+                        {videoError}
+                      </p>
                     </div>
                   ) : null}
                 </div>
@@ -1185,6 +1234,10 @@ const Library: FC<LibraryProps> = ({
                     {selectedClip.quote ? `“${selectedClip.quote}”` : selectedClip.title}
                   </p>
                 </div>
+              </div>
+            ) : clipSelectionErrorMessage ? (
+              <div className="rounded-xl border border-[color:var(--error-strong)] bg-[color:color-mix(in_srgb,var(--error-soft)_55%,transparent)] p-8 text-center text-sm font-medium text-[color:var(--error-strong)]">
+                {clipSelectionErrorMessage}
               </div>
             ) : (
               <div className="rounded-xl border border-dashed border-white/12 bg-[color:color-mix(in_srgb,var(--panel)_70%,transparent)] p-8 text-center text-sm text-[var(--muted)]">
