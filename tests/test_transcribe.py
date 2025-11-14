@@ -2,6 +2,7 @@
 
 import sys
 import types
+import json
 from pathlib import Path
 
 
@@ -10,13 +11,14 @@ class FakeSegment:
         self.start = start
         self.end = end
         self.text = text
+        self.words = []
 
 
 class FakeModel:
     def __init__(self, *args, **kwargs):
         pass
 
-    def transcribe(self, file_path):
+    def transcribe(self, file_path, **kwargs):
         segments = (
             seg
             for seg in [
@@ -39,8 +41,8 @@ def test_transcribe_audio_handles_generator():
     result = transcribe.transcribe_audio("dummy", model_size="fake")
     assert result["text"] == "Hello world!"
     assert result["segments"] == [
-        {"start": 0.0, "end": 1.0, "text": "Hello "},
-        {"start": 1.0, "end": 2.0, "text": "world!"},
+        {"start": 0.0, "end": 1.0, "text": "Hello ", "words": []},
+        {"start": 1.0, "end": 2.0, "text": "world!", "words": []},
     ]
     assert result["timing"]["total_time"] >= 0
 
@@ -67,4 +69,7 @@ def test_write_transcript_normalizes_quotes(tmp_path):
     content = out.read_text(encoding="utf-8")
     assert "It's fine" in content
     assert "\u2019" not in content
+    json_data = json.loads(out.with_suffix(".json").read_text(encoding="utf-8"))
+    assert json_data["segments"][0]["text"] == "It's fine"
+    assert json_data["segments"][0]["words"] == []
 

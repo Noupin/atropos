@@ -25,6 +25,7 @@ CAPTION_USE_COLORS = True
 # Default caption fill and outline colors in BGR (blue-green-red) order
 # hex 1cbbff -> RGB(28,187,255) -> BGR(255,187,28)
 CAPTION_FILL_BGR = (255, 187, 28)
+CAPTION_HIGHLIGHT_BGR = (85, 255, 127)  # vibrant green highlight for active words
 CAPTION_OUTLINE_BGR = (236, 236, 236)  # hex ececec
 # Constant frame-rate to avoid VFR issues on platforms like TikTok/Reels
 OUTPUT_FPS: float = 30.0

@@ -21,9 +21,13 @@ def transcribe_audio(file_path, model_size=WHISPER_MODEL, progress_callback: Pro
                 vad_parameters=dict(threshold=0.6),
                 no_speech_threshold=0.6,
                 condition_on_previous_text=False,
+                word_timestamps=True,
             )
         except TypeError:
-            segments_iter, info = model.transcribe(file_path)
+            try:
+                segments_iter, info = model.transcribe(file_path, word_timestamps=True)
+            except TypeError:
+                segments_iter, info = model.transcribe(file_path)
 
         duration = getattr(info, "duration", None)
         segments = []
@@ -36,14 +40,39 @@ def transcribe_audio(file_path, model_size=WHISPER_MODEL, progress_callback: Pro
         progress_callback(1.0)
 
     text = "".join(s.text for s in segments)
-    segment_list = [
-        {
-            "start": s.start,
-            "end": s.end,
-            "text": s.text,
-        }
-        for s in segments
-    ]
+    segment_list = []
+    for seg in segments:
+        words_data = []
+        for w in getattr(seg, "words", []) or []:
+            text = getattr(w, "word", "")
+            if text is None:
+                continue
+            cleaned = text.strip()
+            if not cleaned:
+                continue
+            start = getattr(w, "start", None)
+            end = getattr(w, "end", None)
+            try:
+                start_val = float(start) if start is not None else None
+                end_val = float(end) if end is not None else None
+            except (TypeError, ValueError):
+                start_val = end_val = None
+            if start_val is None or end_val is None or end_val <= start_val:
+                continue
+            words_data.append({
+                "start": start_val,
+                "end": end_val,
+                "text": cleaned,
+            })
+
+        segment_list.append(
+            {
+                "start": seg.start,
+                "end": seg.end,
+                "text": seg.text,
+                "words": words_data,
+            }
+        )
     timing = {
         "start_time": t.start_time,
         "stop_time": t.stop_time,
