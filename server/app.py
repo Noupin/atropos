@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from custom_types.ETone import Tone
 from interfaces.clips import router as clips_router, register_legacy_routes as register_clip_legacy_routes
 from interfaces.progress import PipelineEvent, PipelineEventType, PipelineObserver
-from pipeline import GENERIC_HASHTAGS, process_video
+from pipeline import GENERIC_HASHTAGS, process_video, PipelineCancelledError
 from library import (
     DEFAULT_ACCOUNT_PLACEHOLDER,
     list_account_clips,
@@ -533,6 +533,8 @@ class JobState:
     transcript_path: Path | None = None
     subtitles_path: Path | None = None
     source_kind: str | None = None
+    cancel_event: threading.Event = field(default_factory=threading.Event)
+    cancellation_requested: bool = False
 
     def publish(self, event: PipelineEvent) -> None:
         """Broadcast ``event`` to all listeners and append it to history."""
@@ -705,6 +707,19 @@ class JobState:
         event = self.resume_event
         if event and not event.is_set():
             event.set()
+
+    def cancel(self) -> bool:
+        """Request cancellation of the running job."""
+
+        with self.lock:
+            if self.finished:
+                return False
+            if self.cancellation_requested:
+                return False
+            self.cancellation_requested = True
+            self.cancel_event.set()
+        self.resume()
+        return True
 
 
 class BroadcastObserver(PipelineObserver):
@@ -1127,6 +1142,28 @@ async def start_job(payload: RunRequest) -> RunResponse:
                 review_gate=state.wait_for_resume if payload.review_mode else None,
                 source_kind=source_kind,
                 local_video_path=local_video_path,
+                cancellation_event=state.cancel_event,
+            )
+        except PipelineCancelledError:
+            logger.info("Pipeline job %s cancelled", job_id)
+            with state.lock:
+                rendered_clips = len(state.clips)
+                state.clips.clear()
+                state.project_dir = None
+            observer.handle_event(
+                PipelineEvent(
+                    type=PipelineEventType.PIPELINE_COMPLETED,
+                    message="Pipeline cancelled",
+                    data={
+                        "success": False,
+                        "error": "Pipeline cancelled",
+                        "cancelled": True,
+                        "clips_expected": rendered_clips,
+                        "clips_rendered": 0,
+                        "clips_available": 0,
+                        "source_kind": state.source_kind,
+                    },
+                )
             )
         except Exception as exc:  # pragma: no cover - exercised in integration
             logger.exception("Pipeline job %s failed", job_id)
@@ -1160,6 +1197,30 @@ async def resume_job(job_id: str) -> Response:
 
     state.resume()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/api/jobs/{job_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
+async def cancel_job(job_id: str) -> Response:
+    """Request cancellation of a running pipeline job."""
+
+    state = _get_job(job_id)
+    if state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    with state.lock:
+        if state.finished:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Job has already finished.",
+            )
+
+    if not state.cancel():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cancellation has already been requested for this job.",
+        )
+
+    return Response(status_code=status.HTTP_202_ACCEPTED)
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatus)

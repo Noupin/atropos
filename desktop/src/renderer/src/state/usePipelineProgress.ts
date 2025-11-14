@@ -8,6 +8,7 @@ import {
 } from '../data/pipeline'
 import {
   normaliseJobClip,
+  cancelPipelineJob,
   resumePipelineJob,
   startPipelineJob,
   subscribeToPipelineEvents,
@@ -42,6 +43,7 @@ type UsePipelineProgressResult = {
     reviewMode: boolean
   ) => Promise<void>
   resumePipeline: () => Promise<void>
+  cancelPipeline: () => Promise<void>
   cleanup: () => void
 }
 
@@ -62,6 +64,39 @@ const parseNonNegativeInt = (value: unknown): number | null => {
   return bounded >= 0 ? bounded : 0
 }
 
+const normaliseCancelledSteps = (steps: PipelineStep[]): PipelineStep[] =>
+  steps.map((step) => {
+    const nextSubsteps = step.substeps.map((substep) => {
+      if (substep.status === 'completed') {
+        return { ...substep, etaSeconds: null, activeClipIndex: null }
+      }
+      const boundedProgress = substep.progress > 0 ? clamp01(substep.progress) : 0
+      const progress = substep.status === 'failed' ? 1 : boundedProgress
+      return {
+        ...substep,
+        status: 'cancelled',
+        progress,
+        etaSeconds: null,
+        activeClipIndex: null
+      }
+    })
+
+    if (step.status === 'completed') {
+      return { ...step, etaSeconds: null, substeps: nextSubsteps }
+    }
+
+    const boundedProgress = step.progress > 0 ? clamp01(step.progress) : 0
+    const progress = step.status === 'failed' ? 1 : boundedProgress
+
+    return {
+      ...step,
+      status: 'cancelled',
+      progress,
+      etaSeconds: null,
+      substeps: nextSubsteps
+    }
+  })
+
 export const usePipelineProgress = ({
   state,
   setState,
@@ -80,6 +115,7 @@ export const usePipelineProgress = ({
   const trialFlagsRef = useRef({ isTrialActive, hasPendingTrialRun })
   const firstClipHandledRef = useRef(false)
   const finalizeTriggeredRef = useRef(false)
+  const cancellationRequestedRef = useRef(false)
   const onFirstClipReadyRef = useRef<((details: { jobId: string }) => void) | null>(
     onFirstClipReady ?? null
   )
@@ -125,6 +161,7 @@ export const usePipelineProgress = ({
   const handlePipelineEvent = useCallback(
     (event: PipelineEventMessage) => {
       if (event.type === 'pipeline_started') {
+        cancellationRequestedRef.current = false
         firstClipHandledRef.current = false
         finalizeTriggeredRef.current = false
         if (trialFlagsRef.current.isTrialActive) {
@@ -144,6 +181,9 @@ export const usePipelineProgress = ({
       }
 
       if (event.type === 'step_progress') {
+        if (cancellationRequestedRef.current) {
+          return
+        }
         const location = resolvePipelineLocation(event.step)
         if (!location || typeof event.data?.progress !== 'number') {
           return
@@ -279,6 +319,15 @@ export const usePipelineProgress = ({
         event.type === 'step_completed' ||
         event.type === 'step_failed'
       ) {
+        if (cancellationRequestedRef.current) {
+          if (event.type === 'step_failed') {
+            updateState((prev) => ({
+              ...prev,
+              steps: normaliseCancelledSteps(prev.steps)
+            }))
+          }
+          return
+        }
         const location = resolvePipelineLocation(event.step)
         if (!location) {
           return
@@ -513,6 +562,7 @@ export const usePipelineProgress = ({
       }
 
       if (event.type === 'pipeline_completed') {
+        cancellationRequestedRef.current = false
         const successValue = event.data?.success
         const success = typeof successValue === 'boolean' ? successValue : true
         const errorValue = event.data?.error
@@ -527,6 +577,7 @@ export const usePipelineProgress = ({
           event.data && typeof event.data === 'object'
             ? (event.data as Record<string, unknown>)
             : null
+        const cancelled = rawData?.['cancelled'] === true
         const expectedFromEvent =
           rawData !== null
             ? parseNonNegativeInt(
@@ -554,7 +605,7 @@ export const usePipelineProgress = ({
           sourceKind: null
         }
 
-        if (rawData) {
+        if (rawData && !cancelled) {
           const rawDownloads = rawData['downloads']
           if (rawDownloads && typeof rawDownloads === 'object') {
             const audioCandidate = rawDownloads['audio']
@@ -589,9 +640,9 @@ export const usePipelineProgress = ({
             resolvedExpectedCount = Math.max(resolvedExpectedCount, clipProgressTotal)
           }
 
-          producedClipCount = resolvedRenderedCount
+          producedClipCount = cancelled ? 0 : resolvedRenderedCount
           const clipStatus: HomePipelineState['lastRunClipStatus'] =
-            success && resolvedRenderedCount === 0
+            !cancelled && success && resolvedRenderedCount === 0
               ? resolvedExpectedCount > 0
                 ? 'rendered_none'
                 : 'none_to_render'
@@ -600,27 +651,41 @@ export const usePipelineProgress = ({
             ? { expected: resolvedExpectedCount, rendered: resolvedRenderedCount }
             : null
 
-          return {
-            ...prev,
-            pipelineError: success ? null : errorMessage ?? 'Pipeline failed.',
-            isProcessing: false,
-            awaitingReview: false,
-            steps: prev.steps.map((step): PipelineStep => {
-              if (success) {
+          const failureMessage = cancelled
+            ? 'Processing was cancelled.'
+            : errorMessage ?? 'Pipeline failed.'
+
+          const nextClips = cancelled ? [] : prev.clips
+          const nextSelectedClipId = cancelled ? null : prev.selectedClipId
+
+          const nextSteps: PipelineStep[] = success
+            ? prev.steps.map((step) => {
                 if (step.status === 'completed' || step.status === 'failed') {
                   return { ...step, etaSeconds: null }
                 }
                 return { ...step, status: 'completed', progress: 1, etaSeconds: null }
-              }
-              if (step.status === 'completed' || step.status === 'failed') {
-                return { ...step, etaSeconds: null }
-              }
-              return { ...step, status: 'failed', progress: 1, etaSeconds: null }
-            }),
-            lastRunProducedNoClips: success && resolvedRenderedCount === 0,
-            lastRunClipSummary: clipSummary,
-            lastRunClipStatus: clipStatus,
-            downloads: success ? downloads : prev.downloads
+              })
+            : cancelled
+              ? normaliseCancelledSteps(prev.steps)
+              : prev.steps.map((step) => {
+                  if (step.status === 'completed' || step.status === 'failed') {
+                    return { ...step, etaSeconds: null }
+                  }
+                  return { ...step, status: 'failed', progress: 1, etaSeconds: null }
+                })
+
+          return {
+            ...prev,
+            pipelineError: cancelled ? null : success ? null : failureMessage,
+            isProcessing: false,
+            awaitingReview: false,
+            steps: nextSteps,
+            clips: nextClips,
+            selectedClipId: nextSelectedClipId,
+            lastRunProducedNoClips: !cancelled && success && resolvedRenderedCount === 0,
+            lastRunClipSummary: cancelled ? null : clipSummary,
+            lastRunClipStatus: cancelled ? null : clipStatus,
+            downloads: success ? downloads : cancelled ? { ...EMPTY_DOWNLOADS } : prev.downloads
           }
         })
         cleanupConnection()
@@ -785,9 +850,41 @@ export const usePipelineProgress = ({
     }
   }, [isMockBackend, updateState])
 
+  const cancelPipeline = useCallback(async () => {
+    const jobId = activeJobIdRef.current
+    if (!jobId || isMockBackend) {
+      return
+    }
+
+    try {
+      await cancelPipelineJob(jobId)
+      cancellationRequestedRef.current = true
+      updateState((prev) => ({
+        ...prev,
+        awaitingReview: false,
+        isProcessing: false,
+        pipelineError: null,
+        steps: normaliseCancelledSteps(prev.steps),
+        lastRunProducedNoClips: false,
+        lastRunClipSummary: null,
+        lastRunClipStatus: null
+      }))
+    } catch (error) {
+      cancellationRequestedRef.current = false
+      updateState((prev) => ({
+        ...prev,
+        pipelineError:
+          error instanceof Error
+            ? error.message
+            : 'Unable to cancel the pipeline. Try again shortly.'
+      }))
+    }
+  }, [isMockBackend, updateState])
+
   return {
     startPipeline,
     resumePipeline,
+    cancelPipeline,
     cleanup: cleanupConnection
   }
 }

@@ -124,4 +124,34 @@ describe('PipelineProgress', () => {
     const produceStepProgress = within(stepList).getByTestId('step-progress-produce-clips')
     expect(produceStepProgress).toHaveAccessibleName(/produce final clips progress/i)
   })
+
+  it('highlights cancelled steps distinctly', () => {
+    const cancelledSteps: PipelineStep[] = [
+      {
+        ...mockSteps[0],
+        status: 'completed'
+      },
+      {
+        ...mockSteps[1],
+        status: 'cancelled',
+        progress: 0.6,
+        etaSeconds: null,
+        substeps: mockSteps[1].substeps.map((substep) => ({
+          ...substep,
+          status: substep.status === 'completed' ? 'completed' : 'cancelled',
+          etaSeconds: null
+        }))
+      },
+      {
+        ...mockSteps[2],
+        status: 'pending'
+      }
+    ]
+
+    render(<PipelineProgress steps={cancelledSteps} />)
+
+    expect(screen.getByText(/produce final clips cancelled/i)).toBeInTheDocument()
+    expect(screen.getByText(/processing cancelled during produce final clips/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/cancelled/i).length).toBeGreaterThan(0)
+  })
 })

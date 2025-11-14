@@ -169,6 +169,7 @@ const renderHome = (props: Partial<ComponentProps<typeof Home>> = {}) => {
     accounts: [],
     onStartPipeline: vi.fn(),
     onResumePipeline: vi.fn(),
+    onCancelPipeline: vi.fn(),
     ...props
   }
 

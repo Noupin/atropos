@@ -46,6 +46,7 @@ type HomeProps = {
     reviewMode: boolean
   ) => Promise<void> | void
   onResumePipeline: () => Promise<void> | void
+  onCancelPipeline: () => Promise<void> | void
 }
 
 const Home: FC<HomeProps> = ({
@@ -53,7 +54,8 @@ const Home: FC<HomeProps> = ({
   onStateChange,
   accounts,
   onStartPipeline,
-  onResumePipeline
+  onResumePipeline,
+  onCancelPipeline
 }) => {
   const navigate = useNavigate()
   const [state, setState] = useState<HomePipelineState>(initialState)
@@ -649,8 +651,17 @@ const Home: FC<HomeProps> = ({
     void onResumePipeline()
   }, [onResumePipeline])
 
+  const handleCancelPipeline = useCallback(() => {
+    void onCancelPipeline()
+  }, [onCancelPipeline])
+
   const hasProgress = useMemo(
     () => steps.some((step) => step.status !== 'pending' || step.progress > 0),
+    [steps]
+  )
+
+  const hasCancelledSteps = useMemo(
+    () => steps.some((step) => step.status === 'cancelled'),
     [steps]
   )
 
@@ -746,6 +757,9 @@ const Home: FC<HomeProps> = ({
     if (awaitingReview) {
       return 'Pipeline paused for manual clip review. Adjust boundaries, then resume when ready.'
     }
+    if (hasCancelledSteps) {
+      return 'Processing cancelled. Resume the pipeline to pick up where you left off.'
+    }
     if (currentStep) {
       return `Currently processing: ${currentStep.title}`
     }
@@ -771,7 +785,8 @@ const Home: FC<HomeProps> = ({
     offlineCountdownMessage,
     offlineRestrictionMessage,
     accessState.pendingConsumption,
-    accessState.pendingConsumptionStage
+    accessState.pendingConsumptionStage,
+    hasCancelledSteps
   ])
 
   return (
@@ -956,6 +971,14 @@ const Home: FC<HomeProps> = ({
                   className="marble-button marble-button--primary whitespace-nowrap px-5 py-2.5 text-sm font-semibold sm:px-6 sm:py-2.5 sm:text-base"
                 >
                   {isProcessing ? 'Processing…' : 'Start processing'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelPipeline}
+                  disabled={!isProcessing && !awaitingReview}
+                  className="marble-button marble-button--danger whitespace-nowrap px-4 py-2.5 text-sm font-semibold sm:px-5"
+                >
+                  Cancel processing
                 </button>
                 <button
                   type="button"

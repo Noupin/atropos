@@ -79,7 +79,7 @@ export type SearchBridge = {
   clear: () => void
 }
 
-export type PipelineStepStatus = 'pending' | 'running' | 'completed' | 'failed'
+export type PipelineStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 
 export interface PipelineStepDefinition {
   id: string

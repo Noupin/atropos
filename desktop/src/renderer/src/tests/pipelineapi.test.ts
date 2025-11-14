@@ -14,10 +14,11 @@ vi.mock('../config/backend', () => ({
     }
     return null
   }),
-  buildWebSocketUrl: vi.fn((jobId: string) => `ws://jobs/${jobId}`)
+  buildWebSocketUrl: vi.fn((jobId: string) => `ws://jobs/${jobId}`),
+  buildJobCancelUrl: vi.fn((jobId: string) => `http://127.0.0.1:8000/api/jobs/${jobId}/cancel`)
 }))
 
-import { startPipelineJob } from '../services/pipelineApi'
+import { cancelPipelineJob, startPipelineJob } from '../services/pipelineApi'
 import * as backend from '../config/backend'
 
 const mockedBuildJobUrl = backend.buildJobUrl as unknown as Mock
@@ -81,5 +82,45 @@ describe('startPipelineJob', () => {
     )
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(mockedAdvanceApiBaseUrl).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('cancelPipelineJob', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('resolves when the backend accepts the cancellation request', async () => {
+    const fetchMock = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValue({ ok: true } as unknown as Response)
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(cancelPipelineJob('job-123')).resolves.toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8000/api/jobs/job-123/cancel',
+      expect.objectContaining({ method: 'POST' })
+    )
+  })
+
+  it('throws a descriptive error when the backend rejects the cancellation request', async () => {
+    const fetchMock = vi
+      .fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>()
+      .mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: async () => ({ detail: 'Job has already finished.' })
+      } as unknown as Response)
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(cancelPipelineJob('job-456')).rejects.toThrow(
+      'Job has already finished.'
+    )
   })
 })

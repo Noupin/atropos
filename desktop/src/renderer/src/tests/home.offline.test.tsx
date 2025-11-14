@@ -115,6 +115,7 @@ describe('Home offline access handling', () => {
           accounts={[AVAILABLE_ACCOUNT]}
           onStartPipeline={() => {}}
           onResumePipeline={() => {}}
+          onCancelPipeline={() => {}}
         />
       </MemoryRouter>
     )
@@ -154,6 +155,7 @@ describe('Home offline access handling', () => {
           accounts={[AVAILABLE_ACCOUNT]}
           onStartPipeline={() => {}}
           onResumePipeline={() => {}}
+          onCancelPipeline={() => {}}
         />
       </MemoryRouter>
     )
