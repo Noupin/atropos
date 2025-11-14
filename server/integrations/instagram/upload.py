@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 import json
 import os
 import time
 
+from helpers.media import probe_media_duration
+
 # Upload tuning
 MAX_RETRIES = 3
 RETRY_BACKOFF_SEC = 5
+RECENT_DUPLICATE_WINDOW = timedelta(minutes=10)
+DURATION_TOLERANCE = 1.5
 
 
 def get_username() -> str | None:
@@ -134,6 +139,7 @@ def clip_upload_with_retries(
     password: str,
 ) -> dict:
     last_exc: Optional[Exception] = None
+    video_duration = probe_media_duration(video_path)
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             media = cl.clip_upload(
@@ -160,10 +166,85 @@ def clip_upload_with_retries(
         except Exception as e:
             last_exc = e
             print(f"Upload failed (attempt {attempt}/{MAX_RETRIES}): {e}")
+            duplicate = _detect_recent_duplicate(
+                cl,
+                username=username,
+                caption=caption,
+                video_duration=video_duration,
+            )
+            if duplicate:
+                print(
+                    "Existing reel detected after failure; treating as successful upload."
+                )
+                return duplicate
             time.sleep(RETRY_BACKOFF_SEC * attempt)
     if last_exc:
+        duplicate = _detect_recent_duplicate(
+            cl,
+            username=username,
+            caption=caption,
+            video_duration=video_duration,
+        )
+        if duplicate:
+            print(
+                "Existing reel detected after repeated failures; treating as successful upload."
+            )
+            return duplicate
         raise last_exc
     raise RuntimeError("Unknown upload failure")
+
+
+def _detect_recent_duplicate(
+    cl: Client,
+    *,
+    username: str,
+    caption: str,
+    video_duration: float | None,
+) -> Optional[dict]:
+    """Return upload metadata if a matching clip already exists recently."""
+
+    normalized_caption = (caption or "").strip()
+    if not username:
+        return None
+    try:
+        user_id = getattr(cl, "user_id", None) or cl.user_id_from_username(username)
+    except Exception:
+        return None
+
+    try:
+        recent_clips = cl.user_clips(user_id, amount=10)
+    except Exception:
+        return None
+
+    now = datetime.utcnow()
+    for media in recent_clips:
+        taken_at = getattr(media, "taken_at", None)
+        if isinstance(taken_at, datetime) and now - taken_at > RECENT_DUPLICATE_WINDOW:
+            continue
+
+        remote_caption = (getattr(media, "caption_text", "") or "").strip()
+        if normalized_caption and remote_caption != normalized_caption:
+            continue
+        if not normalized_caption and remote_caption:
+            continue
+
+        remote_duration = getattr(media, "video_duration", None)
+        if (
+            remote_duration is not None
+            and video_duration is not None
+            and abs(remote_duration - video_duration) > DURATION_TOLERANCE
+        ):
+            continue
+
+        return {
+            "status": "ok",
+            "pk": getattr(media, "pk", None),
+            "code": getattr(media, "code", None),
+            "id": getattr(media, "id", None),
+            "duplicate": True,
+        }
+
+    return None
 
 
 def save_state(data: dict, path: Path | None = None) -> None:
