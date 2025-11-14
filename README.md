@@ -78,3 +78,9 @@ modification.
 - Override the file location with the `SOCIAL_CONFIG_FILE` environment
   variable or inject a full configuration via `SOCIAL_OVERVIEW_HANDLES`
   (JSON string) when deploying.
+
+### Docker Commands
+
+- For rebuilding and recreating the uploader
+  - `docker compose build uploader`
+  - `docker compose up -d --force-recreate uploader`
