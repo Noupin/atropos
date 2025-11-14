@@ -660,6 +660,11 @@ const Home: FC<HomeProps> = ({
     [steps]
   )
 
+  const hasCancelledSteps = useMemo(
+    () => steps.some((step) => step.status === 'cancelled'),
+    [steps]
+  )
+
   const currentStep = useMemo(() => steps.find((step) => step.status === 'running') ?? null, [steps])
   const timelineDateFormatter = useMemo(
     () =>
@@ -752,6 +757,9 @@ const Home: FC<HomeProps> = ({
     if (awaitingReview) {
       return 'Pipeline paused for manual clip review. Adjust boundaries, then resume when ready.'
     }
+    if (hasCancelledSteps) {
+      return 'Processing cancelled. Resume the pipeline to pick up where you left off.'
+    }
     if (currentStep) {
       return `Currently processing: ${currentStep.title}`
     }
@@ -777,7 +785,8 @@ const Home: FC<HomeProps> = ({
     offlineCountdownMessage,
     offlineRestrictionMessage,
     accessState.pendingConsumption,
-    accessState.pendingConsumptionStage
+    accessState.pendingConsumptionStage,
+    hasCancelledSteps
   ])
 
   return (

@@ -49,7 +49,7 @@ const THEME_STORAGE_KEY = 'atropos:theme'
 const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
 
-type NavItemBadgeVariant = 'accent' | 'info' | 'success' | 'error' | 'warning'
+type NavItemBadgeVariant = 'accent' | 'info' | 'success' | 'error' | 'warning' | 'neutral'
 
 type NavItemBadge = {
   label: string
@@ -138,7 +138,9 @@ const badgeVariantClasses: Record<NavItemBadgeVariant, string> = {
   error:
     'border-[color:color-mix(in_srgb,var(--error-strong)_55%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--error-soft)_78%,transparent)] text-[color:color-mix(in_srgb,var(--error-strong)_90%,var(--accent-contrast))]',
   warning:
-    'border-[color:color-mix(in_srgb,var(--warning-strong)_55%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--warning-soft)_78%,transparent)] text-[color:color-mix(in_srgb,var(--warning-strong)_88%,var(--accent-contrast))]'
+    'border-[color:color-mix(in_srgb,var(--warning-strong)_55%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--warning-soft)_78%,transparent)] text-[color:color-mix(in_srgb,var(--warning-strong)_88%,var(--accent-contrast))]',
+  neutral:
+    'border-[color:color-mix(in_srgb,var(--neutral-strong)_45%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--neutral-soft)_80%,transparent)] text-[color:color-mix(in_srgb,var(--neutral-strong)_88%,var(--accent-contrast))]'
 }
 
 const progressStatusClasses: Record<PipelineOverallStatus, string> = {
@@ -388,7 +390,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       return { label: 'Failed', variant: 'error' } satisfies NavItemBadge
     }
     if (homeProgressSummary.status === 'cancelled') {
-      return { label: 'Cancelled', variant: 'warning' } satisfies NavItemBadge
+      return { label: 'Cancelled', variant: 'neutral' } satisfies NavItemBadge
     }
     if (homeState.awaitingReview) {
       return { label: 'Needs review', variant: 'info' } satisfies NavItemBadge
