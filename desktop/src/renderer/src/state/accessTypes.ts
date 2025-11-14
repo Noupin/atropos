@@ -19,6 +19,7 @@ export type AccessState = {
   trial: AccessTrialState
   access: AccessStatusPayload['access'] | null
   transfer: TransferStatePayload
+  accessTokenExpiresAt: string | null
   isSubscriptionActive: boolean
   isTrialActive: boolean
   isAccessActive: boolean
@@ -60,6 +61,7 @@ export const INITIAL_STATE: AccessState = {
     completedAt: null,
     targetDeviceHash: null
   },
+  accessTokenExpiresAt: null,
   isSubscriptionActive: false,
   isTrialActive: false,
   isAccessActive: false,

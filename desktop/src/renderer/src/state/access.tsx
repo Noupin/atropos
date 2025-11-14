@@ -35,8 +35,9 @@ export { DEFAULT_TRIAL_RUNS } from './accessTypes'
 const AccessContext = createContext<AccessContextValue | undefined>(undefined)
 
 const OFFLINE_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000
-const ACTIVE_REFRESH_INTERVAL_MS = 5 * 60 * 1000
-const DORMANT_REFRESH_INTERVAL_MS = 60 * 60 * 1000
+const MIN_REFRESH_INTERVAL_MS = 5 * 1000
+const JWT_REFRESH_BUFFER_MS = 60 * 1000
+const FALLBACK_REFRESH_INTERVAL_MS = 30 * 60 * 1000
 const INACTIVITY_THRESHOLD_MS = 5 * 60 * 1000
 
 type OfflineSnapshot = {
@@ -71,63 +72,85 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
   const [state, setState] = useState<AccessState>(INITIAL_STATE)
   const [deviceHash, setDeviceHash] = useState<string | null>(null)
   const [isUserActive, setIsUserActive] = useState(true)
+  const [scheduledRefreshAt, setScheduledRefreshAt] = useState<number | null>(null)
   const hasRecoveredPendingRef = useRef(false)
   const pendingTransferTokenRef = useRef<string | null>(null)
   const lastVerifiedAtRef = useRef<number | null>(readLastVerifiedAt())
   const isUserActiveRef = useRef(true)
   const inactivityTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null)
   const lastRefreshAtRef = useRef<number | null>(null)
+  const nextRefreshAtRef = useRef<number | null>(null)
 
   const applyStatus = useCallback(
     (status: AccessStatusPayload, overrides?: Partial<AccessState>) => {
-      setState((prev) => {
-        const subscription = status.subscription ?? null
-        const transfer = status.transfer ?? {
-          status: 'none',
-          email: null,
-          initiatedAt: null,
-          expiresAt: null,
-          completedAt: null,
-          targetDeviceHash: null
-        }
-        const trial = deriveTrialState(status.trial)
-        const subscriptionActive = isSubscriptionActive(subscription)
-        const trialActive = isTrialAccessActive(status.access, trial)
-        const accessActive = subscriptionActive || trialActive || Boolean(status.access?.isActive)
-        const shouldResetPending = status.access?.source !== 'trial'
-        const now = Date.now()
-        lastVerifiedAtRef.current = now
-        writeLastVerifiedAt(now)
+      const subscription = status.subscription ?? null
+      const transfer = status.transfer ?? {
+        status: 'none',
+        email: null,
+        initiatedAt: null,
+        expiresAt: null,
+        completedAt: null,
+        targetDeviceHash: null
+      }
+      const trial = deriveTrialState(status.trial)
+      const subscriptionActive = isSubscriptionActive(subscription)
+      const trialActive = isTrialAccessActive(status.access, trial)
+      const accessActive = subscriptionActive || trialActive || Boolean(status.access?.isActive)
+      const shouldResetPending = status.access?.source !== 'trial'
+      const now = Date.now()
+      lastVerifiedAtRef.current = now
+      writeLastVerifiedAt(now)
 
-        return {
-          deviceHash: status.deviceHash,
-          subscription,
-          trial,
-          access: status.access,
-          transfer,
-          isSubscriptionActive: subscriptionActive,
-          isTrialActive: trialActive,
-          isAccessActive: accessActive,
-          isOffline: overrides?.isOffline ?? false,
-          isOfflineLocked: overrides?.isOfflineLocked ?? false,
-          offlineExpiresAt: overrides?.offlineExpiresAt ?? null,
-          offlineRemainingMs: overrides?.offlineRemainingMs ?? null,
-          offlineLastVerifiedAt: overrides?.offlineLastVerifiedAt ?? null,
-          isLoading: overrides?.isLoading ?? false,
-          lastError: overrides?.lastError ?? null,
-          pendingConsumption: shouldResetPending
-            ? false
-            : (overrides?.pendingConsumption ?? prev.pendingConsumption),
-          pendingConsumptionStage: shouldResetPending
-            ? null
-            : (overrides?.pendingConsumptionStage ?? prev.pendingConsumptionStage)
+      const rawExpiresAt = status.accessToken?.expiresAt ?? null
+      let accessTokenExpiresAt: string | null = null
+      let tokenExpiresAtMs: number | null = null
+      if (rawExpiresAt) {
+        const parsed = Date.parse(rawExpiresAt)
+        if (!Number.isNaN(parsed)) {
+          tokenExpiresAtMs = parsed
+          accessTokenExpiresAt = new Date(parsed).toISOString()
         }
-      })
+      }
+
+      const fallbackRefreshAt = now + FALLBACK_REFRESH_INTERVAL_MS
+      const nextRefreshAt = tokenExpiresAtMs
+        ? Math.max(now + MIN_REFRESH_INTERVAL_MS, tokenExpiresAtMs - JWT_REFRESH_BUFFER_MS)
+        : fallbackRefreshAt
+      nextRefreshAtRef.current = nextRefreshAt
+      setScheduledRefreshAt(nextRefreshAt)
+
+      setState((prev) => ({
+        deviceHash: status.deviceHash,
+        subscription,
+        trial,
+        access: status.access,
+        transfer,
+        accessTokenExpiresAt,
+        isSubscriptionActive: subscriptionActive,
+        isTrialActive: trialActive,
+        isAccessActive: accessActive,
+        isOffline: overrides?.isOffline ?? false,
+        isOfflineLocked: overrides?.isOfflineLocked ?? false,
+        offlineExpiresAt: overrides?.offlineExpiresAt ?? null,
+        offlineRemainingMs: overrides?.offlineRemainingMs ?? null,
+        offlineLastVerifiedAt: overrides?.offlineLastVerifiedAt ?? null,
+        isLoading: overrides?.isLoading ?? false,
+        lastError: overrides?.lastError ?? null,
+        pendingConsumption: shouldResetPending
+          ? false
+          : (overrides?.pendingConsumption ?? prev.pendingConsumption),
+        pendingConsumptionStage: shouldResetPending
+          ? null
+          : (overrides?.pendingConsumptionStage ?? prev.pendingConsumptionStage)
+      }))
     },
     []
   )
 
   const markOffline = useCallback((message?: string) => {
+    const nextAttemptAt = Date.now() + FALLBACK_REFRESH_INTERVAL_MS
+    nextRefreshAtRef.current = nextAttemptAt
+    setScheduledRefreshAt(nextAttemptAt)
     const snapshot = resolveOfflineSnapshot(lastVerifiedAtRef.current ?? readLastVerifiedAt())
     setState((prev) => {
       const wasSubscriptionActive = prev.isSubscriptionActive
@@ -171,6 +194,9 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
   }, [])
 
   const markFailure = useCallback((message: string) => {
+    const nextAttemptAt = Date.now() + FALLBACK_REFRESH_INTERVAL_MS
+    nextRefreshAtRef.current = nextAttemptAt
+    setScheduledRefreshAt(nextAttemptAt)
     setState((prev) => ({
       ...prev,
       isLoading: false,
@@ -246,10 +272,16 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
     if (!forceRefresh) {
       const lastRefreshAt = lastRefreshAtRef.current
       const now = Date.now()
-      if (lastRefreshAt !== null && now - lastRefreshAt < ACTIVE_REFRESH_INTERVAL_MS) {
+      if (lastRefreshAt !== null && now - lastRefreshAt < MIN_REFRESH_INTERVAL_MS) {
+        return
+      }
+      const nextRefreshAt = nextRefreshAtRef.current
+      if (nextRefreshAt !== null && now < nextRefreshAt - MIN_REFRESH_INTERVAL_MS) {
         return
       }
     }
+    nextRefreshAtRef.current = null
+    setScheduledRefreshAt(null)
     await loadStatus(deviceHash, { allowCreateTrial: false })
   }, [deviceHash, loadStatus])
 
@@ -598,33 +630,18 @@ export const AccessProvider = ({ children }: { children: ReactNode }): ReactElem
     if (typeof window === 'undefined') {
       return
     }
-
-    let interval: ReturnType<typeof window.setInterval> | null = null
-    let dormantTimeout: ReturnType<typeof window.setTimeout> | null = null
-
-    if (isUserActive) {
-      interval = window.setInterval(() => {
-        void refresh({ force: true })
-      }, ACTIVE_REFRESH_INTERVAL_MS)
-    } else {
-      const scheduleDormantRefresh = (): void => {
-        dormantTimeout = window.setTimeout(() => {
-          void refresh({ force: true })
-          scheduleDormantRefresh()
-        }, DORMANT_REFRESH_INTERVAL_MS)
-      }
-      scheduleDormantRefresh()
+    if (scheduledRefreshAt === null) {
+      return
     }
-
+    const now = Date.now()
+    const delay = Math.max(scheduledRefreshAt - now, MIN_REFRESH_INTERVAL_MS)
+    const timer = window.setTimeout(() => {
+      void refresh({ force: true })
+    }, delay)
     return () => {
-      if (interval) {
-        window.clearInterval(interval)
-      }
-      if (dormantTimeout) {
-        window.clearTimeout(dormantTimeout)
-      }
+      window.clearTimeout(timer)
     }
-  }, [isUserActive, refresh])
+  }, [scheduledRefreshAt, refresh])
 
   useEffect(() => {
     if (!isUserActive) {
