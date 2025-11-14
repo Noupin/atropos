@@ -628,9 +628,21 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
         }
       }
 
+      if (
+        !prev.selectedAccountId &&
+        uiState.activeAccountId &&
+        activeAccountIds.has(uiState.activeAccountId)
+      ) {
+        return {
+          ...prev,
+          selectedAccountId: uiState.activeAccountId,
+          accountError: null
+        }
+      }
+
       return prev
     })
-  }, [availableAccounts, setHomeState])
+  }, [availableAccounts, setHomeState, uiState.activeAccountId])
 
   const handleSelectAccount = useCallback(
     (accountId: string | null) => {

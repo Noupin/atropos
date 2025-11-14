@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { act, render } from '@testing-library/react'
+import { act, render, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import App from '../App'
@@ -26,6 +26,8 @@ vi.mock('react-router-dom', async () => {
   }
 })
 
+const fetchAccountsMock = vi.hoisted(() => vi.fn(async () => []))
+
 const uiStateContainer = {
   value: {
     activeTab: '/',
@@ -46,6 +48,10 @@ const uiStateContainer = {
 const updateUiStateMock = vi.fn((updater: (prev: typeof uiStateContainer.value) => typeof uiStateContainer.value) => {
   uiStateContainer.value = updater(uiStateContainer.value)
 })
+
+const homePropsContainer = {
+  latest: null as any
+}
 
 vi.mock('../state/uiState', () => ({
   useUiState: () => ({
@@ -77,7 +83,7 @@ vi.mock('../state/access', () => ({
 }))
 
 vi.mock('../services/accountsApi', () => ({
-  fetchAccounts: vi.fn(async () => []),
+  fetchAccounts: fetchAccountsMock,
   pingAuth: vi.fn(async () => null),
   createAccount: vi.fn(),
   addPlatformToAccount: vi.fn(),
@@ -104,7 +110,10 @@ vi.mock('../components/TrialBadge', () => ({
 
 vi.mock('../pages/Home', () => ({
   __esModule: true,
-  default: () => <div data-testid="home" />
+  default: (props: any) => {
+    homePropsContainer.latest = props
+    return <div data-testid="home" />
+  }
 }))
 
 vi.mock('../pages/Library', () => ({
@@ -150,6 +159,23 @@ beforeAll(() => {
 beforeEach(() => {
   capturedOptions = null
   navigateMock.mockReset()
+  fetchAccountsMock.mockResolvedValue([])
+  updateUiStateMock.mockClear()
+  uiStateContainer.value = {
+    activeTab: '/',
+    activeAccountId: null,
+    library: {
+      expandedAccountIds: [],
+      expandedProjectIds: [],
+      selectedClipId: null,
+      pageCounts: {},
+      scrollTop: 0,
+      activeAccountId: null,
+      pageSize: 20,
+      accountScrollPositions: {}
+    }
+  }
+  homePropsContainer.latest = null
 })
 
 describe('App library navigation behaviour', () => {
@@ -195,5 +221,48 @@ describe('App library navigation behaviour', () => {
 
     expect(navigateMock).not.toHaveBeenCalledWith('/library')
     expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('restores the stored account selection when available', async () => {
+    const accountId = 'account-1'
+    const now = new Date().toISOString()
+    uiStateContainer.value = {
+      ...uiStateContainer.value,
+      activeAccountId: accountId
+    }
+    fetchAccountsMock.mockResolvedValue([
+      {
+        id: accountId,
+        displayName: 'Creator Account',
+        description: null,
+        createdAt: now,
+        platforms: [
+          {
+            platform: 'youtube',
+            label: 'YouTube',
+            status: 'active',
+            connected: true,
+            tokenPath: null,
+            addedAt: now,
+            lastVerifiedAt: now,
+            active: true
+          }
+        ],
+        active: true,
+        tone: null,
+        effectiveTone: null,
+        defaultLayoutId: null
+      }
+    ])
+
+    render(
+      <MemoryRouter>
+        <App searchInputRef={{ current: null }} />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(homePropsContainer.latest?.initialState.selectedAccountId).toBe(accountId)
+    })
   })
 })
