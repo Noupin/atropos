@@ -34,6 +34,10 @@ export type AccessSummaryPayload = {
   isActive: boolean
 }
 
+export type AccessTokenMetadata = {
+  expiresAt: string | null
+}
+
 export type TransferStatus = 'none' | 'pending' | 'locked'
 
 export type TransferStatePayload = {
@@ -51,6 +55,7 @@ export type AccessStatusPayload = {
   subscription: SubscriptionInfoPayload | null
   trial: TrialStatusPayload | null
   transfer: TransferStatePayload
+  accessToken?: AccessTokenMetadata | null
 }
 
 export class LicensingOfflineError extends Error {

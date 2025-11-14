@@ -44,6 +44,7 @@ const accessStateMock = {
   offlineExpiresAt: null,
   offlineRemainingMs: null,
   offlineLastVerifiedAt: null,
+  accessTokenExpiresAt: null,
   lastError: null,
   trial: { totalRuns: 3, remainingRuns: 3, isActive: false, lastConsumedAt: null },
   subscription: null,

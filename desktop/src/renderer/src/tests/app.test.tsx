@@ -103,6 +103,7 @@ vi.mock('../state/access', () => ({
       isSubscriptionActive: true,
       isTrialActive: false,
       isOffline: false,
+      accessTokenExpiresAt: null,
       pendingConsumption: false
     },
     markTrialRunPending: vi.fn(),

@@ -72,6 +72,7 @@ const baseAccessState: AccessState = {
   trial: { totalRuns: 3, remainingRuns: 1, startedAt: new Date().toISOString() },
   access: { source: 'trial', isActive: true },
   transfer: defaultTransferState,
+  accessTokenExpiresAt: null,
   isSubscriptionActive: false,
   isTrialActive: true,
   isAccessActive: false,
