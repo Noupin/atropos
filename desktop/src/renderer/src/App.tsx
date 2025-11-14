@@ -662,8 +662,16 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
           selectedClipId: shouldReset ? null : prev.selectedClipId
         }
       })
+
+      updateState((previous) => {
+        if (previous.activeAccountId === accountId) {
+          return previous
+        }
+
+        return { ...previous, activeAccountId: accountId }
+      })
     },
-    [setHomeState]
+    [setHomeState, updateState]
   )
 
   const handleCreateAccount = useCallback(

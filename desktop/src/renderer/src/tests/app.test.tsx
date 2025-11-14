@@ -53,6 +53,10 @@ const homePropsContainer = {
   latest: null as any
 }
 
+const marbleSelectPropsContainer = {
+  latest: null as any
+}
+
 vi.mock('../state/uiState', () => ({
   useUiState: () => ({
     state: uiStateContainer.value,
@@ -100,7 +104,10 @@ vi.mock('../components/Search', () => ({
 
 vi.mock('../components/MarbleSelect', () => ({
   __esModule: true,
-  default: () => <div data-testid="marble-select" />
+  default: (props: any) => {
+    marbleSelectPropsContainer.latest = props
+    return <div data-testid="marble-select" />
+  }
 }))
 
 vi.mock('../components/TrialBadge', () => ({
@@ -176,6 +183,7 @@ beforeEach(() => {
     }
   }
   homePropsContainer.latest = null
+  marbleSelectPropsContainer.latest = null
 })
 
 describe('App library navigation behaviour', () => {
@@ -263,6 +271,56 @@ describe('App library navigation behaviour', () => {
 
     await waitFor(() => {
       expect(homePropsContainer.latest?.initialState.selectedAccountId).toBe(accountId)
+    })
+  })
+
+  it('persists the account selection when the user picks an account', async () => {
+    const accountId = 'account-7'
+    const now = new Date().toISOString()
+    fetchAccountsMock.mockResolvedValue([
+      {
+        id: accountId,
+        displayName: 'Creator Account',
+        description: null,
+        createdAt: now,
+        platforms: [
+          {
+            platform: 'youtube',
+            label: 'YouTube',
+            status: 'active',
+            connected: true,
+            tokenPath: null,
+            addedAt: now,
+            lastVerifiedAt: now,
+            active: true
+          }
+        ],
+        active: true,
+        tone: null,
+        effectiveTone: null,
+        defaultLayoutId: null
+      }
+    ])
+
+    render(
+      <MemoryRouter>
+        <App searchInputRef={{ current: null }} />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(marbleSelectPropsContainer.latest).not.toBeNull()
+    })
+
+    act(() => {
+      marbleSelectPropsContainer.latest.onChange(accountId, {
+        value: accountId,
+        label: 'Creator Account'
+      })
+    })
+
+    await waitFor(() => {
+      expect(uiStateContainer.value.activeAccountId).toBe(accountId)
     })
   })
 })
