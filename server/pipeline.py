@@ -342,6 +342,15 @@ def process_video(
         if account:
             base_output_dir /= account
         project_dir = base_output_dir / non_suffix_filename
+        if project_dir.exists():
+            emit_log(
+                (
+                    f"{Fore.YELLOW}Existing project directory found for {non_suffix_filename}. "
+                    f"Removing previous artifacts.{Style.RESET_ALL}"
+                ),
+                level="warning",
+            )
+            shutil.rmtree(project_dir, ignore_errors=True)
         project_dir.mkdir(parents=True, exist_ok=True)
         ensure_not_cancelled()
 
