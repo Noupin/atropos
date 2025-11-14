@@ -1400,22 +1400,22 @@ if __name__ == "__main__":
     # # yt_url = "https://www.youtube.com/playlist?list=PLBIL5prmXqedEXXikBxPsvKRREB-DaoWb"
 
 
-    # tone = Tone.HEALTH
-    # account = "health"
-    # # Matt Lane: Can I Get Fit On Fast Food?
-    # # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
-    # # Matt Lane: Ask MLFit Show
+    tone = Tone.HEALTH
+    account = "health"
+    # Matt Lane: Can I Get Fit On Fast Food?
+    # yt_url = "https://www.youtube.com/watch?v=6J6FI8PAy5E"
+    # Matt Lane: Ask MLFit Show
+    # start next one at [110:]
+    yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
+
+
+    # tone = Tone.HISTORY
+    # account = "history"
+    # # Crash Course World History
+    # # yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9"
+    # # World History Battles
     # # start next one at [100:]
-    # yt_url = "https://www.youtube.com/playlist?list=PLfw1VEbkByghq-SR-HCj0NNTLzRpTVinI"
-
-
-    tone = Tone.HISTORY
-    account = "history"
-    # Crash Course World History
-    # yt_url = "https://www.youtube.com/playlist?list=PLBDA2E52FB1EF80C9"
-    # World History Battles
-    # start next one at [100:]
-    yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
+    # yt_url = "https://www.youtube.com/playlist?list=PL_gGGlaAre787Q8Wx6sCF5m9podjPcqfx"
 
 
     # tone = Tone.CONSPIRACY
@@ -1428,5 +1428,5 @@ if __name__ == "__main__":
     urls = get_video_urls(yt_url)
     # FUNNYKINDA NEEDS REVERSED
     # urls.reverse() # If the playlist is newest first, reverse to process oldest first
-    for url in urls[90:100]:
+    for url in urls[100:110]:
         process_video(url, account=account, tone=tone)
