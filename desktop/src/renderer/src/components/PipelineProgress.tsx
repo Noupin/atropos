@@ -22,7 +22,7 @@ const segmentClasses: Record<PipelineStepStatus, string> = {
   running: 'bg-[color:var(--info-strong)]',
   completed: 'bg-[color:var(--success-strong)]',
   failed: 'bg-[color:var(--error-strong)]',
-  cancelled: 'bg-[color:var(--warning-strong)]'
+  cancelled: 'bg-[color:var(--neutral-strong)]'
 }
 
 const indicatorClasses: Record<PipelineStepStatus, string> = {
@@ -32,7 +32,7 @@ const indicatorClasses: Record<PipelineStepStatus, string> = {
   completed: 'bg-[color:var(--success-strong)]',
   failed: 'bg-[color:var(--error-strong)]',
   cancelled:
-    'bg-[color:var(--warning-strong)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--warning-strong)_35%,transparent)]'
+    'bg-[color:var(--neutral-strong)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--neutral-strong)_35%,transparent)]'
 }
 
 const multiStepBadgeBaseClasses =
@@ -265,7 +265,7 @@ const clipBadgeStateClasses: Record<PipelineStepStatus, string> = {
   failed:
     'border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]',
   cancelled:
-    'border-[color:color-mix(in_srgb,var(--warning-strong)_45%,var(--edge))] bg-[color:var(--warning-soft)] text-[color:color-mix(in_srgb,var(--warning-strong)_85%,var(--accent-contrast))]'
+    'border-[color:color-mix(in_srgb,var(--neutral-strong)_45%,var(--edge))] bg-[color:var(--neutral-soft)] text-[color:color-mix(in_srgb,var(--neutral-strong)_82%,var(--accent-contrast))]'
 }
 
 const getSubstepLabel = (index: number): string => {
@@ -316,7 +316,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
       step.status === 'failed'
         ? 'bg-[color:var(--error-strong)]'
         : step.status === 'cancelled'
-          ? 'bg-[color:var(--warning-strong)]'
+          ? 'bg-[color:var(--neutral-strong)]'
           : step.status === 'completed'
             ? 'bg-[color:var(--success-strong)]'
             : step.status === 'running'
@@ -374,7 +374,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
       substep.status === 'failed'
         ? 'bg-[color:var(--error-strong)]'
         : substep.status === 'cancelled'
-          ? 'bg-[color:var(--warning-strong)]'
+          ? 'bg-[color:var(--neutral-strong)]'
           : substep.status === 'completed'
             ? 'bg-[color:var(--success-strong)]'
             : substep.status === 'running'
@@ -433,7 +433,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
       substep.status === 'failed'
         ? 'bg-[color:var(--error-strong)]'
         : substep.status === 'cancelled'
-          ? 'bg-[color:var(--warning-strong)]'
+          ? 'bg-[color:var(--neutral-strong)]'
           : substep.status === 'completed'
             ? 'bg-[color:var(--success-strong)]'
             : substep.status === 'running'
@@ -497,7 +497,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
                 Review server logs to retry this step.
               </p>
             ) : substep.status === 'cancelled' ? (
-              <p className="font-semibold text-[color:var(--warning-strong)]">
+              <p className="font-semibold text-[color:var(--neutral-strong)]">
                 Processing was cancelled before this substep finished.
               </p>
             ) : null}
@@ -552,7 +552,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
       step.status === 'failed'
         ? 'border-[color:color-mix(in_srgb,var(--error-strong)_55%,transparent)] shadow-[0_14px_28px_-20px_color-mix(in_srgb,var(--error-strong)_45%,transparent)]'
         : step.status === 'cancelled'
-          ? 'border-[color:color-mix(in_srgb,var(--warning-strong)_55%,transparent)] shadow-[0_14px_28px_-20px_color-mix(in_srgb,var(--warning-strong)_45%,transparent)]'
+          ? 'border-[color:color-mix(in_srgb,var(--neutral-strong)_55%,transparent)] shadow-[0_14px_28px_-20px_color-mix(in_srgb,var(--neutral-strong)_45%,transparent)]'
           : 'border-[color:color-mix(in_srgb,var(--info-strong)_55%,transparent)] shadow-[0_14px_28px_-20px_color-mix(in_srgb,var(--info-strong)_45%,transparent)]'
 
     return (
@@ -611,7 +611,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
                 Check the server logs to resolve the failure before retrying.
               </p>
             ) : step.status === 'cancelled' ? (
-              <p className="text-xs font-semibold text-[color:var(--warning-strong)]">
+              <p className="text-xs font-semibold text-[color:var(--neutral-strong)]">
                 Processing was cancelled before this step completed. Resume the pipeline to try again.
               </p>
             ) : null}

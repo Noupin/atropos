@@ -612,7 +612,7 @@ export const usePipelineProgress = ({
 
           return {
             ...prev,
-            pipelineError: success ? null : failureMessage,
+            pipelineError: cancelled ? null : success ? null : failureMessage,
             isProcessing: false,
             awaitingReview: false,
             steps: prev.steps.map((step): PipelineStep => {
@@ -628,26 +628,27 @@ export const usePipelineProgress = ({
                   if (substep.status === 'completed') {
                     return { ...substep, etaSeconds: null, activeClipIndex: null }
                   }
-                  if (substep.status === 'failed') {
-                    return { ...substep, etaSeconds: null }
-                  }
+                  const boundedProgress = substep.progress > 0 ? clamp01(substep.progress) : 0
+                  const progress = substep.status === 'failed' ? 1 : boundedProgress
                   return {
                     ...substep,
                     status: 'cancelled',
+                    progress,
                     etaSeconds: null,
                     activeClipIndex: null
                   }
                 })
 
-                if (step.status === 'completed' || step.status === 'failed') {
+                if (step.status === 'completed') {
                   return { ...step, etaSeconds: null, substeps: nextSubsteps }
                 }
 
                 const boundedProgress = step.progress > 0 ? clamp01(step.progress) : 0
+                const progress = step.status === 'failed' ? 1 : boundedProgress
                 return {
                   ...step,
                   status: 'cancelled',
-                  progress: boundedProgress,
+                  progress,
                   etaSeconds: null,
                   substeps: nextSubsteps
                 }

@@ -146,7 +146,7 @@ const progressStatusClasses: Record<PipelineOverallStatus, string> = {
   active: 'bg-[color:var(--info-strong)]',
   completed: 'bg-[color:var(--success-strong)]',
   failed: 'bg-[color:var(--error-strong)]',
-  cancelled: 'bg-[color:var(--warning-strong)]'
+  cancelled: 'bg-[color:var(--neutral-strong)]'
 }
 
 const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge, progress, children }) => {
