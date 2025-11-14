@@ -1098,7 +1098,12 @@ def process_video(
         for idx, candidate in enumerate(refined_candidates, start=1):
             ensure_not_cancelled()
             def step_cut() -> Path | None:
-                return save_clip_from_candidate(video_output_path, clips_dir, candidate)
+                return save_clip_from_candidate(
+                    video_output_path,
+                    clips_dir,
+                    candidate,
+                    reencode=True,
+                )
 
             if should_run(6):
                 clip_path = run_pipeline_step(

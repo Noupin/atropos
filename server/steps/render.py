@@ -47,6 +47,7 @@ from config import (
     CAPTION_USE_COLORS,
     OUTPUT_FPS,
     VIDEO_ZOOM_RATIO,
+    RENDER_LAYOUT,
 )
 from layouts import (
     LayoutCanvas,
@@ -416,6 +417,9 @@ def render_vertical_with_captions(
         return None
 
     cap = cv2.VideoCapture(str(clip_path), cv2.CAP_FFMPEG)
+    if not cap.isOpened():
+        cap.release()
+        cap = cv2.VideoCapture(str(clip_path), cv2.CAP_ANY)
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open video: {clip_path}")
 
