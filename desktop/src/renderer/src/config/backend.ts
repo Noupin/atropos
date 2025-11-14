@@ -100,6 +100,11 @@ export const buildJobClipsUrl = (jobId: string): string => {
   return url.toString()
 }
 
+export const buildJobCancelUrl = (jobId: string): string => {
+  const url = new URL(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, getApiBaseUrl())
+  return url.toString()
+}
+
 export const buildJobClipVideoUrl = (jobId: string, clipId: string): string => {
   const url = new URL(
     `/api/jobs/${encodeURIComponent(jobId)}/clips/${encodeURIComponent(clipId)}/video`,

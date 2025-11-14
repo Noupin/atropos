@@ -1,4 +1,10 @@
-import { advanceApiBaseUrl, buildJobUrl, buildWebSocketUrl, getApiBaseUrl } from '../config/backend'
+import {
+  advanceApiBaseUrl,
+  buildJobCancelUrl,
+  buildJobUrl,
+  buildWebSocketUrl,
+  getApiBaseUrl
+} from '../config/backend'
 import { parseClipTimestamp } from '../lib/clipMetadata'
 import type { Clip, PipelineEventType } from '../types'
 
@@ -250,6 +256,26 @@ export const resumePipelineJob = async (jobId: string): Promise<void> => {
   if (!response.ok) {
     throw new Error(`Unable to resume pipeline job (status ${response.status}).`)
   }
+}
+
+export const cancelPipelineJob = async (jobId: string): Promise<void> => {
+  const url = buildJobCancelUrl(jobId)
+  const response = await fetch(url, { method: 'POST' })
+  if (response.ok) {
+    return
+  }
+
+  let detail: string | null = null
+  try {
+    const payload = (await response.json()) as UnknownRecord
+    if (payload && typeof payload.detail === 'string') {
+      detail = payload.detail
+    }
+  } catch (error) {
+    // ignore JSON parsing issues
+  }
+
+  throw new Error(detail ?? `Unable to cancel pipeline job (status ${response.status}).`)
 }
 
 export const subscribeToPipelineEvents = (

@@ -92,7 +92,12 @@ vi.mock('../state/usePipelineProgress', () => ({
   __esModule: true,
   default: (options: any) => {
     capturedOptions = options
-    return { startPipeline: vi.fn(), resumePipeline: vi.fn(), cleanup: vi.fn() }
+    return {
+      startPipeline: vi.fn(),
+      resumePipeline: vi.fn(),
+      cancelPipeline: vi.fn(),
+      cleanup: vi.fn()
+    }
   }
 }))
 

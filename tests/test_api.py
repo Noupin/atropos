@@ -18,6 +18,7 @@ import server.app
 import server.config as pipeline_config
 import server.library
 from interfaces.progress import PipelineEvent, PipelineEventType
+from pipeline import PipelineCancelledError
 
 
 def test_job_lifecycle(monkeypatch) -> None:
@@ -40,6 +41,7 @@ def test_job_lifecycle(monkeypatch) -> None:
         review_gate=None,
         source_kind: str = "remote",
         local_video_path=None,
+        cancellation_event=None,
     ) -> None:
         assert observer is not None
         for event in events:
@@ -93,6 +95,7 @@ def test_job_resume_unblocks_review_mode(monkeypatch) -> None:
         review_gate=None,
         source_kind: str = "remote",
         local_video_path=None,
+        cancellation_event=None,
     ) -> None:
         assert observer is not None
         observer.handle_event(
@@ -150,6 +153,71 @@ def test_job_resume_unblocks_review_mode(monkeypatch) -> None:
         server.app._jobs.clear()
 
 
+def test_cancel_job_stops_pipeline(monkeypatch) -> None:
+    def _fake_process(
+        url: str,
+        account=None,
+        tone=None,
+        observer=None,
+        *,
+        pause_for_review: bool = False,
+        review_gate=None,
+        source_kind: str = "remote",
+        local_video_path=None,
+        cancellation_event=None,
+    ) -> None:
+        assert observer is not None
+        assert cancellation_event is not None
+        observer.handle_event(
+            PipelineEvent(
+                type=PipelineEventType.PIPELINE_STARTED,
+                data={"url": url},
+            )
+        )
+        while not cancellation_event.is_set():
+            time.sleep(0.01)
+        raise PipelineCancelledError("cancelled")
+
+    monkeypatch.setattr(server.app, "process_video", _fake_process)
+
+    client = TestClient(server.app.app)
+    response = client.post("/api/jobs", json={"url": "https://example.com/video"})
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+
+    cancel_response = client.post(f"/api/jobs/{job_id}/cancel")
+    assert cancel_response.status_code == 202
+
+    state = server.app._get_job(job_id)
+    assert state is not None
+    if state.thread is not None:
+        state.thread.join(timeout=1)
+
+    for _ in range(100):
+        status_response = client.get(f"/api/jobs/{job_id}")
+        assert status_response.status_code == 200
+        if status_response.json()["finished"]:
+            break
+        time.sleep(0.01)
+    else:  # pragma: no cover - defensive guard
+        raise AssertionError("Cancelled job did not finish")
+
+    with state.lock:
+        assert state.finished is True
+        assert state.error == "Pipeline cancelled"
+        history = list(state.history)
+
+    assert history
+    last_event = history[-1]
+    assert last_event["type"] == PipelineEventType.PIPELINE_COMPLETED.value
+    data = last_event.get("data") or {}
+    assert data.get("cancelled") is True
+    assert data.get("success") is False
+
+    with server.app._jobs_lock:
+        server.app._jobs.clear()
+
+
 def test_clip_endpoints_expose_rendered_clips(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -172,6 +240,7 @@ def test_clip_endpoints_expose_rendered_clips(
         review_gate=None,
         source_kind: str = "remote",
         local_video_path=None,
+        cancellation_event=None,
     ) -> None:
         assert observer is not None
         observer.handle_event(

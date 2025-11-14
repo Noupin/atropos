@@ -454,7 +454,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     [isOnHomePage, navigate, libraryNavigationDisabled]
   )
 
-  const { startPipeline, resumePipeline } = usePipelineProgress({
+  const { startPipeline, resumePipeline, cancelPipeline } = usePipelineProgress({
     state: homeState,
     setState: setHomeState,
     availableAccounts,
@@ -478,12 +478,14 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
         accounts={accounts}
         onStartPipeline={startPipeline}
         onResumePipeline={resumePipeline}
+        onCancelPipeline={cancelPipeline}
       />
     )
   }, [
     accessRestricted,
     accounts,
     homeState,
+    cancelPipeline,
     resumePipeline,
     startPipeline
   ])

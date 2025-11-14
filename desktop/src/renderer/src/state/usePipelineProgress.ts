@@ -8,6 +8,7 @@ import {
 } from '../data/pipeline'
 import {
   normaliseJobClip,
+  cancelPipelineJob,
   resumePipelineJob,
   startPipelineJob,
   subscribeToPipelineEvents,
@@ -42,6 +43,7 @@ type UsePipelineProgressResult = {
     reviewMode: boolean
   ) => Promise<void>
   resumePipeline: () => Promise<void>
+  cancelPipeline: () => Promise<void>
   cleanup: () => void
 }
 
@@ -527,6 +529,7 @@ export const usePipelineProgress = ({
           event.data && typeof event.data === 'object'
             ? (event.data as Record<string, unknown>)
             : null
+        const cancelled = rawData?.['cancelled'] === true
         const expectedFromEvent =
           rawData !== null
             ? parseNonNegativeInt(
@@ -554,7 +557,7 @@ export const usePipelineProgress = ({
           sourceKind: null
         }
 
-        if (rawData) {
+        if (rawData && !cancelled) {
           const rawDownloads = rawData['downloads']
           if (rawDownloads && typeof rawDownloads === 'object') {
             const audioCandidate = rawDownloads['audio']
@@ -589,9 +592,9 @@ export const usePipelineProgress = ({
             resolvedExpectedCount = Math.max(resolvedExpectedCount, clipProgressTotal)
           }
 
-          producedClipCount = resolvedRenderedCount
+          producedClipCount = cancelled ? 0 : resolvedRenderedCount
           const clipStatus: HomePipelineState['lastRunClipStatus'] =
-            success && resolvedRenderedCount === 0
+            !cancelled && success && resolvedRenderedCount === 0
               ? resolvedExpectedCount > 0
                 ? 'rendered_none'
                 : 'none_to_render'
@@ -600,9 +603,16 @@ export const usePipelineProgress = ({
             ? { expected: resolvedExpectedCount, rendered: resolvedRenderedCount }
             : null
 
+          const failureMessage = cancelled
+            ? 'Processing was cancelled.'
+            : errorMessage ?? 'Pipeline failed.'
+
+          const nextClips = cancelled ? [] : prev.clips
+          const nextSelectedClipId = cancelled ? null : prev.selectedClipId
+
           return {
             ...prev,
-            pipelineError: success ? null : errorMessage ?? 'Pipeline failed.',
+            pipelineError: success ? null : failureMessage,
             isProcessing: false,
             awaitingReview: false,
             steps: prev.steps.map((step): PipelineStep => {
@@ -617,10 +627,12 @@ export const usePipelineProgress = ({
               }
               return { ...step, status: 'failed', progress: 1, etaSeconds: null }
             }),
-            lastRunProducedNoClips: success && resolvedRenderedCount === 0,
-            lastRunClipSummary: clipSummary,
-            lastRunClipStatus: clipStatus,
-            downloads: success ? downloads : prev.downloads
+            clips: nextClips,
+            selectedClipId: nextSelectedClipId,
+            lastRunProducedNoClips: !cancelled && success && resolvedRenderedCount === 0,
+            lastRunClipSummary: cancelled ? null : clipSummary,
+            lastRunClipStatus: cancelled ? null : clipStatus,
+            downloads: success ? downloads : cancelled ? { ...EMPTY_DOWNLOADS } : prev.downloads
           }
         })
         cleanupConnection()
@@ -785,9 +797,30 @@ export const usePipelineProgress = ({
     }
   }, [isMockBackend, updateState])
 
+  const cancelPipeline = useCallback(async () => {
+    const jobId = activeJobIdRef.current
+    if (!jobId || isMockBackend) {
+      return
+    }
+
+    try {
+      await cancelPipelineJob(jobId)
+      updateState((prev) => ({ ...prev, awaitingReview: false }))
+    } catch (error) {
+      updateState((prev) => ({
+        ...prev,
+        pipelineError:
+          error instanceof Error
+            ? error.message
+            : 'Unable to cancel the pipeline. Try again shortly.'
+      }))
+    }
+  }, [isMockBackend, updateState])
+
   return {
     startPipeline,
     resumePipeline,
+    cancelPipeline,
     cleanup: cleanupConnection
   }
 }
