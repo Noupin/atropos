@@ -56,6 +56,7 @@ def get_desc_path() -> Path:
 # --- instagrapi import ---
 from instagrapi import Client
 from instagrapi.exceptions import LoginRequired, ChallengeRequired, PleaseWaitFewMinutes
+from pydantic import ValidationError
 
 
 def _read_caption(desc_path: Path) -> str:
@@ -156,6 +157,28 @@ def clip_upload_with_retries(
             login_or_resume(cl, username, password)
         except PleaseWaitFewMinutes as e:
             print(f"Upload throttled (attempt {attempt}/{MAX_RETRIES}): {e}")
+            time.sleep(RETRY_BACKOFF_SEC * attempt)
+        except ValidationError as exc:
+            last_json = getattr(cl, "last_json", None)
+            if isinstance(last_json, dict):
+                status = last_json.get("status") or "ok"
+                media = last_json.get("media") or {}
+                if status == "ok" or media:
+                    print(
+                        "Upload succeeded but response validation failed; "
+                        "using configure payload metadata.",
+                    )
+                    return {
+                        "status": status,
+                        "pk": media.get("pk"),
+                        "code": media.get("code"),
+                        "id": media.get("id"),
+                    }
+            last_exc = exc
+            print(
+                "Upload failed due to response validation error "
+                f"(attempt {attempt}/{MAX_RETRIES}): {exc}",
+            )
             time.sleep(RETRY_BACKOFF_SEC * attempt)
         except Exception as e:
             last_exc = e
