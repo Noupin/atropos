@@ -295,6 +295,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const redirectedJobRef = useRef<string | null>(null)
   const lastActiveJobIdRef = useRef<string | null>(null)
   const hasRestoredTabRef = useRef(false)
+  const hasHydratedAccountRef = useRef(false)
   const isOnHomePage = location.pathname === '/'
 
   const preventDisabledNavigation = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
@@ -327,6 +328,10 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   }, [location.pathname, updateState])
 
   useEffect(() => {
+    if (!hasHydratedAccountRef.current) {
+      return
+    }
+
     updateState((previous) => {
       if (previous.activeAccountId === homeState.selectedAccountId) {
         return previous
@@ -609,6 +614,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       if (availableAccounts.length === 1) {
         const soleAccountId = availableAccounts[0].id
         if (prev.selectedAccountId !== soleAccountId) {
+          hasHydratedAccountRef.current = true
           return {
             ...prev,
             selectedAccountId: soleAccountId,
@@ -619,6 +625,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       }
 
       if (prev.selectedAccountId && !activeAccountIds.has(prev.selectedAccountId)) {
+        hasHydratedAccountRef.current = true
         return {
           ...prev,
           selectedAccountId: null,
@@ -628,12 +635,27 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
         }
       }
 
+      if (
+        !prev.selectedAccountId &&
+        uiState.activeAccountId &&
+        activeAccountIds.has(uiState.activeAccountId)
+      ) {
+        hasHydratedAccountRef.current = true
+        return {
+          ...prev,
+          selectedAccountId: uiState.activeAccountId,
+          accountError: null
+        }
+      }
+
       return prev
     })
-  }, [availableAccounts, setHomeState])
+  }, [availableAccounts, setHomeState, uiState.activeAccountId])
 
   const handleSelectAccount = useCallback(
     (accountId: string | null) => {
+      hasHydratedAccountRef.current = true
+
       setHomeState((prev) => {
         const didChange = prev.selectedAccountId !== accountId
         const shouldReset = didChange || !accountId
@@ -650,8 +672,16 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
           selectedClipId: shouldReset ? null : prev.selectedClipId
         }
       })
+
+      updateState((previous) => {
+        if (previous.activeAccountId === accountId) {
+          return previous
+        }
+
+        return { ...previous, activeAccountId: accountId }
+      })
     },
-    [setHomeState]
+    [setHomeState, updateState]
   )
 
   const handleCreateAccount = useCallback(

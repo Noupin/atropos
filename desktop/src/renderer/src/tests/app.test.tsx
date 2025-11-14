@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { act, render } from '@testing-library/react'
+import { act, render, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import App from '../App'
@@ -7,6 +7,7 @@ import type { HomePipelineState, PipelineStep } from '../types'
 
 const navigateMock = vi.fn()
 let capturedOptions: any = null
+const FIXED_TIMESTAMP = '2024-01-01T00:00:00.000Z'
 
 const createClipStepWithTotals = (step: PipelineStep, totalClips: number, completed: number): PipelineStep => ({
   ...step,
@@ -18,6 +19,29 @@ const createClipStepWithTotals = (step: PipelineStep, totalClips: number, comple
   }))
 })
 
+const createActiveAccount = (id: string, displayName = 'Creator Account') => ({
+  id,
+  displayName,
+  description: null,
+  createdAt: FIXED_TIMESTAMP,
+  platforms: [
+    {
+      platform: 'youtube',
+      label: 'YouTube',
+      status: 'active',
+      connected: true,
+      tokenPath: null,
+      addedAt: FIXED_TIMESTAMP,
+      lastVerifiedAt: FIXED_TIMESTAMP,
+      active: true
+    }
+  ],
+  active: true,
+  tone: null,
+  effectiveTone: null,
+  defaultLayoutId: null
+})
+
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
   return {
@@ -25,6 +49,8 @@ vi.mock('react-router-dom', async () => {
     useNavigate: () => navigateMock
   }
 })
+
+const fetchAccountsMock = vi.hoisted(() => vi.fn(async () => []))
 
 const uiStateContainer = {
   value: {
@@ -46,6 +72,14 @@ const uiStateContainer = {
 const updateUiStateMock = vi.fn((updater: (prev: typeof uiStateContainer.value) => typeof uiStateContainer.value) => {
   uiStateContainer.value = updater(uiStateContainer.value)
 })
+
+const homePropsContainer = {
+  latest: null as any
+}
+
+const marbleSelectPropsContainer = {
+  latest: null as any
+}
 
 vi.mock('../state/uiState', () => ({
   useUiState: () => ({
@@ -77,7 +111,7 @@ vi.mock('../state/access', () => ({
 }))
 
 vi.mock('../services/accountsApi', () => ({
-  fetchAccounts: vi.fn(async () => []),
+  fetchAccounts: fetchAccountsMock,
   pingAuth: vi.fn(async () => null),
   createAccount: vi.fn(),
   addPlatformToAccount: vi.fn(),
@@ -94,7 +128,10 @@ vi.mock('../components/Search', () => ({
 
 vi.mock('../components/MarbleSelect', () => ({
   __esModule: true,
-  default: () => <div data-testid="marble-select" />
+  default: (props: any) => {
+    marbleSelectPropsContainer.latest = props
+    return <div data-testid="marble-select" />
+  }
 }))
 
 vi.mock('../components/TrialBadge', () => ({
@@ -104,7 +141,10 @@ vi.mock('../components/TrialBadge', () => ({
 
 vi.mock('../pages/Home', () => ({
   __esModule: true,
-  default: () => <div data-testid="home" />
+  default: (props: any) => {
+    homePropsContainer.latest = props
+    return <div data-testid="home" />
+  }
 }))
 
 vi.mock('../pages/Library', () => ({
@@ -150,6 +190,24 @@ beforeAll(() => {
 beforeEach(() => {
   capturedOptions = null
   navigateMock.mockReset()
+  fetchAccountsMock.mockResolvedValue([])
+  updateUiStateMock.mockClear()
+  uiStateContainer.value = {
+    activeTab: '/',
+    activeAccountId: null,
+    library: {
+      expandedAccountIds: [],
+      expandedProjectIds: [],
+      selectedClipId: null,
+      pageCounts: {},
+      scrollTop: 0,
+      activeAccountId: null,
+      pageSize: 20,
+      accountScrollPositions: {}
+    }
+  }
+  homePropsContainer.latest = null
+  marbleSelectPropsContainer.latest = null
 })
 
 describe('App library navigation behaviour', () => {
@@ -195,5 +253,94 @@ describe('App library navigation behaviour', () => {
 
     expect(navigateMock).not.toHaveBeenCalledWith('/library')
     expect(navigateMock).not.toHaveBeenCalled()
+  })
+
+  it('restores the stored account selection when available', async () => {
+    const accountId = 'account-1'
+    uiStateContainer.value = {
+      ...uiStateContainer.value,
+      activeAccountId: accountId
+    }
+    fetchAccountsMock.mockResolvedValue([createActiveAccount(accountId)])
+
+    render(
+      <MemoryRouter>
+        <App searchInputRef={{ current: null }} />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(homePropsContainer.latest?.initialState.selectedAccountId).toBe(accountId)
+    })
+    await waitFor(() => {
+      expect(uiStateContainer.value.activeAccountId).toBe(accountId)
+    })
+  })
+
+  it('does not clear the stored account while accounts are loading', async () => {
+    const accountId = 'account-persisted'
+    uiStateContainer.value = {
+      ...uiStateContainer.value,
+      activeAccountId: accountId
+    }
+
+    let resolveAccounts: ((accounts: any[]) => void) | null = null
+    fetchAccountsMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveAccounts = resolve
+        })
+    )
+
+    render(
+      <MemoryRouter>
+        <App searchInputRef={{ current: null }} />
+      </MemoryRouter>
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(uiStateContainer.value.activeAccountId).toBe(accountId)
+    expect(resolveAccounts).not.toBeNull()
+
+    await act(async () => {
+      resolveAccounts?.([createActiveAccount(accountId)])
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(homePropsContainer.latest?.initialState.selectedAccountId).toBe(accountId)
+    })
+    await waitFor(() => {
+      expect(uiStateContainer.value.activeAccountId).toBe(accountId)
+    })
+  })
+
+  it('persists the account selection when the user picks an account', async () => {
+    const accountId = 'account-7'
+    fetchAccountsMock.mockResolvedValue([createActiveAccount(accountId)])
+
+    render(
+      <MemoryRouter>
+        <App searchInputRef={{ current: null }} />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(marbleSelectPropsContainer.latest).not.toBeNull()
+    })
+
+    act(() => {
+      marbleSelectPropsContainer.latest.onChange(accountId, {
+        value: accountId,
+        label: 'Creator Account'
+      })
+    })
+
+    await waitFor(() => {
+      expect(uiStateContainer.value.activeAccountId).toBe(accountId)
+    })
   })
 })
