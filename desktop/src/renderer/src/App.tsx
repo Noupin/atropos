@@ -295,6 +295,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   const redirectedJobRef = useRef<string | null>(null)
   const lastActiveJobIdRef = useRef<string | null>(null)
   const hasRestoredTabRef = useRef(false)
+  const hasHydratedAccountRef = useRef(false)
   const isOnHomePage = location.pathname === '/'
 
   const preventDisabledNavigation = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
@@ -327,6 +328,10 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
   }, [location.pathname, updateState])
 
   useEffect(() => {
+    if (!hasHydratedAccountRef.current) {
+      return
+    }
+
     updateState((previous) => {
       if (previous.activeAccountId === homeState.selectedAccountId) {
         return previous
@@ -609,6 +614,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       if (availableAccounts.length === 1) {
         const soleAccountId = availableAccounts[0].id
         if (prev.selectedAccountId !== soleAccountId) {
+          hasHydratedAccountRef.current = true
           return {
             ...prev,
             selectedAccountId: soleAccountId,
@@ -619,6 +625,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
       }
 
       if (prev.selectedAccountId && !activeAccountIds.has(prev.selectedAccountId)) {
+        hasHydratedAccountRef.current = true
         return {
           ...prev,
           selectedAccountId: null,
@@ -633,6 +640,7 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
         uiState.activeAccountId &&
         activeAccountIds.has(uiState.activeAccountId)
       ) {
+        hasHydratedAccountRef.current = true
         return {
           ...prev,
           selectedAccountId: uiState.activeAccountId,
@@ -646,6 +654,8 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
 
   const handleSelectAccount = useCallback(
     (accountId: string | null) => {
+      hasHydratedAccountRef.current = true
+
       setHomeState((prev) => {
         const didChange = prev.selectedAccountId !== accountId
         const shouldReset = didChange || !accountId
