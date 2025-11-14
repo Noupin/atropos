@@ -622,9 +622,41 @@ export const usePipelineProgress = ({
                 }
                 return { ...step, status: 'completed', progress: 1, etaSeconds: null }
               }
+
+              if (cancelled) {
+                const nextSubsteps = step.substeps.map((substep) => {
+                  if (substep.status === 'completed') {
+                    return { ...substep, etaSeconds: null, activeClipIndex: null }
+                  }
+                  if (substep.status === 'failed') {
+                    return { ...substep, etaSeconds: null }
+                  }
+                  return {
+                    ...substep,
+                    status: 'cancelled',
+                    etaSeconds: null,
+                    activeClipIndex: null
+                  }
+                })
+
+                if (step.status === 'completed' || step.status === 'failed') {
+                  return { ...step, etaSeconds: null, substeps: nextSubsteps }
+                }
+
+                const boundedProgress = step.progress > 0 ? clamp01(step.progress) : 0
+                return {
+                  ...step,
+                  status: 'cancelled',
+                  progress: boundedProgress,
+                  etaSeconds: null,
+                  substeps: nextSubsteps
+                }
+              }
+
               if (step.status === 'completed' || step.status === 'failed') {
                 return { ...step, etaSeconds: null }
               }
+
               return { ...step, status: 'failed', progress: 1, etaSeconds: null }
             }),
             clips: nextClips,

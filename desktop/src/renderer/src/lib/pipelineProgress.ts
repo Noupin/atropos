@@ -1,6 +1,6 @@
 import type { PipelineStep } from '../types'
 
-export type PipelineOverallStatus = 'idle' | 'active' | 'completed' | 'failed'
+export type PipelineOverallStatus = 'idle' | 'active' | 'completed' | 'failed' | 'cancelled'
 
 export type PipelineProgressSummary = {
   fraction: number
@@ -33,7 +33,7 @@ const computeClipStageAggregate = (step: PipelineStep): number => {
     completedUnits += boundedCompleted
     if (substep.status === 'running' && boundedCompleted < totalClips) {
       inFlightUnits += clamp01(substep.progress)
-    } else if (substep.status === 'failed') {
+    } else if (substep.status === 'failed' || substep.status === 'cancelled') {
       inFlightUnits += clamp01(substep.progress)
     }
   })
@@ -48,6 +48,10 @@ const computeClipStageAggregate = (step: PipelineStep): number => {
 export const computeStepProgressValue = (step: PipelineStep): number => {
   if (step.status === 'completed' || step.status === 'failed') {
     return 1
+  }
+
+  if (step.status === 'cancelled') {
+    return clamp01(step.progress)
   }
 
   if (step.status === 'pending') {
@@ -88,6 +92,7 @@ export const summarisePipelineProgress = (steps: PipelineStep[]): PipelineProgre
   let hasActive = false
   let hasFailure = false
   let completed = 0
+  let hasCancelled = false
 
   steps.forEach((step, index) => {
     const weight = weights[index] ?? 0
@@ -95,6 +100,9 @@ export const summarisePipelineProgress = (steps: PipelineStep[]): PipelineProgre
 
     if (step.status === 'failed') {
       hasFailure = true
+    }
+    if (step.status === 'cancelled') {
+      hasCancelled = true
     }
     if (step.status === 'completed') {
       completed += 1
@@ -110,6 +118,10 @@ export const summarisePipelineProgress = (steps: PipelineStep[]): PipelineProgre
 
   if (hasFailure) {
     return { fraction, status: 'failed', hasSteps: true }
+  }
+
+  if (hasCancelled) {
+    return { fraction, status: 'cancelled', hasSteps: true }
   }
 
   if (completed === steps.length) {

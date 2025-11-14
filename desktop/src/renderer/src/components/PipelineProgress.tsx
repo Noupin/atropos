@@ -13,14 +13,16 @@ const statusLabels: Record<PipelineStepStatus, string> = {
   pending: 'Queued',
   running: 'In progress',
   completed: 'Completed',
-  failed: 'Failed'
+  failed: 'Failed',
+  cancelled: 'Cancelled'
 }
 
 const segmentClasses: Record<PipelineStepStatus, string> = {
   pending: 'bg-transparent',
   running: 'bg-[color:var(--info-strong)]',
   completed: 'bg-[color:var(--success-strong)]',
-  failed: 'bg-[color:var(--error-strong)]'
+  failed: 'bg-[color:var(--error-strong)]',
+  cancelled: 'bg-[color:var(--warning-strong)]'
 }
 
 const indicatorClasses: Record<PipelineStepStatus, string> = {
@@ -28,7 +30,9 @@ const indicatorClasses: Record<PipelineStepStatus, string> = {
   running:
     'bg-[color:var(--info-strong)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--info-strong)_35%,transparent)]',
   completed: 'bg-[color:var(--success-strong)]',
-  failed: 'bg-[color:var(--error-strong)]'
+  failed: 'bg-[color:var(--error-strong)]',
+  cancelled:
+    'bg-[color:var(--warning-strong)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--warning-strong)_35%,transparent)]'
 }
 
 const multiStepBadgeBaseClasses =
@@ -46,6 +50,7 @@ type PipelineSnapshot = {
   progressPercent: number
   activeStep: PipelineStep | null
   hasFailure: boolean
+  hasCancellation: boolean
 }
 
 const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
@@ -53,7 +58,9 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
   const [expandedSubsteps, setExpandedSubsteps] = useState<Set<string>>(() => new Set())
 
   useEffect(() => {
-    const active = steps.find((step) => step.status === 'running' || step.status === 'failed')
+    const active = steps.find(
+      (step) => step.status === 'running' || step.status === 'failed' || step.status === 'cancelled'
+    )
     if (!active) {
       return
     }
@@ -70,7 +77,10 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
   useEffect(() => {
     const activeSubsteps = steps.flatMap((step) =>
       step.substeps
-        .filter((substep) => substep.status === 'running' || substep.status === 'failed')
+        .filter(
+          (substep) =>
+            substep.status === 'running' || substep.status === 'failed' || substep.status === 'cancelled'
+        )
         .map((substep) => buildSubstepKey(step.id, substep.id))
     )
 
@@ -159,47 +169,63 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
     [stepDurations]
   )
 
-  const { completedCount, progressPercent, activeStep, hasFailure } = useMemo<PipelineSnapshot>(() => {
-    if (totalSteps === 0 || totalDuration === 0) {
+  const { completedCount, progressPercent, activeStep, hasFailure, hasCancellation } =
+    useMemo<PipelineSnapshot>(() => {
+      if (totalSteps === 0 || totalDuration === 0) {
+        return {
+          completedCount: 0,
+          progressPercent: 0,
+          activeStep: null,
+          hasFailure: false,
+          hasCancellation: false
+        }
+      }
+
+      const weights = stepDurations.map((duration) => duration / totalDuration)
+      let aggregate = 0
+      let active: PipelineStep | null = null
+      let failure = false
+      let cancelled = false
+      let completed = 0
+
+      steps.forEach((step, index) => {
+        const weight = weights[index] ?? 0
+        aggregate += weight * computeStepProgressValue(step)
+        if (
+          !active &&
+          (step.status === 'running' || step.status === 'failed' || step.status === 'cancelled')
+        ) {
+          active = step
+        }
+        if (step.status === 'failed') {
+          failure = true
+        }
+        if (step.status === 'cancelled') {
+          cancelled = true
+        }
+        if (step.status === 'completed') {
+          completed += 1
+        }
+      })
+
       return {
-        completedCount: 0,
-        progressPercent: 0,
-        activeStep: null,
-        hasFailure: false
+        completedCount: completed,
+        progressPercent: Math.round(clamp01(aggregate) * 100),
+        activeStep: active,
+        hasFailure: failure,
+        hasCancellation: cancelled
       }
-    }
-
-    const weights = stepDurations.map((duration) => duration / totalDuration)
-    let aggregate = 0
-    let active: PipelineStep | null = null
-    let failure = false
-    let completed = 0
-
-    steps.forEach((step, index) => {
-      const weight = weights[index] ?? 0
-      aggregate += weight * computeStepProgressValue(step)
-      if (!active && (step.status === 'running' || step.status === 'failed')) {
-        active = step
-      }
-      if (step.status === 'failed') {
-        failure = true
-      }
-      if (step.status === 'completed') {
-        completed += 1
-      }
-    })
-
-    return {
-      completedCount: completed,
-      progressPercent: Math.round(clamp01(aggregate) * 100),
-      activeStep: active,
-      hasFailure: failure
-    }
-  }, [stepDurations, steps, totalDuration, totalSteps])
+    }, [stepDurations, steps, totalDuration, totalSteps])
 
   const summaryLabel = useMemo(() => {
     if (hasFailure && activeStep?.status === 'failed') {
       return `${activeStep.title} failed`
+    }
+    if (hasCancellation) {
+      if (activeStep?.status === 'cancelled') {
+        return `${activeStep.title} cancelled`
+      }
+      return 'Processing cancelled'
     }
     if (activeStep) {
       const index = steps.findIndex((step) => step.id === activeStep.id)
@@ -212,7 +238,7 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
       return 'Pipeline idle'
     }
     return 'Waiting for next step'
-  }, [activeStep, completedCount, hasFailure, steps, totalSteps])
+  }, [activeStep, completedCount, hasCancellation, hasFailure, steps, totalSteps])
 
   const activeMessage = useMemo(() => {
     if (!activeStep) {
@@ -220,6 +246,9 @@ const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
     }
     if (activeStep.status === 'failed') {
       return `${activeStep.title} failed`
+    }
+    if (activeStep.status === 'cancelled') {
+      return `Processing cancelled during ${activeStep.title}`
     }
     if (activeStep.status === 'completed') {
       return `${activeStep.title} completed`
@@ -234,7 +263,9 @@ const clipBadgeStateClasses: Record<PipelineStepStatus, string> = {
   completed:
     'border-[color:color-mix(in_srgb,var(--success-strong)_45%,var(--edge))] bg-[color:var(--success-soft)] text-[color:color-mix(in_srgb,var(--success-strong)_82%,var(--accent-contrast))]',
   failed:
-    'border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]'
+    'border-[color:color-mix(in_srgb,var(--error-strong)_45%,var(--edge))] bg-[color:var(--error-soft)] text-[color:color-mix(in_srgb,var(--error-strong)_85%,var(--accent-contrast))]',
+  cancelled:
+    'border-[color:color-mix(in_srgb,var(--warning-strong)_45%,var(--edge))] bg-[color:var(--warning-soft)] text-[color:color-mix(in_srgb,var(--warning-strong)_85%,var(--accent-contrast))]'
 }
 
 const getSubstepLabel = (index: number): string => {
@@ -284,11 +315,13 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
     const progressColor =
       step.status === 'failed'
         ? 'bg-[color:var(--error-strong)]'
-        : step.status === 'completed'
-          ? 'bg-[color:var(--success-strong)]'
-          : step.status === 'running'
-            ? 'bg-[color:var(--info-strong)]'
-            : 'bg-white/30'
+        : step.status === 'cancelled'
+          ? 'bg-[color:var(--warning-strong)]'
+          : step.status === 'completed'
+            ? 'bg-[color:var(--success-strong)]'
+            : step.status === 'running'
+              ? 'bg-[color:var(--info-strong)]'
+              : 'bg-white/30'
 
     return (
       <div
@@ -340,11 +373,13 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
     const progressColor =
       substep.status === 'failed'
         ? 'bg-[color:var(--error-strong)]'
-        : substep.status === 'completed'
-          ? 'bg-[color:var(--success-strong)]'
-          : substep.status === 'running'
-            ? 'bg-[color:var(--info-strong)]'
-            : 'bg-white/40'
+        : substep.status === 'cancelled'
+          ? 'bg-[color:var(--warning-strong)]'
+          : substep.status === 'completed'
+            ? 'bg-[color:var(--success-strong)]'
+            : substep.status === 'running'
+              ? 'bg-[color:var(--info-strong)]'
+              : 'bg-white/40'
     const clipLabel = getSubstepClipLabel(substep)
     const completedSummary = getSubstepCompletedSummary(substep)
 
@@ -397,11 +432,13 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
     const progressColor =
       substep.status === 'failed'
         ? 'bg-[color:var(--error-strong)]'
-        : substep.status === 'completed'
-          ? 'bg-[color:var(--success-strong)]'
-          : substep.status === 'running'
-            ? 'bg-[color:var(--info-strong)]'
-            : 'bg-white/40'
+        : substep.status === 'cancelled'
+          ? 'bg-[color:var(--warning-strong)]'
+          : substep.status === 'completed'
+            ? 'bg-[color:var(--success-strong)]'
+            : substep.status === 'running'
+              ? 'bg-[color:var(--info-strong)]'
+              : 'bg-white/40'
     const clipLabel = getSubstepClipLabel(substep)
     const completedSummary = getSubstepCompletedSummary(substep)
 
@@ -459,6 +496,10 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
               <p className="font-semibold text-[color:var(--error-strong)]">
                 Review server logs to retry this step.
               </p>
+            ) : substep.status === 'cancelled' ? (
+              <p className="font-semibold text-[color:var(--warning-strong)]">
+                Processing was cancelled before this substep finished.
+              </p>
             ) : null}
           </div>
         </div>
@@ -469,7 +510,8 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
   const renderSubstep = (step: PipelineStep, substep: PipelineSubstep, index: number) => {
     const key = buildSubstepKey(step.id, substep.id)
     const isExpanded = expandedSubsteps.has(key)
-    const isActive = substep.status === 'running' || substep.status === 'failed'
+    const isActive =
+      substep.status === 'running' || substep.status === 'failed' || substep.status === 'cancelled'
     const progressValue = substep.status === 'completed' ? 1 : substep.progress
     const percent = Math.round(clamp01(progressValue) * 100)
     const etaLabel = substep.etaSeconds !== null ? formatEta(substep.etaSeconds) : null
@@ -498,20 +540,26 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
           : null
 
     const activeSubstep = step.substeps.find(
-      (substep) => substep.status === 'running' || substep.status === 'failed'
+      (substep) =>
+        substep.status === 'running' || substep.status === 'failed' || substep.status === 'cancelled'
     )
 
     const showDetails = isExpanded || isActive
     const multiStepBadge = step.substeps.length > 0 ? renderMultiStepBadge('default') : null
     const clipBadge = renderClipBadge(step)
 
+    const activeHighlightClass =
+      step.status === 'failed'
+        ? 'border-[color:color-mix(in_srgb,var(--error-strong)_55%,transparent)] shadow-[0_14px_28px_-20px_color-mix(in_srgb,var(--error-strong)_45%,transparent)]'
+        : step.status === 'cancelled'
+          ? 'border-[color:color-mix(in_srgb,var(--warning-strong)_55%,transparent)] shadow-[0_14px_28px_-20px_color-mix(in_srgb,var(--warning-strong)_45%,transparent)]'
+          : 'border-[color:color-mix(in_srgb,var(--info-strong)_55%,transparent)] shadow-[0_14px_28px_-20px_color-mix(in_srgb,var(--info-strong)_45%,transparent)]'
+
     return (
       <li
         key={step.id}
         className={`col-span-full rounded-xl border ${
-          isActive
-            ? 'border-[color:color-mix(in_srgb,var(--info-strong)_55%,transparent)] shadow-[0_14px_28px_-20px_color-mix(in_srgb,var(--info-strong)_45%,transparent)]'
-            : 'border-white/10'
+          isActive ? activeHighlightClass : 'border-white/10'
         } bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)]`}
       >
         <button
@@ -561,6 +609,10 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
             {step.status === 'failed' ? (
               <p className="text-xs font-semibold text-[color:var(--error-strong)]">
                 Check the server logs to resolve the failure before retrying.
+              </p>
+            ) : step.status === 'cancelled' ? (
+              <p className="text-xs font-semibold text-[color:var(--warning-strong)]">
+                Processing was cancelled before this step completed. Resume the pipeline to try again.
               </p>
             ) : null}
             {step.substeps.length > 0 ? (
@@ -632,7 +684,8 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
 
   const renderStep = (step: PipelineStep, index: number) => {
     const isExpanded = expandedSteps.has(step.id)
-    const isActive = step.status === 'running' || step.status === 'failed'
+    const isActive =
+      step.status === 'running' || step.status === 'failed' || step.status === 'cancelled'
 
     if (isExpanded || isActive) {
       return renderExpandedStep(step, index, isActive, isExpanded)

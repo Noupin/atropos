@@ -49,7 +49,7 @@ const THEME_STORAGE_KEY = 'atropos:theme'
 const sortAccounts = (items: AccountSummary[]): AccountSummary[] =>
   [...items].sort((a, b) => a.displayName.localeCompare(b.displayName))
 
-type NavItemBadgeVariant = 'accent' | 'info' | 'success' | 'error'
+type NavItemBadgeVariant = 'accent' | 'info' | 'success' | 'error' | 'warning'
 
 type NavItemBadge = {
   label: string
@@ -136,14 +136,17 @@ const badgeVariantClasses: Record<NavItemBadgeVariant, string> = {
   success:
     'border-[color:color-mix(in_srgb,var(--success-strong)_55%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--success-soft)_80%,transparent)] text-[color:color-mix(in_srgb,var(--success-strong)_90%,var(--accent-contrast))]',
   error:
-    'border-[color:color-mix(in_srgb,var(--error-strong)_55%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--error-soft)_78%,transparent)] text-[color:color-mix(in_srgb,var(--error-strong)_90%,var(--accent-contrast))]'
+    'border-[color:color-mix(in_srgb,var(--error-strong)_55%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--error-soft)_78%,transparent)] text-[color:color-mix(in_srgb,var(--error-strong)_90%,var(--accent-contrast))]',
+  warning:
+    'border-[color:color-mix(in_srgb,var(--warning-strong)_55%,var(--edge-soft))] bg-[color:color-mix(in_srgb,var(--warning-soft)_78%,transparent)] text-[color:color-mix(in_srgb,var(--warning-strong)_88%,var(--accent-contrast))]'
 }
 
 const progressStatusClasses: Record<PipelineOverallStatus, string> = {
   idle: 'bg-[color:var(--edge-soft)]',
   active: 'bg-[color:var(--info-strong)]',
   completed: 'bg-[color:var(--success-strong)]',
-  failed: 'bg-[color:var(--error-strong)]'
+  failed: 'bg-[color:var(--error-strong)]',
+  cancelled: 'bg-[color:var(--warning-strong)]'
 }
 
 const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge, progress, children }) => {
@@ -154,7 +157,9 @@ const NavItemLabel: FC<NavItemLabelProps> = ({ label, isActive, badge, progress,
           ? `${label} pipeline complete`
           : progress.status === 'failed'
             ? `${label} pipeline failed`
-            : `${label} pipeline progress ${Math.round(clamp01(progress.fraction) * 100)}%`
+            : progress.status === 'cancelled'
+              ? `${label} pipeline cancelled`
+              : `${label} pipeline progress ${Math.round(clamp01(progress.fraction) * 100)}%`
         : null)
   const showProgress = progress && progress.status !== 'idle'
   const percent = showProgress ? Math.round(clamp01(progress.fraction) * 100) : 0
@@ -365,7 +370,9 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
         ? 'Pipeline run complete'
         : homeProgressSummary.status === 'failed'
           ? `Pipeline run failed at ${percent}%`
-          : `Pipeline progress ${percent}%`
+          : homeProgressSummary.status === 'cancelled'
+            ? `Pipeline run cancelled at ${percent}%`
+            : `Pipeline progress ${percent}%`
     return {
       fraction,
       status: homeProgressSummary.status,
@@ -379,6 +386,9 @@ const App: FC<AppProps> = ({ searchInputRef }) => {
     }
     if (homeProgressSummary.status === 'failed') {
       return { label: 'Failed', variant: 'error' } satisfies NavItemBadge
+    }
+    if (homeProgressSummary.status === 'cancelled') {
+      return { label: 'Cancelled', variant: 'warning' } satisfies NavItemBadge
     }
     if (homeState.awaitingReview) {
       return { label: 'Needs review', variant: 'info' } satisfies NavItemBadge
