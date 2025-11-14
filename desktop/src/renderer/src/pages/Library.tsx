@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FC, RefObject } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ClipCard from '../components/ClipCard'
@@ -250,7 +244,9 @@ const Library: FC<LibraryProps> = ({
               }
               const existing = previous[accountId] ?? createDefaultAccountState()
               const hasValidTotal = typeof total === 'number' && Number.isFinite(total)
-              const resolvedTotal = hasValidTotal ? Math.max(0, Math.floor(total)) : existing.totalClips
+              const resolvedTotal = hasValidTotal
+                ? Math.max(0, Math.floor(total))
+                : existing.totalClips
               return {
                 ...previous,
                 [accountId]: {
@@ -294,7 +290,9 @@ const Library: FC<LibraryProps> = ({
 
   useEffect(() => {
     updateLibrary((previous) => {
-      const validExpanded = previous.expandedAccountIds.filter((id) => availableAccountIds.includes(id))
+      const validExpanded = previous.expandedAccountIds.filter((id) =>
+        availableAccountIds.includes(id)
+      )
       const nextPageCounts: Record<string, number> = {}
       for (const [accountId, count] of Object.entries(previous.pageCounts)) {
         if (availableAccountIds.includes(accountId) && count > 0) {
@@ -318,7 +316,8 @@ const Library: FC<LibraryProps> = ({
       const didChange =
         validExpanded.length !== previous.expandedAccountIds.length ||
         Object.keys(nextPageCounts).length !== Object.keys(previous.pageCounts).length ||
-        Object.keys(nextScrollPositions).length !== Object.keys(previous.accountScrollPositions).length ||
+        Object.keys(nextScrollPositions).length !==
+          Object.keys(previous.accountScrollPositions).length ||
         nextActiveAccountId !== previous.activeAccountId ||
         nextProjectIds.length !== previous.expandedProjectIds.length
       if (!didChange) {
@@ -404,7 +403,7 @@ const Library: FC<LibraryProps> = ({
       })
 
       try {
-        const cursor = reset ? null : current?.nextCursor ?? null
+        const cursor = reset ? null : (current?.nextCursor ?? null)
         const page: ClipPage = await fetchAccountClipsPage({
           accountId,
           limit: effectivePageSize,
@@ -421,14 +420,14 @@ const Library: FC<LibraryProps> = ({
             typeof page.totalClips === 'number' && Number.isFinite(page.totalClips)
               ? page.totalClips
               : reset
-              ? null
-              : existing.totalClips
+                ? null
+                : existing.totalClips
           const summaries =
             page.projects.length > 0
               ? mapProjectSummaries(page.projects)
               : reset
-              ? {}
-              : existing.projectSummaries
+                ? {}
+                : existing.projectSummaries
           return {
             ...previous,
             [accountId]: {
@@ -468,7 +467,9 @@ const Library: FC<LibraryProps> = ({
         }
       } catch (error) {
         const message =
-          error instanceof Error && error.message ? error.message : 'Unable to load clips. Please try again.'
+          error instanceof Error && error.message
+            ? error.message
+            : 'Unable to load clips. Please try again.'
         console.error('Unable to load clips from library', error)
         setAccountStates((previous) => {
           const existing = previous[accountId] ?? createDefaultAccountState()
@@ -580,13 +581,7 @@ const Library: FC<LibraryProps> = ({
         expandedProjectIds: expandedProjects
       }
     })
-  }, [
-    accountStates,
-    availableAccounts,
-    normalisedQuery,
-    selectedClipId,
-    updateLibrary
-  ])
+  }, [accountStates, availableAccounts, normalisedQuery, selectedClipId, updateLibrary])
 
   const selectedContext = useMemo(() => {
     if (!selectedClipId) {
@@ -629,7 +624,9 @@ const Library: FC<LibraryProps> = ({
 
   const handleVideoError = useCallback(() => {
     setIsVideoLoading(false)
-    setVideoError('We couldn’t play this clip preview right now. Please try again or pick another clip.')
+    setVideoError(
+      'We couldn’t play this clip preview right now. Please try again or pick another clip.'
+    )
     if (selectedClipId) {
       console.error('Failed to load clip preview video in the library', { clipId: selectedClipId })
     } else {
@@ -784,9 +781,10 @@ const Library: FC<LibraryProps> = ({
     const cacheBusted = buildCacheBustedPlaybackUrl(selectedClip)
     return cacheBusted.length > 0 ? cacheBusted : selectedClip.playbackUrl
   }, [selectedClip])
-  const clipSelectionErrorMessage = selectedClipId !== null && !selectedClip
-    ? 'We couldn’t load that clip preview. Try selecting a different clip or reload the page.'
-    : null
+  const clipSelectionErrorMessage =
+    selectedClipId !== null && !selectedClip
+      ? 'We couldn’t load that clip preview. Try selecting a different clip or reload the page.'
+      : null
 
   useEffect(() => {
     if (!selectedClip) {
@@ -797,7 +795,9 @@ const Library: FC<LibraryProps> = ({
     }
     console.error('Selected clip is missing a playable source', { clipId: selectedClip.id })
     setIsVideoLoading(false)
-    setVideoError('We couldn’t play this clip preview right now. Please try again or pick another clip.')
+    setVideoError(
+      'We couldn’t play this clip preview right now. Please try again or pick another clip.'
+    )
   }, [selectedClip, selectedClipPlaybackSrc, setIsVideoLoading, setVideoError])
 
   return (
@@ -829,9 +829,6 @@ const Library: FC<LibraryProps> = ({
             ) : null}
           </div>
         </label>
-        <div className="text-sm text-[color:color-mix(in_srgb,var(--muted)_80%,transparent)]">
-          Showing {effectivePageSize} clips per page
-        </div>
       </div>
 
       {loadingAccountList ? (
@@ -887,10 +884,10 @@ const Library: FC<LibraryProps> = ({
                 typeof state.totalClips === 'number' && Number.isFinite(state.totalClips)
                   ? Math.max(0, Math.floor(state.totalClips))
                   : totalFromSummaries > 0
-                  ? totalFromSummaries
-                  : state.clips.length > 0
-                  ? state.clips.length
-                  : null
+                    ? totalFromSummaries
+                    : state.clips.length > 0
+                      ? state.clips.length
+                      : null
               const accountClipLabel = (() => {
                 if (totalClipsValue !== null) {
                   return totalClipsValue === 0
@@ -918,25 +915,27 @@ const Library: FC<LibraryProps> = ({
                     onClick={() => handleToggleAccount(account.id)}
                     className="flex w-full items-center justify-between gap-3 text-left"
                   >
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-semibold transition ${
-                            isExpanded
-                              ? 'border-[color:var(--accent)] text-[color:var(--accent)]'
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs font-semibold transition ${
+                          isExpanded
+                            ? 'border-[color:var(--accent)] text-[color:var(--accent)]'
                             : 'border-[color:var(--edge-soft)] text-[color:var(--muted)]'
                         }`}
-                        >
-                          {isExpanded ? '–' : '+'}
+                      >
+                        {isExpanded ? '–' : '+'}
+                      </span>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-semibold text-[var(--fg)]">
+                          {account.displayName}
                         </span>
-                        <div className="flex flex-col">
-                          <span className="text-sm font-semibold text-[var(--fg)]">{account.displayName}</span>
-                          <span className="text-xs text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
-                            {accountClipLabel}
-                          </span>
-                        </div>
+                        <span className="text-xs text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
+                          {accountClipLabel}
+                        </span>
                       </div>
-                      {state.isLoading ? <MarbleSpinner size={20} label="Loading clips" /> : null}
-                    </button>
+                    </div>
+                    {state.isLoading ? <MarbleSpinner size={20} label="Loading clips" /> : null}
+                  </button>
 
                   {isExpanded ? (
                     <div className="mt-4 space-y-4">
@@ -947,7 +946,9 @@ const Library: FC<LibraryProps> = ({
                           </span>
                           <ul className="list-disc space-y-1 pl-4">
                             {pending.map((project) => (
-                              <li key={`${project.jobId}:${project.projectId}`}>{buildPendingSummary(project)}</li>
+                              <li key={`${project.jobId}:${project.projectId}`}>
+                                {buildPendingSummary(project)}
+                              </li>
                             ))}
                           </ul>
                         </div>
@@ -971,8 +972,8 @@ const Library: FC<LibraryProps> = ({
                           {totalClipsValue === 0
                             ? 'No clips are available for this account yet.'
                             : normalisedQuery
-                            ? 'No clips match the current search.'
-                            : 'No clips are available for this account yet.'}
+                              ? 'No clips match the current search.'
+                              : 'No clips are available for this account yet.'}
                         </div>
                       ) : null}
 
@@ -1064,12 +1065,12 @@ const Library: FC<LibraryProps> = ({
                                   {normalisedQuery
                                     ? 'No clips match the current search for this video.'
                                     : state.isLoading
-                                    ? 'Loading clips for this video…'
-                                    : hasMore
-                                    ? 'Load more clips to reveal the rest of this video.'
-                                    : group.hasLoadedClips
-                                    ? 'No clips match the current filters.'
-                                    : 'No clips are available for this video yet.'}
+                                      ? 'Loading clips for this video…'
+                                      : hasMore
+                                        ? 'Load more clips to reveal the rest of this video.'
+                                        : group.hasLoadedClips
+                                          ? 'No clips match the current filters.'
+                                          : 'No clips are available for this video yet.'}
                                 </div>
                               )
                             ) : null}
@@ -1106,7 +1107,9 @@ const Library: FC<LibraryProps> = ({
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex flex-col">
-                    <h3 className="text-base font-semibold text-[var(--fg)]">{selectedClip.title}</h3>
+                    <h3 className="text-base font-semibold text-[var(--fg)]">
+                      {selectedClip.title}
+                    </h3>
                     <span className="text-xs text-[color:color-mix(in_srgb,var(--muted)_78%,transparent)]">
                       {selectedClip.channel}
                     </span>
@@ -1183,7 +1186,8 @@ const Library: FC<LibraryProps> = ({
                       <dd>{new Date(selectedClip.sourcePublishedAt).toLocaleString()}</dd>
                     </>
                   ) : null}
-                  {selectedClip.timestampSeconds !== null && selectedClip.timestampSeconds !== undefined ? (
+                  {selectedClip.timestampSeconds !== null &&
+                  selectedClip.timestampSeconds !== undefined ? (
                     <>
                       <dt className="font-medium text-[var(--fg)]">Starts at</dt>
                       <dd>{formatDuration(selectedClip.timestampSeconds)}</dd>
