@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import List, Tuple, Optional, Union
 
@@ -42,10 +42,12 @@ from config import (
     CAPTION_FONT_SCALE,
     CAPTION_MAX_LINES,
     CAPTION_FILL_BGR,
+    CAPTION_HIGHLIGHT_BGR,
     CAPTION_OUTLINE_BGR,
     CAPTION_USE_COLORS,
     OUTPUT_FPS,
     VIDEO_ZOOM_RATIO,
+    RENDER_LAYOUT,
 )
 from layouts import (
     LayoutCanvas,
@@ -55,6 +57,21 @@ from layouts import (
     load_layout,
     prepare_layout,
 )
+
+@dataclass
+class CaptionWord:
+    start: float
+    end: float
+    text: str
+
+
+@dataclass
+class CaptionEntry:
+    start: float
+    end: float
+    text: str
+    words: List[CaptionWord]
+
 
 def _open_writer(path, fps, size):
     w, h = size
@@ -118,6 +135,8 @@ def render_vertical_with_captions(
     temp_video = output.with_suffix('.temp.mp4')
 
     fill_color = fill_bgr if use_caption_colors else (255, 255, 255)
+    highlight_color = CAPTION_HIGHLIGHT_BGR if use_caption_colors else fill_color
+    base_caption_color = (255, 255, 255)
     outline_color = outline_bgr if use_caption_colors else (0, 0, 0)
 
     if layout is None:
@@ -157,7 +176,7 @@ def render_vertical_with_captions(
 
     caption_rect = prepared_layout.caption_rect
     caption_align = prepared_layout.caption_align or "center"
-    caption_max_lines = prepared_layout.caption_max_lines or max_lines
+    caption_max_lines = 1
     if prepared_layout.caption_wrap_width is not None:
         caption_wrap_pixels = int(prepared_layout.caption_wrap_width * frame_width)
     elif caption_rect is not None:
@@ -301,38 +320,106 @@ def render_vertical_with_captions(
         # unknown extension
         return []
 
-    def _normalize_caps(caps: Optional[Union[List[Tuple[float, float, str]], List[dict], str, Path]]) -> List[Tuple[float, float, str]]:
+    def _load_caption_words(source: Optional[Union[List[dict], str, Path]]) -> List[CaptionWord]:
+        if isinstance(source, (str, Path)):
+            json_path = Path(source).with_suffix(".words.json")
+            if json_path.exists():
+                try:
+                    data = json.loads(json_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    return []
+                words: List[CaptionWord] = []
+                for item in data.get("words", []) or []:
+                    try:
+                        start = float(item.get("start"))
+                        end = float(item.get("end"))
+                    except (TypeError, ValueError):
+                        continue
+                    text = str(item.get("text") or item.get("word") or "").strip()
+                    if not text or end <= start:
+                        continue
+                    words.append(CaptionWord(start=start, end=end, text=text))
+                words.sort(key=lambda w: w.start)
+                return words
+        return []
+
+    def _normalize_caps(
+        caps: Optional[Union[List[Tuple[float, float, str]], List[dict], str, Path]]
+    ) -> List[CaptionEntry]:
+        entries: List[CaptionEntry] = []
         if caps is None:
-            return []
-        # If a path or string was passed (legacy call sites), load from file
+            return entries
         if isinstance(caps, (str, Path)):
-            return _load_captions_from_path(Path(caps))
-        norm: List[Tuple[float, float, str]] = []
-        for it in caps:
-            if isinstance(it, dict):
-                s = float(it.get("start", 0.0))
-                e = float(it.get("end", it.get("stop", s)))
-                txt = str(it.get("text", it.get("content", "")))
-            else:
-                s, e, txt = it  # type: ignore[misc]
-            if e > s and txt:
-                norm.append((s, e, txt))
-        norm.sort(key=lambda x: x[0])
-        return norm
+            loaded = _load_captions_from_path(Path(caps))
+        else:
+            loaded = []
+            for it in caps:
+                if isinstance(it, dict):
+                    s = float(it.get("start", 0.0))
+                    e = float(it.get("end", it.get("stop", s)))
+                    txt = str(it.get("text", it.get("content", "")))
+                else:
+                    s, e, txt = it  # type: ignore[misc]
+                if e > s and txt:
+                    loaded.append((float(s), float(e), txt))
+        loaded.sort(key=lambda x: x[0])
+        for s, e, txt in loaded:
+            entries.append(CaptionEntry(start=float(s), end=float(e), text=str(txt), words=[]))
+        return entries
 
-    captions_norm = _normalize_caps(captions)
+    caption_entries = _normalize_caps(captions)
+    caption_words = _load_caption_words(captions)
 
-    if isinstance(captions, (str, Path)) and not captions_norm:
+    if isinstance(captions, (str, Path)) and not caption_entries:
         print(f"WARN: No captions parsed from {captions}. Proceeding without text.")
 
-    def _current_caption_text(t: float) -> str:
-        # Binary search could be added; linear is fine for modest lists
-        for (s, e, txt) in captions_norm:
-            if (s - time_tolerance) <= t <= (e + time_tolerance):
-                return txt
-        return ""
+    def _assign_words_to_entries(entries: List[CaptionEntry], words: List[CaptionWord]) -> None:
+        if not words:
+            return
+        for entry in entries:
+            entry.words = [
+                CaptionWord(start=w.start, end=w.end, text=w.text)
+                for w in words
+                if not (w.end <= entry.start or w.start >= entry.end)
+            ]
+
+    _assign_words_to_entries(caption_entries, caption_words)
+
+    def _ensure_entry_words(entry: CaptionEntry) -> List[CaptionWord]:
+        if entry.words:
+            return entry.words
+        tokens = entry.text.replace("\n", " ").split()
+        if not tokens:
+            entry.words = []
+            return entry.words
+        duration = max(entry.end - entry.start, 0.01)
+        step = max(duration / max(len(tokens), 1), 0.01)
+        cur = entry.start
+        fallback: List[CaptionWord] = []
+        for idx, token in enumerate(tokens):
+            token = token.strip()
+            if not token:
+                continue
+            nxt = cur + step
+            if idx == len(tokens) - 1:
+                nxt = max(nxt, entry.end)
+            fallback.append(CaptionWord(start=cur, end=nxt, text=token))
+            cur = nxt
+        if fallback and fallback[-1].end < entry.end:
+            fallback[-1].end = entry.end
+        entry.words = fallback
+        return entry.words
+
+    def _current_caption_entry(t: float) -> Optional[CaptionEntry]:
+        for entry in caption_entries:
+            if (entry.start - time_tolerance) <= t <= (entry.end + time_tolerance):
+                return entry
+        return None
 
     cap = cv2.VideoCapture(str(clip_path), cv2.CAP_FFMPEG)
+    if not cap.isOpened():
+        cap.release()
+        cap = cv2.VideoCapture(str(clip_path), cv2.CAP_ANY)
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open video: {clip_path}")
 
@@ -390,30 +477,51 @@ def render_vertical_with_captions(
         return _cached_lines, _cached_sizes, _cached_total_h
 
     def _split_long_captions(
-        caps: List[Tuple[float, float, str]],
+        caps: List[CaptionEntry],
         max_lines: int,
-    ) -> List[Tuple[float, float, str]]:
-        out: List[Tuple[float, float, str]] = []
-        for s, e, txt in caps:
-            lines, _, _ = _measure_and_wrap(txt, font_scale, line_spacing)
+    ) -> List[CaptionEntry]:
+        if max_lines <= 0:
+            return caps
+        out: List[CaptionEntry] = []
+        for entry in caps:
+            lines, _, _ = _measure_and_wrap(entry.text, font_scale, line_spacing)
             if len(lines) <= max_lines:
-                out.append((s, e, txt))
+                out.append(entry)
                 continue
+            seq_words = list(_ensure_entry_words(entry))
+            word_idx = 0
             total_lines = len(lines)
-            duration = e - s
-            idx = 0
-            cur_start = s
-            while idx < total_lines:
+            for idx in range(0, total_lines, max_lines):
                 seg_lines = lines[idx:idx + max_lines]
-                seg_text = " ".join(seg_lines)
-                seg_count = len(seg_lines)
-                seg_duration = duration * (seg_count / total_lines)
-                out.append((cur_start, cur_start + seg_duration, seg_text))
-                cur_start += seg_duration
-                idx += seg_count
+                if not seg_lines:
+                    continue
+                seg_word_count = sum(len(seg_line.split()) for seg_line in seg_lines)
+                seg_words = seq_words[word_idx:word_idx + seg_word_count] if seg_word_count else []
+                word_idx += seg_word_count
+                seg_text = " ".join(seg_lines).strip()
+                if not seg_text:
+                    continue
+                if seg_words:
+                    seg_start = seg_words[0].start
+                    seg_end = seg_words[-1].end
+                else:
+                    portion_start = idx / max(total_lines, 1)
+                    portion_end = min(total_lines, idx + len(seg_lines)) / max(total_lines, 1)
+                    span = entry.end - entry.start
+                    seg_start = entry.start + span * portion_start
+                    seg_end = entry.start + span * portion_end
+                out.append(
+                    CaptionEntry(
+                        start=seg_start,
+                        end=seg_end,
+                        text=seg_text,
+                        words=[CaptionWord(start=w.start, end=w.end, text=w.text) for w in seg_words],
+                    )
+                )
+        out.sort(key=lambda e: e.start)
         return out
 
-    captions_norm = _split_long_captions(captions_norm, caption_max_lines)
+    caption_entries = _split_long_captions(caption_entries, caption_max_lines)
     _last_text = _last_scale = _last_spacing = None
     _cached_lines = []
     _cached_sizes = []
@@ -425,7 +533,7 @@ def render_vertical_with_captions(
         if not ret:
             break
         t = (frame_idx + 0.5) * frame_duration
-        current_text = _current_caption_text(t)
+        current_entry = _current_caption_entry(t)
 
         # --- Compose background and overlay layout items ---
         h, w = frame.shape[:2]
@@ -631,55 +739,88 @@ def render_vertical_with_captions(
             int(frame_height * 0.2),
         ).clamp(frame_width, frame_height)
 
-        if current_text:
-            fs = font_scale
-            spacing = line_spacing
-            lines, sizes, total_h = _measure_and_wrap(current_text, fs, spacing)
-            available_h = max(0, effective_caption_rect.height)
-            if total_h > available_h and available_h > 0:
-                fs = fs * (available_h / max(total_h, 1))
-                spacing = max(1, int(line_spacing * fs / font_scale))
-                lines, sizes, total_h = _measure_and_wrap(current_text, fs, spacing)
+        if current_entry is not None:
+            words = _ensure_entry_words(current_entry)
+            display_words = [w for w in words if w.text]
+            line_text = " ".join(w.text for w in display_words).strip()
+            if line_text:
+                fs = font_scale * 1.25
+                (tw, th), _ = cv2.getTextSize(line_text, font, fs, thickness + outline)
+                max_text_w = max(1, caption_wrap_pixels)
+                if tw > max_text_w:
+                    scale_factor = max_text_w / max(tw, 1)
+                    fs = fs * scale_factor
+                    (tw, th), _ = cv2.getTextSize(line_text, font, fs, thickness + outline)
+                available_h = max(0, effective_caption_rect.height)
+                total_h = th
+                if total_h > available_h and available_h > 0:
+                    scale_factor = available_h / max(total_h, 1)
+                    fs = fs * scale_factor
+                    (tw, th), _ = cv2.getTextSize(line_text, font, fs, thickness + outline)
+                    total_h = th
+                bottom_safe = int(frame_height * bottom_safe_ratio)
+                max_y = frame_height - bottom_safe - total_h
+                y_text = max(0, min(effective_caption_rect.y, max_y))
+                y_cursor = y_text + th
 
-            bottom_safe = int(frame_height * bottom_safe_ratio)
-            max_y = frame_height - bottom_safe - total_h
-            y_text = max(0, min(effective_caption_rect.y, max_y))
-
-            y_cursor = y_text
-            for index, ln in enumerate(lines):
-                (tw, th), _ = cv2.getTextSize(ln, font, fs, thickness + outline)
                 if caption_align == "left":
                     x_text = effective_caption_rect.x
                 elif caption_align == "right":
                     x_text = effective_caption_rect.x + max(0, effective_caption_rect.width - tw)
                 else:
                     x_text = effective_caption_rect.x + max(0, (effective_caption_rect.width - tw) // 2)
-                y_cursor += th
-                for dx in (-outline, 0, outline):
-                    for dy in (-outline, 0, outline):
-                        if dx == 0 and dy == 0:
-                            continue
-                        cv2.putText(
-                            canvas,
-                            ln,
-                            (x_text + dx, y_cursor + dy),
-                            font,
-                            fs,
-                            outline_color,
-                            thickness + outline,
-                            line_type,
-                        )
-                cv2.putText(
-                    canvas,
-                    ln,
-                    (x_text, y_cursor),
-                    font,
-                    fs,
-                    fill_color,
-                    thickness,
-                    line_type,
-                )
-                y_cursor += spacing
+
+                highlight_index: Optional[int] = None
+                for idx, word in enumerate(display_words):
+                    if (word.start - time_tolerance) <= t <= (word.end + time_tolerance):
+                        highlight_index = idx
+                        break
+                if highlight_index is None and display_words:
+                    if t < display_words[0].start:
+                        highlight_index = 0
+                    else:
+                        highlight_index = len(display_words) - 1
+
+                space_width = cv2.getTextSize(" ", font, fs, thickness + outline)[0][0]
+                x_cursor = float(x_text)
+
+                def _draw_token(token: str, origin_x: float, origin_y: int, color: Tuple[int, int, int]) -> None:
+                    base_x = int(round(origin_x))
+                    for dx in (-outline, 0, outline):
+                        for dy in (-outline, 0, outline):
+                            if dx == 0 and dy == 0:
+                                continue
+                            cv2.putText(
+                                canvas,
+                                token,
+                                (base_x + dx, origin_y + dy),
+                                font,
+                                fs,
+                                outline_color,
+                                thickness + outline,
+                                line_type,
+                            )
+                    cv2.putText(
+                        canvas,
+                        token,
+                        (base_x, origin_y),
+                        font,
+                        fs,
+                        color,
+                        thickness,
+                        line_type,
+                    )
+
+                for idx, word in enumerate(display_words):
+                    token = word.text.strip()
+                    if not token:
+                        continue
+                    (word_w, _), _ = cv2.getTextSize(token, font, fs, thickness + outline)
+                    color = highlight_color if highlight_index == idx else base_caption_color
+                    _draw_token(token, x_cursor, int(round(y_cursor)), color)
+                    x_cursor += word_w
+                    if idx != len(display_words) - 1:
+                        x_cursor += space_width
 
         writer.write(canvas)
         frame_idx += 1

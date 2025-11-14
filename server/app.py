@@ -880,7 +880,7 @@ def _apply_clip_adjustment(
         raw_clip_path,
         start=start_seconds,
         end=end_seconds,
-        reencode=False,
+        reencode=True,
     )
     if not ok:
         raise HTTPException(

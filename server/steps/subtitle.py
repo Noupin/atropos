@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from __future__ import annotations
+
+import json
 from pathlib import Path
+from typing import List
 
 from .candidates import parse_transcript
 
@@ -23,6 +27,30 @@ def _fmt_ts(seconds: float) -> str:
 # -----------------------------
 
 
+def _load_transcript_words(transcript_path: Path) -> List[dict]:
+    json_path = transcript_path.with_suffix(".json")
+    if not json_path.exists():
+        return []
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    words: List[dict] = []
+    for segment in data.get("segments", []):
+        for word in segment.get("words", []) or []:
+            try:
+                start = float(word.get("start"))
+                end = float(word.get("end"))
+            except (TypeError, ValueError):
+                continue
+            text = str(word.get("text") or word.get("word") or "").strip()
+            if not text or end <= start:
+                continue
+            words.append({"start": start, "end": end, "text": text})
+    words.sort(key=lambda w: w["start"])
+    return words
+
+
 def build_srt_for_range(
     transcript_path: str | Path,
     *,
@@ -35,6 +63,7 @@ def build_srt_for_range(
     Line times are shifted so the SRT starts at 00:00:00,000.
     """
     items = parse_transcript(transcript_path)
+    transcript_path = Path(transcript_path)
     raw_lines = []
     for (s, e, text) in items:
         if e <= global_start or s >= global_end:
@@ -61,5 +90,22 @@ def build_srt_for_range(
     with out.open("w", encoding="utf-8") as f:
         for idx, (rs, re, txt) in enumerate(lines, start=1):
             f.write(f"{idx}\n{_fmt_ts(rs)} --> { _fmt_ts(re) }\n{txt}\n\n")
+
+    words = _load_transcript_words(transcript_path)
+    clip_words = []
+    for word in words:
+        ws = float(word["start"])
+        we = float(word["end"])
+        if we <= global_start or ws >= global_end:
+            continue
+        local_start = max(0.0, ws - global_start)
+        local_end = max(local_start + 0.01, min(global_end, we) - global_start)
+        clip_words.append({"start": local_start, "end": local_end, "text": word["text"]})
+
+    if clip_words:
+        words_path = out.with_suffix(".words.json")
+        words_payload = {"words": clip_words}
+        words_path.write_text(json.dumps(words_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
     return out
 
