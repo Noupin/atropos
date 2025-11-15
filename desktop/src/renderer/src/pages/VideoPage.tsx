@@ -199,7 +199,7 @@ const delay = (ms: number): Promise<void> =>
     setTimeout(resolve, ms)
   })
 
-const LAYOUT_FALLBACK_IDS = ['default', 'default.json'] as const
+const LAYOUT_FALLBACK_IDS = ['default.json', 'default'] as const
 const ADJUSTMENT_ERROR_FALLBACK_MESSAGE =
   'We couldn’t rebuild this clip right now. Please try again in a moment.'
 
