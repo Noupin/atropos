@@ -395,6 +395,7 @@ const VideoPage: FC = () => {
   const [isLayoutRendering, setIsLayoutRendering] = useState(false)
   const [layoutRenderStatusMessage, setLayoutRenderStatusMessage] = useState<string | null>(null)
   const [layoutRenderErrorMessage, setLayoutRenderErrorMessage] = useState<string | null>(null)
+  const layoutRenderInFlightRef = useRef(false)
 
   const resolveLayoutCategory = useCallback(
     (identifier: string | null | undefined): LayoutCategory | null => {
@@ -413,10 +414,13 @@ const VideoPage: FC = () => {
   )
 
   useEffect(() => {
+    if (layoutRenderInFlightRef.current) {
+      return
+    }
     setLayoutRenderSteps(createInitialSaveSteps())
     setLayoutRenderStatusMessage(null)
     setLayoutRenderErrorMessage(null)
-  }, [activeLayoutDefinition?.id])
+  }, [activeLayoutDefinition?.id, layoutRenderInFlightRef])
 
   const refreshLayoutCollection = useCallback(async () => {
     setIsLayoutCollectionLoading(true)
@@ -790,6 +794,7 @@ const VideoPage: FC = () => {
         setLayoutErrorMessage('Load a clip before rendering a layout.')
         return
       }
+      layoutRenderInFlightRef.current = true
       setLayoutRenderSteps(
         SAVE_STEP_DEFINITIONS.map((step, index) => ({
           ...step,
@@ -813,10 +818,11 @@ const VideoPage: FC = () => {
           prev.map((step) => (step.status === 'running' ? { ...step, status: 'failed' } : step))
         )
       } finally {
+        layoutRenderInFlightRef.current = false
         setIsLayoutRendering(false)
       }
     },
-    [clipState, handleApplyLayoutDefinition, runStepAnimation]
+    [clipState, handleApplyLayoutDefinition, layoutRenderInFlightRef, runStepAnimation]
   )
 
   const originalStart = clipState?.originalStartSeconds ?? 0
