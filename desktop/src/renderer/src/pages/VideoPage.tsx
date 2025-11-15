@@ -676,6 +676,13 @@ const VideoPage: FC = () => {
         throw new Error('Load a clip before applying changes.')
       }
 
+      const layoutIdForRequest =
+        adjustment.layoutId ??
+        clipState.layoutId ??
+        layoutAppliedIdRef.current ??
+        activeLayoutReference?.id ??
+        null
+
       const clipAccountId =
         accountId ?? (typeof clipState.accountId === 'string' && clipState.accountId.length > 0
           ? clipState.accountId
@@ -685,7 +692,11 @@ const VideoPage: FC = () => {
         if (!clipAccountId) {
           throw new Error('We need an account to rebuild this clip. Try reopening it from the library.')
         }
-        const updated = await adjustLibraryClip(clipAccountId, clipState.id, adjustment)
+        const updated = await adjustLibraryClip(clipAccountId, clipState.id, {
+          startSeconds: adjustment.startSeconds,
+          endSeconds: adjustment.endSeconds,
+          layoutId: layoutIdForRequest
+        })
         applyUpdatedClip(updated)
         setPersistedState((previous) => ({
           ...(previous ?? {}),
@@ -701,7 +712,11 @@ const VideoPage: FC = () => {
         throw new Error('We lost the job that produced this clip. Save it to your library and try again.')
       }
 
-      const updated = await adjustJobClip(jobId, clipState.id, adjustment)
+      const updated = await adjustJobClip(jobId, clipState.id, {
+        startSeconds: adjustment.startSeconds,
+        endSeconds: adjustment.endSeconds,
+        layoutId: layoutIdForRequest
+      })
       applyUpdatedClip(updated)
       setPersistedState((previous) => ({
         ...(previous ?? {}),
@@ -712,7 +727,15 @@ const VideoPage: FC = () => {
       }))
       return updated
     },
-    [accountId, applyUpdatedClip, clipState, context, jobId, setPersistedState]
+    [
+      accountId,
+      activeLayoutReference,
+      applyUpdatedClip,
+      clipState,
+      context,
+      jobId,
+      setPersistedState
+    ]
   )
 
   const handleApplyLayoutDefinition = useCallback(
