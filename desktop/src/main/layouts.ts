@@ -294,6 +294,10 @@ const normalisePath = (candidate: string | null | undefined): string | null => {
   }
 }
 
+type CandidateOptions = {
+  requireExists?: boolean
+}
+
 const getLayoutsRoot = async (): Promise<string> => {
   if (layoutsRoot) {
     return layoutsRoot
@@ -304,9 +308,15 @@ const getLayoutsRoot = async (): Promise<string> => {
   const seen = new Set<string>()
   const candidates: string[] = []
 
-  const pushCandidate = (candidate: string | null | undefined): void => {
+  const pushCandidate = (
+    candidate: string | null | undefined,
+    options: CandidateOptions = {}
+  ): void => {
     const resolved = normalisePath(candidate ?? null)
     if (!resolved || seen.has(resolved)) {
+      return
+    }
+    if (options.requireExists && !existsSync(resolved)) {
       return
     }
     seen.add(resolved)
@@ -336,13 +346,15 @@ const getLayoutsRoot = async (): Promise<string> => {
   pushOutRoot(join(appPath, '..', 'out'))
 
   outRoots.forEach((outRoot) => {
-    pushCandidate(join(outRoot, '..', 'layouts'))
+    if (existsSync(outRoot)) {
+      pushCandidate(join(outRoot, '..', 'layouts'))
+    }
   })
 
-  pushCandidate(join(cwd, 'layouts'))
-  pushCandidate(join(cwd, '..', 'layouts'))
-  pushCandidate(join(appPath, 'layouts'))
-  pushCandidate(join(appPath, '..', 'layouts'))
+  pushCandidate(join(cwd, 'layouts'), { requireExists: true })
+  pushCandidate(join(cwd, '..', 'layouts'), { requireExists: true })
+  pushCandidate(join(appPath, 'layouts'), { requireExists: true })
+  pushCandidate(join(appPath, '..', 'layouts'), { requireExists: true })
 
   const fallbackRoot = resolve(app.getPath('userData'), 'layouts')
   if (!seen.has(fallbackRoot)) {
