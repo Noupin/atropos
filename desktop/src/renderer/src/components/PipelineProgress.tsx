@@ -341,10 +341,14 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
           aria-hidden="true"
           className="h-4 w-4"
           focusable="false"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
         >
           <path
-            d="M12 5a7 7 0 0 1 6.32 9.9.75.75 0 1 0 1.36.6A8.5 8.5 0 1 0 12 20.5a.75.75 0 0 0 0-1.5 7 7 0 1 1 0-14v1.69a.75.75 0 0 0 1.28.54l2.44-2.44a.75.75 0 0 0 0-1.06L13.28 1.3A.75.75 0 0 0 12 1.84V5Z"
-            fill="currentColor"
+            d="M16.023 9.348h4.992M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           />
         </svg>
       </button>
