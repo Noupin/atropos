@@ -160,11 +160,14 @@ describe('PipelineProgress', () => {
     render(<PipelineProgress steps={mockSteps} onRerunStep={handleRerun} />)
 
     const rerunButtons = screen.getAllByRole('button', {
-      name: /run this step and all following steps/i
+      name: /run the pipeline from this step to the end/i
     })
     const rerunnableSteps = mockSteps.filter((step) => step.status !== 'pending')
     expect(rerunButtons).toHaveLength(rerunnableSteps.length)
-    expect(rerunButtons[0]).toHaveAttribute('title', 'Run this step and all following steps.')
+    expect(rerunButtons[0]).toHaveAttribute(
+      'title',
+      'Run the pipeline from this step to the end.'
+    )
 
     const produceToggle = screen.getAllByRole('button', {
       name: /produce final clips/i

@@ -40,7 +40,7 @@ const indicatorClasses: Record<PipelineStepStatus, string> = {
 const multiStepBadgeBaseClasses =
   'inline-flex items-center justify-center gap-1 rounded-full border border-white/10 bg-white/5 uppercase tracking-[0.16em] text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]'
 
-const RERUN_TOOLTIP = 'Run this step and all following steps.'
+const RERUN_TOOLTIP = 'Run the pipeline from this step to the end.'
 
 const multiStepBadgeSizeClasses = {
   default: 'px-2 py-0.5 text-[10px] font-semibold',
