@@ -143,7 +143,7 @@ def render_vertical_with_captions(
         try:
             layout_definition = load_layout(RENDER_LAYOUT)
         except LayoutNotFoundError:
-            layout_definition = load_layout("centered")
+            layout_definition = load_layout("default")
     elif isinstance(layout, str):
         try:
             layout_definition = load_layout(layout)

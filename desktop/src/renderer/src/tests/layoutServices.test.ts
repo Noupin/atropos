@@ -70,8 +70,8 @@ describe('layout services', () => {
     const collection: LayoutCollection = {
       builtin: [
         {
-          id: 'centered',
-          name: 'Centered',
+          id: 'default',
+          name: 'Default vertical spotlight',
           description: null,
           author: 'Atropos',
           category: 'builtin',
@@ -89,11 +89,11 @@ describe('layout services', () => {
   })
 
   it('loads a layout definition by identifier', async () => {
-    const layout = createLayout({ id: 'centered', category: 'builtin' })
+    const layout = createLayout({ id: 'default', category: 'builtin' })
     apiMock.loadLayout.mockResolvedValueOnce(layout)
 
-    const result = await loadLayoutDefinition('centered', 'builtin')
-    expect(apiMock.loadLayout).toHaveBeenCalledWith({ id: 'centered', category: 'builtin' })
+    const result = await loadLayoutDefinition('default', 'builtin')
+    expect(apiMock.loadLayout).toHaveBeenCalledWith({ id: 'default', category: 'builtin' })
     expect(result).toEqual(layout)
   })
 

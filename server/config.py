@@ -62,7 +62,7 @@ else:
     LAYOUTS_ROOT = _default_layouts_root()
 
 # Identifier of the render layout to use by default
-RENDER_LAYOUT = os.environ.get("RENDER_LAYOUT", "centered")
+RENDER_LAYOUT = os.environ.get("RENDER_LAYOUT", "default")
 VIDEO_ZOOM_RATIO = 0.4  # legacy zoom ratio retained for backwards compatibility
 
 # Clip boundary snapping options

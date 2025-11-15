@@ -907,7 +907,7 @@ def _apply_clip_adjustment(
     try:
         layout_definition = load_layout(layout_identifier)
     except LayoutNotFoundError:
-        layout_definition = load_layout("centered")
+        layout_definition = load_layout("default")
 
     try:
         render_vertical_with_captions(

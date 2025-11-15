@@ -144,13 +144,8 @@ export const SETTINGS_METADATA: Record<string, SettingMetadata> = {
     description: 'Layout preset that controls positioning of the primary footage.',
     group: 'rendering',
     control: 'select',
-    options: [
-      { value: 'centered', label: 'Centered' },
-      { value: 'centered_with_corners', label: 'Centered with corners' },
-      { value: 'no_zoom', label: 'No zoom' },
-      { value: 'left_aligned', label: 'Left aligned' }
-    ],
-    defaultValue: 'centered',
+    options: [{ value: 'default', label: 'Default vertical spotlight' }],
+    defaultValue: 'default',
     order: 7
   },
   VIDEO_ZOOM_RATIO: {
