@@ -1,4 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, protocol } from 'electron'
+import type { BrowserWindowConstructorOptions } from 'electron'
 import type { FileFilter } from 'electron'
 import { existsSync } from 'fs'
 import { join, resolve, dirname } from 'path'
@@ -27,6 +28,7 @@ import {
   deleteCustomLayout
 } from './layouts'
 import type { LayoutDefinition } from '../types/layouts'
+import { DEFAULT_WINDOW_BOUNDS, loadWindowState, trackWindowState } from './windowState'
 
 type NavigationCommand = 'back' | 'forward'
 
@@ -538,10 +540,11 @@ app.on('open-url', (event, url) => {
 })
 
 function createWindow(): void {
-  // Create the browser window.
-  mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+  const windowState = loadWindowState()
+
+  const windowOptions: BrowserWindowConstructorOptions = {
+    width: windowState.bounds?.width ?? DEFAULT_WINDOW_BOUNDS.width,
+    height: windowState.bounds?.height ?? DEFAULT_WINDOW_BOUNDS.height,
     show: false,
     autoHideMenuBar: true,
     title: 'Atropos',
@@ -553,12 +556,27 @@ function createWindow(): void {
       enableRemoteModule: false,
       nodeIntegration: false
     }
-  })
+  }
+
+  if (windowState.bounds) {
+    windowOptions.x = windowState.bounds.x
+    windowOptions.y = windowState.bounds.y
+  }
+
+  // Create the browser window.
+  mainWindow = new BrowserWindow(windowOptions)
+  trackWindowState(mainWindow)
 
   navigationState = { canGoBack: false, canGoForward: false }
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow?.show()
+    if (!mainWindow) {
+      return
+    }
+    if (windowState.isMaximized) {
+      mainWindow.maximize()
+    }
+    mainWindow.show()
     flushPendingDeepLinks()
   })
 
