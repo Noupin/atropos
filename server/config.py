@@ -31,11 +31,35 @@ CAPTION_OUTLINE_BGR = (236, 236, 236)  # hex ececec
 OUTPUT_FPS: float = 30.0
 
 # Layout storage root and default layout identifier
+
+
+def _resolve_path(value: str) -> Path:
+    """Expand user tokens and resolve ``value`` to an absolute path."""
+
+    return Path(value).expanduser().resolve()
+
+
+def _default_out_root() -> Path:
+    """Return the pipeline output root directory."""
+
+    override = os.environ.get("OUT_ROOT")
+    if override:
+        return _resolve_path(override)
+    return Path(__file__).resolve().parents[1] / "out"
+
+
+def _default_layouts_root() -> Path:
+    """Return the default layouts directory adjacent to the output root."""
+
+    out_root = _default_out_root()
+    return (out_root.parent / "layouts").resolve()
+
+
 _layout_root_override = os.environ.get("ATROPOS_LAYOUTS_ROOT")
 if _layout_root_override:
-    LAYOUTS_ROOT = Path(_layout_root_override).expanduser()
+    LAYOUTS_ROOT = _resolve_path(_layout_root_override)
 else:
-    LAYOUTS_ROOT = Path(__file__).resolve().parents[1] / "layouts"
+    LAYOUTS_ROOT = _default_layouts_root()
 
 # Identifier of the render layout to use by default
 RENDER_LAYOUT = os.environ.get("RENDER_LAYOUT", "centered")
