@@ -199,6 +199,37 @@ const delay = (ms: number): Promise<void> =>
     setTimeout(resolve, ms)
   })
 
+const LAYOUT_FALLBACK_IDS = ['default', 'default.json'] as const
+const ADJUSTMENT_ERROR_FALLBACK_MESSAGE =
+  'We couldn’t rebuild this clip right now. Please try again in a moment.'
+
+const normaliseAdjustmentErrorMessage = (error: unknown): string => {
+  if (!(error instanceof Error)) {
+    return ADJUSTMENT_ERROR_FALLBACK_MESSAGE
+  }
+
+  const detail = error.message?.trim()
+  if (!detail) {
+    return ADJUSTMENT_ERROR_FALLBACK_MESSAGE
+  }
+
+  const lowerCaseDetail = detail.toLowerCase()
+  if (lowerCaseDetail.includes('layoutnotfound') || lowerCaseDetail.includes('layout not found')) {
+    return 'The selected layout is no longer available. Choose a different layout and try again.'
+  }
+
+  const statusMatch = detail.match(/status\s+(\d{3})/i)
+  if (statusMatch) {
+    return `The server returned an unexpected error (status ${statusMatch[1]}). Please try again in a moment.`
+  }
+
+  if (/request failed with status/i.test(detail)) {
+    return 'The server returned an unexpected error. Please try again in a moment.'
+  }
+
+  return detail
+}
+
 const DEFAULT_CALL_TO_ACTION = 'Invite viewers to subscribe for more highlights.'
 const DEFAULT_TAGS = 'clips, highlights, community'
 const DEFAULT_PLATFORM_NOTES = 'Share with the community playlist and pin on the channel page.'
@@ -395,6 +426,8 @@ const VideoPage: FC = () => {
   const [isLayoutRendering, setIsLayoutRendering] = useState(false)
   const [layoutRenderStatusMessage, setLayoutRenderStatusMessage] = useState<string | null>(null)
   const [layoutRenderErrorMessage, setLayoutRenderErrorMessage] = useState<string | null>(null)
+  const layoutRenderInFlightRef = useRef(false)
+  const layoutRenderResetPendingRef = useRef(false)
 
   const resolveLayoutCategory = useCallback(
     (identifier: string | null | undefined): LayoutCategory | null => {
@@ -413,10 +446,15 @@ const VideoPage: FC = () => {
   )
 
   useEffect(() => {
+    if (layoutRenderInFlightRef.current) {
+      layoutRenderResetPendingRef.current = true
+      return
+    }
     setLayoutRenderSteps(createInitialSaveSteps())
     setLayoutRenderStatusMessage(null)
     setLayoutRenderErrorMessage(null)
-  }, [activeLayoutDefinition?.id])
+    layoutRenderResetPendingRef.current = false
+  }, [activeLayoutDefinition?.id, layoutRenderInFlightRef, layoutRenderResetPendingRef])
 
   const refreshLayoutCollection = useCallback(async () => {
     setIsLayoutCollectionLoading(true)
@@ -652,8 +690,127 @@ const VideoPage: FC = () => {
       } else {
         setActiveLayoutReference(null)
       }
+      setPersistedState((previous) => ({
+        ...(previous ?? {}),
+        clip: updated,
+        context: previous?.context ?? context,
+        jobId: previous?.jobId ?? jobId ?? null,
+        accountId: previous?.accountId ?? accountId ?? null
+      }))
     },
-    [minGap, resolveLayoutCategory]
+    [accountId, context, jobId, minGap, resolveLayoutCategory, setPersistedState]
+  )
+
+  const submitClipAdjustment = useCallback(
+    async (adjustment: { startSeconds: number; endSeconds: number; layoutId: string | null }) => {
+      if (!clipState) {
+        throw new Error('Load a clip before applying changes.')
+      }
+
+      const requestedLayoutId =
+        adjustment.layoutId ??
+        clipState.layoutId ??
+        layoutAppliedIdRef.current ??
+        activeLayoutReference?.id ??
+        null
+
+      const clipAccountId =
+        accountId ?? (typeof clipState.accountId === 'string' && clipState.accountId.length > 0
+          ? clipState.accountId
+          : null)
+
+      const layoutCandidates: Array<string | null> = []
+      if (requestedLayoutId) {
+        layoutCandidates.push(requestedLayoutId)
+      }
+      for (const fallbackId of LAYOUT_FALLBACK_IDS) {
+        if (!layoutCandidates.includes(fallbackId)) {
+          layoutCandidates.push(fallbackId)
+        }
+      }
+      if (layoutCandidates.length === 0) {
+        layoutCandidates.push(LAYOUT_FALLBACK_IDS[0])
+      }
+
+      const initialCandidate = layoutCandidates[0] ?? null
+
+      const performAdjustment = async (layoutIdToUse: string | null): Promise<Clip> => {
+        if (context === 'library' || (!jobId && clipAccountId)) {
+          if (!clipAccountId) {
+            throw new Error('We need an account to rebuild this clip. Try reopening it from the library.')
+          }
+          const updated = await adjustLibraryClip(clipAccountId, clipState.id, {
+            startSeconds: adjustment.startSeconds,
+            endSeconds: adjustment.endSeconds,
+            layoutId: layoutIdToUse
+          })
+          applyUpdatedClip(updated)
+          setPersistedState((previous) => ({
+            ...(previous ?? {}),
+            clip: updated,
+            context: 'library',
+            accountId: clipAccountId,
+            jobId: previous?.jobId ?? null
+          }))
+          return updated
+        }
+
+        if (!jobId) {
+          throw new Error('We lost the job that produced this clip. Save it to your library and try again.')
+        }
+
+        const updated = await adjustJobClip(jobId, clipState.id, {
+          startSeconds: adjustment.startSeconds,
+          endSeconds: adjustment.endSeconds,
+          layoutId: layoutIdToUse
+        })
+        applyUpdatedClip(updated)
+        setPersistedState((previous) => ({
+          ...(previous ?? {}),
+          clip: updated,
+          context: 'job',
+          jobId,
+          accountId: previous?.accountId ?? clipAccountId ?? null
+        }))
+        return updated
+      }
+
+      let lastError: unknown = null
+
+      for (const candidate of layoutCandidates) {
+        try {
+          const updated = await performAdjustment(candidate)
+          if (initialCandidate && candidate !== initialCandidate) {
+            setLayoutStatusMessage(
+              'The selected layout was unavailable, so we used our default layout instead.'
+            )
+            setLayoutErrorMessage(null)
+          }
+          return updated
+        } catch (error) {
+          console.error(
+            'Failed to adjust clip with layout candidate',
+            candidate ?? 'default pipeline layout',
+            error
+          )
+          lastError = error
+        }
+      }
+
+      const friendlyMessage = normaliseAdjustmentErrorMessage(lastError)
+      throw new Error(friendlyMessage)
+    },
+    [
+      accountId,
+      activeLayoutReference,
+      applyUpdatedClip,
+      clipState,
+      context,
+      jobId,
+      setLayoutErrorMessage,
+      setLayoutStatusMessage,
+      setPersistedState
+    ]
   )
 
   const handleApplyLayoutDefinition = useCallback(
@@ -688,34 +845,18 @@ const VideoPage: FC = () => {
           throw new Error('Layout must be saved before applying.')
         }
 
-        if (context === 'library') {
-          const accountForUpdate = accountId ?? clipState.accountId
-          if (!accountForUpdate) {
-            throw new Error('Missing account information for this clip.')
-          }
-          const updated = await adjustLibraryClip(accountForUpdate, clipState.id, {
-            startSeconds: clipState.startSeconds,
-            endSeconds: clipState.endSeconds,
-            layoutId: layoutIdToApply
-          })
-          applyUpdatedClip(updated)
-        } else {
-          if (!jobId) {
-            throw new Error('Missing job information for this clip.')
-          }
-          const updated = await adjustJobClip(jobId, clipState.id, {
-            startSeconds: clipState.startSeconds,
-            endSeconds: clipState.endSeconds,
-            layoutId: layoutIdToApply
-          })
-          applyUpdatedClip(updated)
-        }
-        layoutAppliedIdRef.current = layoutIdToApply
+        await submitClipAdjustment({
+          startSeconds: clipState.startSeconds,
+          endSeconds: clipState.endSeconds,
+          layoutId: layoutIdToApply
+        })
         setLayoutStatusMessage('Layout applied to this clip.')
       } catch (error) {
+        console.error('Failed to apply layout definition', error)
         const message =
           error instanceof Error ? error.message : 'Unable to apply the layout. Please try again.'
         setLayoutErrorMessage(message)
+        throw error instanceof Error ? new Error(message) : new Error(message)
       } finally {
         setIsApplyingLayout(false)
       }
@@ -727,7 +868,8 @@ const VideoPage: FC = () => {
       clipState,
       context,
       handleSaveLayoutDefinition,
-      jobId
+      jobId,
+      submitClipAdjustment
     ]
   )
 
@@ -790,6 +932,7 @@ const VideoPage: FC = () => {
         setLayoutErrorMessage('Load a clip before rendering a layout.')
         return
       }
+      layoutRenderInFlightRef.current = true
       setLayoutRenderSteps(
         SAVE_STEP_DEFINITIONS.map((step, index) => ({
           ...step,
@@ -799,10 +942,12 @@ const VideoPage: FC = () => {
       setIsLayoutRendering(true)
       setLayoutRenderStatusMessage(null)
       setLayoutRenderErrorMessage(null)
+      let resetWithSuccess = false
       try {
         await handleApplyLayoutDefinition(layout)
         await runStepAnimation(setLayoutRenderSteps)
         setLayoutRenderStatusMessage('Rendering started with the latest layout. We will notify you when it finishes.')
+        resetWithSuccess = true
       } catch (error) {
         const message =
           error instanceof Error
@@ -813,10 +958,25 @@ const VideoPage: FC = () => {
           prev.map((step) => (step.status === 'running' ? { ...step, status: 'failed' } : step))
         )
       } finally {
+        layoutRenderInFlightRef.current = false
         setIsLayoutRendering(false)
+        if (layoutRenderResetPendingRef.current) {
+          layoutRenderResetPendingRef.current = false
+          setLayoutRenderSteps(createInitialSaveSteps())
+          if (resetWithSuccess) {
+            setLayoutRenderStatusMessage(null)
+            setLayoutRenderErrorMessage(null)
+          }
+        }
       }
     },
-    [clipState, handleApplyLayoutDefinition, runStepAnimation]
+    [
+      clipState,
+      handleApplyLayoutDefinition,
+      layoutRenderInFlightRef,
+      layoutRenderResetPendingRef,
+      runStepAnimation
+    ]
   )
 
   const originalStart = clipState?.originalStartSeconds ?? 0
@@ -2006,28 +2166,11 @@ const VideoPage: FC = () => {
     setSaveError(null)
     setSaveSuccess(null)
     try {
-      if (context === 'library') {
-        const accountForUpdate = accountId ?? clipState.accountId
-        if (!accountForUpdate) {
-          throw new Error('Missing account information for this clip.')
-        }
-        const updated = await adjustLibraryClip(accountForUpdate, clipState.id, {
-          startSeconds: adjustedStart,
-          endSeconds: adjustedEnd,
-          layoutId: clipState.layoutId ?? null
-        })
-        applyUpdatedClip(updated)
-      } else {
-        if (!jobId) {
-          throw new Error('Missing job information for this clip.')
-        }
-        const updated = await adjustJobClip(jobId, clipState.id, {
-          startSeconds: adjustedStart,
-          endSeconds: adjustedEnd,
-          layoutId: clipState.layoutId ?? null
-        })
-        applyUpdatedClip(updated)
-      }
+      await submitClipAdjustment({
+        startSeconds: adjustedStart,
+        endSeconds: adjustedEnd,
+        layoutId: clipState.layoutId ?? null
+      })
       await runStepAnimation(setSaveSteps)
       setSaveSuccess('Clip boundaries updated successfully.')
     } catch (error) {
@@ -2042,7 +2185,13 @@ const VideoPage: FC = () => {
     } finally {
       setIsSaving(false)
     }
-  }, [applyUpdatedClip, clipState, context, rangeEnd, rangeStart, runStepAnimation, accountId, jobId])
+  }, [
+    clipState,
+    rangeEnd,
+    rangeStart,
+    runStepAnimation,
+    submitClipAdjustment
+  ])
 
   if (!clipState) {
     return (

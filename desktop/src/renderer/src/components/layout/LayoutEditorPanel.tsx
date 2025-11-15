@@ -1808,7 +1808,11 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     if (!draftLayout) {
       return
     }
-    await onApplyLayout(draftLayout)
+    try {
+      await onApplyLayout(draftLayout)
+    } catch (error) {
+      console.error('Layout application failed', error)
+    }
   }, [draftLayout, onApplyLayout])
 
   const handleExport = useCallback(async () => {
