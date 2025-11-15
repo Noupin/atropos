@@ -13,6 +13,7 @@ import {
 declare global {
   interface Window {
     api?: import('../../../types/api').RendererApi
+    electron?: { ipcRenderer: { invoke: (channel: string, ...args: unknown[]) => Promise<unknown> } }
   }
 }
 
@@ -62,6 +63,7 @@ describe('layout services', () => {
 
   afterEach(() => {
     delete window.api
+    delete window.electron
   })
 
   it('fetches the layout collection through the bridge', async () => {
@@ -136,5 +138,22 @@ describe('layout services', () => {
     const result = await deleteLayoutDefinition('custom-layout', 'custom')
     expect(apiMock.deleteLayout).toHaveBeenCalledWith({ id: 'custom-layout', category: 'custom' })
     expect(result).toBe(true)
+  })
+
+  it('falls back to invoking the delete channel directly if the bridge helper is missing', async () => {
+    const invoke = vi.fn().mockResolvedValue(true)
+    window.electron = {
+      ipcRenderer: { invoke }
+    } as unknown as typeof window.electron
+
+    const originalDelete = apiMock.deleteLayout
+    ;(apiMock as unknown as { deleteLayout?: undefined }).deleteLayout = undefined
+
+    const result = await deleteLayoutDefinition('custom-layout', 'custom')
+
+    expect(invoke).toHaveBeenCalledWith('layouts:delete', { id: 'custom-layout', category: 'custom' })
+    expect(result).toBe(true)
+
+    apiMock.deleteLayout = originalDelete
   })
 })
