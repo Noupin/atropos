@@ -298,6 +298,40 @@ type CandidateOptions = {
   requireExists?: boolean
 }
 
+type ResolveLayoutsSiblingOptions = {
+  pathExists?: (candidate: string) => boolean
+}
+
+const resolveLayoutsSibling = (
+  outRoot: string,
+  options: ResolveLayoutsSiblingOptions = {}
+): string | null => {
+  const resolvedOutRoot = normalisePath(outRoot)
+  if (!resolvedOutRoot) {
+    return null
+  }
+  const candidate = normalisePath(join(resolvedOutRoot, '..', 'layouts'))
+  if (!candidate) {
+    return null
+  }
+  const exists = options.pathExists ?? existsSync
+  try {
+    if (exists(candidate)) {
+      return candidate
+    }
+  } catch (error) {
+    console.warn('[layouts] failed to inspect candidate layouts directory', candidate, error)
+  }
+  try {
+    if (exists(resolvedOutRoot)) {
+      return candidate
+    }
+  } catch (error) {
+    console.warn('[layouts] failed to inspect pipeline output directory', resolvedOutRoot, error)
+  }
+  return null
+}
+
 const getLayoutsRoot = async (): Promise<string> => {
   if (layoutsRoot) {
     return layoutsRoot
@@ -346,8 +380,9 @@ const getLayoutsRoot = async (): Promise<string> => {
   pushOutRoot(join(appPath, '..', 'out'))
 
   outRoots.forEach((outRoot) => {
-    if (existsSync(outRoot)) {
-      pushCandidate(join(outRoot, '..', 'layouts'))
+    const sibling = resolveLayoutsSibling(outRoot)
+    if (sibling) {
+      pushCandidate(sibling)
     }
   })
 
@@ -670,4 +705,8 @@ export const deleteCustomLayout = async (id: string): Promise<boolean> => {
     }
     throw error
   }
+}
+
+export const __testing = {
+  resolveLayoutsSibling
 }
