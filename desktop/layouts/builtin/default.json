@@ -1,0 +1,66 @@
+{
+  "id": "default",
+  "name": "Default",
+  "version": 1,
+  "canvas": {
+    "width": 1080,
+    "height": 1920,
+    "background": {
+      "kind": "blur",
+      "radius": 45,
+      "opacity": 0.6,
+      "brightness": 0.55
+    }
+  },
+  "items": [
+    {
+      "id": "primary-video",
+      "kind": "video",
+      "source": "primary",
+      "name": "Foreground",
+      "frame": {
+        "x": 0,
+        "y": 0.1,
+        "width": 1,
+        "height": 0.8
+      },
+      "crop": {
+        "x": 0.3028421255977184,
+        "y": 0,
+        "width": 0.3943157488045631,
+        "height": 0.9969859920391918,
+        "units": "fraction"
+      },
+      "scaleMode": "cover",
+      "rotation": null,
+      "opacity": null,
+      "mirror": false,
+      "zIndex": 10,
+      "sourceCrop": {
+        "x": 0.3028421255977184,
+        "y": 0,
+        "width": 0.39431574880456316,
+        "height": 0.9969859920391918,
+        "units": "fraction"
+      },
+      "lockAspectRatio": false,
+      "lockCropAspectRatio": false,
+      "frameAspectRatio": null,
+      "cropAspectRatio": null
+    }
+  ],
+  "description": "Shows the original video without additional zoom, pillarboxing the sides with a solid background.",
+  "author": "Atropos",
+  "tags": ["legacy", "full"],
+  "captionArea": {
+    "x": 0.08,
+    "y": 0.78,
+    "width": 0.84,
+    "height": 0.18,
+    "align": "center",
+    "maxLines": 3,
+    "wrapWidth": null
+  },
+  "createdAt": "2025-11-15T01:50:59.913Z",
+  "updatedAt": "2025-11-15T02:20:00.423Z"
+}

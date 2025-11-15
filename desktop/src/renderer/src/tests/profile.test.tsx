@@ -8,8 +8,8 @@ import type { AccountPlatformConnection, AccountSummary, AuthPingSummary } from 
 const layoutCollectionMock = {
   builtin: [
     {
-      id: 'centered',
-      name: 'Centered spotlight',
+      id: 'default',
+      name: 'Default vertical spotlight',
       description: 'Primary video with blurred background.',
       author: 'Atropos',
       category: 'builtin',
@@ -322,7 +322,7 @@ describe('Profile page', () => {
   it('updates the default layout when a new preset is selected', async () => {
     const layoutUpdatedAccount: AccountSummary = {
       ...sampleAccounts[0],
-      defaultLayoutId: 'centered'
+      defaultLayoutId: 'default'
     }
     updateAccountMock.mockResolvedValueOnce(layoutUpdatedAccount)
 
@@ -331,11 +331,11 @@ describe('Profile page', () => {
     const creatorCard = await screen.findByTestId('account-card-account-1')
     const scope = within(creatorCard)
     const layoutSelect = await scope.findByTestId('layout-account-1')
-    fireEvent.change(layoutSelect, { target: { value: 'centered' } })
+    fireEvent.change(layoutSelect, { target: { value: 'default' } })
 
     await waitFor(() => expect(updateAccountMock).toHaveBeenCalledTimes(1))
-    expect(updateAccountMock).toHaveBeenCalledWith('account-1', { defaultLayoutId: 'centered' })
-    expect(await scope.findByText(/Layout set to Centered spotlight/i)).toBeInTheDocument()
+    expect(updateAccountMock).toHaveBeenCalledWith('account-1', { defaultLayoutId: 'default' })
+    expect(await scope.findByText(/Layout set to Default vertical spotlight/i)).toBeInTheDocument()
   })
 
   it('disables and removes a platform connection', async () => {

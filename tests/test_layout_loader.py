@@ -15,8 +15,8 @@ from server.layouts.loader import (
 
 
 def test_load_builtin_layout_returns_definition() -> None:
-    layout = load_layout("centered")
-    assert layout.id == "centered"
+    layout = load_layout("default")
+    assert layout.id == "default"
     assert layout.canvas.width > 0
     assert layout.canvas.height > 0
     assert layout.items, "Expected built-in layout to contain at least one item"
@@ -51,6 +51,27 @@ def test_list_layouts_includes_custom_and_builtin(monkeypatch: pytest.MonkeyPatc
     summaries = list_layouts()
     assert any(summary.category == "custom" and summary.id == "custom_showcase" for summary in summaries)
     assert any(summary.category == "builtin" for summary in summaries)
+
+
+def test_out_root_sibling_directory_used(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    out_root = tmp_path / "pipeline" / "out"
+    custom_dir = out_root.parent / "layouts" / "custom"
+    custom_dir.mkdir(parents=True)
+    payload = {
+        "id": "sibling-layout",
+        "name": "Sibling layout",
+        "version": 1,
+        "canvas": {"width": 480, "height": 852, "background": {"kind": "color", "color": "#abcdef"}},
+        "items": [],
+    }
+    (custom_dir / "sibling.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    monkeypatch.delenv("ATROPOS_LAYOUTS_ROOT", raising=False)
+    monkeypatch.setenv("OUT_ROOT", str(out_root))
+
+    layout = load_layout("sibling-layout")
+    assert layout.id == "sibling-layout"
+    assert layout.canvas.height == 852
 
 
 def test_load_layout_prefers_identifier_over_filename(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

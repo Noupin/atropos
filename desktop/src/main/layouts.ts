@@ -282,18 +282,135 @@ const parseLayoutDefinition = async (
   }
 }
 
+const normalisePath = (candidate: string | null | undefined): string | null => {
+  if (!candidate) {
+    return null
+  }
+  try {
+    return resolve(candidate)
+  } catch (error) {
+    console.warn('[layouts] failed to resolve path', candidate, error)
+    return null
+  }
+}
+
+type CandidateOptions = {
+  requireExists?: boolean
+}
+
+type ResolveLayoutsSiblingOptions = {
+  pathExists?: (candidate: string) => boolean
+}
+
+const resolveLayoutsSibling = (
+  outRoot: string,
+  options: ResolveLayoutsSiblingOptions = {}
+): string | null => {
+  const resolvedOutRoot = normalisePath(outRoot)
+  if (!resolvedOutRoot) {
+    return null
+  }
+  const candidate = normalisePath(join(resolvedOutRoot, '..', 'layouts'))
+  if (!candidate) {
+    return null
+  }
+  const exists = options.pathExists ?? existsSync
+  try {
+    if (exists(candidate)) {
+      return candidate
+    }
+  } catch (error) {
+    console.warn('[layouts] failed to inspect candidate layouts directory', candidate, error)
+  }
+  try {
+    if (exists(resolvedOutRoot)) {
+      return candidate
+    }
+  } catch (error) {
+    console.warn('[layouts] failed to inspect pipeline output directory', resolvedOutRoot, error)
+  }
+  return null
+}
+
 const getLayoutsRoot = async (): Promise<string> => {
   if (layoutsRoot) {
     return layoutsRoot
   }
+
   await app.whenReady()
-  const root = resolve(app.getPath('userData'), 'layouts')
-  await fs.mkdir(root, { recursive: true })
-  await fs.mkdir(join(root, BUILTIN_DIR), { recursive: true })
-  await fs.mkdir(join(root, CUSTOM_DIR), { recursive: true })
-  layoutsRoot = root
-  process.env.ATROPOS_LAYOUTS_ROOT = root
-  return root
+
+  const seen = new Set<string>()
+  const candidates: string[] = []
+
+  const pushCandidate = (
+    candidate: string | null | undefined,
+    options: CandidateOptions = {}
+  ): void => {
+    const resolved = normalisePath(candidate ?? null)
+    if (!resolved || seen.has(resolved)) {
+      return
+    }
+    if (options.requireExists && !existsSync(resolved)) {
+      return
+    }
+    seen.add(resolved)
+    candidates.push(resolved)
+  }
+
+  pushCandidate(process.env.ATROPOS_LAYOUTS_ROOT)
+
+  const outRoots = new Set<string>()
+  const pushOutRoot = (candidate: string | null | undefined): void => {
+    const resolved = normalisePath(candidate ?? null)
+    if (resolved) {
+      outRoots.add(resolved)
+    }
+  }
+
+  pushOutRoot(process.env.OUT_ROOT)
+
+  const cwd = process.cwd()
+  pushOutRoot(join(cwd, 'out'))
+  pushOutRoot(join(cwd, '..', 'out'))
+  pushOutRoot(join(cwd, 'server', 'out'))
+  pushOutRoot(join(cwd, '..', 'server', 'out'))
+
+  const appPath = app.getAppPath()
+  pushOutRoot(join(appPath, 'out'))
+  pushOutRoot(join(appPath, '..', 'out'))
+
+  outRoots.forEach((outRoot) => {
+    const sibling = resolveLayoutsSibling(outRoot)
+    if (sibling) {
+      pushCandidate(sibling)
+    }
+  })
+
+  pushCandidate(join(cwd, 'layouts'), { requireExists: true })
+  pushCandidate(join(cwd, '..', 'layouts'), { requireExists: true })
+  pushCandidate(join(appPath, 'layouts'), { requireExists: true })
+  pushCandidate(join(appPath, '..', 'layouts'), { requireExists: true })
+
+  const fallbackRoot = resolve(app.getPath('userData'), 'layouts')
+  if (!seen.has(fallbackRoot)) {
+    seen.add(fallbackRoot)
+    candidates.push(fallbackRoot)
+  }
+
+  for (const candidate of candidates) {
+    try {
+      await fs.mkdir(candidate, { recursive: true })
+      await fs.mkdir(join(candidate, BUILTIN_DIR), { recursive: true })
+      await fs.mkdir(join(candidate, CUSTOM_DIR), { recursive: true })
+      layoutsRoot = candidate
+      process.env.ATROPOS_LAYOUTS_ROOT = candidate
+      return candidate
+    } catch (error) {
+      console.error('[layouts] failed to prepare layout root', candidate, error)
+    }
+  }
+
+  throw new Error('Unable to determine layout storage directory.')
 }
 
 const builtinCandidateDirs = (): string[] => {
@@ -588,4 +705,8 @@ export const deleteCustomLayout = async (id: string): Promise<boolean> => {
     }
     throw error
   }
+}
+
+export const __testing = {
+  resolveLayoutsSibling
 }

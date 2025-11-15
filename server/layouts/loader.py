@@ -30,14 +30,29 @@ class LayoutValidationError(ValueError):
 
 def _candidate_roots() -> list[Path]:
     roots: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(path: Path) -> None:
+        try:
+            resolved = path.expanduser().resolve()
+        except Exception:
+            return
+        if not resolved.exists() or not resolved.is_dir():
+            return
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        roots.append(resolved)
+
     env = os.environ.get("ATROPOS_LAYOUTS_ROOT")
     if env:
-        root_path = Path(env).expanduser()
-        if root_path.exists():
-            roots.append(root_path)
+        add(Path(env))
+    out_root_env = os.environ.get("OUT_ROOT")
+    if out_root_env:
+        out_root = Path(out_root_env).expanduser().resolve()
+        add(out_root.parent / "layouts")
     package_root = Path(__file__).resolve().parents[2] / "layouts"
-    if package_root.exists():
-        roots.append(package_root)
+    add(package_root)
     return roots
 
 

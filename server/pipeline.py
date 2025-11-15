@@ -171,7 +171,7 @@ def process_video(
     try:
         default_layout_definition = load_layout(RENDER_LAYOUT)
     except LayoutNotFoundError:
-        default_layout_definition = load_layout("centered")
+        default_layout_definition = load_layout("default")
 
     active_layout_definition = default_layout_definition
     if account:
