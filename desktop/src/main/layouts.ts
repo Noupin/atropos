@@ -422,7 +422,8 @@ const builtinCandidateDirs = (): string[] => {
     join(process.resourcesPath, 'layouts', BUILTIN_DIR),
     join(process.resourcesPath, 'app.asar.unpacked', 'layouts', BUILTIN_DIR),
     join(appPath, 'resources', 'layouts', BUILTIN_DIR),
-    join(appPath, 'layouts', BUILTIN_DIR)
+    join(appPath, 'layouts', BUILTIN_DIR),
+    join(appPath, '..', 'layouts', BUILTIN_DIR)
   ]
   dirs.forEach((candidate) => candidates.add(resolve(candidate)))
   return Array.from(candidates)
@@ -708,5 +709,6 @@ export const deleteCustomLayout = async (id: string): Promise<boolean> => {
 }
 
 export const __testing = {
-  resolveLayoutsSibling
+  resolveLayoutsSibling,
+  builtinCandidateDirs
 }
