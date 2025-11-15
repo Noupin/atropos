@@ -1,4 +1,4 @@
-import type { ChangeEvent, FC, FormEvent, ReactNode } from 'react'
+import type { ChangeEvent, FC, FormEvent, MouseEvent, ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { LayoutCollection } from '../../../../types/api'
 import type {
@@ -60,6 +60,7 @@ type LayoutEditorPanelProps = {
   isRenderingLayout: boolean
   renderStatusMessage: string | null
   renderErrorMessage: string | null
+  onDeleteLayout?: (id: string, category: LayoutCategory) => Promise<void> | void
 }
 
 type UpdateOptions = {
@@ -726,6 +727,15 @@ const CollapseToggleIcon: FC<{ collapsed: boolean }> = ({ collapsed }) => (
   </svg>
 )
 
+const DeleteLayoutIcon: FC = () => (
+  <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false" className="h-4 w-4">
+    <path
+      d="M8 4.25A.75.75 0 0 1 8.75 3.5h2.5a.75.75 0 0 1 .75.75V5h3a.75.75 0 0 1 0 1.5h-.37l-.54 8a1.75 1.75 0 0 1-1.74 1.63H7.4a1.75 1.75 0 0 1-1.74-1.63l-.54-8H4.75A.75.75 0 0 1 4.75 5h3Zm1.5.75V5h1v0h-.01V5h-.99v0Zm-2.73 1.5.5 7.46a.25.25 0 0 0 .25.23h4.2a.25.25 0 0 0 .25-.23l.5-7.46Z"
+      fill="currentColor"
+    />
+  </svg>
+)
+
 const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   tabNavigation,
   clip,
@@ -750,7 +760,8 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   renderSteps,
   isRenderingLayout,
   renderStatusMessage,
-  renderErrorMessage
+  renderErrorMessage,
+  onDeleteLayout
 }) => {
   const [draftLayout, setDraftLayout] = useState<LayoutDefinition | null>(null)
   const [selectedItemId, setSelectedItemId] = useLayoutSelection()
@@ -758,6 +769,7 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
   const [future, setFuture] = useState<LayoutDefinition[]>([])
   const [clipboard, setClipboard] = useState<LayoutItem[] | null>(null)
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [showGrid, setShowGrid] = useState(true)
   const [layoutTransformTarget, setLayoutTransformTarget] = useState<'frame' | 'crop'>('frame')
   const [showSafeMargins, setShowSafeMargins] = useState(false)
@@ -1818,6 +1830,38 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
     await onRenderLayout(draftLayout)
   }, [draftLayout, onRenderLayout])
 
+  const handleDeleteLayout = useCallback(
+    async (
+      event: MouseEvent<HTMLButtonElement>,
+      layoutId: string,
+      category: LayoutCategory,
+      layoutName: string
+    ) => {
+      event.preventDefault()
+      event.stopPropagation()
+      if (!onDeleteLayout || category !== 'custom') {
+        return
+      }
+      const trimmedName = layoutName?.trim() ?? ''
+      const displayName = trimmedName.length > 0 ? trimmedName : layoutId
+      const confirmed = window.confirm(
+        `Delete the layout "${displayName}"? This action cannot be undone.`
+      )
+      if (!confirmed) {
+        return
+      }
+      setPendingDeleteId(layoutId)
+      try {
+        await onDeleteLayout(layoutId, category)
+      } catch (error) {
+        console.error('[layout-editor] failed to delete layout', { layoutId, category }, error)
+      } finally {
+        setPendingDeleteId((current) => (current === layoutId ? null : current))
+      }
+    },
+    [onDeleteLayout]
+  )
+
   const bringSelectionIntoView = useCallback(() => {
     if (!draftLayout || !selectedItemId) {
       return
@@ -2354,22 +2398,51 @@ const LayoutEditorPanel: FC<LayoutEditorPanelProps> = ({
                     <div id={`layout-section-${section.category}`} className="flex gap-3">
                       {section.items.map((layout) => {
                         const isSelected = selectedLayoutReference?.id === layout.id
+                        const isDeleting = pendingDeleteId === layout.id
                         return (
-                          <button
-                            key={layout.id}
-                            type="button"
-                            onClick={() => onSelectLayout(layout.id, section.category)}
-                            className={`flex w-48 flex-col gap-1 rounded-2xl border px-3 py-3 text-left transition ${
-                              isSelected
-                                ? 'border-[color:color-mix(in_srgb,var(--accent)_70%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_85%,transparent)] text-[var(--fg)] shadow-[0_8px_20px_rgba(0,0,0,0.35)]'
-                                : 'border-white/12 bg-[color:color-mix(in_srgb,var(--card)_85%,transparent)] text-[var(--muted)] hover:border-white/24'
-                            }`}
-                          >
-                            <span className="truncate text-sm font-semibold text-[var(--fg)]">{layout.name}</span>
-                            <span className="line-clamp-2 text-xs text-[var(--muted)]">
-                              {layout.description ? layout.description : 'No description'}
-                            </span>
-                          </button>
+                          <div key={layout.id} className="group relative">
+                            <button
+                              type="button"
+                              onClick={() => onSelectLayout(layout.id, section.category)}
+                              disabled={isDeleting}
+                              aria-busy={isDeleting}
+                              className={`flex w-48 flex-col gap-1 rounded-2xl border px-3 py-3 text-left transition ${
+                                isSelected
+                                  ? 'border-[color:color-mix(in_srgb,var(--accent)_70%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-soft)_85%,transparent)] text-[var(--fg)] shadow-[0_8px_20px_rgba(0,0,0,0.35)]'
+                                  : 'border-white/12 bg-[color:color-mix(in_srgb,var(--card)_85%,transparent)] text-[var(--muted)] hover:border-white/24'
+                              } ${isDeleting ? 'opacity-60' : ''}`}
+                            >
+                              <span className="truncate text-sm font-semibold text-[var(--fg)]">{layout.name}</span>
+                              <span className="line-clamp-2 text-xs text-[var(--muted)]">
+                                {layout.description ? layout.description : 'No description'}
+                              </span>
+                            </button>
+                            {section.category === 'custom' ? (
+                              <button
+                                type="button"
+                                disabled={isDeleting}
+                                onMouseDown={(event) => {
+                                  event.preventDefault()
+                                }}
+                                onClick={(event) =>
+                                  handleDeleteLayout(event, layout.id, section.category, layout.name)
+                                }
+                                aria-label={`Delete ${layout.name}`}
+                                className={`absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border text-[color:var(--error-contrast)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--error-strong)_65%,transparent)] ${
+                                  isDeleting
+                                    ? 'opacity-100'
+                                    : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100'
+                                } ${
+                                  isDeleting
+                                    ? 'border-[color:color-mix(in_srgb,var(--error-strong)_60%,transparent)] bg-[color:color-mix(in_srgb,var(--error-soft)_90%,transparent)]'
+                                    : 'border-[color:color-mix(in_srgb,var(--error-strong)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--error-soft)_75%,transparent)] hover:border-[color:var(--error-strong)] hover:bg-[color:color-mix(in_srgb,var(--error-soft)_92%,transparent)]'
+                                }`}
+                              >
+                                <DeleteLayoutIcon />
+                                <span className="sr-only">Delete layout</span>
+                              </button>
+                            ) : null}
+                          </div>
                         )
                       })}
                     </div>

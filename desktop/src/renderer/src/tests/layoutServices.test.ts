@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LayoutCollection } from '../../../types/api'
 import type { LayoutDefinition } from '../../../types/layouts'
 import {
+  deleteLayoutDefinition,
   exportLayoutDefinition,
   fetchLayoutCollection,
   importLayoutDefinition,
@@ -45,7 +46,8 @@ describe('layout services', () => {
       originalCategory: 'builtin' | 'custom' | null
     }], Promise<LayoutDefinition>>(),
     importLayout: vi.fn<[], Promise<LayoutDefinition | null>>(),
-    exportLayout: vi.fn<[{ id: string; category: 'builtin' | 'custom' }], Promise<boolean>>()
+    exportLayout: vi.fn<[{ id: string; category: 'builtin' | 'custom' }], Promise<boolean>>(),
+    deleteLayout: vi.fn<[{ id: string; category: 'builtin' | 'custom' }], Promise<boolean>>()
   }
 
   beforeEach(() => {
@@ -55,6 +57,7 @@ describe('layout services', () => {
     apiMock.saveLayout.mockReset()
     apiMock.importLayout.mockReset()
     apiMock.exportLayout.mockReset()
+    apiMock.deleteLayout.mockReset()
   })
 
   afterEach(() => {
@@ -124,6 +127,14 @@ describe('layout services', () => {
 
     const result = await exportLayoutDefinition('custom-layout', 'custom')
     expect(apiMock.exportLayout).toHaveBeenCalledWith({ id: 'custom-layout', category: 'custom' })
+    expect(result).toBe(true)
+  })
+
+  it('deletes a layout definition by id and category', async () => {
+    apiMock.deleteLayout.mockResolvedValueOnce(true)
+
+    const result = await deleteLayoutDefinition('custom-layout', 'custom')
+    expect(apiMock.deleteLayout).toHaveBeenCalledWith({ id: 'custom-layout', category: 'custom' })
     expect(result).toBe(true)
   })
 })

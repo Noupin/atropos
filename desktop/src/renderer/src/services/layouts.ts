@@ -48,3 +48,11 @@ export const exportLayoutDefinition = async (
   const api = ensureApi()
   return api.exportLayout({ id, category })
 }
+
+export const deleteLayoutDefinition = async (
+  id: string,
+  category: LayoutCategory
+): Promise<boolean> => {
+  const api = ensureApi()
+  return api.deleteLayout({ id, category })
+}

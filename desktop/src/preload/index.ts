@@ -49,7 +49,8 @@ const api: RendererApi = {
   loadLayout: (request) => ipcRenderer.invoke('layouts:load', request),
   saveLayout: (request) => ipcRenderer.invoke('layouts:save', request),
   importLayout: () => ipcRenderer.invoke('layouts:import'),
-  exportLayout: (request) => ipcRenderer.invoke('layouts:export', request)
+  exportLayout: (request) => ipcRenderer.invoke('layouts:export', request),
+  deleteLayout: (request) => ipcRenderer.invoke('layouts:delete', request)
 }
 
 const extendedElectronAPI: ElectronAPIWithShell = {

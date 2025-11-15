@@ -27,7 +27,8 @@ import {
   loadLayoutDefinition as loadLayoutDefinitionApi,
   saveLayoutDefinition as saveLayoutDefinitionApi,
   importLayoutDefinition as importLayoutDefinitionApi,
-  exportLayoutDefinition as exportLayoutDefinitionApi
+  exportLayoutDefinition as exportLayoutDefinitionApi,
+  deleteLayoutDefinition as deleteLayoutDefinitionApi
 } from '../services/layouts'
 import { fetchConfigEntries } from '../services/configApi'
 import {
@@ -728,6 +729,40 @@ const VideoPage: FC = () => {
       handleSaveLayoutDefinition,
       jobId
     ]
+  )
+
+  const handleDeleteLayoutDefinition = useCallback(
+    async (id: string, category: LayoutCategory) => {
+      if (category !== 'custom') {
+        return
+      }
+      setLayoutStatusMessage(null)
+      setLayoutErrorMessage(null)
+      try {
+        const deleted = await deleteLayoutDefinitionApi(id, category)
+        if (activeLayoutReference?.id === id) {
+          setActiveLayoutReference(null)
+          setActiveLayoutDefinition(null)
+        }
+        if (layoutAppliedIdRef.current === id) {
+          layoutAppliedIdRef.current = null
+        }
+        await refreshLayoutCollection()
+        setLayoutStatusMessage(
+          deleted
+            ? 'Layout removed from your custom layouts.'
+            : 'Layout was already removed from your custom layouts.'
+        )
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unable to delete the layout. Please try again.'
+        setLayoutErrorMessage(message)
+        throw error
+      }
+    },
+    [activeLayoutReference?.id, refreshLayoutCollection]
   )
 
   const runStepAnimation = useCallback(async (setSteps: (updater: (prev: SaveStepState[]) => SaveStepState[]) => void) => {
@@ -2160,6 +2195,7 @@ const VideoPage: FC = () => {
         isRenderingLayout={isLayoutRendering}
         renderStatusMessage={layoutRenderStatusMessage}
         renderErrorMessage={layoutRenderErrorMessage}
+        onDeleteLayout={handleDeleteLayoutDefinition}
       />
     )
   }

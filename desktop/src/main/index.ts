@@ -23,7 +23,8 @@ import {
   loadLayoutDefinition,
   saveCustomLayout,
   importLayoutFromDialog,
-  exportLayoutToDialog
+  exportLayoutToDialog,
+  deleteCustomLayout
 } from './layouts'
 import type { LayoutDefinition } from '../types/layouts'
 
@@ -313,6 +314,7 @@ const registerIpcHandlers = (): void => {
   ipcMain.removeHandler('layouts:save')
   ipcMain.removeHandler('layouts:import')
   ipcMain.removeHandler('layouts:export')
+  ipcMain.removeHandler('layouts:delete')
 
   ipcMain.on('ping', () => console.log('pong'))
   ipcMain.on('navigation:state', (_event, state: NavigationState) => {
@@ -488,6 +490,21 @@ const registerIpcHandlers = (): void => {
         return await exportLayoutToDialog(request.id, request.category as 'builtin' | 'custom')
       } catch (error) {
         console.error('[layouts] failed to export layout', request, error)
+        throw error
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'layouts:delete',
+    async (_event, request: { id: string; category: string }) => {
+      try {
+        if (request.category !== 'custom') {
+          throw new Error('Only custom layouts can be deleted.')
+        }
+        return await deleteCustomLayout(request.id)
+      } catch (error) {
+        console.error('[layouts] failed to delete layout', request, error)
         throw error
       }
     }

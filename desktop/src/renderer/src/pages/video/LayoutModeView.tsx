@@ -38,6 +38,7 @@ type LayoutModeViewProps = {
   isRenderingLayout: boolean
   renderStatusMessage: string | null
   renderErrorMessage: string | null
+  onDeleteLayout?: (id: string, category: LayoutCategory) => Promise<void> | void
 }
 
 const LayoutModeView: FC<LayoutModeViewProps> = ({
@@ -64,7 +65,8 @@ const LayoutModeView: FC<LayoutModeViewProps> = ({
   renderSteps,
   isRenderingLayout,
   renderStatusMessage,
-  renderErrorMessage
+  renderErrorMessage,
+  onDeleteLayout
 }) => {
   return (
     <section className="flex w-full flex-1 flex-col gap-8 px-6 py-10 lg:px-8">
@@ -93,6 +95,7 @@ const LayoutModeView: FC<LayoutModeViewProps> = ({
         isRenderingLayout={isRenderingLayout}
         renderStatusMessage={renderStatusMessage}
         renderErrorMessage={renderErrorMessage}
+        onDeleteLayout={onDeleteLayout}
       />
     </section>
   )
