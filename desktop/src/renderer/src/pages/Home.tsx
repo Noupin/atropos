@@ -12,7 +12,13 @@ import { useNavigate } from 'react-router-dom'
 import PipelineProgress from '../components/PipelineProgress'
 import { getBadgeClassName } from '../components/badgeStyles'
 import { BACKEND_MODE, getApiBaseUrl } from '../config/backend'
-import { createInitialPipelineSteps, PIPELINE_STEP_DEFINITIONS } from '../data/pipeline'
+import {
+  createInitialPipelineSteps,
+  createInitialPipelineStepsForStart,
+  getPipelineStepIndex,
+  getPipelineStepStartOrder,
+  PIPELINE_STEP_DEFINITIONS
+} from '../data/pipeline'
 import { TONE_LABELS } from '../constants/tone'
 import { formatDuration, timeAgo } from '../lib/format'
 import { canOpenAccountClipsFolder, openAccountClipsFolder } from '../services/clipLibrary'
@@ -43,7 +49,8 @@ type HomeProps = {
   onStartPipeline: (
     source: { url?: string | null; filePath?: string | null },
     accountId: string,
-    reviewMode: boolean
+    reviewMode: boolean,
+    startStepId?: string | null
   ) => Promise<void> | void
   onResumePipeline: () => Promise<void> | void
   onCancelPipeline: () => Promise<void> | void
@@ -412,9 +419,8 @@ const Home: FC<HomeProps> = ({
     offlineRestrictionMessageRef.current = offlineRestrictionMessage
   }, [offlineRestrictionMessage, updateState])
 
-  const handleSubmit = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault()
+  const startPipelineRun = useCallback(
+    async (startStepId?: string | null) => {
       const trimmed = videoUrl.trim()
       const selectedFile = (localFilePath ?? '').trim()
       const accountId = selectedAccountId
@@ -422,6 +428,7 @@ const Home: FC<HomeProps> = ({
       const isUrlPresent = trimmed.length > 0
       const isUrlValid = isUrlPresent && isValidVideoUrl(trimmed)
       const isUrlMode = sourceMode === 'url'
+      const isFileMode = sourceMode === 'file'
       let hasError = false
 
       setFileSelectionError(null)
@@ -515,6 +522,11 @@ const Home: FC<HomeProps> = ({
         sourcePayload.url = trimmed
       }
 
+      const startOrder = startStepId ? getPipelineStepStartOrder(startStepId) : null
+      const initialSteps = createInitialPipelineStepsForStart(startOrder)
+      const stepIndex = startStepId ? getPipelineStepIndex(startStepId) : 0
+      const safeStartIndex = stepIndex >= 0 ? stepIndex : 0
+
       clearTimers()
       updateState((prev) => ({
         ...prev,
@@ -522,7 +534,7 @@ const Home: FC<HomeProps> = ({
         pipelineError: null,
         clips: [],
         selectedClipId: null,
-        steps: createInitialPipelineSteps(),
+        steps: initialSteps,
         isProcessing: true,
         accountError: null,
         activeJobId: null,
@@ -539,7 +551,7 @@ const Home: FC<HomeProps> = ({
       }))
 
       if (isMockBackend) {
-        const startTimeout = window.setTimeout(() => runStepRef.current(0), 150)
+        const startTimeout = window.setTimeout(() => runStepRef.current(safeStartIndex), 150)
         timersRef.current.push(startTimeout)
         if (accessState.isTrialActive) {
           markTrialRunPending()
@@ -547,26 +559,41 @@ const Home: FC<HomeProps> = ({
         return
       }
 
-      void onStartPipeline(sourcePayload, accountId, reviewMode)
+      await onStartPipeline(sourcePayload, accountId, reviewMode, startStepId ?? null)
     },
     [
-      availableAccounts.length,
-      clearTimers,
-      finalizeTrialRun,
-      isMockBackend,
-      markTrialRunPending,
-      selectedAccountId,
-      onStartPipeline,
-      reviewMode,
-      offlineRestrictionMessage,
-      accessState.isTrialActive,
-      accessState.pendingConsumption,
-      accessState.pendingConsumptionStage,
-      updateState,
       videoUrl,
       localFilePath,
-      sourceMode
+      selectedAccountId,
+      sourceMode,
+      updateState,
+      availableAccounts.length,
+      offlineRestrictionMessage,
+      accessState.pendingConsumption,
+      accessState.pendingConsumptionStage,
+      accessState.isTrialActive,
+      finalizeTrialRun,
+      clearTimers,
+      isMockBackend,
+      markTrialRunPending,
+      onStartPipeline,
+      reviewMode
     ]
+  )
+
+  const handleSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      void startPipelineRun()
+    },
+    [startPipelineRun]
+  )
+
+  const handleRerunStep = useCallback(
+    (stepId: string) => {
+      void startPipelineRun(stepId)
+    },
+    [startPipelineRun]
   )
 
   const handleReset = useCallback(() => {
@@ -664,6 +691,14 @@ const Home: FC<HomeProps> = ({
     () => steps.some((step) => step.status === 'cancelled'),
     [steps]
   )
+
+  const canDisplayRerun = useMemo(
+    () => !isProcessing && hasProgress,
+    [hasProgress, isProcessing]
+  )
+
+  const isRerunActionDisabled =
+    isProcessing || awaitingReview || Boolean(offlineRestrictionMessage) || accessState.pendingConsumption
 
   const currentStep = useMemo(() => steps.find((step) => step.status === 'running') ?? null, [steps])
   const timelineDateFormatter = useMemo(
@@ -1012,7 +1047,11 @@ const Home: FC<HomeProps> = ({
               <p className="text-sm text-[var(--muted)]">{pipelineMessage}</p>
             </div>
             <div className="mt-4 rounded-xl border border-white/10 bg-[color:color-mix(in_srgb,var(--card)_75%,transparent)] p-4">
-              <PipelineProgress steps={steps} />
+              <PipelineProgress
+                steps={steps}
+                onRerunStep={canDisplayRerun ? handleRerunStep : undefined}
+                rerunDisabled={isRerunActionDisabled}
+              />
             </div>
             {awaitingReview ? (
               <div className="mt-4 rounded-lg border border-[color:color-mix(in_srgb,var(--warning-strong)_45%,var(--edge))] bg-[color:var(--warning-soft)] p-4 text-sm text-[color:var(--warning-contrast)]">

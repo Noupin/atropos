@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import PipelineProgress from '../components/PipelineProgress'
 import type { PipelineStep } from '../types'
 
@@ -153,5 +153,29 @@ describe('PipelineProgress', () => {
     expect(screen.getByText(/produce final clips cancelled/i)).toBeInTheDocument()
     expect(screen.getByText(/processing cancelled during produce final clips/i)).toBeInTheDocument()
     expect(screen.getAllByText(/cancelled/i).length).toBeGreaterThan(0)
+  })
+
+  it('renders rerun controls when provided', () => {
+    const handleRerun = vi.fn()
+    render(<PipelineProgress steps={mockSteps} onRerunStep={handleRerun} />)
+
+    const rerunButtons = screen.getAllByRole('button', {
+      name: /run the pipeline from this step to the end/i
+    })
+    const rerunnableSteps = mockSteps.filter((step) => step.status !== 'pending')
+    expect(rerunButtons).toHaveLength(rerunnableSteps.length)
+    expect(rerunButtons[0]).toHaveAttribute(
+      'title',
+      'Run the pipeline from this step to the end.'
+    )
+
+    const produceToggle = screen.getAllByRole('button', {
+      name: /produce final clips/i
+    })[0]
+    expect(produceToggle).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.click(rerunButtons[1])
+    expect(handleRerun).toHaveBeenCalledWith(mockSteps[1].id)
+    expect(produceToggle).toHaveAttribute('aria-expanded', 'true')
   })
 })

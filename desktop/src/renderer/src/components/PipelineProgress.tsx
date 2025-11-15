@@ -7,6 +7,8 @@ import { clamp01, computeStepProgressValue } from '../lib/pipelineProgress'
 type PipelineProgressProps = {
   steps: PipelineStep[]
   className?: string
+  onRerunStep?: (stepId: string) => void
+  rerunDisabled?: boolean
 }
 
 const statusLabels: Record<PipelineStepStatus, string> = {
@@ -38,6 +40,8 @@ const indicatorClasses: Record<PipelineStepStatus, string> = {
 const multiStepBadgeBaseClasses =
   'inline-flex items-center justify-center gap-1 rounded-full border border-white/10 bg-white/5 uppercase tracking-[0.16em] text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]'
 
+const RERUN_TOOLTIP = 'Run the pipeline from this step to the end.'
+
 const multiStepBadgeSizeClasses = {
   default: 'px-2 py-0.5 text-[10px] font-semibold',
   compact: 'px-1.5 py-px text-[9px] font-semibold'
@@ -53,7 +57,12 @@ type PipelineSnapshot = {
   hasCancellation: boolean
 }
 
-const PipelineProgress: FC<PipelineProgressProps> = ({ steps, className }) => {
+const PipelineProgress: FC<PipelineProgressProps> = ({
+  steps,
+  className,
+  onRerunStep,
+  rerunDisabled = false
+}) => {
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(() => new Set())
   const [expandedSubsteps, setExpandedSubsteps] = useState<Set<string>>(() => new Set())
 
@@ -307,6 +316,53 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
     </span>
   )
 }
+
+  const renderRerunButton = (step: PipelineStep, variant: 'default' | 'compact') => {
+    if (!onRerunStep || step.status === 'pending') {
+      return null
+    }
+
+    const sizeClasses = variant === 'compact' ? 'h-7 w-7' : 'h-8 w-8'
+    const tooltipId = `rerun-tooltip-${step.id}`
+
+    return (
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation()
+          onRerunStep(step.id)
+        }}
+        disabled={rerunDisabled}
+        className={`group relative inline-flex items-center justify-center rounded-full border border-white/15 bg-[color:color-mix(in_srgb,var(--card)_85%,transparent)] text-[color:color-mix(in_srgb,var(--muted)_65%,transparent)] shadow-sm transition hover:border-[var(--ring)] hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60 ${sizeClasses}`}
+        title={RERUN_TOOLTIP}
+        aria-label={RERUN_TOOLTIP}
+        aria-describedby={tooltipId}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          className="h-4 w-4"
+          focusable="false"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+        >
+          <path
+            d="M16.023 9.348h4.992M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span
+          id={tooltipId}
+          role="tooltip"
+          className="pointer-events-none absolute left-1/2 bottom-full z-20 mb-2 -translate-x-1/2 scale-95 whitespace-nowrap rounded-md border border-white/10 bg-[color:var(--fg)] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--panel)] opacity-0 shadow-[0_6px_18px_rgba(15,23,42,0.32)] transition duration-150 ease-out group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100"
+        >
+          {RERUN_TOOLTIP}
+        </span>
+      </button>
+    )
+  }
 
   const renderStepProgress = (step: PipelineStep) => {
     const percent = Math.round(computeStepProgressValue(step) * 100)
@@ -562,13 +618,14 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
           isActive ? activeHighlightClass : 'border-white/10'
         } bg-[color:color-mix(in_srgb,var(--card)_70%,transparent)]`}
       >
-        <button
-          type="button"
-          onClick={() => toggleStep(step.id)}
-          className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left sm:px-4"
-          aria-expanded={showDetails}
-          aria-controls={`step-${step.id}-details`}
-        >
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => toggleStep(step.id)}
+            className="flex w-full items-center justify-between gap-3 px-3 py-3 pr-16 text-left sm:px-4"
+            aria-expanded={showDetails}
+            aria-controls={`step-${step.id}-details`}
+          >
           <div className="flex items-center gap-3">
             <span className={`h-3 w-3 rounded-full ${indicatorClasses[step.status]}`} aria-hidden="true" />
             <div className="flex flex-col">
@@ -598,7 +655,13 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
               </span>
             </div>
           </div>
-        </button>
+          </button>
+          {onRerunStep ? (
+            <div className="pointer-events-auto absolute right-3 top-3">
+              {renderRerunButton(step, 'default')}
+            </div>
+          ) : null}
+        </div>
         {showDetails ? (
           <div
             id={`step-${step.id}-details`}
@@ -646,38 +709,45 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
 
     return (
       <li key={step.id} className={listItemClasses}>
-        <button
-          type="button"
-          onClick={() => toggleStep(step.id)}
-          className={`group flex w-full flex-col gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-left text-[11px] transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
-            step.status === 'completed' ? 'opacity-85' : ''
-          }`}
-          aria-expanded={false}
-          aria-controls={`step-${step.id}-details`}
-        >
-          <div className="flex items-center gap-2 text-[9px] uppercase tracking-[0.16em] text-[var(--muted)]">
-            <span className={`h-2 w-2 rounded-full ${indicatorClasses[step.status]}`} aria-hidden="true" />
-            <span className="font-semibold">Step {index + 1}</span>
-            <span className="ml-auto flex items-center gap-1">
-              {multiStepBadge ? <span className="flex-shrink-0">{multiStepBadge}</span> : null}
-              <span>{statusLabels[step.status]}</span>
-            </span>
-          </div>
-          <div className="flex items-start gap-2 text-[11px]">
-            <span className="truncate font-semibold text-[var(--fg)]">{step.title}</span>
-            {clipBadge ? <span className="ml-auto flex-shrink-0">{clipBadge}</span> : null}
-          </div>
-          <div className="flex items-center justify-between text-[10px] text-[var(--muted)]">
-            <span className="font-semibold text-[var(--fg)]">{percent}%</span>
-            {etaLabel ? <span>{etaLabel}</span> : null}
-          </div>
-          <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
-            <div
-              className={`h-full rounded-full ${segmentClasses[step.status]} transition-all duration-500 ease-out`}
-              style={{ width: `${percent}%` }}
-            />
-          </div>
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => toggleStep(step.id)}
+            className={`group flex w-full flex-col gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 pr-14 text-left text-[11px] transition hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+              step.status === 'completed' ? 'opacity-85' : ''
+            }`}
+            aria-expanded={false}
+            aria-controls={`step-${step.id}-details`}
+          >
+            <div className="flex items-center gap-2 text-[9px] uppercase tracking-[0.16em] text-[var(--muted)]">
+              <span className={`h-2 w-2 rounded-full ${indicatorClasses[step.status]}`} aria-hidden="true" />
+              <span className="font-semibold">Step {index + 1}</span>
+              <span className="ml-auto flex items-center gap-1">
+                {multiStepBadge ? <span className="flex-shrink-0">{multiStepBadge}</span> : null}
+                <span>{statusLabels[step.status]}</span>
+              </span>
+            </div>
+            <div className="flex items-start gap-2 text-[11px]">
+              <span className="truncate font-semibold text-[var(--fg)]">{step.title}</span>
+              {clipBadge ? <span className="ml-auto flex-shrink-0">{clipBadge}</span> : null}
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-[var(--muted)]">
+              <span className="font-semibold text-[var(--fg)]">{percent}%</span>
+              {etaLabel ? <span>{etaLabel}</span> : null}
+            </div>
+            <div className="h-1 w-full overflow-hidden rounded-full bg-white/10">
+              <div
+                className={`h-full rounded-full ${segmentClasses[step.status]} transition-all duration-500 ease-out`}
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+          </button>
+          {onRerunStep ? (
+            <div className="pointer-events-auto absolute right-2.5 top-2.5">
+              {renderRerunButton(step, 'compact')}
+            </div>
+          ) : null}
+        </div>
       </li>
     )
   }
