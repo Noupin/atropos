@@ -1822,6 +1822,132 @@ describe('Layout editor interactions', () => {
     await screen.findAllByText(/layouts hidden/i)
   })
 
+  it('confirms before deleting a custom layout', async () => {
+    const onDeleteLayout = vi.fn(async () => undefined)
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const layoutCollection = {
+      builtin: [],
+      custom: [
+        {
+          id: 'custom-1',
+          name: 'My layout',
+          description: 'Personal layout',
+          author: null,
+          tags: [],
+          category: 'custom' as const,
+          version: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ]
+    }
+
+    try {
+      render(
+        <LayoutEditorPanel
+          tabNavigation={<div />}
+          clip={null}
+          layoutCollection={layoutCollection}
+          isCollectionLoading={false}
+          selectedLayout={baseLayout}
+          selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+          isLayoutLoading={false}
+          appliedLayoutId={null}
+          isSavingLayout={false}
+          isApplyingLayout={false}
+          statusMessage={null}
+          errorMessage={null}
+          onSelectLayout={vi.fn()}
+          onCreateBlankLayout={vi.fn()}
+          onLayoutChange={vi.fn()}
+          onSaveLayout={vi.fn(async () => baseLayout)}
+          onImportLayout={vi.fn(async () => undefined)}
+          onExportLayout={vi.fn(async () => undefined)}
+          onApplyLayout={vi.fn(async () => undefined)}
+          onRenderLayout={vi.fn(async () => undefined)}
+          renderSteps={pipelineSteps}
+          isRenderingLayout={false}
+          renderStatusMessage={null}
+          renderErrorMessage={null}
+          onDeleteLayout={onDeleteLayout}
+        />
+      )
+
+      const deleteButton = await screen.findByRole('button', { name: 'Delete My layout' })
+      fireEvent.click(deleteButton)
+
+      expect(confirmSpy).toHaveBeenCalledWith(
+        'Delete the layout "My layout"? This action cannot be undone.'
+      )
+      await waitFor(() => {
+        expect(onDeleteLayout).toHaveBeenCalledWith('custom-1', 'custom')
+      })
+    } finally {
+      confirmSpy.mockRestore()
+    }
+  })
+
+  it('does not delete a custom layout when confirmation is cancelled', async () => {
+    const onDeleteLayout = vi.fn(async () => undefined)
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const layoutCollection = {
+      builtin: [],
+      custom: [
+        {
+          id: 'custom-1',
+          name: 'My layout',
+          description: null,
+          author: null,
+          tags: [],
+          category: 'custom' as const,
+          version: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ]
+    }
+
+    try {
+      render(
+        <LayoutEditorPanel
+          tabNavigation={<div />}
+          clip={null}
+          layoutCollection={layoutCollection}
+          isCollectionLoading={false}
+          selectedLayout={baseLayout}
+          selectedLayoutReference={{ id: 'layout-1', category: 'custom' }}
+          isLayoutLoading={false}
+          appliedLayoutId={null}
+          isSavingLayout={false}
+          isApplyingLayout={false}
+          statusMessage={null}
+          errorMessage={null}
+          onSelectLayout={vi.fn()}
+          onCreateBlankLayout={vi.fn()}
+          onLayoutChange={vi.fn()}
+          onSaveLayout={vi.fn(async () => baseLayout)}
+          onImportLayout={vi.fn(async () => undefined)}
+          onExportLayout={vi.fn(async () => undefined)}
+          onApplyLayout={vi.fn(async () => undefined)}
+          onRenderLayout={vi.fn(async () => undefined)}
+          renderSteps={pipelineSteps}
+          isRenderingLayout={false}
+          renderStatusMessage={null}
+          renderErrorMessage={null}
+          onDeleteLayout={onDeleteLayout}
+        />
+      )
+
+      const deleteButton = await screen.findByRole('button', { name: 'Delete My layout' })
+      fireEvent.click(deleteButton)
+
+      expect(confirmSpy).toHaveBeenCalled()
+      expect(onDeleteLayout).not.toHaveBeenCalled()
+    } finally {
+      confirmSpy.mockRestore()
+    }
+  })
+
   it('applies transforms when dragging items on the layout preview', async () => {
     let capturedLayout: LayoutDefinition | null = null
     const onLayoutChange = vi.fn((layout: LayoutDefinition) => {

@@ -33,4 +33,5 @@ export interface RendererApi {
   }) => Promise<LayoutDefinition>
   importLayout: () => Promise<LayoutDefinition | null>
   exportLayout: (request: { id: string; category: LayoutCategory }) => Promise<boolean>
+  deleteLayout: (request: { id: string; category: LayoutCategory }) => Promise<boolean>
 }

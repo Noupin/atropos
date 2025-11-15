@@ -570,3 +570,22 @@ export const exportLayoutToDialog = async (
   await fs.copyFile(filePath, destination)
   return true
 }
+
+export const deleteCustomLayout = async (id: string): Promise<boolean> => {
+  const layout = await findLayoutFile(id, 'custom')
+  if (!layout) {
+    throw new Error(`Layout '${id}' was not found.`)
+  }
+  if (layout.category !== 'custom') {
+    throw new Error('Only custom layouts can be deleted.')
+  }
+  try {
+    await fs.unlink(layout.filePath)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false
+    }
+    throw error
+  }
+}

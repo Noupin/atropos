@@ -48,3 +48,19 @@ export const exportLayoutDefinition = async (
   const api = ensureApi()
   return api.exportLayout({ id, category })
 }
+
+export const deleteLayoutDefinition = async (
+  id: string,
+  category: LayoutCategory
+): Promise<boolean> => {
+  const api = ensureApi()
+  if (typeof api.deleteLayout === 'function') {
+    return api.deleteLayout({ id, category })
+  }
+
+  if (typeof window.electron?.ipcRenderer?.invoke === 'function') {
+    return window.electron.ipcRenderer.invoke('layouts:delete', { id, category }) as Promise<boolean>
+  }
+
+  throw new Error('Deleting custom layouts is not supported in this build.')
+}

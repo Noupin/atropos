@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LayoutCollection } from '../../../types/api'
 import type { LayoutDefinition } from '../../../types/layouts'
 import {
+  deleteLayoutDefinition,
   exportLayoutDefinition,
   fetchLayoutCollection,
   importLayoutDefinition,
@@ -12,6 +13,7 @@ import {
 declare global {
   interface Window {
     api?: import('../../../types/api').RendererApi
+    electron?: { ipcRenderer: { invoke: (channel: string, ...args: unknown[]) => Promise<unknown> } }
   }
 }
 
@@ -45,7 +47,8 @@ describe('layout services', () => {
       originalCategory: 'builtin' | 'custom' | null
     }], Promise<LayoutDefinition>>(),
     importLayout: vi.fn<[], Promise<LayoutDefinition | null>>(),
-    exportLayout: vi.fn<[{ id: string; category: 'builtin' | 'custom' }], Promise<boolean>>()
+    exportLayout: vi.fn<[{ id: string; category: 'builtin' | 'custom' }], Promise<boolean>>(),
+    deleteLayout: vi.fn<[{ id: string; category: 'builtin' | 'custom' }], Promise<boolean>>()
   }
 
   beforeEach(() => {
@@ -55,10 +58,12 @@ describe('layout services', () => {
     apiMock.saveLayout.mockReset()
     apiMock.importLayout.mockReset()
     apiMock.exportLayout.mockReset()
+    apiMock.deleteLayout.mockReset()
   })
 
   afterEach(() => {
     delete window.api
+    delete window.electron
   })
 
   it('fetches the layout collection through the bridge', async () => {
@@ -125,5 +130,30 @@ describe('layout services', () => {
     const result = await exportLayoutDefinition('custom-layout', 'custom')
     expect(apiMock.exportLayout).toHaveBeenCalledWith({ id: 'custom-layout', category: 'custom' })
     expect(result).toBe(true)
+  })
+
+  it('deletes a layout definition by id and category', async () => {
+    apiMock.deleteLayout.mockResolvedValueOnce(true)
+
+    const result = await deleteLayoutDefinition('custom-layout', 'custom')
+    expect(apiMock.deleteLayout).toHaveBeenCalledWith({ id: 'custom-layout', category: 'custom' })
+    expect(result).toBe(true)
+  })
+
+  it('falls back to invoking the delete channel directly if the bridge helper is missing', async () => {
+    const invoke = vi.fn().mockResolvedValue(true)
+    window.electron = {
+      ipcRenderer: { invoke }
+    } as unknown as typeof window.electron
+
+    const originalDelete = apiMock.deleteLayout
+    ;(apiMock as unknown as { deleteLayout?: undefined }).deleteLayout = undefined
+
+    const result = await deleteLayoutDefinition('custom-layout', 'custom')
+
+    expect(invoke).toHaveBeenCalledWith('layouts:delete', { id: 'custom-layout', category: 'custom' })
+    expect(result).toBe(true)
+
+    apiMock.deleteLayout = originalDelete
   })
 })
