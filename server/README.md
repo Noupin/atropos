@@ -29,7 +29,7 @@ Key settings reside in `server/config.py`:
 
 - `ENVIRONMENT` / `SERVER_ENV` – selects credential bundles and webhook hosts.
 - `WINDOW_CONTEXT_PERCENTAGE` – window overlap as a fraction of duration.
-- `RENDER_LAYOUT` – choose `centered`, `centered_with_corners`, `no_zoom`, or `left_aligned`.
+- `RENDER_LAYOUT` – choose `default`, `centered`, `centered_with_corners`, `no_zoom`, or `left_aligned`.
 - `DELETE_UPLOADED_CLIPS` – auto-delete rendered clips after successful uploads.
 - Legacy LLM options (`MAX_LLM_CHARS`, etc.) remain for backward compatibility and are deprecated.
 

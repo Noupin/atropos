@@ -15,8 +15,8 @@ from server.layouts.loader import (
 
 
 def test_load_builtin_layout_returns_definition() -> None:
-    layout = load_layout("centered")
-    assert layout.id == "centered"
+    layout = load_layout("default")
+    assert layout.id == "default"
     assert layout.canvas.width > 0
     assert layout.canvas.height > 0
     assert layout.items, "Expected built-in layout to contain at least one item"
