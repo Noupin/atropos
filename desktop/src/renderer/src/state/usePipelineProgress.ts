@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import { buildJobClipVideoUrl } from '../config/backend'
 import {
-  createInitialPipelineSteps,
+  createInitialPipelineStepsForStart,
   PIPELINE_STEP_DEFINITIONS,
-  resolvePipelineLocation
+  resolvePipelineLocation,
+  getPipelineStepStartOrder
 } from '../data/pipeline'
 import {
   normaliseJobClip,
@@ -40,7 +41,8 @@ type UsePipelineProgressResult = {
   startPipeline: (
     source: { url?: string | null; filePath?: string | null },
     accountId: string,
-    reviewMode: boolean
+    reviewMode: boolean,
+    startStepId?: string | null
   ) => Promise<void>
   resumePipeline: () => Promise<void>
   cancelPipeline: () => Promise<void>
@@ -116,6 +118,7 @@ export const usePipelineProgress = ({
   const firstClipHandledRef = useRef(false)
   const finalizeTriggeredRef = useRef(false)
   const cancellationRequestedRef = useRef(false)
+  const startStepRef = useRef<number | null>(null)
   const onFirstClipReadyRef = useRef<((details: { jobId: string }) => void) | null>(
     onFirstClipReady ?? null
   )
@@ -167,9 +170,11 @@ export const usePipelineProgress = ({
         if (trialFlagsRef.current.isTrialActive) {
           markTrialRunPending()
         }
+        const startStepValue = startStepRef.current
+        startStepRef.current = null
         updateState((prev) => ({
           ...prev,
-          steps: createInitialPipelineSteps(),
+          steps: createInitialPipelineStepsForStart(startStepValue),
           pipelineError: null,
           isProcessing: true,
           lastRunProducedNoClips: false,
@@ -765,7 +770,8 @@ export const usePipelineProgress = ({
     async (
       source: { url?: string | null; filePath?: string | null },
       accountId: string,
-      reviewMode: boolean
+      reviewMode: boolean,
+      startStepId?: string | null
     ) => {
       if (isMockBackend) {
         return
@@ -779,6 +785,9 @@ export const usePipelineProgress = ({
         }))
         return
       }
+
+      const startStepOrder = startStepId ? getPipelineStepStartOrder(startStepId) : null
+      startStepRef.current = startStepOrder
 
       updateState((prev) => ({
         ...prev,
@@ -802,7 +811,8 @@ export const usePipelineProgress = ({
           filePath: source.filePath ?? null,
           account: accountId,
           tone: toneOverride,
-          reviewMode
+          reviewMode,
+          startStep: startStepOrder
         })
         activeJobIdRef.current = jobId
         updateState((prev) => ({ ...prev, activeJobId: jobId, awaitingReview: false }))
@@ -811,6 +821,7 @@ export const usePipelineProgress = ({
         }
         subscribeToJob(jobId)
       } catch (error) {
+        startStepRef.current = null
         updateState((prev) => ({
           ...prev,
           pipelineError: error instanceof Error ? error.message : 'Unable to start the pipeline.',

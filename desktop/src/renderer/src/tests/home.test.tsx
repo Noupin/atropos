@@ -258,7 +258,7 @@ describe('Home account selection', () => {
     fireEvent.submit(form as HTMLFormElement)
 
     await waitFor(() => expect(startPipelineSpy).toHaveBeenCalledTimes(1))
-    expect(startPipelineSpy).toHaveBeenCalledWith({ url: videoUrl }, accountId, false)
+    expect(startPipelineSpy).toHaveBeenCalledWith({ url: videoUrl }, accountId, false, null)
   })
 
   it('prefers a selected local file over the pasted URL', async () => {
@@ -293,7 +293,8 @@ describe('Home account selection', () => {
       expect(startPipelineSpy).toHaveBeenCalledWith(
         { filePath: '/Users/operator/video.mp4' },
         AVAILABLE_ACCOUNT.id,
-        false
+        false,
+        null
       )
     } finally {
       // @ts-expect-error restore testing shim
@@ -419,6 +420,53 @@ describe('Home pipeline rendering', () => {
     const metadata = timelineScope.getByText(/creator hub/i)
     expect(metadata).toBeInTheDocument()
     expect(metadata).toHaveTextContent(/0:32/)
+  })
+
+  it('allows rerunning the pipeline from a completed step', async () => {
+    const steps = createInitialPipelineSteps().map((step, index) =>
+      index === 0
+        ? { ...step, status: 'completed' as PipelineStep['status'], progress: 1 }
+        : step
+    )
+    const startPipelineSpy = vi.fn()
+
+    render(
+      <AccessProvider>
+        <MemoryRouter>
+          <Home
+            onStateChange={() => {}}
+            accounts={[AVAILABLE_ACCOUNT]}
+            onStartPipeline={startPipelineSpy}
+            onResumePipeline={vi.fn()}
+            initialState={createInitialState({
+              selectedAccountId: AVAILABLE_ACCOUNT.id,
+              steps,
+              videoUrl: 'https://www.youtube.com/watch?v=example',
+              isProcessing: false
+            })}
+          />
+        </MemoryRouter>
+      </AccessProvider>
+    )
+
+    const rerunButtons = screen.getAllByRole('button', {
+      name: /start the pipeline here and run the remaining steps/i
+    })
+    expect(rerunButtons.length).toBeGreaterThan(0)
+    expect(rerunButtons[0]).toHaveAttribute(
+      'title',
+      'Start the pipeline here and run the remaining steps.'
+    )
+
+    fireEvent.click(rerunButtons[0])
+
+    await waitFor(() => expect(startPipelineSpy).toHaveBeenCalledTimes(1))
+    expect(startPipelineSpy).toHaveBeenCalledWith(
+      { url: 'https://www.youtube.com/watch?v=example' },
+      AVAILABLE_ACCOUNT.id,
+      false,
+      'download-video'
+    )
   })
 
   it('surfaces clip batch progress details for multi-clip steps', () => {

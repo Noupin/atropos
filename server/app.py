@@ -129,6 +129,7 @@ class RunRequest(BaseModel):
     account: str | None = Field(default=None, max_length=128)
     tone: Tone | None = Field(default=None)
     review_mode: bool = Field(default=False)
+    start_step: int | None = Field(default=None, alias="start_step", ge=1)
 
     @field_validator("tone", mode="before")
     @classmethod
@@ -1143,6 +1144,7 @@ async def start_job(payload: RunRequest) -> RunResponse:
                 source_kind=source_kind,
                 local_video_path=local_video_path,
                 cancellation_event=state.cancel_event,
+                start_at_step=payload.start_step,
             )
         except PipelineCancelledError:
             logger.info("Pipeline job %s cancelled", job_id)

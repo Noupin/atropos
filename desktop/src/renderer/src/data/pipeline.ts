@@ -74,6 +74,22 @@ export const PIPELINE_STEP_DEFINITIONS: PipelineStepDefinition[] = [
   }
 ]
 
+const STEP_ORDER_LOOKUP: Record<string, number> = PIPELINE_STEP_DEFINITIONS.reduce(
+  (accumulator, definition, index) => {
+    accumulator[definition.id] = index + 1
+    return accumulator
+  },
+  {} as Record<string, number>
+)
+
+export const getPipelineStepStartOrder = (stepId: string): number | null =>
+  STEP_ORDER_LOOKUP[stepId] ?? null
+
+export const getPipelineStepIndex = (stepId: string): number => {
+  const order = getPipelineStepStartOrder(stepId)
+  return order !== null ? order - 1 : -1
+}
+
 type StepPattern = { stepId: PipelineStepDefinition['id']; pattern: RegExp }
 
 type SubstepPattern = {
@@ -186,3 +202,44 @@ export const createInitialPipelineSteps = (): PipelineStep[] =>
     etaSeconds: null,
     substeps: initialiseSubsteps(definition.substeps)
   }))
+
+export const createInitialPipelineStepsForStart = (startStep: number | null): PipelineStep[] => {
+  const baseSteps = createInitialPipelineSteps()
+  if (typeof startStep !== 'number' || !Number.isFinite(startStep) || startStep <= 1) {
+    return baseSteps
+  }
+
+  const threshold = Math.max(1, Math.floor(startStep))
+
+  return baseSteps.map((step, index) => {
+    const order = index + 1
+    if (order >= threshold) {
+      return step
+    }
+
+    const nextSubsteps = step.substeps.map((substep) => ({
+      ...substep,
+      status: 'completed' as PipelineStep['status'],
+      progress: 1,
+      etaSeconds: null,
+      completedClips: substep.totalClips,
+      activeClipIndex: null
+    }))
+
+    const clipProgress = step.clipStage
+      ? {
+          completed: step.clipProgress?.total ?? 0,
+          total: step.clipProgress?.total ?? 0
+        }
+      : step.clipProgress
+
+    return {
+      ...step,
+      status: 'completed' as PipelineStep['status'],
+      progress: 1,
+      etaSeconds: null,
+      clipProgress,
+      substeps: nextSubsteps
+    }
+  })
+}

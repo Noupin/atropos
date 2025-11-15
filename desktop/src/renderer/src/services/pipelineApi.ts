@@ -16,6 +16,7 @@ export type PipelineJobRequest = {
   account?: string | null
   tone?: string | null
   reviewMode?: boolean
+  startStep?: number | null
 }
 
 export type PipelineJobResponse = {
@@ -56,7 +57,8 @@ export const startPipelineJob = async (request: PipelineJobRequest): Promise<Pip
           file_path: request.filePath ?? null,
           account: request.account ?? null,
           tone: request.tone ?? null,
-          review_mode: request.reviewMode ?? false
+          review_mode: request.reviewMode ?? false,
+          start_step: request.startStep ?? null
         })
       })
       break

@@ -147,6 +147,7 @@ def process_video(
     source_kind: Literal["remote", "local"] = "remote",
     local_video_path: Path | None = None,
     cancellation_event: Event | None = None,
+    start_at_step: int | None = None,
 ) -> None:
     """Run the clipping pipeline for ``yt_url``.
 
@@ -287,8 +288,12 @@ def process_video(
             twitch = is_twitch_url(yt_url)
         transcript_source = "whisper"
 
+        effective_start = START_AT_STEP
+        if isinstance(start_at_step, int) and start_at_step >= 1:
+            effective_start = start_at_step
+
         def should_run(step: int) -> bool:
-            return START_AT_STEP <= step
+            return effective_start <= step
 
         if is_local_source:
             video_info = _build_local_video_info(local_video_path)
