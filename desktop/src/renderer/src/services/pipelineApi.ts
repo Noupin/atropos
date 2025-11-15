@@ -7,6 +7,7 @@ import {
 } from '../config/backend'
 import { parseClipTimestamp } from '../lib/clipMetadata'
 import type { Clip, PipelineEventType } from '../types'
+import { extractErrorMessage } from './http'
 
 type UnknownRecord = Record<string, unknown>
 
@@ -241,7 +242,8 @@ export const adjustJobClip = async (
   })
 
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`)
+    const detail = await extractErrorMessage(response)
+    throw new Error(detail || `Request failed with status ${response.status}`)
   }
 
   const payload = (await response.json()) as UnknownRecord

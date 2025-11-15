@@ -503,7 +503,8 @@ export const adjustLibraryClip = async (
   })
 
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`)
+    const detail = await extractErrorMessage(response)
+    throw new Error(detail || `Request failed with status ${response.status}`)
   }
 
   const payload = (await response.json()) as RawClipPayload

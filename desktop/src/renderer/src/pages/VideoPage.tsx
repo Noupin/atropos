@@ -199,6 +199,37 @@ const delay = (ms: number): Promise<void> =>
     setTimeout(resolve, ms)
   })
 
+const LAYOUT_FALLBACK_IDS = ['default', 'default.json'] as const
+const ADJUSTMENT_ERROR_FALLBACK_MESSAGE =
+  'We couldn’t rebuild this clip right now. Please try again in a moment.'
+
+const normaliseAdjustmentErrorMessage = (error: unknown): string => {
+  if (!(error instanceof Error)) {
+    return ADJUSTMENT_ERROR_FALLBACK_MESSAGE
+  }
+
+  const detail = error.message?.trim()
+  if (!detail) {
+    return ADJUSTMENT_ERROR_FALLBACK_MESSAGE
+  }
+
+  const lowerCaseDetail = detail.toLowerCase()
+  if (lowerCaseDetail.includes('layoutnotfound') || lowerCaseDetail.includes('layout not found')) {
+    return 'The selected layout is no longer available. Choose a different layout and try again.'
+  }
+
+  const statusMatch = detail.match(/status\s+(\d{3})/i)
+  if (statusMatch) {
+    return `The server returned an unexpected error (status ${statusMatch[1]}). Please try again in a moment.`
+  }
+
+  if (/request failed with status/i.test(detail)) {
+    return 'The server returned an unexpected error. Please try again in a moment.'
+  }
+
+  return detail
+}
+
 const DEFAULT_CALL_TO_ACTION = 'Invite viewers to subscribe for more highlights.'
 const DEFAULT_TAGS = 'clips, highlights, community'
 const DEFAULT_PLATFORM_NOTES = 'Share with the community playlist and pin on the channel page.'
@@ -676,7 +707,7 @@ const VideoPage: FC = () => {
         throw new Error('Load a clip before applying changes.')
       }
 
-      const layoutIdForRequest =
+      const requestedLayoutId =
         adjustment.layoutId ??
         clipState.layoutId ??
         layoutAppliedIdRef.current ??
@@ -688,44 +719,86 @@ const VideoPage: FC = () => {
           ? clipState.accountId
           : null)
 
-      if (context === 'library' || (!jobId && clipAccountId)) {
-        if (!clipAccountId) {
-          throw new Error('We need an account to rebuild this clip. Try reopening it from the library.')
+      const layoutCandidates: Array<string | null> = []
+      if (requestedLayoutId) {
+        layoutCandidates.push(requestedLayoutId)
+      }
+      for (const fallbackId of LAYOUT_FALLBACK_IDS) {
+        if (!layoutCandidates.includes(fallbackId)) {
+          layoutCandidates.push(fallbackId)
         }
-        const updated = await adjustLibraryClip(clipAccountId, clipState.id, {
+      }
+      if (layoutCandidates.length === 0) {
+        layoutCandidates.push(LAYOUT_FALLBACK_IDS[0])
+      }
+
+      const initialCandidate = layoutCandidates[0] ?? null
+
+      const performAdjustment = async (layoutIdToUse: string | null): Promise<Clip> => {
+        if (context === 'library' || (!jobId && clipAccountId)) {
+          if (!clipAccountId) {
+            throw new Error('We need an account to rebuild this clip. Try reopening it from the library.')
+          }
+          const updated = await adjustLibraryClip(clipAccountId, clipState.id, {
+            startSeconds: adjustment.startSeconds,
+            endSeconds: adjustment.endSeconds,
+            layoutId: layoutIdToUse
+          })
+          applyUpdatedClip(updated)
+          setPersistedState((previous) => ({
+            ...(previous ?? {}),
+            clip: updated,
+            context: 'library',
+            accountId: clipAccountId,
+            jobId: previous?.jobId ?? null
+          }))
+          return updated
+        }
+
+        if (!jobId) {
+          throw new Error('We lost the job that produced this clip. Save it to your library and try again.')
+        }
+
+        const updated = await adjustJobClip(jobId, clipState.id, {
           startSeconds: adjustment.startSeconds,
           endSeconds: adjustment.endSeconds,
-          layoutId: layoutIdForRequest
+          layoutId: layoutIdToUse
         })
         applyUpdatedClip(updated)
         setPersistedState((previous) => ({
           ...(previous ?? {}),
           clip: updated,
-          context: 'library',
-          accountId: clipAccountId,
-          jobId: previous?.jobId ?? null
+          context: 'job',
+          jobId,
+          accountId: previous?.accountId ?? clipAccountId ?? null
         }))
         return updated
       }
 
-      if (!jobId) {
-        throw new Error('We lost the job that produced this clip. Save it to your library and try again.')
+      let lastError: unknown = null
+
+      for (const candidate of layoutCandidates) {
+        try {
+          const updated = await performAdjustment(candidate)
+          if (initialCandidate && candidate !== initialCandidate) {
+            setLayoutStatusMessage(
+              'The selected layout was unavailable, so we used our default layout instead.'
+            )
+            setLayoutErrorMessage(null)
+          }
+          return updated
+        } catch (error) {
+          console.error(
+            'Failed to adjust clip with layout candidate',
+            candidate ?? 'default pipeline layout',
+            error
+          )
+          lastError = error
+        }
       }
 
-      const updated = await adjustJobClip(jobId, clipState.id, {
-        startSeconds: adjustment.startSeconds,
-        endSeconds: adjustment.endSeconds,
-        layoutId: layoutIdForRequest
-      })
-      applyUpdatedClip(updated)
-      setPersistedState((previous) => ({
-        ...(previous ?? {}),
-        clip: updated,
-        context: 'job',
-        jobId,
-        accountId: previous?.accountId ?? clipAccountId ?? null
-      }))
-      return updated
+      const friendlyMessage = normaliseAdjustmentErrorMessage(lastError)
+      throw new Error(friendlyMessage)
     },
     [
       accountId,
@@ -734,6 +807,8 @@ const VideoPage: FC = () => {
       clipState,
       context,
       jobId,
+      setLayoutErrorMessage,
+      setLayoutStatusMessage,
       setPersistedState
     ]
   )
@@ -777,9 +852,11 @@ const VideoPage: FC = () => {
         })
         setLayoutStatusMessage('Layout applied to this clip.')
       } catch (error) {
+        console.error('Failed to apply layout definition', error)
         const message =
           error instanceof Error ? error.message : 'Unable to apply the layout. Please try again.'
         setLayoutErrorMessage(message)
+        throw error instanceof Error ? new Error(message) : new Error(message)
       } finally {
         setIsApplyingLayout(false)
       }
