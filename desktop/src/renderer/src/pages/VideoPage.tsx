@@ -659,8 +659,60 @@ const VideoPage: FC = () => {
       } else {
         setActiveLayoutReference(null)
       }
+      setPersistedState((previous) => ({
+        ...(previous ?? {}),
+        clip: updated,
+        context: previous?.context ?? context,
+        jobId: previous?.jobId ?? jobId ?? null,
+        accountId: previous?.accountId ?? accountId ?? null
+      }))
     },
-    [minGap, resolveLayoutCategory]
+    [accountId, context, jobId, minGap, resolveLayoutCategory, setPersistedState]
+  )
+
+  const submitClipAdjustment = useCallback(
+    async (adjustment: { startSeconds: number; endSeconds: number; layoutId: string | null }) => {
+      if (!clipState) {
+        throw new Error('Load a clip before applying changes.')
+      }
+
+      const clipAccountId =
+        accountId ?? (typeof clipState.accountId === 'string' && clipState.accountId.length > 0
+          ? clipState.accountId
+          : null)
+
+      if (context === 'library' || (!jobId && clipAccountId)) {
+        if (!clipAccountId) {
+          throw new Error('We need an account to rebuild this clip. Try reopening it from the library.')
+        }
+        const updated = await adjustLibraryClip(clipAccountId, clipState.id, adjustment)
+        applyUpdatedClip(updated)
+        setPersistedState((previous) => ({
+          ...(previous ?? {}),
+          clip: updated,
+          context: 'library',
+          accountId: clipAccountId,
+          jobId: previous?.jobId ?? null
+        }))
+        return updated
+      }
+
+      if (!jobId) {
+        throw new Error('We lost the job that produced this clip. Save it to your library and try again.')
+      }
+
+      const updated = await adjustJobClip(jobId, clipState.id, adjustment)
+      applyUpdatedClip(updated)
+      setPersistedState((previous) => ({
+        ...(previous ?? {}),
+        clip: updated,
+        context: 'job',
+        jobId,
+        accountId: previous?.accountId ?? clipAccountId ?? null
+      }))
+      return updated
+    },
+    [accountId, applyUpdatedClip, clipState, context, jobId, setPersistedState]
   )
 
   const handleApplyLayoutDefinition = useCallback(
@@ -695,29 +747,11 @@ const VideoPage: FC = () => {
           throw new Error('Layout must be saved before applying.')
         }
 
-        if (context === 'library') {
-          const accountForUpdate = accountId ?? clipState.accountId
-          if (!accountForUpdate) {
-            throw new Error('Missing account information for this clip.')
-          }
-          const updated = await adjustLibraryClip(accountForUpdate, clipState.id, {
-            startSeconds: clipState.startSeconds,
-            endSeconds: clipState.endSeconds,
-            layoutId: layoutIdToApply
-          })
-          applyUpdatedClip(updated)
-        } else {
-          if (!jobId) {
-            throw new Error('Missing job information for this clip.')
-          }
-          const updated = await adjustJobClip(jobId, clipState.id, {
-            startSeconds: clipState.startSeconds,
-            endSeconds: clipState.endSeconds,
-            layoutId: layoutIdToApply
-          })
-          applyUpdatedClip(updated)
-        }
-        layoutAppliedIdRef.current = layoutIdToApply
+        await submitClipAdjustment({
+          startSeconds: clipState.startSeconds,
+          endSeconds: clipState.endSeconds,
+          layoutId: layoutIdToApply
+        })
         setLayoutStatusMessage('Layout applied to this clip.')
       } catch (error) {
         const message =
@@ -734,7 +768,8 @@ const VideoPage: FC = () => {
       clipState,
       context,
       handleSaveLayoutDefinition,
-      jobId
+      jobId,
+      submitClipAdjustment
     ]
   )
 
@@ -2031,28 +2066,11 @@ const VideoPage: FC = () => {
     setSaveError(null)
     setSaveSuccess(null)
     try {
-      if (context === 'library') {
-        const accountForUpdate = accountId ?? clipState.accountId
-        if (!accountForUpdate) {
-          throw new Error('Missing account information for this clip.')
-        }
-        const updated = await adjustLibraryClip(accountForUpdate, clipState.id, {
-          startSeconds: adjustedStart,
-          endSeconds: adjustedEnd,
-          layoutId: clipState.layoutId ?? null
-        })
-        applyUpdatedClip(updated)
-      } else {
-        if (!jobId) {
-          throw new Error('Missing job information for this clip.')
-        }
-        const updated = await adjustJobClip(jobId, clipState.id, {
-          startSeconds: adjustedStart,
-          endSeconds: adjustedEnd,
-          layoutId: clipState.layoutId ?? null
-        })
-        applyUpdatedClip(updated)
-      }
+      await submitClipAdjustment({
+        startSeconds: adjustedStart,
+        endSeconds: adjustedEnd,
+        layoutId: clipState.layoutId ?? null
+      })
       await runStepAnimation(setSaveSteps)
       setSaveSuccess('Clip boundaries updated successfully.')
     } catch (error) {
@@ -2067,7 +2085,13 @@ const VideoPage: FC = () => {
     } finally {
       setIsSaving(false)
     }
-  }, [applyUpdatedClip, clipState, context, rangeEnd, rangeStart, runStepAnimation, accountId, jobId])
+  }, [
+    clipState,
+    rangeEnd,
+    rangeStart,
+    runStepAnimation,
+    submitClipAdjustment
+  ])
 
   if (!clipState) {
     return (
