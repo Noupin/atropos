@@ -282,15 +282,37 @@ const parseLayoutDefinition = async (
   }
 }
 
+const normalisePath = (candidate: string | null | undefined): string | null => {
+  if (!candidate) {
+    return null
+  }
+  try {
+    return resolve(candidate)
+  } catch (error) {
+    console.warn('[layouts] failed to resolve path', candidate, error)
+    return null
+  }
+}
+
 const getLayoutsRoot = async (): Promise<string> => {
   if (layoutsRoot) {
     return layoutsRoot
   }
+
   await app.whenReady()
-  const root = resolve(app.getPath('userData'), 'layouts')
+
+  const envRoot = normalisePath(process.env.ATROPOS_LAYOUTS_ROOT)
+  const outSiblingRoot = normalisePath(
+    process.env.OUT_ROOT ? join(process.env.OUT_ROOT, '..', 'layouts') : null
+  )
+  const fallbackRoot = resolve(app.getPath('userData'), 'layouts')
+
+  const root = envRoot ?? outSiblingRoot ?? fallbackRoot
+
   await fs.mkdir(root, { recursive: true })
   await fs.mkdir(join(root, BUILTIN_DIR), { recursive: true })
   await fs.mkdir(join(root, CUSTOM_DIR), { recursive: true })
+
   layoutsRoot = root
   process.env.ATROPOS_LAYOUTS_ROOT = root
   return root
