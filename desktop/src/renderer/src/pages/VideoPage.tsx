@@ -396,6 +396,7 @@ const VideoPage: FC = () => {
   const [layoutRenderStatusMessage, setLayoutRenderStatusMessage] = useState<string | null>(null)
   const [layoutRenderErrorMessage, setLayoutRenderErrorMessage] = useState<string | null>(null)
   const layoutRenderInFlightRef = useRef(false)
+  const layoutRenderResetPendingRef = useRef(false)
 
   const resolveLayoutCategory = useCallback(
     (identifier: string | null | undefined): LayoutCategory | null => {
@@ -415,12 +416,14 @@ const VideoPage: FC = () => {
 
   useEffect(() => {
     if (layoutRenderInFlightRef.current) {
+      layoutRenderResetPendingRef.current = true
       return
     }
     setLayoutRenderSteps(createInitialSaveSteps())
     setLayoutRenderStatusMessage(null)
     setLayoutRenderErrorMessage(null)
-  }, [activeLayoutDefinition?.id, layoutRenderInFlightRef])
+    layoutRenderResetPendingRef.current = false
+  }, [activeLayoutDefinition?.id, layoutRenderInFlightRef, layoutRenderResetPendingRef])
 
   const refreshLayoutCollection = useCallback(async () => {
     setIsLayoutCollectionLoading(true)
@@ -804,10 +807,12 @@ const VideoPage: FC = () => {
       setIsLayoutRendering(true)
       setLayoutRenderStatusMessage(null)
       setLayoutRenderErrorMessage(null)
+      let resetWithSuccess = false
       try {
         await handleApplyLayoutDefinition(layout)
         await runStepAnimation(setLayoutRenderSteps)
         setLayoutRenderStatusMessage('Rendering started with the latest layout. We will notify you when it finishes.')
+        resetWithSuccess = true
       } catch (error) {
         const message =
           error instanceof Error
@@ -820,9 +825,23 @@ const VideoPage: FC = () => {
       } finally {
         layoutRenderInFlightRef.current = false
         setIsLayoutRendering(false)
+        if (layoutRenderResetPendingRef.current) {
+          layoutRenderResetPendingRef.current = false
+          setLayoutRenderSteps(createInitialSaveSteps())
+          if (resetWithSuccess) {
+            setLayoutRenderStatusMessage(null)
+            setLayoutRenderErrorMessage(null)
+          }
+        }
       }
     },
-    [clipState, handleApplyLayoutDefinition, layoutRenderInFlightRef, runStepAnimation]
+    [
+      clipState,
+      handleApplyLayoutDefinition,
+      layoutRenderInFlightRef,
+      layoutRenderResetPendingRef,
+      runStepAnimation
+    ]
   )
 
   const originalStart = clipState?.originalStartSeconds ?? 0
