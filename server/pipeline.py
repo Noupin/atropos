@@ -88,7 +88,7 @@ from helpers.logging import run_step, report_step_progress
 from helpers.notifications import send_failure_email
 from helpers.description import maybe_append_website_link
 from steps.candidates import ClipCandidate
-from helpers.cleanup import cleanup_project_dir
+from helpers.cleanup import cleanup_project_dir, reset_project_for_restart
 from common.caption_utils import prepare_hashtags
 from helpers.hashtags import generate_hashtag_strings
 
@@ -288,7 +288,7 @@ def process_video(
             twitch = is_twitch_url(yt_url)
         transcript_source = "whisper"
 
-        effective_start = START_AT_STEP
+        effective_start = START_AT_STEP if isinstance(START_AT_STEP, int) and START_AT_STEP >= 1 else 1
         if isinstance(start_at_step, int) and start_at_step >= 1:
             effective_start = start_at_step
 
@@ -347,15 +347,25 @@ def process_video(
         if account:
             base_output_dir /= account
         project_dir = base_output_dir / non_suffix_filename
+        cleanup_step = effective_start if isinstance(effective_start, int) and effective_start >= 1 else 1
         if project_dir.exists():
-            emit_log(
-                (
-                    f"{Fore.YELLOW}Existing project directory found for {non_suffix_filename}. "
-                    f"Removing previous artifacts.{Style.RESET_ALL}"
-                ),
-                level="warning",
-            )
-            shutil.rmtree(project_dir, ignore_errors=True)
+            if cleanup_step > 1:
+                emit_log(
+                    (
+                        f"{Fore.YELLOW}Existing project directory found for {non_suffix_filename}. "
+                        f"Resetting artifacts from step {cleanup_step}.{Style.RESET_ALL}"
+                    ),
+                    level="warning",
+                )
+            else:
+                emit_log(
+                    (
+                        f"{Fore.YELLOW}Existing project directory found for {non_suffix_filename}. "
+                        f"Removing previous artifacts.{Style.RESET_ALL}"
+                    ),
+                    level="warning",
+                )
+        reset_project_for_restart(project_dir, non_suffix_filename, cleanup_step)
         project_dir.mkdir(parents=True, exist_ok=True)
         ensure_not_cancelled()
 
@@ -1340,17 +1350,19 @@ def process_video(
                 "Pausing after clip production for manual review. Resume when adjustments are complete.",
                 level="info",
             )
-        if observer:
-            observer.handle_event(
-                PipelineEvent(
-                    type=PipelineEventType.LOG,
-                    message="Awaiting manual clip review before completion.",
-                    data={"status": "waiting_for_review"},
+            if observer:
+                observer.handle_event(
+                    PipelineEvent(
+                        type=PipelineEventType.LOG,
+                        message="Awaiting manual clip review before completion.",
+                        data={"status": "waiting_for_review"},
+                    )
                 )
-            )
-        review_gate()
-        ensure_not_cancelled()
-        emit_log("Resuming pipeline after manual review.", level="info")
+            review_gate()
+            ensure_not_cancelled()
+            emit_log("Resuming pipeline after manual review.", level="info")
+        else:
+            ensure_not_cancelled()
 
         if total_candidates:
             notify_progress(

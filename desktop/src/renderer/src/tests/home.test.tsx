@@ -450,13 +450,10 @@ describe('Home pipeline rendering', () => {
     )
 
     const rerunButtons = screen.getAllByRole('button', {
-      name: /start the pipeline here and run the remaining steps/i
+      name: /run this step and all following steps/i
     })
     expect(rerunButtons.length).toBeGreaterThan(0)
-    expect(rerunButtons[0]).toHaveAttribute(
-      'title',
-      'Start the pipeline here and run the remaining steps.'
-    )
+    expect(rerunButtons[0]).toHaveAttribute('title', 'Run this step and all following steps.')
 
     fireEvent.click(rerunButtons[0])
 

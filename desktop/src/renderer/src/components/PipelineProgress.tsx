@@ -40,6 +40,8 @@ const indicatorClasses: Record<PipelineStepStatus, string> = {
 const multiStepBadgeBaseClasses =
   'inline-flex items-center justify-center gap-1 rounded-full border border-white/10 bg-white/5 uppercase tracking-[0.16em] text-[color:color-mix(in_srgb,var(--muted)_75%,transparent)]'
 
+const RERUN_TOOLTIP = 'Run this step and all following steps.'
+
 const multiStepBadgeSizeClasses = {
   default: 'px-2 py-0.5 text-[10px] font-semibold',
   compact: 'px-1.5 py-px text-[9px] font-semibold'
@@ -320,7 +322,7 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
       return null
     }
 
-    const sizeClasses = variant === 'compact' ? 'px-2 py-0.5 text-[9px]' : 'px-2.5 py-1 text-[10px]'
+    const sizeClasses = variant === 'compact' ? 'h-7 w-7' : 'h-8 w-8'
 
     return (
       <button
@@ -330,11 +332,21 @@ const renderClipBadge = (step: PipelineStep, variant: 'default' | 'compact' = 'd
           onRerunStep(step.id)
         }}
         disabled={rerunDisabled}
-        className={`inline-flex items-center gap-1 rounded-md border border-white/15 bg-[color:color-mix(in_srgb,var(--card)_85%,transparent)] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_srgb,var(--muted)_65%,transparent)] shadow-sm transition hover:border-[var(--ring)] hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60 ${sizeClasses}`}
-        title="Start the pipeline here and run the remaining steps."
-        aria-label="Start the pipeline here and run the remaining steps."
+        className={`inline-flex items-center justify-center rounded-full border border-white/15 bg-[color:color-mix(in_srgb,var(--card)_85%,transparent)] text-[color:color-mix(in_srgb,var(--muted)_65%,transparent)] shadow-sm transition hover:border-[var(--ring)] hover:text-[color:var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60 ${sizeClasses}`}
+        title={RERUN_TOOLTIP}
+        aria-label={RERUN_TOOLTIP}
       >
-        Re-run
+        <svg
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          className="h-4 w-4"
+          focusable="false"
+        >
+          <path
+            d="M12 5a7 7 0 0 1 6.32 9.9.75.75 0 1 0 1.36.6A8.5 8.5 0 1 0 12 20.5a.75.75 0 0 0 0-1.5 7 7 0 1 1 0-14v1.69a.75.75 0 0 0 1.28.54l2.44-2.44a.75.75 0 0 0 0-1.06L13.28 1.3A.75.75 0 0 0 12 1.84V5Z"
+            fill="currentColor"
+          />
+        </svg>
       </button>
     )
   }
